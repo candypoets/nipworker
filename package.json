@@ -1,0 +1,67 @@
+{
+  "name": "@candypoets/nipworker",
+  "version": "1.0.0",
+  "description": "Nostr client library with worker-based architecture using Rust WASM",
+  "type": "module",
+  "main": "./dist/index.umd.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.umd.cjs",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "src"
+  ],
+  "scripts": {
+    "dev": "vite",
+    "build": "npm run build:wasm && vite build && npm run build:types",
+    "build:wasm": "npm run build:wasm:main && npm run build:wasm:worker",
+    "build:wasm:main": "cd nostr-main && wasm-pack build --target web --out-dir ../src/wasm/main --no-pack && rm ../src/wasm/main/.gitignore",
+    "build:wasm:worker": "cd nostr-worker && wasm-pack build --target web --out-dir ../src/wasm/worker --no-pack && rm ../src/wasm/worker/.gitignore",
+    "build:types": "tsc --emitDeclarationOnly --outDir dist",
+    "preview": "vite preview",
+    "prepublishOnly": "npm run build",
+    "clean": "rm -rf dist src/wasm",
+    "test": "echo \"No tests yet\" && exit 0"
+  },
+  "keywords": [
+    "nostr",
+    "protocol",
+    "web-worker",
+    "wasm",
+    "rust"
+  ],
+  "author": "So Tachi <sotachi@proton.me>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/candypoets/nipworker.git"
+  },
+  "bugs": {
+    "url": "https://github.com/candypoets/nipworker/issues"
+  },
+  "homepage": "https://github.com/candypoets/nipworker#readme",
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0",
+    "vite": "^5.0.0",
+    "vite-plugin-dts": "^3.0.0",
+    "vite-plugin-wasm": "^3.0.0"
+  },
+  "dependencies": {
+    "msgpackr": "^1.11.5",
+    "@msgpack/msgpack": "^3.0.0"
+  },
+  "peerDependencies": {
+    "nostr-tools": "^2.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

@@ -1,0 +1,547 @@
+use super::*;
+use crate::db::NostrDB;
+use crate::network::subscriptions::interfaces::CacheProcessor as CacheProcessorTrait;
+use crate::network::subscriptions::CacheProcessor;
+use crate::parser::Parser;
+use crate::relays::utils::{normalize_relay_url, validate_relay_url};
+use crate::types::network::{Request, SubscribeKind};
+use crate::types::*;
+use anyhow::Result;
+use js_sys::{Array, SharedArrayBuffer, Uint8Array};
+use rmp_serde;
+use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, RwLock};
+use tracing::{debug, error, info, warn};
+use wasm_bindgen::prelude::*;
+use wasm_bindgen_futures::spawn_local;
+
+pub struct SubscriptionManager {
+    database: Arc<NostrDB>,
+    parser: Arc<Parser>,
+    subscriptions: Arc<RwLock<HashMap<String, SharedArrayBuffer>>>,
+    cache_processor: Arc<CacheProcessor>,
+    connection_registry: ConnectionRegistry,
+    relay_hints: HashMap<String, Vec<String>>,
+}
+
+impl SubscriptionManager {
+    pub fn new(database: Arc<NostrDB>, parser: Arc<Parser>) -> Self {
+        let cache_processor = Arc::new(CacheProcessor::new(database.clone(), parser.clone()));
+
+        Self {
+            database: database.clone(),
+            parser,
+            subscriptions: Arc::new(RwLock::new(HashMap::new())),
+            relay_hints: HashMap::new(),
+            cache_processor,
+            connection_registry: ConnectionRegistry::new(),
+        }
+    }
+
+    pub async fn open_subscription(
+        &self,
+        subscription_id: String,
+        requests: Vec<Request>,
+        shared_buffer: SharedArrayBuffer,
+    ) -> Result<()> {
+        info!(
+            "Opening subscription: {} with {} requests{}",
+            subscription_id,
+            requests.len(),
+            if requests.len() == 1 {
+                format!(" with filter: {:?}", requests[0].tags)
+            } else {
+                String::new()
+            }
+        );
+
+        // Check if subscription already exists, close it if it does
+        if self
+            .subscriptions
+            .read()
+            .unwrap()
+            .contains_key(&subscription_id)
+        {
+            debug!(
+                "Subscription {} already exists, closing it first",
+                subscription_id
+            );
+            // self.connection_registry
+            //     .close_subscription(&subscription_id)
+            //     .await?;
+            return Ok(());
+        }
+
+        self.subscriptions
+            .write()
+            .unwrap()
+            .insert(subscription_id.clone(), shared_buffer);
+
+        // Spawn subscription processing task
+        self.process_subscription(&subscription_id, requests)
+            .await?;
+
+        debug!("Subscription {} opened successfully", subscription_id);
+        Ok(())
+    }
+
+    pub async fn close_subscription(&self, subscription_id: &String) -> Result<()> {
+        info!("Closing subscription: {}", subscription_id);
+
+        self.connection_registry
+            .close_subscription(&subscription_id)
+            .await?;
+
+        // drop the reference to the sharedBuffer
+        self.subscriptions.write().unwrap().remove(subscription_id);
+
+        debug!(
+            "Subscription {} closed (SharedArrayBuffer retained)",
+            subscription_id
+        );
+
+        Ok(())
+    }
+
+    pub async fn get_active_subscription_count(&self) -> u32 {
+        self.subscriptions.read().unwrap().len() as u32
+    }
+
+    async fn process_subscription(
+        &self,
+        subscription_id: &String,
+        _requests: Vec<Request>,
+    ) -> Result<()> {
+        debug!("Processing subscription: {}", subscription_id);
+
+        // track unique event IDs with size limit to prevent memory issues
+        let mut sent_ids: HashSet<[u8; 32]> = HashSet::new();
+        const MAX_SENT_IDS: usize = 10000; // Limit to prevent excessive memory usage
+
+        let (network_requests, events) = match self
+            .cache_processor
+            .process_local_requests(_requests, 3)
+            .await
+        {
+            Ok((network_requests, events)) => (network_requests, events),
+            Err(e) => {
+                error!(
+                    "Failed to process local requests for subscription {}: {}",
+                    subscription_id, e
+                );
+                return Err(anyhow::anyhow!("Failed to process local requests: {}", e));
+            }
+        };
+
+        // Send the parsed events back to the main thread
+        if !events.is_empty() {
+            // Update sent_ids with all event IDs from cached events
+            for event_batch in &events {
+                if let Some(first_event) = event_batch.first() {
+                    if sent_ids.len() < MAX_SENT_IDS {
+                        sent_ids.insert(first_event.event.id.to_bytes());
+                    }
+                }
+            }
+            self.send_cached_events(&subscription_id, &events).await;
+        }
+
+        let _ = self.send_eoce(&subscription_id).await;
+
+        // Only process network requests if there are any
+        if !network_requests.is_empty() {
+            let relay_filters = self.group_requests_by_relay(network_requests.clone())?;
+            let subscription_handle = self
+                .connection_registry
+                .subscribe(subscription_id.clone(), relay_filters.clone())
+                .await?;
+
+            // Clone the parser for use in the spawn_local task
+            let parser = self.parser.clone();
+            let database = self.database.clone();
+            let cache_processor = self.cache_processor.clone();
+            let shared_buffer = {
+                let subscriptions = self.subscriptions.read().unwrap();
+                subscriptions.get(subscription_id.as_str()).cloned()
+            };
+            let sub_id = subscription_id.clone();
+            let total_connections = relay_filters.len() as i32;
+            let mut remaining_connections = total_connections;
+
+            // Process events from the subscription handle
+            spawn_local(async move {
+                let mut handle = subscription_handle;
+                while let Some(event) = handle.next_event().await {
+                    match event.event_type {
+                        NetworkEventType::Event => {
+                            debug!("Received event from relay: {:?}", event.relay);
+                            if event.event.is_some() {
+                                // Check if the event has already been sent
+                                let event = event.event.as_ref().unwrap();
+                                let id = event.id.to_bytes();
+                                if sent_ids.contains(&id) {
+                                    continue;
+                                }
+                                sent_ids.insert(id);
+
+                                // Parse the event using the cloned parser
+                                match parser.parse(event.clone()) {
+                                    Ok(parsed_event) => {
+                                        debug!("Successfully parsed event: {:?}", event.id);
+                                        let _ = database.add_event(parsed_event.clone()).await;
+                                        // Send the parsed event
+                                        let events_with_context = vec![parsed_event.clone()];
+                                        // let context_events = cache_processor
+                                        //     .find_context_events_simple(&parsed_event, 3)
+                                        //     .await;
+                                        // events_with_context.extend(context_events);
+
+                                        if let Some(ref buffer) = shared_buffer {
+                                            let _ = Self::send_fetched_event(
+                                                buffer,
+                                                &sub_id,
+                                                &events_with_context,
+                                            )
+                                            .await;
+                                        }
+                                    }
+                                    Err(e) => {
+                                        warn!("Failed to parse event kind {}: {}", event.kind, e);
+                                    }
+                                }
+                            }
+                        }
+                        NetworkEventType::EOSE => {
+                            remaining_connections -= 1;
+                            // Send End of Stored Events notification
+                            debug!(
+                                "Received EOSE from relay {:?} for subscription {} (Remaining: {}/{})",
+                                event.relay, sub_id, remaining_connections, total_connections
+                            );
+                            if let Some(ref buffer) = shared_buffer {
+                                Self::send_eose(
+                                    buffer,
+                                    &sub_id,
+                                    EOSE {
+                                        total_connections: total_connections,
+                                        remaining_connections: remaining_connections,
+                                    },
+                                )
+                                .await;
+                            }
+                        }
+                        NetworkEventType::Error => {
+                            warn!("Received error event from network: {:?}", event);
+                        }
+                    }
+                }
+                info!(
+                    "🔚 Subscription handle completed for subscription {}",
+                    sub_id
+                );
+            });
+        }
+
+        // If there are no network requests, we consider the subscription complete
+        if network_requests.is_empty() {
+            info!(
+                "Subscription {} complete (no network requests needed)",
+                subscription_id
+            );
+        }
+
+        Ok(())
+    }
+
+    fn group_requests_by_relay(
+        &self,
+        requests: Vec<Request>,
+    ) -> Result<HashMap<String, Vec<Filter>>, anyhow::Error> {
+        let mut relay_filters_map: HashMap<String, Vec<Filter>> = HashMap::new();
+
+        for mut request in requests {
+            request = self.set_request_relay(request)?;
+            // Convert the request to a filter
+            let filter = request.to_filter()?;
+
+            // Add the filter to each relay in the request
+            for relay_url in request.relays {
+                if let Err(e) = validate_relay_url(&relay_url) {
+                    warn!("Invalid relay URL {}: {}, skipping", relay_url, e);
+                    continue;
+                }
+                relay_filters_map
+                    .entry(normalize_relay_url(&relay_url))
+                    .or_insert_with(Vec::new)
+                    .push(filter.clone());
+            }
+        }
+
+        Ok(relay_filters_map)
+    }
+
+    fn set_request_relay(&self, mut request: Request) -> Result<Request> {
+        let filter = request.to_filter()?;
+        if request.relays.is_empty() {
+            let pubkey = match filter.authors.as_ref() {
+                Some(authors) => {
+                    if !authors.is_empty() {
+                        authors.iter().next().unwrap().to_string()
+                    } else {
+                        String::new()
+                    }
+                }
+                None => String::new(),
+            };
+
+            let kind = match filter.kinds.as_ref() {
+                Some(kinds) => {
+                    if !kinds.is_empty() {
+                        kinds.iter().next().unwrap().as_u64()
+                    } else {
+                        0
+                    }
+                }
+                None => 0,
+            };
+
+            let relays = self.database.find_relay_candidates(kind, &pubkey, &false);
+
+            info!(
+                "No relays specified, found {} relay candidates",
+                relays.len()
+            );
+
+            // Limit to maximum of 8 relays
+            let relays_to_add: Vec<String> = relays.into_iter().take(8).collect();
+
+            request.relays.extend(relays_to_add);
+        }
+
+        Ok(request)
+    }
+
+    async fn send_fetched_event(
+        shared_buffer: &SharedArrayBuffer,
+        subscription_id: &str,
+        event_data: &Vec<ParsedEvent>,
+    ) {
+        // Convert ParsedEvent to SerializableParsedEvent to ensure id and sig fields are hex strings
+        let serializable_events: Vec<SerializableParsedEvent> = event_data
+            .iter()
+            .map(|event| SerializableParsedEvent::from(event.clone()))
+            .collect();
+
+        let message = crate::WorkerToMainMessage::SubscriptionEvent {
+            subscription_id: subscription_id.to_string(),
+            event_type: SubscribeKind::FetchedEvent,
+            event_data: vec![serializable_events],
+        };
+
+        let data = match rmp_serde::to_vec_named(&message) {
+            Ok(msgpack) => {
+                // Safety check: prevent excessive serialized data
+                if msgpack.len() > 512 * 1024 {
+                    // 512KB limit
+                    warn!(
+                        "Serialized data too large: {} bytes for subscription {}",
+                        msgpack.len(),
+                        subscription_id
+                    );
+                    return;
+                }
+                msgpack
+            }
+            Err(e) => {
+                error!(
+                    "Failed to serialize event for subscription {}: {}",
+                    subscription_id, e
+                );
+                return;
+            }
+        };
+
+        let _ = Self::write_to_buffer(shared_buffer, subscription_id, &data).await;
+    }
+
+    async fn send_cached_events(&self, subscription_id: &str, events: &[Vec<ParsedEvent>]) {
+        // Safety check: prevent excessive memory allocation
+        let total_events: usize = events.iter().map(|batch| batch.len()).sum();
+        if total_events > 1000 {
+            // Limit total number of cached events
+            warn!(
+                "Too many cached events: {} for subscription {}",
+                total_events, subscription_id
+            );
+            return;
+        }
+
+        // Convert ParsedEvents to SerializableParsedEvent to ensure id and sig fields are hex strings
+        let serializable_events: Vec<Vec<SerializableParsedEvent>> = events
+            .iter()
+            .map(|event_batch| {
+                event_batch
+                    .iter()
+                    .map(|event| SerializableParsedEvent::from(event.clone()))
+                    .collect()
+            })
+            .collect();
+
+        let message = crate::WorkerToMainMessage::SubscriptionEvent {
+            subscription_id: subscription_id.to_string(),
+            event_type: SubscribeKind::CachedEvent,
+            event_data: serializable_events.clone(),
+        };
+
+        let data = match rmp_serde::to_vec_named(&message) {
+            Ok(msgpack) => {
+                // Safety check: prevent excessive serialized data
+                if msgpack.len() > 1024 * 1024 {
+                    // 1MB limit for cached events
+                    warn!(
+                        "Serialized cached data too large: {} bytes for subscription {}",
+                        msgpack.len(),
+                        subscription_id
+                    );
+                    return;
+                }
+                msgpack
+            }
+            Err(e) => {
+                error!(
+                    "Failed to serialize cached events for subscription {}: {}",
+                    subscription_id, e
+                );
+                return;
+            }
+        };
+
+        self.write_to_shared_buffer(subscription_id, &data).await;
+    }
+
+    async fn send_eose(shared_buffer: &SharedArrayBuffer, subscription_id: &str, eose: EOSE) {
+        let message = crate::WorkerToMainMessage::Eose {
+            subscription_id: subscription_id.to_string(),
+            data: eose,
+        };
+
+        let data = match rmp_serde::to_vec_named(&message) {
+            Ok(msgpack) => msgpack,
+            Err(e) => {
+                error!(
+                    "Failed to serialize EOSE for subscription {}: {}",
+                    subscription_id, e
+                );
+                return;
+            }
+        };
+
+        let _ = Self::write_to_buffer(shared_buffer, subscription_id, &data).await;
+    }
+
+    async fn send_eoce(&self, subscription_id: &str) {
+        let message = crate::WorkerToMainMessage::Eoce {
+            subscription_id: subscription_id.to_string(),
+        };
+
+        let data = match rmp_serde::to_vec_named(&message) {
+            Ok(msgpack) => msgpack,
+            Err(e) => {
+                error!(
+                    "Failed to serialize EOCE for subscription {}: {}",
+                    subscription_id, e
+                );
+                return;
+            }
+        };
+
+        self.write_to_shared_buffer(subscription_id, &data).await;
+    }
+
+    async fn write_to_shared_buffer(&self, subscription_id: &str, data: &[u8]) {
+        let subscriptions = self.subscriptions.read().unwrap();
+        if let Some(shared_buffer) = subscriptions.get(subscription_id) {
+            Self::write_to_buffer(shared_buffer, subscription_id, data).await;
+        } else {
+            warn!(
+                "No SharedArrayBuffer found for subscription: {}, dropping message",
+                subscription_id
+            );
+        }
+    }
+
+    async fn write_to_buffer(
+        shared_buffer: &SharedArrayBuffer,
+        subscription_id: &str,
+        data: &[u8],
+    ) {
+        // Add safety checks for data size
+        if data.len() > 1024 * 1024 {
+            // 1MB limit
+            warn!(
+                "Data too large for SharedArrayBuffer: {} bytes for subscription {}",
+                data.len(),
+                subscription_id
+            );
+            warn!("Dropping message due to size limit");
+            return;
+        }
+
+        // Get the buffer as Uint8Array for manipulation
+        let buffer_uint8 = Uint8Array::new(shared_buffer);
+        let buffer_length = buffer_uint8.length() as usize;
+
+        // Read current write position from header (first 4 bytes, little endian)
+        let header_subarray = buffer_uint8.subarray(0, 4);
+        let mut header_bytes = vec![0u8; 4];
+        header_subarray.copy_to(&mut header_bytes[..]);
+
+        let mut header_array = [0u8; 4];
+        header_array.copy_from_slice(&header_bytes);
+        let current_write_pos = u32::from_le_bytes(header_array) as usize;
+
+        // Safety check for current write position
+        if current_write_pos >= buffer_length {
+            warn!(
+                "Invalid write position {} >= buffer length {} for subscription {}",
+                current_write_pos, buffer_length, subscription_id
+            );
+            warn!("Dropping message due to invalid write position");
+            return;
+        }
+
+        // Check if we have enough space (4 bytes write position header + 4 bytes length prefix + data)
+        let new_write_pos = current_write_pos + 4 + data.len(); // +4 for length prefix
+        if new_write_pos > buffer_length {
+            warn!(
+                "SharedArrayBuffer overflow for subscription {}: trying to write {} bytes at position {}, buffer size {}",
+                subscription_id, data.len() + 4, current_write_pos, buffer_length
+            );
+            // Drop message if buffer is full
+            warn!("Dropping message due to buffer overflow");
+            return;
+        }
+
+        // Write the length prefix (4 bytes, little endian) at current write position
+        let length_prefix = (data.len() as u32).to_le_bytes();
+        let length_prefix_uint8 = Uint8Array::from(&length_prefix[..]);
+        buffer_uint8.set(&length_prefix_uint8, current_write_pos as u32);
+
+        // Write the actual data after the length prefix
+        let data_uint8 = Uint8Array::from(data);
+        buffer_uint8.set(&data_uint8, (current_write_pos + 4) as u32);
+
+        // Update the header with new write position (little endian)
+        let new_header = (new_write_pos as u32).to_le_bytes();
+        let new_header_uint8 = Uint8Array::from(&new_header[..]);
+        buffer_uint8.set(&new_header_uint8, 0);
+
+        debug!(
+            "Wrote {} bytes (+ 4 byte length prefix) to SharedArrayBuffer for subscription: {} (pos: {} -> {}) and notified waiters",
+            data.len(),
+            subscription_id,
+            current_write_pos,
+            new_write_pos
+        );
+    }
+}

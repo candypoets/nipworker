@@ -1,0 +1,48 @@
+[build]
+target = "wasm32-unknown-unknown"
+
+[unstable]
+# Enable unstable features for better error checking
+check-cfg = true
+
+[env]
+# Ensure we're targeting the browser specifically
+CARGO_CFG_TARGET_FAMILY = "wasm"
+CARGO_CFG_TARGET_OS = "unknown"
+CARGO_CFG_TARGET_ARCH = "wasm32"
+
+# Browser-specific environment
+WASM_BINDGEN_BROWSER = "1"
+
+# Force compile-time detection of WASM target
+RUSTFLAGS_WASM_CHECK = "1"
+
+[target.wasm32-unknown-unknown]
+# WASM-specific build flags
+rustflags = [
+    "-C",
+    "target-feature=+bulk-memory",
+    "-C",
+    "target-feature=+sign-ext",
+    "-C",
+    "target-feature=+mutable-globals",
+    "-C",
+    "target-feature=+nontrapping-fptoint",
+    "-C",
+    "debuginfo=2",
+    "-C",
+    "opt-level=0",
+]
+
+# Release-specific optimizations for WASM
+[target.wasm32-unknown-unknown.env]
+# Enable additional optimizations for release builds
+CARGO_PROFILE_RELEASE_OPT_LEVEL = "s"
+CARGO_PROFILE_RELEASE_LTO = "true"
+CARGO_PROFILE_RELEASE_CODEGEN_UNITS = "1"
+CARGO_PROFILE_RELEASE_PANIC = "abort"
+
+
+[registries.crates-io]
+# Use sparse index for faster builds
+protocol = "sparse"
