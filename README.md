@@ -5,6 +5,8 @@ A high-performance Nostr client library with worker-based architecture using Rus
 [![npm version](https://badge.fury.io/js/@candypoets%2Fnipworker.svg)](https://badge.fury.io/js/@candypoets%2Fnipworker)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+![NipWorker](static/nipworker.jpg)
+
 ## 🚀 Features
 
 - **High Performance**: Rust WASM core for cryptographic operations and message processing
@@ -60,15 +62,32 @@ The library provides complete support for **NIP-60 Cashu wallet functionality**:
 npm install @candypoets/nipworker
 ```
 
-### Peer Dependencies
-
-This library requires `nostr-tools` as a peer dependency:
-
-```bash
-npm install nostr-tools
-```
+That's it! No additional dependencies needed.
 
 ## 🔧 Usage
+
+### Import Structure
+
+The library is organized into logical modules for better tree-shaking:
+
+```javascript
+// Core API - main functionality
+import { nostrManager, createNostrManager } from '@candypoets/nipworker';
+
+// Hooks - React-style subscription hooks
+import { useSubscription } from '@candypoets/nipworker/hooks';
+
+// Types - TypeScript type definitions
+import type { 
+  ParsedEvent, 
+  Kind1Parsed, 
+  NostrManagerConfig,
+  Request 
+} from '@candypoets/nipworker/types';
+
+// Utils - type guards and helper functions
+import { isKind1, isKind0, SignerTypes } from '@candypoets/nipworker/utils';
+```
 
 ### Basic Usage
 

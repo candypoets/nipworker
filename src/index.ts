@@ -1,14 +1,13 @@
-import { SharedBufferReader } from "./lib/sharedBuffer";
-import init, {
+import { SharedBufferReader } from "src/lib/sharedBuffer";
+import {
   type MainToWorkerMessage,
   type RelayStatusUpdate,
   type Request,
   type WorkerToMainMessage,
-} from "src/wasm/main/nostr_main.js";
+} from "nostr-main/nostr_main.js";
+// import mainWasmUrl from "src/wasm/main/nostr_main_bg.wasm?url";
 
-// Import worker using Vite's special syntax to get the URL
-import NostrWorkerUrl from "nostr-worker/index.ts?worker&url";
-import type { AnyKind, ParsedEvent } from "./types";
+import type { AnyKind, ParsedEvent } from "src/types";
 
 import { decode, encode } from "@msgpack/msgpack";
 import type { NostrEvent } from "nostr-tools";
@@ -60,7 +59,7 @@ export interface NostrManagerConfig {
   worker?: Worker;
 }
 
-const wasmReady = init();
+// const wasmReady = init(mainWasmUrl);
 
 /**
  * Pure TypeScript NostrClient that manages worker communication and state.
@@ -87,18 +86,15 @@ class NostrManager {
   }
 
   private createWorker(config: NostrManagerConfig): Worker {
-    if (config.worker) {
-      return config.worker;
-    }
+    const workerUrl = new URL("./worker.js", import.meta.url);
+    console.log(import.meta.url, workerUrl);
 
-    // Use the bundled worker URL or a custom one
-    const workerUrl = config.workerUrl || NostrWorkerUrl;
     return new Worker(workerUrl, { type: "module" });
   }
 
   private setupWorkerListener() {
     this.worker.onmessage = async (event) => {
-      await wasmReady;
+      // await wasmReady;
       if (event.data instanceof Uint8Array) {
         let uint8Array = event.data;
         try {
@@ -379,3 +375,5 @@ export const nostrManager = new NostrManager();
 export function cleanup(): void {
   nostrManager.cleanup();
 }
+
+export * from "./types";

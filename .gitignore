@@ -1,3 +1,4 @@
 nostr-main/target
 nostr-worker/target
 node_modules
+dist

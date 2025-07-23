@@ -20,8 +20,7 @@
     "rootDir": ".",
     "baseUrl": ".",
     "paths": {
-      "nostr-main/*": ["./nostr-main/*"],
-      "nostr-worker/*": ["./nostr-worker/*"],
+      "nostr-main/*": ["./nostr-main/pkg/*"],
       "src/*": ["./src/*"]
     },
     "removeComments": false,
