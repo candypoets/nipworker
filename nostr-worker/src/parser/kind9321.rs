@@ -1,16 +1,10 @@
-use crate::parser::Parser;
 use crate::types::network::Request;
 use crate::utils::request_deduplication::RequestDeduplicator;
+use crate::{parser::Parser, ProofUnion};
 use anyhow::{anyhow, Result};
 use nostr::{Event, UnsignedEvent};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProofUnion {
-    // Placeholder for proof types - would need actual cashu types
-    pub data: Value,
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Kind9321Parsed {
@@ -161,7 +155,9 @@ impl Parser {
                     }
                 }
 
-                proofs.push(ProofUnion { data: proof_data });
+                if let Ok(proof_union) = serde_json::from_value::<ProofUnion>(proof_data) {
+                    proofs.push(proof_union);
+                }
             }
         }
 
@@ -315,7 +311,15 @@ mod tests {
             .unwrap();
 
         let parser = Parser::default();
-        let result = parser.prepare_kind_9321(&mut event);
+        let mut unsigned_event = UnsignedEvent {
+            id: event.id,
+            pubkey: event.pubkey,
+            kind: event.kind,
+            content: event.content.clone(),
+            tags: event.tags.clone(),
+            created_at: event.created_at,
+        };
+        let result = parser.prepare_kind_9321(&mut unsigned_event);
 
         assert!(result.is_err());
         assert!(result

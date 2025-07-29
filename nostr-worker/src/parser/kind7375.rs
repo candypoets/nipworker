@@ -3,8 +3,7 @@ use crate::types::network::Request;
 use anyhow::{anyhow, Result};
 use nostr::{Event, UnsignedEvent};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use tracing::{info, warn};
+use tracing::warn;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DLEQProof {
@@ -40,7 +39,6 @@ pub struct Kind7375Parsed {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct TokenContent {
     pub mint: String,
-    pub id: String,
     pub proofs: Vec<ProofUnion>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
@@ -148,7 +146,7 @@ mod tests {
             .unwrap();
 
         let parser = Parser::default();
-        let result = parser.prepare_kind_7375(&mut event);
+        let result = parser.prepare_kind_7375(&mut event.into());
 
         assert!(result.is_err());
         assert!(result
