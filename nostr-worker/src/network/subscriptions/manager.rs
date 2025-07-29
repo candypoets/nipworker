@@ -3,6 +3,7 @@ use crate::db::NostrDB;
 use crate::network::subscriptions::interfaces::CacheProcessor as CacheProcessorTrait;
 use crate::network::subscriptions::CacheProcessor;
 use crate::parser::Parser;
+use crate::pipeline::{Pipeline, PipelineEvent};
 use crate::relays::utils::{normalize_relay_url, validate_relay_url};
 use crate::types::network::{Request, SubscribeKind};
 use crate::types::*;
@@ -66,9 +67,6 @@ impl SubscriptionManager {
                 "Subscription {} already exists, closing it first",
                 subscription_id
             );
-            // self.connection_registry
-            //     .close_subscription(&subscription_id)
-            //     .await?;
             return Ok(());
         }
 
@@ -114,9 +112,12 @@ impl SubscriptionManager {
     ) -> Result<()> {
         debug!("Processing subscription: {}", subscription_id);
 
-        // track unique event IDs with size limit to prevent memory issues
-        let mut sent_ids: HashSet<[u8; 32]> = HashSet::new();
-        const MAX_SENT_IDS: usize = 10000; // Limit to prevent excessive memory usage
+        // Create default pipeline for this subscription
+        let mut pipeline = Pipeline::default(
+            self.parser.clone(),
+            self.database.clone(),
+            subscription_id.clone(),
+        )?;
 
         let (network_requests, events) = match self
             .cache_processor
@@ -133,17 +134,16 @@ impl SubscriptionManager {
             }
         };
 
-        // Send the parsed events back to the main thread
+        // Process cached events through pipeline
         if !events.is_empty() {
-            // Update sent_ids with all event IDs from cached events
-            for event_batch in &events {
-                if let Some(first_event) = event_batch.first() {
-                    if sent_ids.len() < MAX_SENT_IDS {
-                        sent_ids.insert(first_event.event.id.to_bytes());
+            for event_batch in events {
+                for parsed_event in event_batch {
+                    let pipeline_event = PipelineEvent::from_parsed(parsed_event);
+                    if let Some(output) = pipeline.process(pipeline_event).await? {
+                        self.write_to_shared_buffer(subscription_id, &output).await;
                     }
                 }
             }
-            self.send_cached_events(&subscription_id, &events).await;
         }
 
         let _ = self.send_eoce(&subscription_id).await;
@@ -156,10 +156,8 @@ impl SubscriptionManager {
                 .subscribe(subscription_id.clone(), relay_filters.clone())
                 .await?;
 
-            // Clone the parser for use in the spawn_local task
-            let parser = self.parser.clone();
-            let database = self.database.clone();
-            let cache_processor = self.cache_processor.clone();
+            // Move pipeline into spawn_local task
+            let _cache_processor = self.cache_processor.clone();
             let shared_buffer = {
                 let subscriptions = self.subscriptions.read().unwrap();
                 subscriptions.get(subscription_id.as_str()).cloned()
@@ -171,42 +169,28 @@ impl SubscriptionManager {
             // Process events from the subscription handle
             spawn_local(async move {
                 let mut handle = subscription_handle;
+                let mut pipeline = pipeline; // Move pipeline into task
+
                 while let Some(event) = handle.next_event().await {
                     match event.event_type {
                         NetworkEventType::Event => {
                             debug!("Received event from relay: {:?}", event.relay);
-                            if event.event.is_some() {
-                                // Check if the event has already been sent
-                                let event = event.event.as_ref().unwrap();
-                                let id = event.id.to_bytes();
-                                if sent_ids.contains(&id) {
-                                    continue;
-                                }
-                                sent_ids.insert(id);
-
-                                // Parse the event using the cloned parser
-                                match parser.parse(event.clone()) {
-                                    Ok(parsed_event) => {
-                                        debug!("Successfully parsed event: {:?}", event.id);
-                                        let _ = database.add_event(parsed_event.clone()).await;
-                                        // Send the parsed event
-                                        let events_with_context = vec![parsed_event.clone()];
-                                        // let context_events = cache_processor
-                                        //     .find_context_events_simple(&parsed_event, 3)
-                                        //     .await;
-                                        // events_with_context.extend(context_events);
-
+                            if let Some(raw_event) = event.event {
+                                // Process raw event through pipeline
+                                let pipeline_event =
+                                    PipelineEvent::from_raw(raw_event, event.relay);
+                                match pipeline.process(pipeline_event).await {
+                                    Ok(Some(output)) => {
+                                        // Send output to buffer
                                         if let Some(ref buffer) = shared_buffer {
-                                            let _ = Self::send_fetched_event(
-                                                buffer,
-                                                &sub_id,
-                                                &events_with_context,
-                                            )
-                                            .await;
+                                            Self::write_to_buffer(buffer, &sub_id, &output).await;
                                         }
                                     }
+                                    Ok(None) => {
+                                        // Event was dropped by pipeline
+                                    }
                                     Err(e) => {
-                                        warn!("Failed to parse event kind {}: {}", event.kind, e);
+                                        warn!("Pipeline processing failed: {}", e);
                                     }
                                 }
                             }
@@ -319,104 +303,6 @@ impl SubscriptionManager {
         }
 
         Ok(request)
-    }
-
-    async fn send_fetched_event(
-        shared_buffer: &SharedArrayBuffer,
-        subscription_id: &str,
-        event_data: &Vec<ParsedEvent>,
-    ) {
-        // Convert ParsedEvent to SerializableParsedEvent to ensure id and sig fields are hex strings
-        let serializable_events: Vec<SerializableParsedEvent> = event_data
-            .iter()
-            .map(|event| SerializableParsedEvent::from(event.clone()))
-            .collect();
-
-        let message = crate::WorkerToMainMessage::SubscriptionEvent {
-            subscription_id: subscription_id.to_string(),
-            event_type: SubscribeKind::FetchedEvent,
-            event_data: vec![serializable_events],
-        };
-
-        let data = match rmp_serde::to_vec_named(&message) {
-            Ok(msgpack) => {
-                // Safety check: prevent excessive serialized data
-                if msgpack.len() > 512 * 1024 {
-                    // 512KB limit
-                    warn!(
-                        "Serialized data too large: {} bytes for subscription {}",
-                        msgpack.len(),
-                        subscription_id
-                    );
-                    return;
-                }
-                msgpack
-            }
-            Err(e) => {
-                error!(
-                    "Failed to serialize event for subscription {}: {}",
-                    subscription_id, e
-                );
-                return;
-            }
-        };
-
-        let _ = Self::write_to_buffer(shared_buffer, subscription_id, &data).await;
-    }
-
-    async fn send_cached_events(&self, subscription_id: &str, events: &[Vec<ParsedEvent>]) {
-        // Safety check: prevent excessive memory allocation
-        let total_events: usize = events.iter().map(|batch| batch.len()).sum();
-        if total_events > 1000 {
-            // Limit total number of cached events
-            warn!(
-                "Too many cached events: {} for subscription {}",
-                total_events, subscription_id
-            );
-            return;
-        }
-
-        // Convert ParsedEvents to SerializableParsedEvent to ensure id and sig fields are hex strings
-        let serializable_events: Vec<Vec<SerializableParsedEvent>> = events
-            .iter()
-            .map(|event_batch| {
-                event_batch
-                    .iter()
-                    .map(|event| SerializableParsedEvent::from(event.clone()))
-                    .collect()
-            })
-            .collect();
-
-        let message = crate::WorkerToMainMessage::SubscriptionEvent {
-            subscription_id: subscription_id.to_string(),
-            event_type: SubscribeKind::CachedEvent,
-            event_data: serializable_events.clone(),
-        };
-
-        let data = match rmp_serde::to_vec_named(&message) {
-            Ok(msgpack) => {
-                // Safety check: prevent excessive serialized data
-                if msgpack.len() > 1024 * 1024 {
-                    // 1MB limit for cached events
-                    warn!(
-                        "Serialized cached data too large: {} bytes for subscription {}",
-                        msgpack.len(),
-                        subscription_id
-                    );
-                    return;
-                }
-                msgpack
-            }
-            Err(e) => {
-                error!(
-                    "Failed to serialize cached events for subscription {}: {}",
-                    subscription_id, e
-                );
-                return;
-            }
-        };
-
-        self.write_to_shared_buffer(subscription_id, &data).await;
     }
 
     async fn send_eose(shared_buffer: &SharedArrayBuffer, subscription_id: &str, eose: EOSE) {

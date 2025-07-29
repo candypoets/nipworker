@@ -15,6 +15,7 @@ pub mod config;
 pub mod db;
 pub mod network;
 pub mod parser;
+pub mod pipeline;
 pub mod relays;
 pub mod signer;
 pub mod types;

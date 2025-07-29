@@ -28,7 +28,7 @@
     "build": "vite build",
     "build:wasm": "npm run build:wasm:main && npm run build:wasm:worker",
     "build:wasm:main": "cd nostr-main && wasm-pack build --target bundler --out-dir ../src/wasm/main --no-pack && rm ../src/wasm/main/.gitignore",
-    "build:wasm:worker": "cd nostr-worker && wasm-pack build --target bundler",
+    "build:wasm:worker": "cd nostr-worker && wasm-pack build --target web",
     "build:types": "tsc --emitDeclarationOnly --outDir dist",
     "preview": "vite preview",
     "prepublishOnly": "npm run build",
