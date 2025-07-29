@@ -1,5 +1,5 @@
 // import { openDB } from 'idb';
-import { init_nostr_client } from "nostr-worker/nostr_worker.js";
+import init, { init_nostr_client } from "nostr-worker/nostr_worker.js";
 
 // Initialize WASM and set up the worker
 const initWorker = async () => {
@@ -12,7 +12,7 @@ const initWorker = async () => {
     console.log("WASM worker module initialized successfully");
 
     // const
-    // await init();
+    await init();
     return await init_nostr_client();
   } catch (error) {
     console.log("oops");

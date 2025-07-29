@@ -124,7 +124,7 @@ export class SharedBufferReader {
   /**
    * Calculate recommended buffer size based on request limits
    * @param totalEventLimit Total expected events across all requests
-   * @param bytesPerEvent Estimated bytes per event (default: 2048)
+   * @param bytesPerEvent Estimated bytes per event (default: 3072)
    * @returns Recommended buffer size in bytes
    */
   static calculateBufferSize(

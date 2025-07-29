@@ -43,6 +43,7 @@ export interface SubscriptionOptions {
   closeOnEose?: boolean;
   skipCache?: boolean;
   force?: boolean;
+  bytesPerEvent?: number;
 }
 
 /**
@@ -205,7 +206,12 @@ class NostrManager {
       (sum, req) => sum + (req.limit || 100),
       0,
     );
-    const bufferSize = SharedBufferReader.calculateBufferSize(totalLimit);
+
+    const bufferSize = SharedBufferReader.calculateBufferSize(
+      totalLimit,
+      options.bytesPerEvent,
+    );
+
     const buffer = new SharedArrayBuffer(bufferSize);
 
     const view = new DataView(buffer);

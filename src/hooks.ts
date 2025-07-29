@@ -1,4 +1,4 @@
-import { nostrManager } from ".";
+import { nostrManager, SubscriptionOptions } from ".";
 import { SharedBufferReader } from "src/lib/sharedBuffer";
 import type { WorkerToMainMessage, Request } from "src/types";
 
@@ -6,7 +6,7 @@ export function useSubscription(
   subId: string,
   requests: Request[],
   callback: any = () => {},
-  options = { closeOnEose: false },
+  options: SubscriptionOptions = { closeOnEose: false },
 ) {
   if (!subId) {
     console.warn("useSharedSubscription: No subscription ID provided");
