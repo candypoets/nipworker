@@ -1,7 +1,7 @@
 use super::*;
 use crate::db::NostrDB;
-use crate::network::subscriptions::interfaces::CacheProcessor as CacheProcessorTrait;
-use crate::network::subscriptions::CacheProcessor;
+use crate::network::cache_processor::CacheProcessor;
+use crate::network::interfaces::CacheProcessor as CacheProcessorTrait;
 use crate::parser::Parser;
 use crate::pipeline::{Pipeline, PipelineEvent};
 use crate::relays::utils::{normalize_relay_url, validate_relay_url};

@@ -1,4 +1,4 @@
-use crate::network::subscriptions::interfaces::SubscriptionOptimizer as SubscriptionOptimizerTrait;
+use crate::network::interfaces::SubscriptionOptimizer as SubscriptionOptimizerTrait;
 use crate::types::network::Request;
 use async_trait::async_trait;
 use std::collections::{HashMap, HashSet};

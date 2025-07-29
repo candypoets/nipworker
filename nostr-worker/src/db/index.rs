@@ -3,7 +3,7 @@ use crate::db::types::{
     intersect_event_sets, DatabaseConfig, DatabaseError, DatabaseIndexes, DatabaseStats,
     EventStorage, ProcessedNostrEvent, QueryFilter, QueryResult,
 };
-use crate::network::subscriptions::interfaces::EventDatabase;
+use crate::network::interfaces::EventDatabase;
 use crate::types::{network::Request, ParsedEvent};
 use crate::utils::relay::RelayUtils;
 use anyhow::Result;

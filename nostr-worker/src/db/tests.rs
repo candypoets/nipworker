@@ -3,7 +3,7 @@ use crate::db::types::{
     intersect_event_sets, union_event_sets, DatabaseConfig, DatabaseError, EventStorage,
     ProcessedNostrEvent,
 };
-use crate::network::subscriptions::interfaces::EventDatabase;
+use crate::network::interfaces::EventDatabase;
 use crate::types::{network::Request, ParsedEvent};
 use async_trait::async_trait;
 use nostr::{Event, EventBuilder, EventId, Filter, Keys, Kind, Tag, Timestamp};

@@ -1,5 +1,5 @@
 use super::super::*;
-use crate::network::subscriptions::interfaces::EventDatabase;
+use crate::network::interfaces::EventDatabase;
 use nostr::util::hex;
 
 pub struct SaveToDbPipe {

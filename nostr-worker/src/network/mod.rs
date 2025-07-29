@@ -1,5 +1,8 @@
+pub mod cache_processor;
+pub mod interfaces;
+pub mod optimizer;
 pub mod publish;
-pub mod subscriptions;
+pub mod subscription;
 
 use crate::db::NostrDB;
 use crate::parser::Parser;
@@ -13,7 +16,7 @@ use std::sync::Arc;
 
 pub struct NetworkManager {
     publish_manager: publish::PublishManager,
-    subscription_manager: subscriptions::SubscriptionManager,
+    subscription_manager: subscription::SubscriptionManager,
 }
 
 impl NetworkManager {
@@ -29,7 +32,7 @@ impl NetworkManager {
         );
 
         let subscription_manager =
-            subscriptions::SubscriptionManager::new(database.clone(), parser.clone());
+            subscription::SubscriptionManager::new(database.clone(), parser.clone());
 
         Self {
             publish_manager,

@@ -1,7 +1,5 @@
 use crate::db::NostrDB;
-use crate::network::subscriptions::interfaces::{
-    CacheProcessor as CacheProcessorTrait, EventDatabase,
-};
+use crate::network::interfaces::{CacheProcessor as CacheProcessorTrait, EventDatabase};
 use crate::parser::Parser;
 use crate::types::network::Request;
 use crate::types::*;
