@@ -94,7 +94,7 @@ impl ProofVerificationPipe {
             if let Some(secret) = proof.secret() {
                 // Skip if we've already seen this proof
                 if self.seen_proofs.contains(&secret) {
-                    info!(
+                    debug!(
                         "{}: Skipping duplicate proof with secret {}",
                         self.name,
                         &secret[..8.min(secret.len())]
@@ -116,7 +116,7 @@ impl ProofVerificationPipe {
                     }
                 }
 
-                info!(
+                debug!(
                     "Adding new proof to verification queue: secret={}, mint={}",
                     &secret[..8.min(secret.len())],
                     mint_url
@@ -192,7 +192,7 @@ impl ProofVerificationPipe {
                             if let Some(secret) = found_secret {
                                 match state.state.as_str() {
                                     "SPENT" => {
-                                        info!(
+                                        debug!(
                                             "Proof {} is SPENT, dropping from mint {}",
                                             &secret[..8.min(secret.len())],
                                             mint_url
@@ -207,7 +207,7 @@ impl ProofVerificationPipe {
                                         made_progress = true;
                                     }
                                     "UNSPENT" => {
-                                        info!(
+                                        debug!(
                                             "Proof {} is UNSPENT, collecting for output from mint {}",
                                             &secret[..8.min(secret.len())],
                                             mint_url
@@ -302,7 +302,7 @@ impl ProofVerificationPipe {
         mint_url: &str,
         y_points: &[String],
     ) -> Result<Vec<ProofState>> {
-        info!(
+        debug!(
             "{}: Checking {} proofs with mint: {}",
             self.name,
             y_points.len(),
@@ -350,7 +350,7 @@ impl Pipe for ProofVerificationPipe {
             // Extract proofs from Kind 9321 or 7375
             let (proofs, mint_url) = match kind {
                 9321 => {
-                    info!("Attempting to parse Kind 9321 event data");
+                    debug!("Attempting to parse Kind 9321 event data");
                     if let Some(parsed_data) = &parsed_event.parsed {
                         // Extract fields directly from the JSON object
                         if let Some(kind9321_object) = parsed_data.as_object() {
@@ -360,7 +360,7 @@ impl Pipe for ProofVerificationPipe {
                                 .unwrap_or("")
                                 .to_string();
 
-                            info!("Kind 9321 event - mint_url: {}", mint_url);
+                            debug!("Kind 9321 event - mint_url: {}", mint_url);
 
                             // Extract proofs from the JSON array
                             if let Some(proofs_array) =
@@ -374,7 +374,7 @@ impl Pipe for ProofVerificationPipe {
                                         proofs.push(proof);
                                     }
                                 }
-                                info!(
+                                debug!(
                                     "Successfully extracted {} proofs from Kind 9321 event",
                                     proofs.len()
                                 );
@@ -392,7 +392,7 @@ impl Pipe for ProofVerificationPipe {
                     }
                 }
                 7375 => {
-                    info!("Attempting to parse Kind 7375 event data");
+                    debug!("Attempting to parse Kind 7375 event data");
                     if let Some(parsed_data) = &parsed_event.parsed {
                         // Extract fields directly from the JSON object
                         if let Some(kind7375_object) = parsed_data.as_object() {
@@ -407,7 +407,7 @@ impl Pipe for ProofVerificationPipe {
                                 .and_then(|v| v.as_bool())
                                 .unwrap_or(false);
 
-                            info!(
+                            debug!(
                                 "Kind 7375 event - mint_url: {}, decrypted: {}",
                                 mint_url, decrypted
                             );
@@ -425,7 +425,7 @@ impl Pipe for ProofVerificationPipe {
                                             proofs.push(proof);
                                         }
                                     }
-                                    info!(
+                                    debug!(
                                         "Successfully extracted {} proofs from Kind 7375 event",
                                         proofs.len()
                                     );
@@ -457,7 +457,7 @@ impl Pipe for ProofVerificationPipe {
             match self.verify_pending_proofs().await {
                 Ok(bytes) => {
                     if !bytes.is_empty() {
-                        info!(
+                        debug!(
                             "{}: Returning valid proofs as output: {} bytes",
                             self.name,
                             bytes.len()
