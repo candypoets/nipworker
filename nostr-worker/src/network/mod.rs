@@ -45,9 +45,10 @@ impl NetworkManager {
         subscription_id: String,
         requests: Vec<Request>,
         shared_buffer: SharedArrayBuffer,
+        config: Option<SubscriptionConfig>,
     ) -> Result<()> {
         self.subscription_manager
-            .open_subscription(subscription_id, requests, shared_buffer)
+            .open_subscription(subscription_id, requests, shared_buffer, config)
             .await
     }
 

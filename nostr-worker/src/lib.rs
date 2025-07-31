@@ -226,7 +226,7 @@ impl NostrClient {
             .map_err(|e| JsValue::from_str(&format!("Failed to parse requests: {}", e)))?;
 
         self.network_manager
-            .open_subscription(subscription_id, requests, shared_buffer)
+            .open_subscription(subscription_id, requests, shared_buffer, None)
             .await
             .map_err(|e| JsValue::from_str(&format!("Failed to open subscription: {}", e)))
     }
@@ -368,12 +368,18 @@ impl NostrClient {
                     MainToWorkerMessage::Subscribe {
                         subscription_id,
                         requests,
+                        config,
                     } => {
                         let requests_data = rmp_serde::to_vec_named(&requests).map_err(|e| {
                             JsValue::from_str(&format!("Failed to serialize requests: {}", e))
                         })?;
-                        self.open_subscription(subscription_id, &requests_data, shared_buffer)
-                            .await?;
+                        self.open_subscription_with_config(
+                            subscription_id,
+                            &requests_data,
+                            shared_buffer,
+                            config,
+                        )
+                        .await?;
                     }
                     _ => {
                         return Err(JsValue::from_str(
@@ -402,6 +408,7 @@ impl NostrClient {
             MainToWorkerMessage::Subscribe {
                 subscription_id: _,
                 requests: _,
+                config: _,
             } => {
                 return Err(JsValue::from_str(
                     "Subscribe requires SharedArrayBuffer in new format",
@@ -430,6 +437,24 @@ impl NostrClient {
                 self.get_public_key()?;
             }
         }
+
+        Ok(())
+    }
+
+    async fn open_subscription_with_config(
+        &self,
+        subscription_id: String,
+        requests_data: &[u8],
+        shared_buffer: SharedArrayBuffer,
+        config: Option<crate::types::thread::SubscriptionConfig>,
+    ) -> Result<(), JsValue> {
+        let requests: Vec<Request> = rmp_serde::from_slice(requests_data)
+            .map_err(|e| JsValue::from_str(&format!("Failed to deserialize requests: {}", e)))?;
+
+        self.network_manager
+            .open_subscription(subscription_id, requests, shared_buffer, config)
+            .await
+            .map_err(|e| JsValue::from_str(&format!("Failed to open subscription: {}", e)))?;
 
         Ok(())
     }

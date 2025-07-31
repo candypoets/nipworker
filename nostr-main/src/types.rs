@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
+use crate::proof::ProofUnion;
 use nostr::Event;
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use wasm_bindgen::prelude::*;
 
 /// Publish status types
@@ -144,13 +144,13 @@ pub enum WorkerToMainMessage {
         content: String,
         signed_event: serde_json::Value,
     },
-    Debug {
-        message: String,
-        data: serde_json::Value,
-    },
     Count {
         subscription_id: String,
         count: u32,
+    },
+    Proofs {
+        mint: String,
+        proofs: Vec<ProofUnion>,
     },
     Eose {
         subscription_id: String,

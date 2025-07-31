@@ -50,6 +50,8 @@ export function useSubscription(
             callback(message.Eose.data, "EOSE");
           } else if ("Eoce" in message) {
             callback([], "EOCE");
+          } else if ("Proofs" in message) {
+            callback(message.Proofs);
           }
         });
         lastReadPos = result.newReadPosition;

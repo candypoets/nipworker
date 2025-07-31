@@ -1,3 +1,4 @@
+mod proof;
 mod types;
 mod utils;
 
@@ -6,6 +7,7 @@ use rmp_serde::{from_slice, to_vec_named};
 use wasm_bindgen::prelude::*;
 use web_sys::Worker;
 
+pub use crate::proof::ProofUnion;
 pub use crate::types::{MainToWorkerMessage, WorkerToMainMessage};
 
 #[cfg(feature = "wee_alloc")]
@@ -136,8 +138,46 @@ export type EventTemplate = {
   tags: string[][];
 };
 
+export type PipeConfig = {
+  name: string;
+  params?: Record<string, any>;
+};
+
+export type PipelineConfig = {
+  pipes: PipeConfig[];
+};
+
+export type SubscriptionConfig = {
+  pipeline?: PipelineConfig;
+  closeOnEose?: boolean;
+  cacheFirst?: boolean;
+  timeoutMs?: number;
+  maxEvents?: number;
+  enableOptimization?: boolean;
+  skipCache?: boolean;
+  force?: boolean;
+  bytesPerEvent?: number;
+};
+
+export type DleqProof = {
+  e: string;
+  s: string;
+  r?: string;
+};
+
+export type ProofUnion = {
+  version?: number;
+  amount?: number;
+  secret?: string;
+  C?: string;
+  id?: string;
+  dleq?: DleqProof;
+  p2pksigs?: string[];
+  htlcpreimage?: string;
+};
+
 export type MainToWorkerMessage =
-  | { Subscribe: { subscription_id: string; requests: Request[] } }
+  | { Subscribe: { subscription_id: string; requests: Request[]; config?: SubscriptionConfig } }
   | { Unsubscribe: { subscription_id: string } }
   | { Publish: { publish_id: string; template: EventTemplate } }
   | { SignEvent: { template: EventTemplate } }
@@ -152,5 +192,6 @@ export type WorkerToMainMessage =
   | { Count: { subscription_id: string; count: number } }
   | { Eose: { subscription_id: string; data: EOSE } }
   | { Eoce: { subscription_id: string } }
-  | { PublicKey: { public_key: string } };
+  | { PublicKey: { public_key: string } }
+  | { Proofs: { mint: string; proofs: ProofUnion[] } };
 "#;

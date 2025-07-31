@@ -3,9 +3,11 @@ use crate::db::NostrDB;
 use crate::network::cache_processor::CacheProcessor;
 use crate::network::interfaces::CacheProcessor as CacheProcessorTrait;
 use crate::parser::Parser;
-use crate::pipeline::{Pipeline, PipelineEvent};
+use crate::pipeline::pipes::*;
+use crate::pipeline::{Pipe, Pipeline, PipelineEvent};
 use crate::relays::utils::{normalize_relay_url, validate_relay_url};
 use crate::types::network::{Request, SubscribeKind};
+use crate::types::thread::{PipeConfig, PipelineConfig, SubscriptionConfig};
 use crate::types::*;
 use anyhow::Result;
 use js_sys::{Array, SharedArrayBuffer, Uint8Array};
@@ -44,11 +46,16 @@ impl SubscriptionManager {
         subscription_id: String,
         requests: Vec<Request>,
         shared_buffer: SharedArrayBuffer,
+        config: Option<SubscriptionConfig>,
     ) -> Result<()> {
+        let config = config.unwrap_or_default();
+
         info!(
-            "Opening subscription: {} with {} requests{}",
+            "Opening subscription: {} with {} requests (closeOnEOSE: {}, cacheFirst: {}){}",
             subscription_id,
             requests.len(),
+            config.close_on_eose,
+            config.cache_first,
             if requests.len() == 1 {
                 format!(" with filter: {:?}", requests[0].tags)
             } else {
@@ -56,17 +63,13 @@ impl SubscriptionManager {
             }
         );
 
-        // Check if subscription already exists, close it if it does
         if self
             .subscriptions
             .read()
             .unwrap()
             .contains_key(&subscription_id)
         {
-            debug!(
-                "Subscription {} already exists, closing it first",
-                subscription_id
-            );
+            debug!("Subscription {} already exists", subscription_id);
             return Ok(());
         }
 
@@ -76,7 +79,7 @@ impl SubscriptionManager {
             .insert(subscription_id.clone(), shared_buffer);
 
         // Spawn subscription processing task
-        self.process_subscription(&subscription_id, requests)
+        self.process_subscription(&subscription_id, requests, config)
             .await?;
 
         debug!("Subscription {} opened successfully", subscription_id);
@@ -109,15 +112,12 @@ impl SubscriptionManager {
         &self,
         subscription_id: &String,
         _requests: Vec<Request>,
+        config: SubscriptionConfig,
     ) -> Result<()> {
         debug!("Processing subscription: {}", subscription_id);
 
-        // Create default pipeline for this subscription
-        let mut pipeline = Pipeline::default(
-            self.parser.clone(),
-            self.database.clone(),
-            subscription_id.clone(),
-        )?;
+        // Create pipeline based on config
+        let mut pipeline = self.build_pipeline(config.pipeline.clone(), subscription_id.clone())?;
 
         let (network_requests, events) = match self
             .cache_processor
@@ -165,6 +165,7 @@ impl SubscriptionManager {
             let sub_id = subscription_id.clone();
             let total_connections = relay_filters.len() as i32;
             let mut remaining_connections = total_connections;
+            let close_on_eose = config.close_on_eose;
 
             // Process events from the subscription handle
             spawn_local(async move {
@@ -212,6 +213,15 @@ impl SubscriptionManager {
                                     },
                                 )
                                 .await;
+                            }
+
+                            // Check if we should close the subscription when all EOSE received
+                            if close_on_eose && remaining_connections == 0 {
+                                info!(
+                                    "All relays sent EOSE, closing subscription {} as requested",
+                                    sub_id
+                                );
+                                // Subscription will naturally close when handle completes
                             }
                         }
                         NetworkEventType::Error => {
@@ -429,5 +439,105 @@ impl SubscriptionManager {
             current_write_pos,
             new_write_pos
         );
+    }
+
+    fn build_pipeline(
+        &self,
+        pipeline_config: Option<PipelineConfig>,
+        subscription_id: String,
+    ) -> Result<Pipeline> {
+        match pipeline_config {
+            Some(config) => {
+                let mut pipes: Vec<Box<dyn Pipe>> = Vec::new();
+
+                for pipe_config in config.pipes {
+                    let pipe: Box<dyn Pipe> = match pipe_config.name.as_str() {
+                        "deduplication" => {
+                            let max_size = pipe_config
+                                .params
+                                .as_ref()
+                                .and_then(|p| p.get("maxSize").or_else(|| p.get("max_size")))
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(10000)
+                                as usize;
+                            Box::new(DeduplicationPipe::new(max_size))
+                        }
+                        "parse" => Box::new(ParsePipe::new(self.parser.clone())),
+                        "saveToDb" | "save_to_db" => {
+                            Box::new(SaveToDbPipe::new(self.database.clone()))
+                        }
+                        "serializeEvents" | "serialize_events" => {
+                            Box::new(SerializeEventsPipe::new(subscription_id.clone()))
+                        }
+                        "proofVerification" => {
+                            let params = pipe_config.params.as_ref();
+                            // max_proofs: usize, check_interval_secs: u64
+                            let max_proofs = params
+                                .and_then(|p| p.get("maxProofs"))
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(100)
+                                as usize;
+                            let check_interval = params
+                                .and_then(|p| p.get("checkIntervalSecs"))
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(1);
+
+                            info!("Creating ProofVerificationPipe with max_proofs: {}, check_interval: {}s", max_proofs, check_interval);
+
+                            Box::new(ProofVerificationPipe::new(max_proofs))
+                        }
+                        "counter" => {
+                            let params = pipe_config.params.as_ref();
+                            let kinds = params
+                                .and_then(|p| p.get("kinds"))
+                                .and_then(|v| v.as_array())
+                                .map(|arr| arr.iter().filter_map(|v| v.as_u64()).collect())
+                                .unwrap_or_else(|| vec![1]); // Default to kind 1 (text notes)
+                            let update_interval = params
+                                .and_then(|p| p.get("updateInterval"))
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(100);
+                            Box::new(CounterPipe::new(kinds, update_interval))
+                        }
+                        "kindFilter" | "kind_filter" => {
+                            let kinds = pipe_config
+                                .params
+                                .as_ref()
+                                .and_then(|p| p.get("kinds"))
+                                .and_then(|v| v.as_array())
+                                .map(|arr| arr.iter().filter_map(|v| v.as_u64()).collect())
+                                .unwrap_or_default();
+                            Box::new(KindFilterPipe::new(kinds))
+                        }
+                        "npubLimiter" | "npub_limiter" => {
+                            let params = pipe_config.params.as_ref();
+                            let kind = params
+                                .and_then(|p| p.get("kind"))
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(1); // Default to kind 1 (text notes)
+                            let limit_per_npub = params
+                                .and_then(|p| p.get("limitPerNpub"))
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(5)
+                                as usize;
+                            let max_total_npubs = params
+                                .and_then(|p| p.get("maxTotalNpubs"))
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(100)
+                                as usize;
+                            Box::new(NpubLimiterPipe::new(kind, limit_per_npub, max_total_npubs))
+                        }
+                        _ => return Err(anyhow::anyhow!("Unknown pipe: {}", pipe_config.name)),
+                    };
+                    pipes.push(pipe);
+                }
+
+                Pipeline::new(pipes, subscription_id)
+            }
+            None => {
+                // Use default pipeline
+                Pipeline::default(self.parser.clone(), self.database.clone(), subscription_id)
+            }
+        }
     }
 }

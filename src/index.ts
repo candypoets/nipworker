@@ -1,8 +1,10 @@
 import { SharedBufferReader } from "src/lib/sharedBuffer";
 import {
   type MainToWorkerMessage,
+  type PipelineConfig,
   type RelayStatusUpdate,
   type Request,
+  type SubscriptionConfig,
   type WorkerToMainMessage,
 } from "nostr-main/nostr_main.js";
 // import mainWasmUrl from "src/wasm/main/nostr_main_bg.wasm?url";
@@ -40,7 +42,12 @@ export type RelayStatus = {
 };
 
 export interface SubscriptionOptions {
+  pipeline?: PipelineConfig;
   closeOnEose?: boolean;
+  cacheFirst?: boolean;
+  timeoutMs?: number;
+  maxEvents?: number;
+  enableOptimization?: boolean;
   skipCache?: boolean;
   force?: boolean;
   bytesPerEvent?: number;
@@ -197,8 +204,10 @@ class NostrManager {
 
     const defaultOptions: SubscriptionOptions = {
       closeOnEose: false,
+      cacheFirst: true,
       skipCache: false,
       force: false,
+      enableOptimization: true,
       ...options,
     };
 
@@ -223,10 +232,24 @@ class NostrManager {
       refCount: 1,
     });
 
+    // Convert SubscriptionOptions to SubscriptionConfig for the worker
+    const config: SubscriptionConfig = {
+      pipeline: defaultOptions.pipeline,
+      closeOnEose: defaultOptions.closeOnEose,
+      cacheFirst: defaultOptions.cacheFirst,
+      timeoutMs: defaultOptions.timeoutMs,
+      maxEvents: defaultOptions.maxEvents,
+      enableOptimization: defaultOptions.enableOptimization,
+      skipCache: defaultOptions.skipCache,
+      force: defaultOptions.force,
+      bytesPerEvent: defaultOptions.bytesPerEvent,
+    };
+
     const message: MainToWorkerMessage = {
       Subscribe: {
         subscription_id: subId,
         requests: requests,
+        config: config,
       },
     };
 

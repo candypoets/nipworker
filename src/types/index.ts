@@ -1,7 +1,10 @@
 export {
   type MainToWorkerMessage,
+  type PipeConfig,
+  type PipelineConfig,
   type RelayStatusUpdate,
   type Request,
+  type SubscriptionConfig,
   type WorkerToMainMessage,
 } from "nostr-main/nostr_main.js";
 

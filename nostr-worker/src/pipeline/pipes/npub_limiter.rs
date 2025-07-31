@@ -1,15 +1,16 @@
 use super::super::*;
 use std::collections::{HashMap, VecDeque};
 
-struct NpubEvents {
-    events: VecDeque<PipelineEvent>,
+struct NpubTracker {
+    last_forwarded_timestamp: Option<u64>,
+    forwarded_count: usize,
 }
 
 pub struct NpubLimiterPipe {
     kind: u64,
     limit_per_npub: usize,
     max_total_npubs: usize,
-    npub_events: HashMap<String, NpubEvents>,
+    npub_trackers: HashMap<String, NpubTracker>,
     name: String,
 }
 
@@ -20,7 +21,7 @@ impl NpubLimiterPipe {
             kind,
             limit_per_npub,
             max_total_npubs,
-            npub_events: HashMap::new(),
+            npub_trackers: HashMap::new(),
         }
     }
 }
@@ -28,14 +29,19 @@ impl NpubLimiterPipe {
 #[async_trait(?Send)]
 impl Pipe for NpubLimiterPipe {
     async fn process(&mut self, event: PipelineEvent) -> Result<PipeOutput> {
-        // Get kind and pubkey from either raw or parsed event
-        let (kind, pubkey) = if let Some(ref raw) = event.raw {
-            (raw.kind.as_u64(), raw.pubkey.to_string())
+        // Get the nostr event from either raw or parsed
+        let nostr_event = if let Some(ref raw) = event.raw {
+            raw
         } else if let Some(ref parsed) = event.parsed {
-            (parsed.event.kind.as_u64(), parsed.event.pubkey.to_string())
+            &parsed.event
         } else {
             return Ok(PipeOutput::Drop);
         };
+
+        // Get kind, pubkey, and timestamp from the nostr event
+        let kind = nostr_event.kind.as_u64();
+        let pubkey = nostr_event.pubkey.to_string();
+        let created_at = nostr_event.created_at.as_u64();
 
         // Only process events of the specified kind
         if kind != self.kind {
@@ -43,30 +49,44 @@ impl Pipe for NpubLimiterPipe {
         }
 
         // Prevent memory explosion by limiting total tracked npubs
-        if self.npub_events.len() > self.max_total_npubs {
-            // Remove oldest npub (simple cleanup - could be improved with LRU)
-            if let Some(oldest_key) = self.npub_events.keys().next().cloned() {
-                self.npub_events.remove(&oldest_key);
-            }
-        }
+        // if self.npub_trackers.len() > self.max_total_npubs {
+        //     // Remove oldest npub (simple cleanup - could be improved with LRU)
+        //     if let Some(oldest_key) = self.npub_trackers.keys().next().cloned() {
+        //         self.npub_trackers.remove(&oldest_key);
+        //     }
+        // }
 
-        // Get or create npub events tracker
-        let npub_events = self
-            .npub_events
+        // Get or create npub tracker
+        let tracker = self
+            .npub_trackers
             .entry(pubkey.clone())
-            .or_insert_with(|| NpubEvents {
-                events: VecDeque::new(),
+            .or_insert_with(|| NpubTracker {
+                last_forwarded_timestamp: None,
+                forwarded_count: 0,
             });
 
-        // Add new event and maintain limit
-        npub_events.events.push_back(event);
-        if npub_events.events.len() > self.limit_per_npub {
-            npub_events.events.pop_front();
+        // If we haven't forwarded any events yet, always forward this one
+        if tracker.last_forwarded_timestamp.is_none() {
+            tracker.last_forwarded_timestamp = Some(created_at);
+            tracker.forwarded_count = 1;
+            return Ok(PipeOutput::Event(event));
         }
 
-        // Forward the current event (it's now stored and limited)
-        if let Some(latest_event) = npub_events.events.back() {
-            Ok(PipeOutput::Event(latest_event.clone()))
+        let last_timestamp = tracker.last_forwarded_timestamp.unwrap();
+
+        // If this event is newer than the last forwarded, update tracker and forward
+        if created_at > last_timestamp {
+            tracker.forwarded_count = if tracker.forwarded_count >= self.limit_per_npub {
+                self.limit_per_npub
+            } else {
+                tracker.forwarded_count + 1
+            };
+            Ok(PipeOutput::Event(event))
+        } else if tracker.forwarded_count < self.limit_per_npub {
+            // Event is older but we haven't reached the limit yet
+            tracker.forwarded_count += 1;
+            tracker.last_forwarded_timestamp = Some(created_at);
+            Ok(PipeOutput::Event(event))
         } else {
             Ok(PipeOutput::Drop)
         }

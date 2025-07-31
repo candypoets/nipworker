@@ -112,6 +112,23 @@ impl Pipeline {
         )
     }
 
+    /// Create proof verification pipeline: deduplication + parsing + proof verification
+    pub fn proof_verification(
+        parser: Arc<Parser>,
+        subscription_id: String,
+        max_proofs: usize,
+    ) -> Result<Self> {
+        Self::new(
+            vec![
+                Box::new(DeduplicationPipe::new(10000)),
+                Box::new(KindFilterPipe::new(vec![9321, 7375])), // Only process cashu events
+                Box::new(ParsePipe::new(parser)),
+                Box::new(ProofVerificationPipe::new(max_proofs)),
+            ],
+            subscription_id,
+        )
+    }
+
     /// Process a single event through the pipeline
     pub async fn process(&mut self, mut event: PipelineEvent) -> Result<Option<Vec<u8>>> {
         // Flow through each pipe
