@@ -6,7 +6,7 @@ export {
   type Request,
   type SubscriptionConfig,
   type WorkerToMainMessage,
-} from "nostr-main/nostr_main.js";
+} from "@candypoets/rust-main";
 
 import type { NostrEvent } from "nostr-tools";
 

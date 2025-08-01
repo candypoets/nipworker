@@ -1,10 +1,10 @@
 [package]
-name = "nostr-worker"
+name = "rust-worker"
 version = "0.1.0"
 edition = "2021"
 
 [lib]
-name = "nostr_worker"
+name = "rust_worker"
 path = "src/lib.rs"
 crate-type = ["cdylib", "rlib"]
 

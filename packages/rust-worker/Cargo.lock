@@ -909,41 +909,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "nostr-worker"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "chrono",
- "console_error_panic_hook",
- "futures",
- "futures-util",
- "gloo-net",
- "gloo-timers",
- "hex",
- "instant",
- "js-sys",
- "k256",
- "nostr",
- "regex",
- "rmp-serde",
- "serde",
- "serde-wasm-bindgen",
- "serde_json",
- "sha2",
- "thiserror",
- "tracing",
- "tracing-subscriber",
- "url",
- "uuid",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "wasm-bindgen-test",
- "web-sys",
- "wee_alloc",
-]
-
-[[package]]
 name = "nu-ansi-term"
 version = "0.46.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1212,6 +1177,41 @@ dependencies = [
  "byteorder",
  "rmp",
  "serde",
+]
+
+[[package]]
+name = "rust-worker"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "console_error_panic_hook",
+ "futures",
+ "futures-util",
+ "gloo-net",
+ "gloo-timers",
+ "hex",
+ "instant",
+ "js-sys",
+ "k256",
+ "nostr",
+ "regex",
+ "rmp-serde",
+ "serde",
+ "serde-wasm-bindgen",
+ "serde_json",
+ "sha2",
+ "thiserror",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "uuid",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "wasm-bindgen-test",
+ "web-sys",
+ "wee_alloc",
 ]
 
 [[package]]

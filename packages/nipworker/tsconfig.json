@@ -20,7 +20,6 @@
     "rootDir": ".",
     "baseUrl": ".",
     "paths": {
-      "nostr-main/*": ["./nostr-main/pkg/*"],
       "src/*": ["./src/*"]
     },
     "removeComments": false,
@@ -36,6 +35,6 @@
     "emitDecoratorMetadata": true,
     "types": ["vite/client"]
   },
-  "include": ["src/**/*", "vite.config.ts"],
+  "include": ["src/**/*", "packages/nipworker/vite.config.ts"],
   "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"]
 }

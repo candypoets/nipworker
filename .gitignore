@@ -1,4 +1,7 @@
-nostr-main/target
-nostr-worker/target
+packages/rust-main/target
+packages/rust-worker/target
+packages/*/node_modules
+packages/*/dist
+packages/*/pkg
 node_modules
 dist

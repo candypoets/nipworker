@@ -21,9 +21,7 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
-      src: resolve(__dirname, "src"),
-      "nostr-main": resolve(__dirname, "nostr-main/pkg"),
-      // "nostr-worker": resolve(__dirname, "nostr-worker/pkg"),
+      src: resolve(__dirname, "src")
     },
   },
   build: {
@@ -34,12 +32,19 @@ export default defineConfig({
       fileName: "index.js",
     },
     rollupOptions: {
-      external: [
-        "@msgpack/msgpack",
-        "nostr-tools",
-        "msgpackr",
-        /^nostr-worker/,
-      ],
+    external: (id) => {
+        // Handle worker imports specifically
+        if (id.includes('@candypoets/rust-worker')) {
+          console.log('Marking as external:', id);
+          return true;
+        }
+        return [
+          "@msgpack/msgpack",
+          "nostr-tools",
+          "msgpackr",
+          "@candypoets/rust-main"
+        ].includes(id);
+      },
       input: {
         index: resolve(__dirname, "src/index.ts"),
         // types: resolve(__dirname, "src/types/index.ts"),
@@ -78,17 +83,13 @@ export default defineConfig({
     // Prevent inlining of assets - this is key!
     assetsInlineLimit: 0, // This prevents base64 inlining
   },
-  // worker: {
-  //   format: "es",
-  //   plugins: () => [wasm(), topLevelAwait()],
-  // },
-  // // Explicitly include WASM files as assets (not for inlining)
-  // assetsInclude: ["**/*.wasm"],
-  // optimizeDeps: {
-  //   exclude: ["@msgpack/msgpack", "nostr-tools", "msgpackr"],
-  //   include: [],
-  // },
-  // define: {
-  //   "process.env.NODE_ENV": '"production"',
-  // },
+  worker: {
+     format: "es",
+     rollupOptions: {
+       external: [
+         "@candypoets/rust-worker",
+         "@candypoets/rust-worker/worker.js"
+       ]
+     }
+   },
 });

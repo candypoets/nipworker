@@ -1,3 +1,5 @@
-nostr-main/target
-nostr-worker/target
+packages/nipworker/rust-main/target
+packages/rust-worker/rust-src/target
+packages/*/node_modules
+packages/*/dist
 node_modules

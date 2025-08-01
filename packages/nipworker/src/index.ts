@@ -6,15 +6,16 @@ import {
   type Request,
   type SubscriptionConfig,
   type WorkerToMainMessage,
-} from "nostr-main/nostr_main.js";
-// import mainWasmUrl from "src/wasm/main/nostr_main_bg.wasm?url";
+} from "@candypoets/rust-main";
 
 import type { AnyKind, ParsedEvent } from "src/types";
 
 import { decode, encode } from "@msgpack/msgpack";
 import type { NostrEvent } from "nostr-tools";
 import type { SubscribeKind, PublishKind } from "src/types";
-import NipWorker from "nostr-worker/worker.js?worker";
+
+import RustWorker from "@candypoets/rust-worker/worker.js?worker";
+
 // Re-export types for external use
 export type { Request };
 
@@ -94,9 +95,7 @@ class NostrManager {
   }
 
   private createWorker(config: NostrManagerConfig): Worker {
-    console.log(import.meta.url, NipWorker);
-
-    return new NipWorker();
+    return new RustWorker();
   }
 
   private setupWorkerListener() {

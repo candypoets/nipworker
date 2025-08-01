@@ -60,20 +60,19 @@ wasm-pack build \
     --target web \
 
 # Optimize worker WASM
-optimize_wasm "pkg/nutscash_nostr_worker_bg.wasm"
+# optimize_wasm "pkg/nostr_worker_bg.wasm"
 
 # Create worker.js file
 echo ""
 echo "Creating worker.js..."
 cat > pkg/worker.js << 'EOF'
-import init, { init_nostr_client } from "./nutscash_nostr_worker.js";
+import init, { init_nostr_client } from "./rust_worker.js";
 
 const initPromise = async () => {
   try {
     console.log("WASM worker module initialized successfully");
     await init();
-    await init_nostr_client();
-    return;
+    return await init_nostr_client();
   } catch (error) {
     console.log("oops");
     console.error("Failed to initialize WASM worker module:", error);
@@ -96,12 +95,18 @@ PACKAGE_JSON="pkg/package.json"
 if ! grep -q '"worker.js"' "$PACKAGE_JSON"; then
     echo "Adding worker.js to package.json files array..."
 
-    # Use sed to add worker.js to the files array
-    # This finds the files array and adds worker.js as the last item
-    sed -i.bak '/^[[:space:]]*"files":[[:space:]]*\[/,/^[[:space:]]*\]/ {
-        /^[[:space:]]*\]/ i\
+    # Use sed to add comma to the last item before the closing bracket, then add worker.js
+    sed -i.bak '
+        /^[[:space:]]*"files":[[:space:]]*\[/,/^[[:space:]]*\]/ {
+            /^[[:space:]]*\]/ {
+                i\
     "worker.js"
-    }' "$PACKAGE_JSON"
+            }
+            /^[[:space:]]*"[^"]*"[[:space:]]*$/ {
+                /^[[:space:]]*\]/ !s/$/,/
+            }
+        }
+    ' "$PACKAGE_JSON"
 
     # Clean up backup file
     rm "${PACKAGE_JSON}.bak"
@@ -126,13 +131,13 @@ echo ""
 echo "Worker WASM module built successfully!"
 echo ""
 echo "Generated files:"
-echo "  - pkg/nutscash_nostr_worker.js (JavaScript bindings)"
-echo "  - pkg/nutscash_nostr_worker_bg.wasm (WebAssembly module)"
-echo "  - pkg/nutscash_nostr_worker.d.ts (TypeScript definitions)"
+echo "  - pkg/rust_worker.js (JavaScript bindings)"
+echo "  - pkg/rust_worker_bg.wasm (WebAssembly module)"
+echo "  - pkg/rust_worker.d.ts (TypeScript definitions)"
 echo "  - pkg/worker.js (Web Worker wrapper)"
 
 # Final size report
-WORKER_SIZE=$(wc -c < pkg/nutscash_nostr_worker_bg.wasm)
+WORKER_SIZE=$(wc -c < pkg/rust_worker_bg.wasm)
 
 echo ""
 echo "Final size:"

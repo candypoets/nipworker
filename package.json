@@ -1,46 +1,40 @@
 {
-  "name": "@candypoets/nipworker",
-  "version": "0.0.1",
-  "description": "Nostr client library with worker-based architecture using Rust WASM",
-  "type": "module",
-  "module": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
-    },
-    "./hooks": {
-      "import": "./dist/hooks.js",
-      "types": "./dist/hooks.d.ts"
-    },
-    "./utils": {
-      "import": "./dist/utils.js",
-      "types": "./dist/utils.d.ts"
-    }
-  },
-  "files": [
-    "dist",
-    "README.md"
+  "name": "@candypoets/nipworker-workspace",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Workspace for nipworker and rust-worker packages",
+  "workspaces": [
+    "packages/*"
   ],
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "build:wasm": "npm run build:wasm:main && npm run build:wasm:worker",
-    "build:wasm:main": "cd nostr-main && wasm-pack build --target web",
-    "build:wasm:worker": "cd nostr-worker && ./build.sh",
-    "build:types": "tsc --emitDeclarationOnly --outDir dist",
-    "preview": "vite preview",
-    "prepublishOnly": "npm run build",
-    "clean": "rm -rf dist src/wasm",
-    "test": "echo \"No tests yet\" && exit 0"
+    "build": "npm run build --workspaces",
+    "build:nipworker": "npm run build --workspace=packages/nipworker",
+    "build:rust-worker": "npm run build --workspace=packages/rust-worker",
+    "build:rust-main": "npm run build --workspace=packages/rust-main",
+    "test": "npm run test --workspaces --if-present",
+    "clean": "npm run clean --workspaces --if-present",
+    "dev": "npm run dev --workspace=packages/nipworker",
+    "publish:rust-main": "npm publish --workspace=packages/rust-main --access public",
+    "publish:rust-worker": "npm publish --workspace=packages/rust-worker --access public",
+    "publish:nipworker": "npm publish --workspace=packages/nipworker --access public",
+    "publish:all": "npm run build && npm run publish:rust-main && npm run publish:rust-worker && npm run publish:nipworker"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0",
+    "vite": "^5.0.0",
+    "vite-plugin-dts": "^3.0.0",
+    "vite-plugin-static-copy": "^3.1.1",
+    "vite-plugin-top-level-await": "^1.6.0",
+    "vite-plugin-wasm": "^3.0.0"
   },
   "keywords": [
     "nostr",
     "protocol",
     "web-worker",
     "wasm",
-    "rust"
+    "rust",
+    "workspace"
   ],
   "author": "So Tachi <sotachi@proton.me>",
   "license": "MIT",
@@ -52,21 +46,6 @@
     "url": "https://github.com/candypoets/nipworker/issues"
   },
   "homepage": "https://github.com/candypoets/nipworker#readme",
-  "devDependencies": {
-    "@types/node": "^20.0.0",
-    "typescript": "^5.0.0",
-    "vite": "^5.0.0",
-    "vite-plugin-dts": "^3.0.0",
-    "vite-plugin-static-copy": "^3.1.1",
-    "vite-plugin-top-level-await": "^1.6.0",
-    "vite-plugin-wasm": "^3.0.0"
-  },
-  "dependencies": {
-    "@msgpack/msgpack": "^3.0.0",
-    "msgpackr": "^1.11.5",
-    "nostr-tools": "^2.0.0",
-    "nostr-worker": "file:./nostr-worker/pkg"
-  },
   "engines": {
     "node": ">=18.0.0"
   }
