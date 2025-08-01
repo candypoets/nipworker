@@ -53,22 +53,68 @@ optimize_wasm() {
     fi
 }
 
-# Clean previous builds
-echo "Cleaning previous builds..."
-rm -rf pkg/
-
 # Build worker WASM module
 echo ""
 echo "Building worker WASM module..."
 wasm-pack build \
     --target web \
-    --out-dir pkg \
-    --out-name nutscash_nostr_worker \
-    --release \
-    --features console_error_panic_hook
 
 # Optimize worker WASM
 optimize_wasm "pkg/nutscash_nostr_worker_bg.wasm"
+
+# Create worker.js file
+echo ""
+echo "Creating worker.js..."
+cat > pkg/worker.js << 'EOF'
+import init, { init_nostr_client } from "./nutscash_nostr_worker.js";
+
+const initPromise = async () => {
+  try {
+    console.log("WASM worker module initialized successfully");
+    await init();
+    await init_nostr_client();
+    return;
+  } catch (error) {
+    console.log("oops");
+    console.error("Failed to initialize WASM worker module:", error);
+    throw error;
+  }
+};
+
+const wasmReady = initPromise();
+
+self.onmessage = async (event) => {
+  (await wasmReady).handle_message(event.data);
+};
+EOF
+
+# Update package.json to include worker.js in files array using sed
+echo "Updating package.json..."
+PACKAGE_JSON="pkg/package.json"
+
+# Check if worker.js is already in the files array
+if ! grep -q '"worker.js"' "$PACKAGE_JSON"; then
+    echo "Adding worker.js to package.json files array..."
+
+    # Use sed to add worker.js to the files array
+    # This finds the files array and adds worker.js as the last item
+    sed -i.bak '/^[[:space:]]*"files":[[:space:]]*\[/,/^[[:space:]]*\]/ {
+        /^[[:space:]]*\]/ i\
+    "worker.js"
+    }' "$PACKAGE_JSON"
+
+    # Clean up backup file
+    rm "${PACKAGE_JSON}.bak"
+
+    echo "Added worker.js to package.json files array"
+else
+    echo "worker.js already present in package.json files array"
+fi
+
+# Clean up worker.js backup
+if [ -f "worker.js.backup" ]; then
+    rm worker.js.backup
+fi
 
 # Generate size report
 echo ""
@@ -83,6 +129,7 @@ echo "Generated files:"
 echo "  - pkg/nutscash_nostr_worker.js (JavaScript bindings)"
 echo "  - pkg/nutscash_nostr_worker_bg.wasm (WebAssembly module)"
 echo "  - pkg/nutscash_nostr_worker.d.ts (TypeScript definitions)"
+echo "  - pkg/worker.js (Web Worker wrapper)"
 
 # Final size report
 WORKER_SIZE=$(wc -c < pkg/nutscash_nostr_worker_bg.wasm)

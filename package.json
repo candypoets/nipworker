@@ -28,7 +28,7 @@
     "build": "vite build",
     "build:wasm": "npm run build:wasm:main && npm run build:wasm:worker",
     "build:wasm:main": "cd nostr-main && wasm-pack build --target web",
-    "build:wasm:worker": "cd nostr-worker && wasm-pack build --target web",
+    "build:wasm:worker": "cd nostr-worker && ./build.sh",
     "build:types": "tsc --emitDeclarationOnly --outDir dist",
     "preview": "vite preview",
     "prepublishOnly": "npm run build",

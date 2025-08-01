@@ -14,7 +14,7 @@ import type { AnyKind, ParsedEvent } from "src/types";
 import { decode, encode } from "@msgpack/msgpack";
 import type { NostrEvent } from "nostr-tools";
 import type { SubscribeKind, PublishKind } from "src/types";
-
+import NipWorker from "nostr-worker/worker.js?worker";
 // Re-export types for external use
 export type { Request };
 
@@ -94,10 +94,9 @@ class NostrManager {
   }
 
   private createWorker(config: NostrManagerConfig): Worker {
-    const workerUrl = new URL("./worker.js", import.meta.url);
-    console.log(import.meta.url, workerUrl);
+    console.log(import.meta.url, NipWorker);
 
-    return new Worker(workerUrl, { type: "module" });
+    return new NipWorker();
   }
 
   private setupWorkerListener() {
