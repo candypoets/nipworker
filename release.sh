@@ -108,14 +108,7 @@ git push origin "v$NEW_VERSION"
 print_success "🚀 Release v$NEW_VERSION initiated!"
 print_success "✅ Version bumped and committed"
 print_success "✅ Tag v$NEW_VERSION created and pushed"
-print_success "🔄 GitHub Actions workflow should now be running"
 
 echo
 print_status "You can monitor the release at:"
 echo "https://github.com/$(git config --get remote.origin.url | sed 's/.*github.com[:/]\([^.]*\).*/\1/')/actions"
-
-print_status "The workflow will automatically:"
-echo "  • Sync all package versions to $NEW_VERSION"
-echo "  • Build all packages"
-echo "  • Create GitHub release"
-echo "  • Publish to npm"

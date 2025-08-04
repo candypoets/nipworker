@@ -10,6 +10,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       # Setup Node.js
       - uses: actions/setup-node@v4
@@ -73,9 +76,20 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add packages/*/package.json
-          git commit -m "Sync all packages to version ${{ steps.sync_versions.outputs.version }}" || echo "No changes to commit"
-          git push
+
+          # Check if there are changes to commit
+          if [ -n "$(git status --porcelain)" ]; then
+            git add packages/*/package.json
+            git commit -m "Sync all packages to version ${{ steps.sync_versions.outputs.version }}"
+
+            # Get the default branch name
+            DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD | sed 's@^refs/remotes/origin/@@')
+
+            # Push to the default branch
+            git push origin HEAD:$DEFAULT_BRANCH
+          else
+            echo "No changes to commit"
+          fi
 
       # Build all packages
       - run: npm run build
