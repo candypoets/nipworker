@@ -13,6 +13,7 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
+          ref: ${{ github.event.repository.default_branch }}
 
       # Setup Node.js
       - uses: actions/setup-node@v4
@@ -81,12 +82,7 @@ jobs:
           if [ -n "$(git status --porcelain)" ]; then
             git add packages/*/package.json
             git commit -m "Sync all packages to version ${{ steps.sync_versions.outputs.version }}"
-
-            # Get the default branch name
-            DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD | sed 's@^refs/remotes/origin/@@')
-
-            # Push to the default branch
-            git push origin HEAD:$DEFAULT_BRANCH
+            git push origin ${{ github.event.repository.default_branch }}
           else
             echo "No changes to commit"
           fi
