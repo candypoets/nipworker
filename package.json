@@ -17,7 +17,7 @@
     "publish:rust-main": "npm publish --workspace=packages/rust-main --access public",
     "publish:rust-worker": "npm publish --workspace=packages/rust-worker --access public",
     "publish:nipworker": "npm publish --workspace=packages/nipworker --access public",
-    "publish:all": "npm run build && npm run publish:rust-main && npm run publish:rust-worker && npm run publish:nipworker"
+    "publish:all": "npm run publish:rust-main && npm run publish:rust-worker && npm run publish:nipworker"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
