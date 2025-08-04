@@ -94,7 +94,8 @@ export type SubscribeKind =
   | "FETCHED_EVENT"
   | "COUNT"
   | "EOSE"
-  | "EOCE";
+  | "EOCE"
+  | "BUFFER_FULL";
 
 export type PublishKind = "PUBLISH_STATUS";
 

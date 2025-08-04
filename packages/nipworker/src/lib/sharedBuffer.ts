@@ -50,6 +50,26 @@ export class SharedBufferReader {
         const eventLength = view.getUint32(currentPos, true);
         currentPos += 4;
 
+        // Check for special "buffer full" marker
+        if (eventLength === 1) {
+          if (currentPos + 1 <= currentWritePosition) {
+            const marker = uint8View[currentPos];
+            if (marker === 0xFF) {
+              // Buffer full detected - create special message
+              const bufferFullMessage: WorkerToMainMessage = {
+                SubscriptionEvent: {
+                  subscription_id: "",
+                  event_type: "BUFFER_FULL" as any,
+                  event_data: []
+                }
+              };
+              messages.push(bufferFullMessage);
+              currentPos += 1;
+              continue;
+            }
+          }
+        }
+
         // Read the event data
         if (currentPos + eventLength > currentWritePosition) break;
         const eventData = uint8View.slice(currentPos, currentPos + eventLength);

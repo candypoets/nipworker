@@ -140,8 +140,6 @@ class NostrManager {
       );
     } else if ("PublicKey" in message) {
       this.handlePublicKey(message.PublicKey.public_key);
-    } else if ("Debug" in message) {
-      console.debug("Worker debug:", message.Debug.message, message.Debug.data);
     } else {
       console.warn("Unknown message type from worker:", message);
     }

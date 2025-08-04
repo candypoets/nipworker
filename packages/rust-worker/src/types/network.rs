@@ -196,6 +196,8 @@ pub enum SubscribeKind {
     Eose,
     #[serde(rename = "EOCE")]
     Eoce,
+    #[serde(rename = "BUFFER_FULL")]
+    BufferFull,
 }
 
 /// Publish event types

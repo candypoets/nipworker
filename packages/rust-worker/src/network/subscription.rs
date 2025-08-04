@@ -162,10 +162,17 @@ impl SubscriptionManager {
                 let subscriptions = self.subscriptions.read().unwrap();
                 subscriptions.get(subscription_id.as_str()).cloned()
             };
+
+            let relay_urls = subscription_handle.relay_urls();
             let sub_id = subscription_id.clone();
-            let total_connections = relay_filters.len() as i32;
+            let total_connections = relay_urls.len() as i32;
             let mut remaining_connections = total_connections;
             let close_on_eose = config.close_on_eose;
+
+            let mut relay_eose_status: HashMap<String, bool> = HashMap::new();
+            for relay_url in relay_urls {
+                relay_eose_status.insert(relay_url.clone(), false);
+            }
 
             // Process events from the subscription handle
             spawn_local(async move {
@@ -197,6 +204,9 @@ impl SubscriptionManager {
                             }
                         }
                         NetworkEventType::EOSE => {
+                            if let Some(relay) = event.relay.clone() {
+                                relay_eose_status.insert(relay, true);
+                            }
                             remaining_connections -= 1;
                             // Send End of Stored Events notification
                             debug!(
@@ -409,12 +419,33 @@ impl SubscriptionManager {
         // Check if we have enough space (4 bytes write position header + 4 bytes length prefix + data)
         let new_write_pos = current_write_pos + 4 + data.len(); // +4 for length prefix
         if new_write_pos > buffer_length {
-            warn!(
-                "SharedArrayBuffer overflow for subscription {}: trying to write {} bytes at position {}, buffer size {}",
-                subscription_id, data.len() + 4, current_write_pos, buffer_length
-            );
-            // Drop message if buffer is full
-            warn!("Dropping message due to buffer overflow");
+            // Write minimal "buffer full" marker: length=1, data=0xFF
+            if current_write_pos + 5 <= buffer_length {
+                // 4 bytes length + 1 byte marker
+                let length_prefix = 1u32.to_le_bytes(); // Length = 1
+                let length_prefix_uint8 = Uint8Array::from(&length_prefix[..]);
+                buffer_uint8.set(&length_prefix_uint8, current_write_pos as u32);
+
+                let marker = [0xFF]; // Single byte marker for "buffer full"
+                let marker_uint8 = Uint8Array::from(&marker[..]);
+                buffer_uint8.set(&marker_uint8, (current_write_pos + 4) as u32);
+
+                // Update write position
+                let new_pos = current_write_pos + 5;
+                let new_header = (new_pos as u32).to_le_bytes();
+                let new_header_uint8 = Uint8Array::from(&new_header[..]);
+                buffer_uint8.set(&new_header_uint8, 0);
+
+                warn!(
+                    "Buffer full for subscription {}, wrote 1-byte marker",
+                    subscription_id
+                );
+            } else {
+                warn!(
+                    "Buffer completely full for subscription {}, cannot even write marker",
+                    subscription_id
+                );
+            }
             return;
         }
 

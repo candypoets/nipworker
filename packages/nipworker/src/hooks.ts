@@ -38,9 +38,13 @@ export function useSubscription(
 
         result.messages.forEach((message: WorkerToMainMessage) => {
           if ("SubscriptionEvent" in message) {
-            message.SubscriptionEvent.event_data.forEach((event) => {
-              callback(event, message.SubscriptionEvent.event_type);
-            });
+            if (message.SubscriptionEvent.event_type === "BUFFER_FULL" as any) {
+              callback([], "BUFFER_FULL");
+            } else {
+              message.SubscriptionEvent.event_data.forEach((event) => {
+                callback(event, message.SubscriptionEvent.event_type);
+              });
+            }
           } else if ("Eose" in message) {
             if (options.closeOnEose) {
               console.log("close");

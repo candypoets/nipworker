@@ -116,7 +116,7 @@ export type Request = {
   noContext?: boolean;
 };
 
-export type SubscribeKind = "CACHED_EVENT" | "FETCHED_EVENT" | "COUNT" | "EOSE" | "EOCE";
+export type SubscribeKind = "CACHED_EVENT" | "FETCHED_EVENT" | "COUNT" | "EOSE" | "EOCE" | "BUFFER_FULL";
 
 export type PublishStatus = "Pending" | "Sent" | "Success" | "Failed" | "Rejected" | "ConnectionError";
 
