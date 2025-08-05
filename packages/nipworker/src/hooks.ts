@@ -7,7 +7,7 @@ export function useSubscription(
   requests: Request[],
   callback: any = () => {},
   options: SubscriptionOptions = { closeOnEose: false },
-) {
+): () => void {
   if (!subId) {
     console.warn("useSharedSubscription: No subscription ID provided");
     return () => {};
@@ -19,8 +19,23 @@ export function useSubscription(
   const maxInterval: number = 4000; // Max 4 seconds
   let running: boolean = true;
 
+  let hasUnsubscribed = false;
+  let hasSubscribed = false;
+
+  const unsubscribe = (): void => {
+    running = false;
+    if (timeoutId !== null) {
+      clearTimeout(timeoutId);
+    }
+    if (hasSubscribed && !hasUnsubscribed) {
+      nostrManager.unsubscribe(subId);
+      hasUnsubscribed = true;
+    }
+  };
+
   if (requests.length > 0) {
     buffer = nostrManager.subscribe(subId, requests, options);
+    hasSubscribed = true;
 
     const processEvents = (): void => {
       if (!running || !buffer) {
@@ -40,6 +55,7 @@ export function useSubscription(
           if ("SubscriptionEvent" in message) {
             if (message.SubscriptionEvent.event_type === "BUFFER_FULL" as any) {
               callback([], "BUFFER_FULL");
+              unsubscribe()
             } else {
               message.SubscriptionEvent.event_data.forEach((event) => {
                 callback(event, message.SubscriptionEvent.event_type);
@@ -47,9 +63,7 @@ export function useSubscription(
             }
           } else if ("Eose" in message) {
             if (options.closeOnEose) {
-              console.log("close");
-              running = false;
-              timeoutId && clearTimeout(timeoutId);
+              unsubscribe();
             }
             callback(message.Eose.data, "EOSE");
           } else if ("Eoce" in message) {
@@ -77,11 +91,5 @@ export function useSubscription(
     timeoutId = window.setTimeout(processEvents, 0);
   }
 
-  return (): void => {
-    running = false;
-    if (timeoutId !== null) {
-      clearTimeout(timeoutId);
-    }
-    nostrManager.unsubscribe(subId);
-  };
+  return unsubscribe
 }
