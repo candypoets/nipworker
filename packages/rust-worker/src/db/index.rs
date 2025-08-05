@@ -8,22 +8,21 @@ use crate::types::{network::Request, ParsedEvent};
 use crate::utils::relay::RelayUtils;
 use anyhow::Result;
 use async_trait::async_trait;
+
 use gloo_timers::future::TimeoutFuture;
 use instant::Instant;
 use nostr::{Event, EventId, Filter, PublicKey};
-use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, HashSet};
-use std::hash::{Hash, Hasher};
 use std::sync::{Arc, RwLock};
 use tracing::{debug, error, info, warn};
 use wasm_bindgen_futures::spawn_local;
 
-/// Main NostrDB implementation with in-memory indexes and persistent storage
+/// Main NostrDB implementation with concurrent DashMap indexes
 pub struct NostrDB {
     /// Database configuration
     config: DatabaseConfig,
-    /// In-memory indexes for fast querying
-    indexes: Arc<RwLock<DatabaseIndexes>>,
+    /// In-memory indexes for fast querying (concurrent)
+    indexes: DatabaseIndexes,
     /// Persistent storage backend
     storage: Arc<dyn EventStorage>,
     /// Initialization flag
@@ -54,7 +53,7 @@ impl NostrDB {
 
         Self {
             config,
-            indexes: Arc::new(RwLock::new(DatabaseIndexes::new())),
+            indexes: DatabaseIndexes::new(),
             storage,
             is_initialized: Arc::new(RwLock::new(false)),
             to_save: Arc::new(RwLock::new(Vec::new())),
@@ -77,7 +76,7 @@ impl NostrDB {
     pub fn with_storage(config: DatabaseConfig, storage: Arc<dyn EventStorage>) -> Self {
         Self {
             config,
-            indexes: Arc::new(RwLock::new(DatabaseIndexes::new())),
+            indexes: DatabaseIndexes::new(),
             storage,
             is_initialized: Arc::new(RwLock::new(false)),
             to_save: Arc::new(RwLock::new(Vec::new())),
@@ -107,7 +106,7 @@ impl NostrDB {
 
         Self {
             config,
-            indexes: Arc::new(RwLock::new(DatabaseIndexes::new())),
+            indexes: DatabaseIndexes::new(),
             storage,
             to_save: Arc::new(RwLock::new(Vec::new())),
             is_initialized: Arc::new(RwLock::new(false)),
@@ -128,7 +127,7 @@ impl NostrDB {
     ) -> Self {
         Self {
             config,
-            indexes: Arc::new(RwLock::new(DatabaseIndexes::new())),
+            indexes: DatabaseIndexes::new(),
             storage,
             is_initialized: Arc::new(RwLock::new(false)),
             to_save: Arc::new(RwLock::new(Vec::new())),
@@ -154,10 +153,7 @@ impl NostrDB {
         }
 
         // Clear existing indexes
-        {
-            let mut indexes = self.indexes.write().map_err(|_| DatabaseError::LockError)?;
-            indexes.clear();
-        }
+        self.indexes.clear();
 
         // Load events from storage
         let events = self.storage.load_events().await?;
@@ -168,10 +164,7 @@ impl NostrDB {
         }
 
         *is_init = true;
-        let event_count = {
-            let indexes = self.indexes.read().map_err(|_| DatabaseError::LockError)?;
-            indexes.events_by_id.len()
-        };
+        let event_count = self.indexes.events_by_id.len();
         info!(
             "NostrDB initialization complete with {} events in cache",
             event_count
@@ -197,7 +190,7 @@ impl NostrDB {
         events: Vec<ProcessedNostrEvent>,
     ) -> Result<(), DatabaseError> {
         let start_time = Instant::now();
-        let mut indexes = self.indexes.write().map_err(|_| DatabaseError::LockError)?;
+        // No need for mutable reference with DashMap
 
         // Pre-allocate maps based on event count for better performance
         let event_count = events.len();
@@ -213,21 +206,21 @@ impl NostrDB {
         // Pre-allocate maps for high-frequency items
         for (pubkey, count) in pubkey_frequency {
             if count > 5 {
-                indexes
+                self.indexes
                     .events_by_pubkey
                     .insert(pubkey, HashSet::with_capacity(count));
             }
         }
 
         for (kind, count) in kind_frequency {
-            indexes
+            self.indexes
                 .events_by_kind
                 .insert(kind, HashSet::with_capacity(count));
         }
 
         // Second pass: build all indexes
         for event in events {
-            self.index_event(&mut indexes, event);
+            self.index_event(event);
         }
 
         let duration = start_time.elapsed();
@@ -235,28 +228,30 @@ impl NostrDB {
             "Built indexes for {} events in {:?} (memory: ~{} bytes)",
             event_count,
             duration,
-            indexes.estimate_memory_usage()
+            self.indexes.estimate_memory_usage()
         );
 
         Ok(())
     }
 
     /// Add an event to all relevant indexes
-    fn index_event(&self, indexes: &mut DatabaseIndexes, event: ProcessedNostrEvent) {
+    fn index_event(&self, event: ProcessedNostrEvent) {
         let event_id = event.id();
 
         // Primary index
-        indexes.events_by_id.insert(event_id.clone(), event.clone());
+        self.indexes
+            .events_by_id
+            .insert(event_id.clone(), event.clone());
 
         // Kind index
-        indexes
+        self.indexes
             .events_by_kind
             .entry(event.kind())
             .or_insert_with(HashSet::new)
             .insert(event_id.clone());
 
         // Pubkey index
-        indexes
+        self.indexes
             .events_by_pubkey
             .entry(event.pubkey())
             .or_insert_with(HashSet::new)
@@ -264,7 +259,7 @@ impl NostrDB {
 
         // Tag indexes
         for e_tag in &event.e_tags {
-            indexes
+            self.indexes
                 .events_by_e_tag
                 .entry(e_tag.clone())
                 .or_insert_with(HashSet::new)
@@ -272,7 +267,7 @@ impl NostrDB {
         }
 
         for p_tag in &event.p_tags {
-            indexes
+            self.indexes
                 .events_by_p_tag
                 .entry(p_tag.clone())
                 .or_insert_with(HashSet::new)
@@ -280,7 +275,7 @@ impl NostrDB {
         }
 
         for a_tag in &event.a_tags {
-            indexes
+            self.indexes
                 .events_by_a_tag
                 .entry(a_tag.clone())
                 .or_insert_with(HashSet::new)
@@ -288,7 +283,7 @@ impl NostrDB {
         }
 
         for d_tag in &event.d_tags {
-            indexes
+            self.indexes
                 .events_by_d_tag
                 .entry(d_tag.clone())
                 .or_insert_with(HashSet::new)
@@ -297,21 +292,20 @@ impl NostrDB {
 
         // Special handling for profiles (kind 0)
         if event.kind() == 0 {
-            indexes
+            self.indexes
                 .profiles_by_pubkey
                 .insert(event.pubkey(), event.clone());
         }
 
         // Special handling for relay lists (kind 10002)
         if event.kind() == 10002 {
-            indexes.relays_by_pubkey.insert(event.pubkey(), event);
+            self.indexes.relays_by_pubkey.insert(event.pubkey(), event);
         }
     }
 
     /// Query events using the internal filter format
     pub fn query_events_internal(&self, filter: QueryFilter) -> Result<QueryResult, DatabaseError> {
         let start_time = Instant::now();
-        let indexes = self.indexes.read().map_err(|_| DatabaseError::LockError)?;
 
         // Start with candidate sets from indexed fields
         let mut candidate_sets = Vec::new();
@@ -322,7 +316,7 @@ impl NostrDB {
             let mut id_set = HashSet::new();
             for id in ids {
                 let id_hex = id.to_hex();
-                if indexes.events_by_id.contains_key(&id_hex) {
+                if self.indexes.events_by_id.contains_key(&id_hex) {
                     id_set.insert(id_hex);
                 }
             }
@@ -335,7 +329,7 @@ impl NostrDB {
             let mut kind_events = HashSet::new();
             for kind in kinds {
                 let kind_u64 = kind.as_u64();
-                if let Some(event_ids) = indexes.events_by_kind.get(&kind_u64) {
+                if let Some(event_ids) = self.indexes.events_by_kind.get(&kind_u64) {
                     kind_events.extend(event_ids.iter().cloned());
                 }
             }
@@ -348,7 +342,7 @@ impl NostrDB {
             let mut author_events = HashSet::new();
             for author in authors {
                 let author_hex = author.to_hex();
-                if let Some(event_ids) = indexes.events_by_pubkey.get(&author_hex) {
+                if let Some(event_ids) = self.indexes.events_by_pubkey.get(&author_hex) {
                     author_events.extend(event_ids.iter().cloned());
                 }
             }
@@ -360,7 +354,7 @@ impl NostrDB {
         if let Some(e_tags) = &filter.e_tags {
             let mut tag_events = HashSet::new();
             for tag in e_tags {
-                if let Some(event_ids) = indexes.events_by_e_tag.get(tag) {
+                if let Some(event_ids) = self.indexes.events_by_e_tag.get(tag) {
                     tag_events.extend(event_ids.iter().cloned());
                 }
             }
@@ -372,7 +366,7 @@ impl NostrDB {
         if let Some(p_tags) = &filter.p_tags {
             let mut tag_events = HashSet::new();
             for tag in p_tags {
-                if let Some(event_ids) = indexes.events_by_p_tag.get(tag) {
+                if let Some(event_ids) = self.indexes.events_by_p_tag.get(tag) {
                     tag_events.extend(event_ids.iter().cloned());
                 }
             }
@@ -384,7 +378,7 @@ impl NostrDB {
         if let Some(a_tags) = &filter.a_tags {
             let mut tag_events = HashSet::new();
             for tag in a_tags {
-                if let Some(event_ids) = indexes.events_by_a_tag.get(tag) {
+                if let Some(event_ids) = self.indexes.events_by_a_tag.get(tag) {
                     tag_events.extend(event_ids.iter().cloned());
                 }
             }
@@ -396,7 +390,7 @@ impl NostrDB {
         if let Some(d_tags) = &filter.d_tags {
             let mut tag_events = HashSet::new();
             for tag in d_tags {
-                if let Some(event_ids) = indexes.events_by_d_tag.get(tag) {
+                if let Some(event_ids) = self.indexes.events_by_d_tag.get(tag) {
                     tag_events.extend(event_ids.iter().cloned());
                 }
             }
@@ -407,7 +401,11 @@ impl NostrDB {
         // Get final candidate set
         let candidate_ids = if use_full_scan {
             // No indexed filters, scan all events
-            indexes.events_by_id.keys().cloned().collect()
+            self.indexes
+                .events_by_id
+                .iter()
+                .map(|item| item.key().clone())
+                .collect()
         } else if candidate_sets.is_empty() {
             HashSet::new()
         } else {
@@ -421,7 +419,7 @@ impl NostrDB {
         let search_lower = filter.search.as_ref().map(|s| s.to_lowercase());
 
         for event_id in candidate_ids {
-            if let Some(event) = indexes.events_by_id.get(&event_id) {
+            if let Some(event) = self.indexes.events_by_id.get(&event_id) {
                 // Time range filters
                 if let Some(since) = filter.since {
                     if event.created_at() < since {
@@ -483,8 +481,7 @@ impl NostrDB {
 
     /// Get a single event by ID
     pub fn get_event(&self, id: &EventId) -> Option<ParsedEvent> {
-        let indexes = self.indexes.read().ok()?;
-        indexes
+        self.indexes
             .events_by_id
             .get(&id.to_hex())
             .map(|e| e.to_parsed_event())
@@ -492,25 +489,20 @@ impl NostrDB {
 
     /// Check if an event exists
     pub fn has_event(&self, id: &EventId) -> bool {
-        let indexes = self
-            .indexes
-            .read()
-            .unwrap_or_else(|_| panic!("Lock poisoned"));
-        indexes.events_by_id.contains_key(&id.to_hex())
+        self.indexes.events_by_id.contains_key(&id.to_hex())
     }
 
     /// Get a profile for a given pubkey
     pub fn get_profile(&self, pubkey: &PublicKey) -> Option<ParsedEvent> {
-        let indexes = self.indexes.read().ok()?;
-        indexes
+        self.indexes
             .profiles_by_pubkey
             .get(&pubkey.to_hex())
             .map(|e| e.to_parsed_event())
     }
 
     pub fn get_read_relays(&self, pubkey: &str) -> Option<Vec<String>> {
-        let indexes = self.indexes.read().ok()?;
-        let parsed_event = indexes
+        let parsed_event = self
+            .indexes
             .relays_by_pubkey
             .get(pubkey)
             .map(|e| e.to_parsed_event());
@@ -541,8 +533,8 @@ impl NostrDB {
     }
 
     pub fn get_write_relays(&self, pubkey: &str) -> Option<Vec<String>> {
-        let indexes = self.indexes.read().ok()?;
-        let parsed_event = indexes
+        let parsed_event = self
+            .indexes
             .relays_by_pubkey
             .get(pubkey)
             .map(|e| e.to_parsed_event());
@@ -676,19 +668,17 @@ impl NostrDB {
 
     /// Get database statistics
     pub fn get_stats(&self) -> DatabaseStats {
-        let indexes = self
-            .indexes
-            .read()
-            .unwrap_or_else(|_| panic!("Lock poisoned"));
-        indexes.get_stats()
+        self.indexes.get_stats()
     }
 
     /// Reset and refill persistent storage with recent events
     pub async fn reset_and_refill_storage(&self) -> Result<(), DatabaseError> {
-        let events: Vec<ProcessedNostrEvent> = {
-            let indexes = self.indexes.read().map_err(|_| DatabaseError::LockError)?;
-            indexes.events_by_id.values().cloned().collect()
-        };
+        let events: Vec<ProcessedNostrEvent> = self
+            .indexes
+            .events_by_id
+            .iter()
+            .map(|item| item.value().clone())
+            .collect();
 
         // Clear and save events using the storage trait
         self.storage.clear_storage().await?;
@@ -896,10 +886,7 @@ impl EventDatabase for NostrDB {
         let event_id = processed_event.id();
 
         // Add to indexes
-        {
-            let mut indexes = self.indexes.write().map_err(|_| DatabaseError::LockError)?;
-            self.index_event(&mut indexes, processed_event);
-        }
+        self.index_event(processed_event);
 
         if self.config.debug_logging {
             debug!("Added event {} to database", event_id);

@@ -53,14 +53,27 @@ optimize_wasm() {
     fi
 }
 
-# Build worker WASM module
+# Build worker WASM module with atomics support
 echo ""
-echo "Building worker WASM module..."
-wasm-pack build \
-    --target web \
+echo "Building worker WASM module with atomics support..."
 
-# Optimize worker WASM
-# optimize_wasm "pkg/nostr_worker_bg.wasm"
+# Set up environment for threading
+export RUSTFLAGS="-C target-feature=+atomics,+bulk-memory,+mutable-globals"
+
+# Build with atomics using nightly and wasm-pack
+RUSTFLAGS="-C target-feature=+atomics,+bulk-memory,+mutable-globals" \
+wasm-pack build --dev --target web -- --target wasm32-unknown-unknown -Z build-std=std,panic_abort --features atomics
+
+wasm-opt pkg/rust_worker_bg.wasm -o pkg/rust_worker_bg.wasm \
+    -O2 \
+    --enable-threads \
+    --enable-bulk-memory \
+    --enable-mutable-globals \
+    --enable-sign-ext
+
+echo "✅ Successfully built with atomics support!"
+ATOMICS_ENABLED=true
+
 
 # Create worker.js file
 echo ""
@@ -74,7 +87,6 @@ const initPromise = async () => {
     await init();
     return await init_nostr_client();
   } catch (error) {
-    console.log("oops");
     console.error("Failed to initialize WASM worker module:", error);
     throw error;
   }
@@ -145,3 +157,10 @@ echo "Worker module: $WORKER_SIZE bytes ($(echo "scale=2; $WORKER_SIZE/1024" | b
 
 echo ""
 echo "✅ Nostr Worker build complete!"
+echo ""
+if [ "$ATOMICS_ENABLED" = true ]; then
+    echo "Build: Atomics support ENABLED"
+    echo "Note: For full DashMap performance, ensure COOP/COEP headers are set"
+else
+    echo "Build: Standard mode (RwLock fallback)"
+fi

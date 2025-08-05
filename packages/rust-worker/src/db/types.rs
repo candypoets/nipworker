@@ -1,7 +1,9 @@
 use crate::types::{network::Request, ParsedEvent};
+use dashmap::DashMap;
 use nostr::{Event, EventId, Kind, PublicKey, SingleLetterTag, Timestamp};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 /// Represents a Nostr event with extracted tags for easier filtering
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -269,16 +271,15 @@ pub trait EventStorage: Send + Sync {
     fn as_any(&self) -> &dyn std::any::Any;
 }
 
-/// Index types for efficient querying
-pub type EventIdIndex = HashMap<String, ProcessedNostrEvent>;
-pub type KindIndex = HashMap<u64, HashSet<String>>;
-pub type PubkeyIndex = HashMap<String, HashSet<String>>;
-pub type TagIndex = HashMap<String, HashSet<String>>;
-pub type ProfileIndex = HashMap<String, ProcessedNostrEvent>;
-pub type RelayIndex = HashMap<String, ProcessedNostrEvent>;
+/// Index types for efficient querying (concurrent)
+pub type EventIdIndex = Arc<DashMap<String, ProcessedNostrEvent>>;
+pub type KindIndex = Arc<DashMap<u64, HashSet<String>>>;
+pub type PubkeyIndex = Arc<DashMap<String, HashSet<String>>>;
+pub type TagIndex = Arc<DashMap<String, HashSet<String>>>;
+pub type ProfileIndex = Arc<DashMap<String, ProcessedNostrEvent>>;
+pub type RelayIndex = Arc<DashMap<String, ProcessedNostrEvent>>;
 
-/// Database indexes for fast querying
-#[derive(Debug, Default)]
+/// Database indexes for fast querying (concurrent)
 pub struct DatabaseIndexes {
     /// Primary index: event_id -> event
     pub events_by_id: EventIdIndex,
@@ -298,11 +299,21 @@ pub struct DatabaseIndexes {
 impl DatabaseIndexes {
     /// Create new empty indexes
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            events_by_id: Arc::new(DashMap::new()),
+            events_by_kind: Arc::new(DashMap::new()),
+            events_by_pubkey: Arc::new(DashMap::new()),
+            events_by_e_tag: Arc::new(DashMap::new()),
+            events_by_p_tag: Arc::new(DashMap::new()),
+            events_by_a_tag: Arc::new(DashMap::new()),
+            events_by_d_tag: Arc::new(DashMap::new()),
+            profiles_by_pubkey: Arc::new(DashMap::new()),
+            relays_by_pubkey: Arc::new(DashMap::new()),
+        }
     }
 
     /// Clear all indexes
-    pub fn clear(&mut self) {
+    pub fn clear(&self) {
         self.events_by_id.clear();
         self.events_by_kind.clear();
         self.events_by_pubkey.clear();
@@ -334,12 +345,14 @@ impl DatabaseIndexes {
         };
 
         // Count events by kind
-        for (kind, event_ids) in &self.events_by_kind {
+        for item in self.events_by_kind.iter() {
+            let (kind, event_ids) = item.pair();
             stats.events_by_kind.insert(*kind, event_ids.len());
         }
 
         // Count events by author
-        for (pubkey, event_ids) in &self.events_by_pubkey {
+        for item in self.events_by_pubkey.iter() {
+            let (pubkey, event_ids) = item.pair();
             stats
                 .events_by_author
                 .insert(pubkey.clone(), event_ids.len());
@@ -356,7 +369,8 @@ impl DatabaseIndexes {
         let mut total = 0;
 
         // Events by ID (main storage)
-        for (id, event) in &self.events_by_id {
+        for item in self.events_by_id.iter() {
+            let (id, event) = item.pair();
             total += id.len() * 2; // String storage
             total += std::mem::size_of::<ProcessedNostrEvent>();
             total += event.event.content.len() * 2; // Content storage
