@@ -376,6 +376,43 @@ impl SubscriptionManager {
         }
     }
 
+    fn has_buffer_full_marker(
+        buffer_uint8: &Uint8Array,
+        current_write_pos: usize,
+        buffer_length: usize,
+    ) -> bool {
+        // Check if the last written entry is already a buffer full marker
+        if current_write_pos < 5 {
+            return false;
+        }
+
+        // Read the length of the previous entry (4 bytes before current position)
+        let prev_length_pos = current_write_pos - 5; // -5 because marker is 1 byte + 4 byte length
+        let prev_length_subarray =
+            buffer_uint8.subarray(prev_length_pos as u32, (prev_length_pos + 4) as u32);
+        let mut prev_length_bytes = vec![0u8; 4];
+        prev_length_subarray.copy_to(&mut prev_length_bytes[..]);
+
+        let mut prev_length_array = [0u8; 4];
+        prev_length_array.copy_from_slice(&prev_length_bytes);
+        let prev_length = u32::from_le_bytes(prev_length_array);
+
+        // If the previous entry has length 1, check if it's the buffer full marker (0xFF)
+        if prev_length == 1 {
+            let prev_data_pos = prev_length_pos + 4;
+            if prev_data_pos < buffer_length {
+                let prev_data_subarray =
+                    buffer_uint8.subarray(prev_data_pos as u32, (prev_data_pos + 1) as u32);
+                let mut prev_data_bytes = vec![0u8; 1];
+                prev_data_subarray.copy_to(&mut prev_data_bytes[..]);
+
+                return prev_data_bytes[0] == 0xFF;
+            }
+        }
+
+        false
+    }
+
     async fn write_to_buffer(
         shared_buffer: &SharedArrayBuffer,
         subscription_id: &str,
@@ -419,6 +456,14 @@ impl SubscriptionManager {
         // Check if we have enough space (4 bytes write position header + 4 bytes length prefix + data)
         let new_write_pos = current_write_pos + 4 + data.len(); // +4 for length prefix
         if new_write_pos > buffer_length {
+            // Check if the last written entry is already a buffer full marker
+            if Self::has_buffer_full_marker(&buffer_uint8, current_write_pos, buffer_length) {
+                warn!(
+                    "Buffer full for subscription {}, but marker already exists",
+                    subscription_id
+                );
+                return;
+            }
             // Write minimal "buffer full" marker: length=1, data=0xFF
             if current_write_pos + 5 <= buffer_length {
                 // 4 bytes length + 1 byte marker
