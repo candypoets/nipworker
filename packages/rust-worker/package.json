@@ -21,7 +21,7 @@
     "./snippets/*"
   ],
   "scripts": {
-    "build": "./build.sh && cp pkg/*.wasm pkg/*.js pkg/*.d.ts dist/",
+    "build": "./build.sh && mkdir -p dist && cp pkg/*.wasm pkg/*.js pkg/*.d.ts dist/",
     "clean": "rm -rf dist && rm -f *.wasm *.js *.d.ts && cargo clean",
     "prepublishOnly": "npm run build"
   },

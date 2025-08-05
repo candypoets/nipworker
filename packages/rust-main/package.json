@@ -18,7 +18,7 @@
     "./snippets/*"
   ],
   "scripts": {
-    "build": "wasm-pack build --target web && cp pkg/*.wasm pkg/*.js pkg/*.d.ts dist/",
+    "build": "wasm-pack build --target web && mkdir -p dist && cp pkg/*.wasm pkg/*.js pkg/*.d.ts dist/",
     "clean": "rm -rf dist && rm -f *.wasm *.js *.d.ts && cargo clean",
     "prepublishOnly": "npm run build"
   },
