@@ -15,8 +15,8 @@ use std::sync::{Arc, RwLock};
 use tracing::{debug, error, info, warn};
 
 /// Constants for event processing
-const MAX_EVENTS_PER_BATCH: usize = 50;
-const PROCESS_INTERVAL_MS: u32 = 20; // 50 events/sec = 1 event per 20ms
+const MAX_EVENTS_PER_PROCESS: usize = 10; // Process max 10 events per add_event call
+const MIN_PROCESS_INTERVAL_MS: u64 = 20; // Minimum time between processing batches
 
 /// Main NostrDB implementation with RefCell indexes for single-threaded async access
 pub struct NostrDB<S = IndexedDbStorage> {
@@ -42,8 +42,8 @@ pub struct NostrDB<S = IndexedDbStorage> {
     default_relay_counter: Arc<RwLock<usize>>,
     /// Pending events queue for rate-limited processing
     pending_events: Arc<RwLock<Vec<ParsedEvent>>>,
-    /// Flag to track if processor is running
-    processor_running: Arc<RwLock<bool>>,
+    /// Last time we processed events
+    last_process_time: Arc<RwLock<Instant>>,
 }
 
 impl NostrDB<IndexedDbStorage> {
@@ -72,7 +72,7 @@ impl NostrDB<IndexedDbStorage> {
             indexer_relay_counter: Arc::new(RwLock::new(0)),
             default_relay_counter: Arc::new(RwLock::new(0)),
             pending_events: Arc::new(RwLock::new(Vec::new())),
-            processor_running: Arc::new(RwLock::new(false)),
+            last_process_time: Arc::new(RwLock::new(Instant::now())),
         }
     }
 
@@ -94,7 +94,7 @@ impl NostrDB<IndexedDbStorage> {
             indexer_relay_counter: Arc::new(RwLock::new(0)),
             default_relay_counter: Arc::new(RwLock::new(0)),
             pending_events: Arc::new(RwLock::new(Vec::new())),
-            processor_running: Arc::new(RwLock::new(false)),
+            last_process_time: Arc::new(RwLock::new(Instant::now())),
         }
     }
 }
@@ -121,7 +121,7 @@ impl<S: EventStorage> NostrDB<S> {
             indexer_relay_counter: Arc::new(RwLock::new(0)),
             default_relay_counter: Arc::new(RwLock::new(0)),
             pending_events: Arc::new(RwLock::new(Vec::new())),
-            processor_running: Arc::new(RwLock::new(false)),
+            last_process_time: Arc::new(RwLock::new(Instant::now())),
         }
     }
 
@@ -143,7 +143,7 @@ impl<S: EventStorage> NostrDB<S> {
             indexer_relay_counter: Arc::new(RwLock::new(0)),
             default_relay_counter: Arc::new(RwLock::new(0)),
             pending_events: Arc::new(RwLock::new(Vec::new())),
-            processor_running: Arc::new(RwLock::new(false)),
+            last_process_time: Arc::new(RwLock::new(Instant::now())),
         }
     }
 
@@ -767,25 +767,37 @@ impl<S: EventStorage> NostrDB<S> {
         self.save_events_to_storage(events_to_save).await
     }
 
-    /// Process events recursively with rate limiting
-    async fn process_events_batch(&self) {
-        let start_time = Instant::now();
+    /// Process a batch of pending events with throttling
+    async fn process_pending_events(&self) -> Result<()> {
+        // Check if enough time has passed since last processing
+        let should_process = {
+            let last_time = self.last_process_time.read().unwrap();
+            let elapsed = last_time.elapsed();
+            elapsed.as_millis() >= MIN_PROCESS_INTERVAL_MS as u128
+        };
 
-        // Take a batch of events to process
+        if !should_process {
+            return Ok(());
+        }
+
+        // Take a small batch of events to process
         let events_to_process = {
             let mut pending = self.pending_events.write().unwrap();
             if pending.is_empty() {
-                // No more events, mark processor as not running
-                *self.processor_running.write().unwrap() = false;
-                return;
+                return Ok(());
             }
 
-            // Take up to MAX_EVENTS_PER_BATCH events
-            let count = pending.len().min(MAX_EVENTS_PER_BATCH);
+            // Take up to MAX_EVENTS_PER_PROCESS events
+            let count = pending.len().min(MAX_EVENTS_PER_PROCESS);
             pending.drain(0..count).collect::<Vec<_>>()
         };
 
-        let batch_size = events_to_process.len();
+        if events_to_process.is_empty() {
+            return Ok(());
+        }
+
+        // Update last process time
+        *self.last_process_time.write().unwrap() = Instant::now();
 
         // Process the events
         for event in events_to_process {
@@ -794,31 +806,7 @@ impl<S: EventStorage> NostrDB<S> {
             }
         }
 
-        let process_time = start_time.elapsed();
-        let queue_size = self.pending_events.read().unwrap().len();
-
-        if batch_size > 0 {
-            debug!(
-                "Processed {} events in {:?} (queue size: {})",
-                batch_size, process_time, queue_size
-            );
-        }
-
-        // If there are more events, wait then continue processing
-        if queue_size > 0 {
-            // Wait to maintain rate limit (50 events/sec)
-            let elapsed_ms = process_time.as_millis() as u32;
-            if elapsed_ms < PROCESS_INTERVAL_MS {
-                let wait_ms = PROCESS_INTERVAL_MS - elapsed_ms;
-                gloo_timers::future::TimeoutFuture::new(wait_ms).await;
-            }
-
-            // Continue processing recursively
-            Box::pin(self.process_events_batch()).await;
-        } else {
-            // No more events, mark processor as not running
-            *self.processor_running.write().unwrap() = false;
-        }
+        Ok(())
     }
 
     /// Process a single event (the actual indexing logic)
@@ -945,22 +933,8 @@ impl<S: EventStorage> EventDatabase for NostrDB<S> {
             }
         }
 
-        // Start processing if not already running
-        let should_start = {
-            let mut is_running = self.processor_running.write().unwrap();
-            if !*is_running {
-                *is_running = true;
-                true
-            } else {
-                false
-            }
-        };
-
-        if should_start {
-            // Use gloo_timers to defer the processing to next tick
-            gloo_timers::future::TimeoutFuture::new(0).await;
-            self.process_events_batch().await;
-        }
+        // Try to process some events immediately (with throttling)
+        self.process_pending_events().await.ok();
 
         Ok(())
     }
