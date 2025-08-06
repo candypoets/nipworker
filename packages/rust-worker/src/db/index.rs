@@ -9,24 +9,14 @@ use crate::utils::relay::RelayUtils;
 use anyhow::Result;
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use futures::StreamExt;
-use gloo_timers::future::IntervalStream;
 use instant::Instant;
 use nostr::{Event, EventId, Filter, PublicKey};
-use std::cell::RefCell;
-use std::rc::Rc;
 use std::sync::{Arc, RwLock};
 use tracing::{debug, error, info, warn};
-use wasm_bindgen_futures::spawn_local;
 
 /// Constants for event processing
 const MAX_EVENTS_PER_BATCH: usize = 50;
 const PROCESS_INTERVAL_MS: u32 = 20; // 50 events/sec = 1 event per 20ms
-
-/// Weak reference wrapper for NostrDB
-struct WeakDbRef<S> {
-    weak: std::sync::Weak<NostrDB<S>>,
-}
 
 /// Main NostrDB implementation with RefCell indexes for single-threaded async access
 pub struct NostrDB<S = IndexedDbStorage> {
@@ -54,8 +44,6 @@ pub struct NostrDB<S = IndexedDbStorage> {
     pending_events: Arc<RwLock<Vec<ParsedEvent>>>,
     /// Flag to track if processor is running
     processor_running: Arc<RwLock<bool>>,
-    /// Weak self-reference for spawning processor
-    weak_self: Arc<RwLock<Option<std::sync::Weak<NostrDB<S>>>>>,
 }
 
 impl NostrDB<IndexedDbStorage> {
@@ -85,7 +73,6 @@ impl NostrDB<IndexedDbStorage> {
             default_relay_counter: Arc::new(RwLock::new(0)),
             pending_events: Arc::new(RwLock::new(Vec::new())),
             processor_running: Arc::new(RwLock::new(false)),
-            weak_self: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -108,7 +95,6 @@ impl NostrDB<IndexedDbStorage> {
             default_relay_counter: Arc::new(RwLock::new(0)),
             pending_events: Arc::new(RwLock::new(Vec::new())),
             processor_running: Arc::new(RwLock::new(false)),
-            weak_self: Arc::new(RwLock::new(None)),
         }
     }
 }
@@ -136,7 +122,6 @@ impl<S: EventStorage> NostrDB<S> {
             default_relay_counter: Arc::new(RwLock::new(0)),
             pending_events: Arc::new(RwLock::new(Vec::new())),
             processor_running: Arc::new(RwLock::new(false)),
-            weak_self: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -159,7 +144,6 @@ impl<S: EventStorage> NostrDB<S> {
             default_relay_counter: Arc::new(RwLock::new(0)),
             pending_events: Arc::new(RwLock::new(Vec::new())),
             processor_running: Arc::new(RwLock::new(false)),
-            weak_self: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -783,87 +767,58 @@ impl<S: EventStorage> NostrDB<S> {
         self.save_events_to_storage(events_to_save).await
     }
 
-    /// Set the weak self-reference (must be called after creating Arc<Self>)
-    pub fn set_weak_ref(self: &Arc<Self>) {
-        let weak = Arc::downgrade(self);
-        *self.weak_self.write().unwrap() = Some(weak);
-    }
+    /// Process events recursively with rate limiting
+    async fn process_events_batch(&self) {
+        let start_time = Instant::now();
 
-    /// Start the event processor if not already running
-    fn ensure_event_processor_running(&self) {
-        let mut is_running = self.processor_running.write().unwrap();
-        if !*is_running {
-            *is_running = true;
-
-            // Get weak reference to self
-            let weak_ref = self.weak_self.read().unwrap().clone();
-            drop(is_running); // Release the lock before spawning
-
-            if let Some(weak) = weak_ref {
-                spawn_local(async move {
-                    // Try to upgrade the weak reference
-                    if let Some(db) = weak.upgrade() {
-                        db.run_event_processor().await;
-                    } else {
-                        warn!("Failed to upgrade weak reference for event processor");
-                    }
-                });
-            } else {
-                error!("Weak self-reference not set, cannot start event processor");
+        // Take a batch of events to process
+        let events_to_process = {
+            let mut pending = self.pending_events.write().unwrap();
+            if pending.is_empty() {
+                // No more events, mark processor as not running
+                *self.processor_running.write().unwrap() = false;
+                return;
             }
-        }
-    }
 
-    /// Run the event processor loop
-    async fn run_event_processor(self: Arc<Self>) {
-        let mut interval = IntervalStream::new(PROCESS_INTERVAL_MS);
+            // Take up to MAX_EVENTS_PER_BATCH events
+            let count = pending.len().min(MAX_EVENTS_PER_BATCH);
+            pending.drain(0..count).collect::<Vec<_>>()
+        };
 
-        info!(
-            "Starting event processor, processing up to {} events every {}ms",
-            MAX_EVENTS_PER_BATCH, PROCESS_INTERVAL_MS
-        );
+        let batch_size = events_to_process.len();
 
-        while let Some(_) = interval.next().await {
-            let events_to_process = {
-                let mut pending = self.pending_events.write().unwrap();
-                if pending.is_empty() {
-                    // No events to process, check if we should stop
-                    drop(pending);
-                    // Wait a bit to see if new events come in
-                    gloo_timers::future::TimeoutFuture::new(100).await;
-                    let pending = self.pending_events.read().unwrap();
-                    if pending.is_empty() {
-                        break;
-                    }
-                    continue;
-                }
-
-                // Take up to MAX_EVENTS_PER_BATCH events
-                let count = pending.len().min(MAX_EVENTS_PER_BATCH);
-                pending.drain(0..count).collect::<Vec<_>>()
-            };
-
-            let batch_size = events_to_process.len();
-            if batch_size > 0 {
-                let start_time = Instant::now();
-
-                for event in events_to_process {
-                    if let Err(e) = self.process_single_event(event).await {
-                        warn!("Failed to process event: {:?}", e);
-                    }
-                }
-
-                let process_time = start_time.elapsed();
-                let queue_size = self.pending_events.read().unwrap().len();
-                debug!(
-                    "Processed {} events in {:?} (queue size: {})",
-                    batch_size, process_time, queue_size
-                );
+        // Process the events
+        for event in events_to_process {
+            if let Err(e) = self.process_single_event(event).await {
+                warn!("Failed to process event: {:?}", e);
             }
         }
 
-        *self.processor_running.write().unwrap() = false;
-        info!("Event processor stopped");
+        let process_time = start_time.elapsed();
+        let queue_size = self.pending_events.read().unwrap().len();
+
+        if batch_size > 0 {
+            debug!(
+                "Processed {} events in {:?} (queue size: {})",
+                batch_size, process_time, queue_size
+            );
+        }
+
+        // If there are more events, wait then continue processing
+        if queue_size > 0 {
+            // Wait to maintain rate limit (50 events/sec)
+            let elapsed_ms = process_time.as_millis() as u32;
+            if elapsed_ms < PROCESS_INTERVAL_MS {
+                let wait_ms = PROCESS_INTERVAL_MS - elapsed_ms;
+                gloo_timers::future::TimeoutFuture::new(wait_ms).await;
+            }
+
+            // Continue processing recursively
+            Box::pin(self.process_events_batch()).await;
+        } else {
+            // No more events, mark processor as not running
+            *self.processor_running.write().unwrap() = false;
+        }
     }
 
     /// Process a single event (the actual indexing logic)
@@ -990,8 +945,22 @@ impl<S: EventStorage> EventDatabase for NostrDB<S> {
             }
         }
 
-        // Ensure processor is running
-        self.ensure_event_processor_running();
+        // Start processing if not already running
+        let should_start = {
+            let mut is_running = self.processor_running.write().unwrap();
+            if !*is_running {
+                *is_running = true;
+                true
+            } else {
+                false
+            }
+        };
+
+        if should_start {
+            // Use gloo_timers to defer the processing to next tick
+            gloo_timers::future::TimeoutFuture::new(0).await;
+            self.process_events_batch().await;
+        }
 
         Ok(())
     }
@@ -1022,12 +991,6 @@ pub async fn init_nostr_db() -> Arc<NostrDB<IndexedDbStorage>> {
                 error!("Failed to initialize NostrDB: {}", e);
             }
         }
-
-        // Set the weak self-reference so event processor can work
-        db.set_weak_ref(&db);
-
-        // Start the event processor for the global instance
-        db.ensure_event_processor_running();
 
         db
     }
