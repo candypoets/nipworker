@@ -4,27 +4,27 @@ use crate::network::cache_processor::CacheProcessor;
 use crate::network::interfaces::CacheProcessor as CacheProcessorTrait;
 use crate::parser::Parser;
 use crate::pipeline::pipes::*;
-use crate::pipeline::{Pipe, Pipeline, PipelineEvent};
+use crate::pipeline::{PipeType, Pipeline, PipelineEvent};
 use crate::relays::utils::{normalize_relay_url, validate_relay_url};
-use crate::types::network::{Request, SubscribeKind};
-use crate::types::thread::{PipeConfig, PipelineConfig, SubscriptionConfig};
+use crate::types::network::Request;
+use crate::types::thread::{PipelineConfig, SubscriptionConfig};
 use crate::types::*;
 use anyhow::Result;
-use js_sys::{Array, SharedArrayBuffer, Uint8Array};
+use js_sys::{SharedArrayBuffer, Uint8Array};
 use rmp_serde;
-use std::collections::{HashMap, HashSet};
+use rustc_hash::FxHashMap;
 use std::sync::{Arc, RwLock};
 use tracing::{debug, error, info, warn};
-use wasm_bindgen::prelude::*;
+
 use wasm_bindgen_futures::spawn_local;
 
 pub struct SubscriptionManager {
     database: Arc<NostrDB>,
     parser: Arc<Parser>,
-    subscriptions: Arc<RwLock<HashMap<String, SharedArrayBuffer>>>,
+    subscriptions: Arc<RwLock<FxHashMap<String, SharedArrayBuffer>>>,
     cache_processor: Arc<CacheProcessor>,
     connection_registry: ConnectionRegistry,
-    relay_hints: HashMap<String, Vec<String>>,
+    relay_hints: FxHashMap<String, Vec<String>>,
 }
 
 impl SubscriptionManager {
@@ -34,8 +34,8 @@ impl SubscriptionManager {
         Self {
             database: database.clone(),
             parser,
-            subscriptions: Arc::new(RwLock::new(HashMap::new())),
-            relay_hints: HashMap::new(),
+            subscriptions: Arc::new(RwLock::new(FxHashMap::default())),
+            relay_hints: FxHashMap::default(),
             cache_processor,
             connection_registry: ConnectionRegistry::new(),
         }
@@ -169,7 +169,7 @@ impl SubscriptionManager {
             let mut remaining_connections = total_connections;
             let close_on_eose = config.close_on_eose;
 
-            let mut relay_eose_status: HashMap<String, bool> = HashMap::new();
+            let mut relay_eose_status: FxHashMap<String, bool> = FxHashMap::default();
             for relay_url in relay_urls {
                 relay_eose_status.insert(relay_url.clone(), false);
             }
@@ -260,8 +260,8 @@ impl SubscriptionManager {
     fn group_requests_by_relay(
         &self,
         requests: Vec<Request>,
-    ) -> Result<HashMap<String, Vec<Filter>>, anyhow::Error> {
-        let mut relay_filters_map: HashMap<String, Vec<Filter>> = HashMap::new();
+    ) -> Result<FxHashMap<String, Vec<Filter>>, anyhow::Error> {
+        let mut relay_filters_map: FxHashMap<String, Vec<Filter>> = FxHashMap::default();
 
         for mut request in requests {
             request = self.set_request_relay(request)?;
@@ -524,10 +524,10 @@ impl SubscriptionManager {
     ) -> Result<Pipeline> {
         match pipeline_config {
             Some(config) => {
-                let mut pipes: Vec<Box<dyn Pipe>> = Vec::new();
+                let mut pipes: Vec<PipeType> = Vec::new();
 
                 for pipe_config in config.pipes {
-                    let pipe: Box<dyn Pipe> = match pipe_config.name.as_str() {
+                    let pipe = match pipe_config.name.as_str() {
                         "deduplication" => {
                             let max_size = pipe_config
                                 .params
@@ -536,15 +536,15 @@ impl SubscriptionManager {
                                 .and_then(|v| v.as_u64())
                                 .unwrap_or(10000)
                                 as usize;
-                            Box::new(DeduplicationPipe::new(max_size))
+                            PipeType::Deduplication(DeduplicationPipe::new(max_size))
                         }
-                        "parse" => Box::new(ParsePipe::new(self.parser.clone())),
+                        "parse" => PipeType::Parse(ParsePipe::new(self.parser.clone())),
                         "saveToDb" | "save_to_db" => {
-                            Box::new(SaveToDbPipe::new(self.database.clone()))
+                            PipeType::SaveToDb(SaveToDbPipe::new(self.database.clone()))
                         }
-                        "serializeEvents" | "serialize_events" => {
-                            Box::new(SerializeEventsPipe::new(subscription_id.clone()))
-                        }
+                        "serializeEvents" | "serialize_events" => PipeType::SerializeEvents(
+                            SerializeEventsPipe::new(subscription_id.clone()),
+                        ),
                         "proofVerification" => {
                             let params = pipe_config.params.as_ref();
                             // max_proofs: usize, check_interval_secs: u64
@@ -560,7 +560,7 @@ impl SubscriptionManager {
 
                             info!("Creating ProofVerificationPipe with max_proofs: {}, check_interval: {}s", max_proofs, check_interval);
 
-                            Box::new(ProofVerificationPipe::new(max_proofs))
+                            PipeType::ProofVerification(ProofVerificationPipe::new(max_proofs))
                         }
                         "counter" => {
                             let params = pipe_config.params.as_ref();
@@ -573,7 +573,7 @@ impl SubscriptionManager {
                                 .and_then(|p| p.get("updateInterval"))
                                 .and_then(|v| v.as_u64())
                                 .unwrap_or(100);
-                            Box::new(CounterPipe::new(kinds, update_interval))
+                            PipeType::Counter(CounterPipe::new(kinds, update_interval))
                         }
                         "kindFilter" | "kind_filter" => {
                             let kinds = pipe_config
@@ -583,7 +583,7 @@ impl SubscriptionManager {
                                 .and_then(|v| v.as_array())
                                 .map(|arr| arr.iter().filter_map(|v| v.as_u64()).collect())
                                 .unwrap_or_default();
-                            Box::new(KindFilterPipe::new(kinds))
+                            PipeType::KindFilter(KindFilterPipe::new(kinds))
                         }
                         "npubLimiter" | "npub_limiter" => {
                             let params = pipe_config.params.as_ref();
@@ -601,7 +601,11 @@ impl SubscriptionManager {
                                 .and_then(|v| v.as_u64())
                                 .unwrap_or(100)
                                 as usize;
-                            Box::new(NpubLimiterPipe::new(kind, limit_per_npub, max_total_npubs))
+                            PipeType::NpubLimiter(NpubLimiterPipe::new(
+                                kind,
+                                limit_per_npub,
+                                max_total_npubs,
+                            ))
                         }
                         _ => return Err(anyhow::anyhow!("Unknown pipe: {}", pipe_config.name)),
                     };

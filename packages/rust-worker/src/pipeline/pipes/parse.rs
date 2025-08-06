@@ -16,7 +16,6 @@ impl ParsePipe {
     }
 }
 
-#[async_trait(?Send)]
 impl Pipe for ParsePipe {
     async fn process(&mut self, mut event: PipelineEvent) -> Result<PipeOutput> {
         // If already parsed, just pass through

@@ -19,7 +19,6 @@ impl SerializeEventsPipe {
     }
 }
 
-#[async_trait(?Send)]
 impl Pipe for SerializeEventsPipe {
     async fn process(&mut self, event: PipelineEvent) -> Result<PipeOutput> {
         if let Some(parsed_event) = event.parsed {

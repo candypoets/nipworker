@@ -9,9 +9,9 @@ use k256::{
     elliptic_curve::{ops::Reduce, sec1::ToEncodedPoint},
     ProjectivePoint, PublicKey, Scalar, U256,
 };
+use rustc_hash::{FxHashMap, FxHashSet};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::{HashMap, HashSet};
 use tracing::{debug, error, info, warn};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -35,9 +35,9 @@ struct CheckStateResponse {
 
 /// Pipe that extracts proofs from Kind 9321 and 7375 events and verifies their state with mints
 pub struct ProofVerificationPipe {
-    seen_proofs: HashSet<String>, // secrets we've already seen
-    pending_verifications: HashMap<String, String>, // secret -> Y point
-    pending_proofs: HashMap<String, HashMap<String, ProofUnion>>, // mint_url -> secret -> proof
+    seen_proofs: FxHashSet<String>, // secrets we've already seen
+    pending_verifications: FxHashMap<String, String>, // secret -> Y point
+    pending_proofs: FxHashMap<String, FxHashMap<String, ProofUnion>>, // mint_url -> secret -> proof
     max_proofs: usize,
     name: String,
     verification_running: bool,
@@ -46,9 +46,9 @@ pub struct ProofVerificationPipe {
 impl ProofVerificationPipe {
     pub fn new(max_proofs: usize) -> Self {
         Self {
-            seen_proofs: HashSet::new(),
-            pending_verifications: HashMap::new(),
-            pending_proofs: HashMap::new(),
+            seen_proofs: FxHashSet::default(),
+            pending_verifications: FxHashMap::default(),
+            pending_proofs: FxHashMap::default(),
             max_proofs,
             name: format!("ProofVerification(max:{})", max_proofs),
             verification_running: false,
@@ -143,7 +143,7 @@ impl ProofVerificationPipe {
         // Set the running state
         self.verification_running = true;
 
-        let mut valid_proofs: HashMap<String, Vec<ProofUnion>> = HashMap::new();
+        let mut valid_proofs: FxHashMap<String, Vec<ProofUnion>> = FxHashMap::default();
 
         // Keep processing until no more pending proofs
         loop {
@@ -163,7 +163,7 @@ impl ProofVerificationPipe {
 
                 // Get Y points for this mint's proofs
                 let mut y_points = Vec::new();
-                let mut secret_to_y: HashMap<String, String> = HashMap::new();
+                let mut secret_to_y: FxHashMap<String, String> = FxHashMap::default();
 
                 for secret in mint_proofs.keys() {
                     if let Some(y_point) = self.pending_verifications.get(secret) {
@@ -340,7 +340,6 @@ impl ProofVerificationPipe {
     }
 }
 
-#[async_trait(?Send)]
 impl Pipe for ProofVerificationPipe {
     async fn process(&mut self, event: PipelineEvent) -> Result<PipeOutput> {
         // Only process parsed events

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use nostr::{Alphabet, EventId, Filter, Kind, PublicKey, SingleLetterTag, Timestamp};
 use serde::{Deserialize, Serialize};
@@ -17,8 +17,8 @@ pub struct Request {
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub kinds: Vec<i32>,
 
-    #[serde(skip_serializing_if = "HashMap::is_empty", default)]
-    pub tags: HashMap<String, Vec<String>>,
+    #[serde(skip_serializing_if = "FxHashMap::is_empty", default)]
+    pub tags: FxHashMap<String, Vec<String>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub since: Option<i64>,
@@ -65,7 +65,7 @@ impl Request {
                 .kinds
                 .map(|kinds| kinds.into_iter().map(|k| k.as_u64() as i32).collect())
                 .unwrap_or_default(),
-            tags: HashMap::new(), // TODO: Convert filter tags properly
+            tags: FxHashMap::default(), // TODO: Convert filter tags properly
             since: filter.since.map(|ts| ts.as_u64() as i64),
             until: filter.until.map(|ts| ts.as_u64() as i64),
             limit: filter.limit.map(|l| l as i32),

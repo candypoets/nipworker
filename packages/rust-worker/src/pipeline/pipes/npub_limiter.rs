@@ -1,5 +1,6 @@
 use super::super::*;
-use std::collections::{HashMap, VecDeque};
+use rustc_hash::FxHashMap;
+use std::collections::VecDeque;
 
 struct NpubTracker {
     last_forwarded_timestamp: Option<u64>,
@@ -10,7 +11,7 @@ pub struct NpubLimiterPipe {
     kind: u64,
     limit_per_npub: usize,
     max_total_npubs: usize,
-    npub_trackers: HashMap<String, NpubTracker>,
+    npub_trackers: FxHashMap<String, NpubTracker>,
     name: String,
 }
 
@@ -21,12 +22,11 @@ impl NpubLimiterPipe {
             kind,
             limit_per_npub,
             max_total_npubs,
-            npub_trackers: HashMap::new(),
+            npub_trackers: FxHashMap::default(),
         }
     }
 }
 
-#[async_trait(?Send)]
 impl Pipe for NpubLimiterPipe {
     async fn process(&mut self, event: PipelineEvent) -> Result<PipeOutput> {
         // Get the nostr event from either raw or parsed

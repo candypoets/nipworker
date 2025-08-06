@@ -17,7 +17,6 @@ impl DeduplicationPipe {
     }
 }
 
-#[async_trait(?Send)]
 impl Pipe for DeduplicationPipe {
     async fn process(&mut self, event: PipelineEvent) -> Result<PipeOutput> {
         if self.seen_ids.contains(&event.id) {

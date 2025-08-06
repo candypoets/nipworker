@@ -15,7 +15,6 @@ impl KindFilterPipe {
     }
 }
 
-#[async_trait(?Send)]
 impl Pipe for KindFilterPipe {
     async fn process(&mut self, event: PipelineEvent) -> Result<PipeOutput> {
         // Get kind from either raw or parsed event

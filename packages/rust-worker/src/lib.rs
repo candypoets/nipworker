@@ -1,3 +1,5 @@
+#![allow(async_fn_in_trait)]
+
 // Shared library for common types and functionality used by the worker
 
 use nostr::{EventBuilder, Kind, PublicKey, Tag, UnsignedEvent};

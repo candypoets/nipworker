@@ -5,7 +5,7 @@
 //! identical filter parameters while combining their relay lists.
 
 use crate::types::network::Request;
-use std::collections::{HashMap, HashSet};
+use rustc_hash::FxHashMap;
 
 /// Utility struct for request deduplication operations
 pub struct RequestDeduplicator;
@@ -22,7 +22,7 @@ impl RequestDeduplicator {
     /// # Returns
     /// A vector of deduplicated requests with merged relay lists
     pub fn deduplicate_requests(requests: Vec<Request>) -> Vec<Request> {
-        let mut request_map: HashMap<String, Request> = HashMap::new();
+        let mut request_map: FxHashMap<String, Request> = FxHashMap::default();
 
         for request in requests {
             // Create a canonical string representation of the filter criteria
@@ -30,8 +30,8 @@ impl RequestDeduplicator {
 
             // If we already have a request with this filter, merge the relays
             if let Some(existing_request) = request_map.get_mut(&filter_key) {
-                // Merge relay sets using HashSet for deduplication
-                let mut relay_set: HashSet<String> =
+                // Merge relay sets using FxHashSet for deduplication
+                let mut relay_set: rustc_hash::FxHashSet<String> =
                     existing_request.relays.iter().cloned().collect();
                 for relay in &request.relays {
                     relay_set.insert(relay.clone());
@@ -40,7 +40,8 @@ impl RequestDeduplicator {
                 existing_request.relays.sort(); // Sort for consistency
             } else {
                 // Create new request with deduplicated relays
-                let relay_set: HashSet<String> = request.relays.iter().cloned().collect();
+                let relay_set: rustc_hash::FxHashSet<String> =
+                    request.relays.iter().cloned().collect();
                 let mut new_request = request.clone();
                 new_request.relays = relay_set.into_iter().collect();
                 new_request.relays.sort(); // Sort for consistency
@@ -268,13 +269,13 @@ mod tests {
 
     #[test]
     fn test_tag_deduplication() {
-        let mut tags1 = HashMap::new();
+        let mut tags1 = FxHashMap::default();
         tags1.insert(
             "#t".to_string(),
             vec!["bitcoin".to_string(), "nostr".to_string()],
         );
 
-        let mut tags2 = HashMap::new();
+        let mut tags2 = FxHashMap::default();
         tags2.insert(
             "#t".to_string(),
             vec!["nostr".to_string(), "bitcoin".to_string()],

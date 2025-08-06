@@ -18,6 +18,7 @@ use crate::{
 use futures::channel::mpsc;
 use futures::StreamExt;
 use nostr::{Event, EventId, Filter};
+use rustc_hash::FxHashMap;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::RwLock;
@@ -167,7 +168,7 @@ impl ConnectionRegistry {
     pub async fn subscribe(
         &self,
         subscription_id: String,
-        reqs: HashMap<String, Vec<Filter>>,
+        reqs: FxHashMap<String, Vec<Filter>>,
     ) -> Result<SubscriptionHandle, RelayError> {
         // Check if subscription already exists
         {

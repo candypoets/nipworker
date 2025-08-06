@@ -1,7 +1,6 @@
 use crate::db::types::{DatabaseConfig, DatabaseError, EventStorage, ProcessedNostrEvent};
-use async_trait::async_trait;
 use js_sys::{Array, Function, Object, Promise, Reflect};
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 use tracing::{debug, error, info};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
@@ -300,7 +299,6 @@ impl IndexedDbStorage {
     }
 }
 
-#[async_trait(?Send)]
 impl EventStorage for IndexedDbStorage {
     async fn save_events(&self, events: Vec<ProcessedNostrEvent>) -> Result<(), DatabaseError> {
         if events.is_empty() {
@@ -376,7 +374,7 @@ impl EventStorage for IndexedDbStorage {
         Ok(())
     }
 
-    async fn get_stats(&self) -> Result<HashMap<String, serde_json::Value>, DatabaseError> {
+    async fn get_stats(&self) -> Result<FxHashMap<String, serde_json::Value>, DatabaseError> {
         let db = self.open_db().await?;
 
         let tx_args = Array::new();
@@ -421,7 +419,7 @@ impl EventStorage for IndexedDbStorage {
 
         let count = result.as_f64().unwrap_or(0.0) as usize;
 
-        let mut stats = HashMap::new();
+        let mut stats = FxHashMap::default();
         stats.insert(
             "total_events".to_string(),
             serde_json::Value::Number(count.into()),

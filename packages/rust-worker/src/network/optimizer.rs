@@ -1,7 +1,7 @@
 use crate::network::interfaces::SubscriptionOptimizer as SubscriptionOptimizerTrait;
 use crate::types::network::Request;
-use async_trait::async_trait;
-use std::collections::{HashMap, HashSet};
+
+use rustc_hash::FxHashMap;
 use tracing::{debug, info};
 
 pub struct SubscriptionOptimizer {
@@ -19,8 +19,8 @@ impl SubscriptionOptimizer {
         }
     }
 
-    fn group_requests_by_relay(&self, requests: Vec<Request>) -> HashMap<String, Vec<Request>> {
-        let mut relay_groups: HashMap<String, Vec<Request>> = HashMap::new();
+    fn group_requests_by_relay(&self, requests: Vec<Request>) -> FxHashMap<String, Vec<Request>> {
+        let mut relay_groups: FxHashMap<String, Vec<Request>> = FxHashMap::default();
 
         for request in requests {
             for relay in &request.relays {
@@ -40,7 +40,7 @@ impl SubscriptionOptimizer {
         }
 
         let mut merged = Vec::new();
-        let mut processed = HashSet::new();
+        let mut processed = rustc_hash::FxHashSet::default();
 
         for i in 0..requests.len() {
             if processed.contains(&i) {
@@ -65,7 +65,7 @@ impl SubscriptionOptimizer {
             }
 
             // Split request if it's too large
-            let split_requests = self.split_oversized_request(base_request);
+            let split_requests = self.split_large_requests(vec![base_request.clone()]);
             merged.extend(split_requests);
         }
 
@@ -160,51 +160,54 @@ impl SubscriptionOptimizer {
         req1
     }
 
-    fn split_oversized_request(&self, request: Request) -> Vec<Request> {
+    fn split_large_requests(&self, requests: Vec<Request>) -> Vec<Request> {
         let mut split_requests = Vec::new();
 
-        // Check if authors need to be split
-        if request.authors.len() > self.max_authors_per_request {
-            for chunk in request.authors.chunks(self.max_authors_per_request) {
-                let mut new_request = request.clone();
-                new_request.authors = chunk.to_vec();
-                new_request.ids.clear(); // Clear other fields when splitting by authors
-                new_request.kinds.clear();
-                split_requests.push(new_request);
+        for request in requests {
+            // Check if authors need to be split
+            if request.authors.len() > self.max_authors_per_request {
+                for chunk in request.authors.chunks(self.max_authors_per_request) {
+                    let mut new_request = request.clone();
+                    new_request.authors = chunk.to_vec();
+                    new_request.ids.clear(); // Clear other fields when splitting by authors
+                    new_request.kinds.clear();
+                    split_requests.push(new_request);
+                }
+                continue;
             }
-            return split_requests;
+
+            // Check if IDs need to be split
+            if request.ids.len() > self.max_ids_per_request {
+                for chunk in request.ids.chunks(self.max_ids_per_request) {
+                    let mut new_request = request.clone();
+                    new_request.ids = chunk.to_vec();
+                    new_request.authors.clear(); // Clear other fields when splitting by IDs
+                    new_request.kinds.clear();
+                    split_requests.push(new_request);
+                }
+                continue;
+            }
+
+            // Check if kinds need to be split
+            if request.kinds.len() > self.max_kinds_per_request {
+                for chunk in request.kinds.chunks(self.max_kinds_per_request) {
+                    let mut new_request = request.clone();
+                    new_request.kinds = chunk.to_vec();
+                    split_requests.push(new_request);
+                }
+                continue;
+            }
+
+            // No splitting needed
+            split_requests.push(request);
         }
 
-        // Check if IDs need to be split
-        if request.ids.len() > self.max_ids_per_request {
-            for chunk in request.ids.chunks(self.max_ids_per_request) {
-                let mut new_request = request.clone();
-                new_request.ids = chunk.to_vec();
-                new_request.authors.clear(); // Clear other fields when splitting by IDs
-                new_request.kinds.clear();
-                split_requests.push(new_request);
-            }
-            return split_requests;
-        }
-
-        // Check if kinds need to be split
-        if request.kinds.len() > self.max_kinds_per_request {
-            for chunk in request.kinds.chunks(self.max_kinds_per_request) {
-                let mut new_request = request.clone();
-                new_request.kinds = chunk.to_vec();
-                split_requests.push(new_request);
-            }
-            return split_requests;
-        }
-
-        // No splitting needed
-        split_requests.push(request);
         split_requests
     }
 
     fn deduplicate_requests(&self, requests: Vec<Request>) -> Vec<Request> {
         let mut unique_requests = Vec::new();
-        let mut seen_signatures = HashSet::new();
+        let mut seen_signatures = rustc_hash::FxHashSet::default();
 
         for request in requests {
             let signature = self.compute_request_signature(&request);
@@ -262,7 +265,6 @@ impl SubscriptionOptimizer {
     }
 }
 
-#[async_trait]
 impl SubscriptionOptimizerTrait for SubscriptionOptimizer {
     fn optimize_subscriptions(&self, requests: Vec<Request>) -> Vec<Request> {
         let request_count = requests.len();

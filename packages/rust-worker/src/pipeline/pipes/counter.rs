@@ -1,10 +1,10 @@
 use super::super::*;
+use rustc_hash::{FxHashMap, FxHashSet};
 use serde_json::json;
-use std::collections::{HashMap, HashSet};
 
 pub struct CounterPipe {
-    kinds: HashSet<u64>,
-    counts: HashMap<u64, u64>,
+    kinds: FxHashSet<u64>,
+    counts: FxHashMap<u64, u64>,
     update_interval: u64,
     total_processed: u64,
     name: String,
@@ -23,7 +23,6 @@ impl CounterPipe {
     }
 }
 
-#[async_trait(?Send)]
 impl Pipe for CounterPipe {
     async fn process(&mut self, event: PipelineEvent) -> Result<PipeOutput> {
         // Get kind from either raw or parsed event

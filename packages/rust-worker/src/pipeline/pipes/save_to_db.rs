@@ -16,7 +16,6 @@ impl SaveToDbPipe {
     }
 }
 
-#[async_trait(?Send)]
 impl Pipe for SaveToDbPipe {
     async fn process(&mut self, event: PipelineEvent) -> Result<PipeOutput> {
         if let Some(ref parsed_event) = event.parsed {

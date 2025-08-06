@@ -3,6 +3,7 @@ use crate::utils::request_deduplication::RequestDeduplicator;
 use crate::{parser::Parser, ProofUnion};
 use anyhow::{anyhow, Result};
 use nostr::{Event, UnsignedEvent};
+use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -75,7 +76,7 @@ impl Parser {
                             });
 
                             // Check for spending history events
-                            let mut spending_tags = std::collections::HashMap::new();
+                            let mut spending_tags = FxHashMap::default();
                             spending_tags.insert("#e".to_string(), vec![event.id.to_hex()]);
 
                             requests.push(Request {

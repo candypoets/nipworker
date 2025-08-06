@@ -29,10 +29,9 @@ jobs:
       - name: Setup Rust
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly
+          toolchain: stable
           target: wasm32-unknown-unknown
           override: true
-          components: rust-src
 
       # Install wasm-pack
       - name: Install wasm-pack

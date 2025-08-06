@@ -1,8 +1,9 @@
 use crate::types::{network::Request, ParsedEvent};
-use dashmap::DashMap;
 use nostr::{Event, EventId, Kind, PublicKey, SingleLetterTag, Timestamp};
+use rustc_hash::{FxHashMap, FxHashSet};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::Arc;
 
 /// Represents a Nostr event with extracted tags for easier filtering
@@ -121,9 +122,9 @@ pub struct DatabaseStats {
     /// Total number of events in memory
     pub total_events: usize,
     /// Number of events by kind
-    pub events_by_kind: HashMap<u64, usize>,
+    pub events_by_kind: FxHashMap<u64, usize>,
     /// Number of events by author
-    pub events_by_author: HashMap<String, usize>,
+    pub events_by_author: FxHashMap<String, usize>,
     /// Number of profiles
     pub profile_count: usize,
     /// Memory usage estimate in bytes
@@ -253,8 +254,7 @@ pub enum DatabaseError {
 }
 
 /// Event storage backend trait
-#[async_trait::async_trait(?Send)]
-pub trait EventStorage: Send + Sync {
+pub trait EventStorage {
     /// Save events to persistent storage
     async fn save_events(&self, events: Vec<ProcessedNostrEvent>) -> Result<(), DatabaseError>;
 
@@ -265,19 +265,19 @@ pub trait EventStorage: Send + Sync {
     async fn clear_storage(&self) -> Result<(), DatabaseError>;
 
     /// Get storage statistics
-    async fn get_stats(&self) -> Result<HashMap<String, serde_json::Value>, DatabaseError>;
+    async fn get_stats(&self) -> Result<FxHashMap<String, serde_json::Value>, DatabaseError>;
 
     /// Downcast to Any for testing purposes
     fn as_any(&self) -> &dyn std::any::Any;
 }
 
 /// Index types for efficient querying (concurrent)
-pub type EventIdIndex = Arc<DashMap<String, ProcessedNostrEvent>>;
-pub type KindIndex = Arc<DashMap<u64, HashSet<String>>>;
-pub type PubkeyIndex = Arc<DashMap<String, HashSet<String>>>;
-pub type TagIndex = Arc<DashMap<String, HashSet<String>>>;
-pub type ProfileIndex = Arc<DashMap<String, ProcessedNostrEvent>>;
-pub type RelayIndex = Arc<DashMap<String, ProcessedNostrEvent>>;
+pub type EventIdIndex = Rc<RefCell<FxHashMap<String, ProcessedNostrEvent>>>;
+pub type KindIndex = Rc<RefCell<FxHashMap<u64, FxHashSet<String>>>>;
+pub type PubkeyIndex = Rc<RefCell<FxHashMap<String, FxHashSet<String>>>>;
+pub type TagIndex = Rc<RefCell<FxHashMap<String, FxHashSet<String>>>>;
+pub type ProfileIndex = Rc<RefCell<FxHashMap<String, ProcessedNostrEvent>>>;
+pub type RelayIndex = Rc<RefCell<FxHashMap<String, ProcessedNostrEvent>>>;
 
 /// Database indexes for fast querying (concurrent)
 pub struct DatabaseIndexes {
@@ -300,39 +300,39 @@ impl DatabaseIndexes {
     /// Create new empty indexes
     pub fn new() -> Self {
         Self {
-            events_by_id: Arc::new(DashMap::new()),
-            events_by_kind: Arc::new(DashMap::new()),
-            events_by_pubkey: Arc::new(DashMap::new()),
-            events_by_e_tag: Arc::new(DashMap::new()),
-            events_by_p_tag: Arc::new(DashMap::new()),
-            events_by_a_tag: Arc::new(DashMap::new()),
-            events_by_d_tag: Arc::new(DashMap::new()),
-            profiles_by_pubkey: Arc::new(DashMap::new()),
-            relays_by_pubkey: Arc::new(DashMap::new()),
+            events_by_id: Rc::new(RefCell::new(FxHashMap::default())),
+            events_by_kind: Rc::new(RefCell::new(FxHashMap::default())),
+            events_by_pubkey: Rc::new(RefCell::new(FxHashMap::default())),
+            events_by_e_tag: Rc::new(RefCell::new(FxHashMap::default())),
+            events_by_p_tag: Rc::new(RefCell::new(FxHashMap::default())),
+            events_by_a_tag: Rc::new(RefCell::new(FxHashMap::default())),
+            events_by_d_tag: Rc::new(RefCell::new(FxHashMap::default())),
+            profiles_by_pubkey: Rc::new(RefCell::new(FxHashMap::default())),
+            relays_by_pubkey: Rc::new(RefCell::new(FxHashMap::default())),
         }
     }
 
     /// Clear all indexes
     pub fn clear(&self) {
-        self.events_by_id.clear();
-        self.events_by_kind.clear();
-        self.events_by_pubkey.clear();
-        self.events_by_e_tag.clear();
-        self.events_by_p_tag.clear();
-        self.events_by_a_tag.clear();
-        self.events_by_d_tag.clear();
-        self.profiles_by_pubkey.clear();
-        self.relays_by_pubkey.clear();
+        self.events_by_id.borrow_mut().clear();
+        self.events_by_kind.borrow_mut().clear();
+        self.events_by_pubkey.borrow_mut().clear();
+        self.events_by_e_tag.borrow_mut().clear();
+        self.events_by_p_tag.borrow_mut().clear();
+        self.events_by_a_tag.borrow_mut().clear();
+        self.events_by_d_tag.borrow_mut().clear();
+        self.profiles_by_pubkey.borrow_mut().clear();
+        self.relays_by_pubkey.borrow_mut().clear();
     }
 
     /// Get total number of events
     pub fn event_count(&self) -> usize {
-        self.events_by_id.len()
+        self.events_by_id.borrow().len()
     }
 
     /// Get number of profiles
     pub fn profile_count(&self) -> usize {
-        self.profiles_by_pubkey.len()
+        self.profiles_by_pubkey.borrow().len()
     }
 
     /// Get statistics about the indexes
@@ -345,14 +345,12 @@ impl DatabaseIndexes {
         };
 
         // Count events by kind
-        for item in self.events_by_kind.iter() {
-            let (kind, event_ids) = item.pair();
+        for (kind, event_ids) in self.events_by_kind.borrow().iter() {
             stats.events_by_kind.insert(*kind, event_ids.len());
         }
 
         // Count events by author
-        for item in self.events_by_pubkey.iter() {
-            let (pubkey, event_ids) = item.pair();
+        for (pubkey, event_ids) in self.events_by_pubkey.borrow().iter() {
             stats
                 .events_by_author
                 .insert(pubkey.clone(), event_ids.len());
@@ -369,8 +367,7 @@ impl DatabaseIndexes {
         let mut total = 0;
 
         // Events by ID (main storage)
-        for item in self.events_by_id.iter() {
-            let (id, event) = item.pair();
+        for (id, event) in self.events_by_id.borrow().iter() {
             total += id.len() * 2; // String storage
             total += std::mem::size_of::<ProcessedNostrEvent>();
             total += event.event.content.len() * 2; // Content storage
@@ -381,22 +378,31 @@ impl DatabaseIndexes {
         }
 
         // Index overhead
-        total += self.events_by_kind.len() * 64;
-        total += self.events_by_pubkey.len() * 64;
-        total += self.events_by_e_tag.len() * 64;
-        total += self.events_by_p_tag.len() * 64;
-        total += self.events_by_a_tag.len() * 64;
-        total += self.events_by_d_tag.len() * 64;
-        total += self.profiles_by_pubkey.len() * 64;
+        let events_by_id = self.events_by_id.borrow();
+        let events_by_kind = self.events_by_kind.borrow();
+        let events_by_pubkey = self.events_by_pubkey.borrow();
+        let events_by_e_tag = self.events_by_e_tag.borrow();
+        let events_by_p_tag = self.events_by_p_tag.borrow();
+        let events_by_a_tag = self.events_by_a_tag.borrow();
+        let events_by_d_tag = self.events_by_d_tag.borrow();
+        let profiles_by_pubkey = self.profiles_by_pubkey.borrow();
+
+        total += events_by_kind.len() * 64;
+        total += events_by_pubkey.len() * 64;
+        total += events_by_e_tag.len() * 64;
+        total += events_by_p_tag.len() * 64;
+        total += events_by_a_tag.len() * 64;
+        total += events_by_d_tag.len() * 64;
+        total += profiles_by_pubkey.len() * 64;
 
         total
     }
 }
 
 /// Intersection helper for HashSets
-pub fn intersect_event_sets(sets: Vec<&HashSet<String>>) -> HashSet<String> {
+pub fn intersect_event_sets(sets: Vec<&FxHashSet<String>>) -> FxHashSet<String> {
     if sets.is_empty() {
-        return HashSet::new();
+        return FxHashSet::default();
     }
 
     if sets.len() == 1 {
@@ -415,8 +421,8 @@ pub fn intersect_event_sets(sets: Vec<&HashSet<String>>) -> HashSet<String> {
 }
 
 /// Union helper for HashSets
-pub fn union_event_sets(sets: Vec<&HashSet<String>>) -> HashSet<String> {
-    let mut result = HashSet::new();
+pub fn union_event_sets(sets: Vec<&FxHashSet<String>>) -> FxHashSet<String> {
+    let mut result = FxHashSet::default();
     for set in sets {
         result.extend(set.iter().cloned());
     }

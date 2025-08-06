@@ -1,9 +1,9 @@
 use crate::{parser::Parser, types::network::Request};
 use anyhow::{anyhow, Result};
 use nostr::Event;
+use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Kind0Parsed {
@@ -59,9 +59,9 @@ pub struct ProfilePointer {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Nip05Response {
-    pub names: HashMap<String, String>,
+    pub names: FxHashMap<String, String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub relays: Option<HashMap<String, Vec<String>>>,
+    pub relays: Option<FxHashMap<String, Vec<String>>>,
 }
 
 impl Parser {

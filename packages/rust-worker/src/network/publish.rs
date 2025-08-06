@@ -9,7 +9,7 @@ use futures::StreamExt;
 use instant::Instant;
 use js_sys::Uint8Array;
 use nostr::{Event, Kind, UnsignedEvent};
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 use std::sync::Arc;
 use std::sync::RwLock;
 use tracing::{debug, info, warn};
@@ -20,7 +20,7 @@ use wasm_bindgen_futures::spawn_local;
 pub struct PublishOperation {
     pub id: String,
     pub event: Event,
-    pub relay_status: HashMap<String, PublishStatus>,
+    pub relay_status: FxHashMap<String, PublishStatus>,
     pub start_time: Instant,
     pub target_relays: Vec<String>,
     pub cancel_tx: Option<()>,
@@ -31,7 +31,7 @@ pub struct PublishManager {
     database: Arc<NostrDB>,
     connection_registry: Arc<ConnectionRegistry>,
     parser: Arc<Parser>,
-    operations: Arc<RwLock<HashMap<String, PublishOperation>>>,
+    operations: Arc<RwLock<FxHashMap<String, PublishOperation>>>,
     callback: Option<js_sys::Function>,
 }
 
@@ -45,7 +45,7 @@ impl PublishManager {
             database,
             connection_registry,
             parser,
-            operations: Arc::new(RwLock::new(HashMap::new())),
+            operations: Arc::new(RwLock::new(FxHashMap::default())),
             callback: None,
         }
     }
@@ -119,7 +119,7 @@ impl PublishManager {
                 let operation = PublishOperation {
                     id: publish_id.clone(),
                     event: event.clone(),
-                    relay_status: HashMap::new(),
+                    relay_status: FxHashMap::default(),
                     start_time: Instant::now(),
                     target_relays: relays,
                     cancel_tx: None,
@@ -151,7 +151,7 @@ impl PublishManager {
     }
 
     async fn determine_target_relays(&self, event: &Event) -> Result<Vec<String>> {
-        let mut relay_set = HashSet::new();
+        let mut relay_set = FxHashSet::default();
         let mut write_pubkeys = Vec::new();
         let mut read_pubkeys = Vec::new();
 

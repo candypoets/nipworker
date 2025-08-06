@@ -2,7 +2,7 @@ use crate::db::NostrDB;
 use crate::parser::Parser;
 use crate::types::*;
 use anyhow::Result;
-use async_trait::async_trait;
+
 use nostr::Event as NostrEvent;
 use std::sync::Arc;
 
@@ -59,7 +59,6 @@ pub enum PipeOutput {
 }
 
 /// A pipe in the processing pipeline
-#[async_trait(?Send)]
 pub trait Pipe {
     async fn process(&mut self, event: PipelineEvent) -> Result<PipeOutput>;
     fn name(&self) -> &str;
@@ -70,14 +69,67 @@ pub trait Pipe {
     }
 }
 
+/// Enum representing all possible pipe types to avoid dynamic dispatch
+pub enum PipeType {
+    Deduplication(DeduplicationPipe),
+    Parse(ParsePipe),
+    SaveToDb(SaveToDbPipe),
+    SerializeEvents(SerializeEventsPipe),
+    ProofVerification(ProofVerificationPipe),
+    Counter(CounterPipe),
+    KindFilter(KindFilterPipe),
+    NpubLimiter(NpubLimiterPipe),
+}
+
+impl PipeType {
+    pub async fn process(&mut self, event: PipelineEvent) -> Result<PipeOutput> {
+        match self {
+            PipeType::Deduplication(pipe) => pipe.process(event).await,
+            PipeType::Parse(pipe) => pipe.process(event).await,
+            PipeType::SaveToDb(pipe) => pipe.process(event).await,
+            PipeType::SerializeEvents(pipe) => pipe.process(event).await,
+            PipeType::ProofVerification(pipe) => pipe.process(event).await,
+            PipeType::Counter(pipe) => pipe.process(event).await,
+            PipeType::KindFilter(pipe) => pipe.process(event).await,
+            PipeType::NpubLimiter(pipe) => pipe.process(event).await,
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        match self {
+            PipeType::Deduplication(pipe) => pipe.name(),
+            PipeType::Parse(pipe) => pipe.name(),
+            PipeType::SaveToDb(pipe) => pipe.name(),
+            PipeType::SerializeEvents(pipe) => pipe.name(),
+            PipeType::ProofVerification(pipe) => pipe.name(),
+            PipeType::Counter(pipe) => pipe.name(),
+            PipeType::KindFilter(pipe) => pipe.name(),
+            PipeType::NpubLimiter(pipe) => pipe.name(),
+        }
+    }
+
+    pub fn can_direct_output(&self) -> bool {
+        match self {
+            PipeType::Deduplication(pipe) => pipe.can_direct_output(),
+            PipeType::Parse(pipe) => pipe.can_direct_output(),
+            PipeType::SaveToDb(pipe) => pipe.can_direct_output(),
+            PipeType::SerializeEvents(pipe) => pipe.can_direct_output(),
+            PipeType::ProofVerification(pipe) => pipe.can_direct_output(),
+            PipeType::Counter(pipe) => pipe.can_direct_output(),
+            PipeType::KindFilter(pipe) => pipe.can_direct_output(),
+            PipeType::NpubLimiter(pipe) => pipe.can_direct_output(),
+        }
+    }
+}
+
 /// Pipeline processor
 pub struct Pipeline {
-    pipes: Vec<Box<dyn Pipe>>,
+    pipes: Vec<PipeType>,
     subscription_id: String,
 }
 
 impl Pipeline {
-    pub fn new(pipes: Vec<Box<dyn Pipe>>, subscription_id: String) -> Result<Self> {
+    pub fn new(pipes: Vec<PipeType>, subscription_id: String) -> Result<Self> {
         // Validate pipeline: only last pipe can direct output
         for (i, pipe) in pipes.iter().enumerate() {
             let is_last = i == pipes.len() - 1;
@@ -103,10 +155,10 @@ impl Pipeline {
     ) -> Result<Self> {
         Self::new(
             vec![
-                Box::new(DeduplicationPipe::new(10000)),
-                Box::new(ParsePipe::new(parser)),
-                Box::new(SaveToDbPipe::new(database)),
-                Box::new(SerializeEventsPipe::new(subscription_id.clone())),
+                PipeType::Deduplication(DeduplicationPipe::new(10000)),
+                PipeType::Parse(ParsePipe::new(parser)),
+                PipeType::SaveToDb(SaveToDbPipe::new(database)),
+                PipeType::SerializeEvents(SerializeEventsPipe::new(subscription_id.clone())),
             ],
             subscription_id,
         )
@@ -120,10 +172,10 @@ impl Pipeline {
     ) -> Result<Self> {
         Self::new(
             vec![
-                Box::new(DeduplicationPipe::new(10000)),
-                Box::new(KindFilterPipe::new(vec![9321, 7375])), // Only process cashu events
-                Box::new(ParsePipe::new(parser)),
-                Box::new(ProofVerificationPipe::new(max_proofs)),
+                PipeType::Deduplication(DeduplicationPipe::new(10000)),
+                PipeType::KindFilter(KindFilterPipe::new(vec![9321, 7375])), // Only process cashu events
+                PipeType::Parse(ParsePipe::new(parser)),
+                PipeType::ProofVerification(ProofVerificationPipe::new(max_proofs)),
             ],
             subscription_id,
         )

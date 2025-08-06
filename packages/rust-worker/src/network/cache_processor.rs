@@ -4,7 +4,6 @@ use crate::parser::Parser;
 use crate::types::network::Request;
 use crate::types::*;
 use anyhow::Result;
-use async_trait::async_trait;
 use std::collections::HashSet;
 use std::sync::Arc;
 use tracing::{debug, warn};
@@ -108,7 +107,6 @@ impl CacheProcessor {
     }
 }
 
-#[async_trait(?Send)]
 impl CacheProcessorTrait for CacheProcessor {
     async fn process_local_requests(
         &self,
