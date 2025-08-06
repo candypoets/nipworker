@@ -1,6 +1,6 @@
 {
   "name": "@candypoets/nipworker",
-  "version": "0.0.14",
+  "version": "0.0.15",
   "description": "Nostr client library with worker-based architecture using Rust WASM",
   "type": "module",
   "module": "./dist/index.js",
@@ -60,8 +60,8 @@
     "vite-plugin-wasm": "^3.0.0"
   },
   "dependencies": {
-    "@candypoets/rust-main": "0.0.13",
-    "@candypoets/rust-worker": "0.0.13",
+    "@candypoets/rust-main": "0.0.15",
+    "@candypoets/rust-worker": "0.0.15",
     "@msgpack/msgpack": "^3.0.0",
     "msgpackr": "^1.11.5",
     "nostr-tools": "^2.0.0"
