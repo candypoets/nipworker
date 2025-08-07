@@ -569,11 +569,14 @@ impl SubscriptionManager {
                                 .and_then(|v| v.as_array())
                                 .map(|arr| arr.iter().filter_map(|v| v.as_u64()).collect())
                                 .unwrap_or_else(|| vec![1]); // Default to kind 1 (text notes)
-                            let update_interval = params
-                                .and_then(|p| p.get("updateInterval"))
-                                .and_then(|v| v.as_u64())
-                                .unwrap_or(100);
-                            PipeType::Counter(CounterPipe::new(kinds, update_interval))
+
+                            let pubkey = params
+                                .and_then(|p| p.get("pubkey"))
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+
+                            PipeType::Counter(CounterPipe::new(kinds, pubkey))
                         }
                         "kindFilter" | "kind_filter" => {
                             let kinds = pipe_config

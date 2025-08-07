@@ -189,7 +189,7 @@ export type WorkerToMainMessage =
   | { PublishStatus: { publish_id: string; status: RelayStatusUpdate[] } }
   | { SignedEvent: { content: string; signed_event: any } }
   | { Debug: { message: string; data: any } }
-  | { Count: { subscription_id: string; count: number } }
+  | { Count: { kind: number; count: number; you: boolean; metadata: string } }
   | { Eose: { subscription_id: string; data: EOSE } }
   | { Eoce: { subscription_id: string } }
   | { PublicKey: { public_key: string } }

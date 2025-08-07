@@ -33,63 +33,69 @@ export function useSubscription(
     }
   };
 
-  if (requests.length > 0) {
-    buffer = nostrManager.subscribe(subId, requests, options);
-    hasSubscribed = true;
+  // if (requests.length > 0) {
+  buffer = nostrManager.subscribe(subId, requests, options);
 
-    const processEvents = (): void => {
-      if (!running || !buffer) {
-        if (timeoutId !== null) {
-          clearTimeout(timeoutId);
-        }
-        return;
-      }
+  console.log(subId, buffer.byteLength)
 
-      const result = SharedBufferReader.readMessages(buffer, lastReadPos);
+  hasSubscribed = true;
 
-      if (result.hasNewData) {
-        // Found new data - reset to aggressive polling
-        pollInterval = 5;
-
-        result.messages.forEach((message: WorkerToMainMessage) => {
-          if ("SubscriptionEvent" in message) {
-            if (message.SubscriptionEvent.event_type === "BUFFER_FULL" as any) {
-              callback([], "BUFFER_FULL");
-              unsubscribe()
-            } else {
-              message.SubscriptionEvent.event_data.forEach((event) => {
-                callback(event, message.SubscriptionEvent.event_type);
-              });
-            }
-          } else if ("Eose" in message) {
-            if (options.closeOnEose) {
-              unsubscribe();
-            }
-            callback(message.Eose.data, "EOSE");
-          } else if ("Eoce" in message) {
-            callback([], "EOCE");
-          } else if ("Proofs" in message) {
-            callback(message.Proofs);
-          }
-        });
-        lastReadPos = result.newReadPosition;
-      } else {
-        // No new data - back off exponentially (faster backoff)
-        pollInterval = Math.min(pollInterval * 2, maxInterval);
-      }
-
-      // Clear any existing timeout before scheduling a new one
+  const processEvents = (): void => {
+    if (!running || !buffer) {
       if (timeoutId !== null) {
         clearTimeout(timeoutId);
       }
+      return;
+    }
 
-      // Schedule next poll
-      timeoutId = window.setTimeout(processEvents, pollInterval);
-    };
+    const result = SharedBufferReader.readMessages(buffer, lastReadPos);
 
-    // Start after a minimal delay to ensure the return function is available
-    timeoutId = window.setTimeout(processEvents, 0);
-  }
+    if (result.hasNewData) {
+      // Found new data - reset to aggressive polling
+      pollInterval = 5;
+
+      result.messages.forEach((message: WorkerToMainMessage) => {
+        if ("SubscriptionEvent" in message) {
+          if (message.SubscriptionEvent.event_type === "BUFFER_FULL" as any) {
+            callback([], "BUFFER_FULL");
+            unsubscribe()
+          } else {
+            message.SubscriptionEvent.event_data.forEach((event) => {
+              callback(event, message.SubscriptionEvent.event_type);
+            });
+          }
+        } else if ("Eose" in message) {
+          if (options.closeOnEose) {
+            unsubscribe();
+          }
+          callback(message.Eose.data, "EOSE");
+        } else if ("Eoce" in message) {
+          callback([], "EOCE");
+        } else if ("Proofs" in message) {
+          callback(message.Proofs);
+        } else if ("Count" in message) {
+          callback([message.Count], "Count")
+        } else {
+          console.log("unknown message", message)
+        }
+      });
+      lastReadPos = result.newReadPosition;
+    } else {
+      // No new data - back off exponentially (faster backoff)
+      pollInterval = Math.min(pollInterval * 2, maxInterval);
+    }
+
+    // Clear any existing timeout before scheduling a new one
+    if (timeoutId !== null) {
+      clearTimeout(timeoutId);
+    }
+
+    // Schedule next poll
+    timeoutId = window.setTimeout(processEvents, pollInterval);
+  };
+
+  // Start after a minimal delay to ensure the return function is available
+  timeoutId = window.setTimeout(processEvents, 0);
 
   return unsubscribe
 }

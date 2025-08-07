@@ -104,8 +104,10 @@ pub enum WorkerToMainMessage {
         signed_event: serde_json::Value,
     },
     Count {
-        subscription_id: String,
+        kind: u32,
         count: u32,
+        you: bool,
+        metadata: String,
     },
     Proofs {
         mint: String,

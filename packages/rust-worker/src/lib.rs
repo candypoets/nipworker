@@ -1,10 +1,5 @@
 #![allow(async_fn_in_trait)]
 
-// Shared library for common types and functionality used by the worker
-
-use nostr::{EventBuilder, Kind, PublicKey, Tag, UnsignedEvent};
-use serde::{Deserialize, Serialize};
-use std::str::FromStr;
 use wasm_bindgen::prelude::*;
 
 // Use `wee_alloc` as the global allocator for smaller WASM size
@@ -149,7 +144,7 @@ fn setup_tracing() {
             .with_writer(|| ConsoleWriter)
             .without_time()
             .with_target(false)
-            .with_max_level(tracing::Level::INFO)
+            .with_max_level(tracing::Level::ERROR)
             .try_init();
 
         console_log!("Tracing subscriber initialized for Web Worker");

@@ -1,56 +1,59 @@
 use super::super::*;
 use rustc_hash::{FxHashMap, FxHashSet};
-use serde_json::json;
+use tracing::error;
 
 pub struct CounterPipe {
     kinds: FxHashSet<u64>,
     counts: FxHashMap<u64, u64>,
-    update_interval: u64,
-    total_processed: u64,
+    pubkey: String, // Pubkey in hex string
     name: String,
 }
 
 impl CounterPipe {
-    pub fn new(kinds: Vec<u64>, update_interval: u64) -> Self {
+    pub fn new(kinds: Vec<u64>, pubkey: String) -> Self {
         let counts = kinds.iter().map(|&k| (k, 0)).collect();
         Self {
             name: format!("Counter({:?})", kinds),
             kinds: kinds.into_iter().collect(),
+            pubkey,
             counts,
-            update_interval,
-            total_processed: 0,
         }
     }
 }
 
 impl Pipe for CounterPipe {
     async fn process(&mut self, event: PipelineEvent) -> Result<PipeOutput> {
+        tracing::info!("Processing event in CounterPipe");
         // Get kind from either raw or parsed event
-        let kind = if let Some(ref raw) = event.raw {
-            raw.kind.as_u64()
+        let (kind, pubkey) = if let Some(ref raw) = event.raw {
+            (raw.kind.as_u64(), raw.pubkey.to_string())
         } else if let Some(ref parsed) = event.parsed {
-            parsed.event.kind.as_u64()
+            (parsed.event.kind.as_u64(), parsed.event.pubkey.to_string())
         } else {
             return Ok(PipeOutput::Drop);
         };
 
         if self.kinds.contains(&kind) {
             *self.counts.entry(kind).or_insert(0) += 1;
-            self.total_processed += 1;
 
-            if self.total_processed % self.update_interval == 0 {
-                let counts_json = json!({
-                    "type": "kind_counts",
-                    "counts": self.counts,
-                    "total": self.total_processed
-                });
-                let data = serde_json::to_vec(&counts_json)?;
-                return Ok(PipeOutput::DirectOutput(data));
+            let message = WorkerToMainMessage::Count {
+                count: *self.counts.get(&kind).unwrap_or(&0) as u32,
+                kind: kind as u32,
+                you: pubkey == self.pubkey,
+                metadata: String::new(),
+            };
+
+            match rmp_serde::to_vec_named(&message) {
+                Ok(msgpack) => Ok(PipeOutput::DirectOutput(msgpack)),
+                Err(e) => {
+                    error!("Failed to serialize counter event: {}", e);
+                    Ok(PipeOutput::Drop)
+                }
             }
+        } else {
+            // Drop all events - we're only counting
+            Ok(PipeOutput::Drop)
         }
-
-        // Drop all events - we're only counting
-        Ok(PipeOutput::Drop)
     }
 
     fn can_direct_output(&self) -> bool {
