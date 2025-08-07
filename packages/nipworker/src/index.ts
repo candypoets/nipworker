@@ -52,6 +52,7 @@ export interface SubscriptionOptions {
   skipCache?: boolean;
   force?: boolean;
   bytesPerEvent?: number;
+  initialMessage?: WorkerToMainMessage;
 }
 
 /**
@@ -182,6 +183,22 @@ class NostrManager {
     return shortId.substring(0, 63);
   }
 
+  private writeToBuffer(
+      sharedBuffer: SharedArrayBuffer,
+      data: Uint8Array
+  ): void {
+      // Get the buffer as Uint8Array for manipulation
+      const bufferUint8 = new Uint8Array(sharedBuffer);
+
+      // Write the length prefix (4 bytes, little endian) at position 0
+      const lengthView = new DataView(new ArrayBuffer(4));
+      lengthView.setUint32(0, data.length, true); // little endian
+      bufferUint8.set(new Uint8Array(lengthView.buffer), 0);
+
+      // Write the actual data after the length prefix (starting at position 4)
+      bufferUint8.set(data, 4);
+  }
+
   subscribe(
     subscriptionId: string,
     requests: Request[],
@@ -195,6 +212,7 @@ class NostrManager {
     const existingSubscription = this.subscriptions.get(subId);
     if (existingSubscription) {
       existingSubscription.refCount++;
+      console.log("existing subscription", subscriptionId);
       return existingSubscription.buffer;
     }
 
@@ -217,10 +235,31 @@ class NostrManager {
       options.bytesPerEvent,
     );
 
-    const buffer = new SharedArrayBuffer(bufferSize);
+    let initialMessage: Uint8Array<ArrayBufferLike> = new Uint8Array();
 
-    const view = new DataView(buffer);
-    view.setUint32(0, 4, true);
+    if(options.initialMessage) {
+      console.log("initialMessage", options.initialMessage)
+      initialMessage = encode(options.initialMessage);
+    }
+
+    const buffer = new SharedArrayBuffer(bufferSize + initialMessage.length);
+
+    // Initialize the buffer (sets write position to 4)
+    SharedBufferReader.initializeBuffer(buffer);
+
+    // Write the initial message if provided
+    if(initialMessage.length > 0) {
+      const success = SharedBufferReader.writeMessage(buffer, initialMessage);
+      if (success) {
+        console.log("initialMessage written to buffer");
+
+        // Test reading it back
+        const result = SharedBufferReader.readMessages(buffer, 4);
+        console.log("initialMessage result", result);
+      } else {
+        console.error("Failed to write initial message to buffer");
+      }
+    }
 
     this.subscriptions.set(subId, {
       buffer,
@@ -255,6 +294,7 @@ class NostrManager {
         serializedMessage: pack,
         sharedBuffer: buffer,
       });
+
       return buffer;
     } catch (error) {
       this.subscriptions.delete(subId);

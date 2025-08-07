@@ -1,3 +1,4 @@
+import { encode } from "@msgpack/msgpack";
 import { unpack } from "msgpackr";
 import type { WorkerToMainMessage } from "src/types";
 
@@ -7,6 +8,64 @@ import type { WorkerToMainMessage } from "src/types";
  * Data format: [4+]: [4-byte length][msgpack event][4-byte length][msgpack event]...
  */
 export class SharedBufferReader {
+  /**
+     * Initialize a buffer for writing - sets the write position header to 4
+     * @param buffer The SharedArrayBuffer to initialize
+     */
+    static initializeBuffer(buffer: SharedArrayBuffer): void {
+      const view = new DataView(buffer);
+      // Set initial write position to 4 (right after the header)
+      view.setUint32(0, 4, true);
+    }
+
+    /**
+     * Write a message to the SharedArrayBuffer
+     * @param buffer The SharedArrayBuffer to write to
+     * @param data The data to write (already encoded as Uint8Array)
+     * @returns True if written successfully, false if buffer is full
+     */
+    static writeMessage(buffer: SharedArrayBuffer, data: Uint8Array): boolean {
+      const view = new DataView(buffer);
+      const uint8View = new Uint8Array(buffer);
+
+      // Get current write position
+      const currentWritePosition = view.getUint32(0, true);
+
+      // Check if there's enough space (4 bytes for length + data length)
+      const requiredSpace = 4 + data.length;
+      if (currentWritePosition + requiredSpace > buffer.byteLength) {
+        console.warn("Buffer full, cannot write message");
+        return false;
+      }
+
+      // Write the length prefix (4 bytes, little endian)
+      view.setUint32(currentWritePosition, data.length, true);
+
+      // Write the actual data
+      uint8View.set(data, currentWritePosition + 4);
+
+      // Update the write position header
+      const newWritePosition = currentWritePosition + requiredSpace;
+      view.setUint32(0, newWritePosition, true);
+
+      return true;
+    }
+
+    /**
+     * Write a message object to the SharedArrayBuffer (handles encoding)
+     * @param buffer The SharedArrayBuffer to write to
+     * @param message The message object to write
+     * @returns True if written successfully, false if buffer is full
+     */
+    static writeMessageObject(buffer: SharedArrayBuffer, message: any): boolean {
+      try {
+        const encoded = encode(message);
+        return this.writeMessage(buffer, new Uint8Array(encoded));
+      } catch (error) {
+        console.error("Failed to encode message:", error);
+        return false;
+      }
+    }
   /**
    * Read new messages from SharedArrayBuffer since last read position
    * @param buffer The SharedArrayBuffer to read from
