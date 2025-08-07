@@ -33,10 +33,7 @@ export function useSubscription(
     }
   };
 
-  // if (requests.length > 0) {
   buffer = nostrManager.subscribe(subId, requests, options);
-
-  console.log(subId, buffer.byteLength)
 
   hasSubscribed = true;
 
@@ -75,8 +72,6 @@ export function useSubscription(
           callback(message.Proofs);
         } else if ("Count" in message) {
           callback([message.Count], "Count")
-        } else {
-          console.log("unknown message", message)
         }
       });
       lastReadPos = result.newReadPosition;

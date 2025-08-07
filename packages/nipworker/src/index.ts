@@ -210,9 +210,9 @@ class NostrManager {
         : this.createShortId(subscriptionId);
 
     const existingSubscription = this.subscriptions.get(subId);
+
     if (existingSubscription) {
       existingSubscription.refCount++;
-      console.log("existing subscription", subscriptionId);
       return existingSubscription.buffer;
     }
 
@@ -238,7 +238,6 @@ class NostrManager {
     let initialMessage: Uint8Array<ArrayBufferLike> = new Uint8Array();
 
     if(options.initialMessage) {
-      console.log("initialMessage", options.initialMessage)
       initialMessage = encode(options.initialMessage);
     }
 
@@ -250,13 +249,7 @@ class NostrManager {
     // Write the initial message if provided
     if(initialMessage.length > 0) {
       const success = SharedBufferReader.writeMessage(buffer, initialMessage);
-      if (success) {
-        console.log("initialMessage written to buffer");
-
-        // Test reading it back
-        const result = SharedBufferReader.readMessages(buffer, 4);
-        console.log("initialMessage result", result);
-      } else {
+      if (!success) {
         console.error("Failed to write initial message to buffer");
       }
     }
