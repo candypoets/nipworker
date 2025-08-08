@@ -33,7 +33,6 @@ impl Pipe for SerializeEventsPipe {
             };
 
             let message = WorkerToMainMessage::SubscriptionEvent {
-                subscription_id: self.subscription_id.clone(),
                 event_type,
                 event_data: vec![vec![serializable_event]],
             };

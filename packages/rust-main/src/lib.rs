@@ -185,13 +185,13 @@ export type MainToWorkerMessage =
   | { SetSigner: { signer_type: string; private_key: string } };
 
 export type WorkerToMainMessage =
-  | { SubscriptionEvent: { subscription_id: string; event_type: SubscribeKind; event_data: any[] } }
+  | { SubscriptionEvent: { event_type: SubscribeKind; event_data: any[] } }
   | { PublishStatus: { publish_id: string; status: RelayStatusUpdate[] } }
   | { SignedEvent: { content: string; signed_event: any } }
   | { Debug: { message: string; data: any } }
   | { Count: { kind: number; count: number; you: boolean; metadata: string } }
-  | { Eose: { subscription_id: string; data: EOSE } }
-  | { Eoce: { subscription_id: string } }
+  | { Eose: { data: EOSE } }
+  | { Eoce: {} }
   | { PublicKey: { public_key: string } }
   | { Proofs: { mint: string; proofs: ProofUnion[] } };
 "#;

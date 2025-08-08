@@ -5,6 +5,7 @@
 //! subscriptions and publishes per connection.
 
 use crate::{
+    pipeline::{Pipeline, PipelineEvent},
     relays::{
         connection::RelayConnection,
         types::{
@@ -13,15 +14,17 @@ use crate::{
         utils::{normalize_relay_url, validate_relay_url},
     },
     types::{PublishStatus as MainPublishStatus, RelayStatusUpdate},
-    NetworkEvent, NetworkEventType,
+    utils::buffer::SharedBufferManager,
+    NetworkEvent, NetworkEventType, EOSE,
 };
-use futures::channel::mpsc;
-use futures::StreamExt;
+use futures::{channel::mpsc, future::LocalBoxFuture};
+use futures::{lock::Mutex, StreamExt};
+use js_sys::SharedArrayBuffer;
 use nostr::{Event, EventId, Filter};
 use rustc_hash::FxHashMap;
-use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::RwLock;
+use std::{cell::RefCell, sync::Arc};
+use std::{collections::HashMap, rc::Rc};
 use tracing::{info, warn};
 use wasm_bindgen_futures::spawn_local;
 
@@ -32,7 +35,7 @@ pub struct ConnectionRegistry {
     /// Global configuration
     config: RelayConfig,
     /// Active subscriptions tracker (subscription_id -> relay_urls)
-    active_subscriptions: Arc<RwLock<HashMap<String, Vec<String>>>>,
+    active_subscriptions: Rc<Mutex<HashMap<String, SubscriptionMeta>>>,
     /// Active publishes tracker (event_id -> relay_urls)
     active_publishes: Arc<RwLock<HashMap<EventId, Vec<String>>>>,
     /// Event receivers for subscriptions (subscription_id -> sender)
@@ -49,41 +52,11 @@ pub struct SubscriptionHandle {
     registry: Arc<ConnectionRegistry>,
 }
 
-impl SubscriptionHandle {
-    /// Get the subscription ID
-    pub fn id(&self) -> &str {
-        &self.subscription_id
-    }
-
-    /// Get relay URLs this subscription is active on
-    pub fn relay_urls(&self) -> &[String] {
-        &self.relay_urls
-    }
-
-    /// Get the next event from the subscription
-    pub async fn next_event(&mut self) -> Option<NetworkEvent> {
-        self.event_receiver.next().await
-    }
-
-    /// Cancel the subscription
-    pub async fn cancel(self) {
-        let _ = self
-            .registry
-            .close_subscription(&self.subscription_id)
-            .await;
-    }
-}
-
-impl futures::Stream for SubscriptionHandle {
-    type Item = NetworkEvent;
-
-    fn poll_next(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Option<Self::Item>> {
-        use futures::StreamExt;
-        self.event_receiver.poll_next_unpin(cx)
-    }
+struct SubscriptionMeta {
+    relay_urls: Vec<String>,
+    pipeline: Rc<Mutex<Pipeline>>,
+    buffer: Rc<js_sys::SharedArrayBuffer>,
+    close_on_eose: bool,
 }
 
 /// Handle for a publish operation that allows tracking results
@@ -133,6 +106,8 @@ impl PublishHandle {
     }
 }
 
+pub type EventCallback = Rc<dyn Fn(String, RelayMessage) -> LocalBoxFuture<'static, ()>>;
+
 impl ConnectionRegistry {
     /// Create a new connection registry
     pub fn new() -> Self {
@@ -144,116 +119,105 @@ impl ConnectionRegistry {
         Self {
             connections: Arc::new(RwLock::new(HashMap::new())),
             config,
-            active_subscriptions: Arc::new(RwLock::new(HashMap::new())),
+            active_subscriptions: Rc::new(Mutex::new(HashMap::new())),
             active_publishes: Arc::new(RwLock::new(HashMap::new())),
             subscription_senders: Arc::new(RwLock::new(HashMap::new())),
             publish_result_senders: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
-    /// Create a subscription to one or more relays
-    ///
-    /// This method creates a new subscription to receive events from specified relays according to
-    /// the provided filters. Each subscription is identified by a unique `subscription_id` which can
-    /// be used to track and close the subscription later.
-    ///
-    /// # Parameters
-    /// * `subscription_id` - A unique identifier for this subscription
-    /// * `reqs` - A mapping of relay URLs to filter sets, where each relay receives a specific set of filters
-    ///
-    /// # Returns
-    /// * `Ok(SubscriptionHandle)` - A handle that can be used to receive events and manage the subscription
-    /// * `Err(RelayError)` - If the subscription could not be created
-    /// ```
+    async fn process_incoming_for_subscription(&self, sub_id: String, msg: RelayMessage) {
+        let (pipeline, buffer, relay_urls, close_on_eose) = {
+            let subs = self.active_subscriptions.lock().await;
+            if let Some(meta) = subs.get(&sub_id) {
+                (
+                    meta.pipeline.clone(),
+                    meta.buffer.clone(),
+                    meta.relay_urls.clone(),
+                    meta.close_on_eose,
+                )
+            } else {
+                tracing::warn!(?sub_id, "Message for unknown subscription");
+                return;
+            }
+            // ⚠ subs.lock() guard is dropped here automatically
+        };
+
+        match msg {
+            RelayMessage::Event { event, .. } => {
+                let mut pipeline_guard = pipeline.lock().await;
+                if let Ok(Some(output)) = pipeline_guard
+                    .process(PipelineEvent::from_raw(event, None))
+                    .await
+                {
+                    SharedBufferManager::write_to_buffer(&buffer, &output).await;
+                }
+            }
+            RelayMessage::Eose { .. } => {
+                SharedBufferManager::send_eose(
+                    &buffer,
+                    EOSE {
+                        total_connections: relay_urls.len() as i32,
+                        remaining_connections: 0,
+                    },
+                )
+                .await;
+                if close_on_eose {
+                    let _ = self.close_subscription(&sub_id);
+                }
+            }
+            _ => {}
+        }
+    }
+
     pub async fn subscribe(
         &self,
         subscription_id: String,
-        reqs: FxHashMap<String, Vec<Filter>>,
-    ) -> Result<SubscriptionHandle, RelayError> {
-        // Check if subscription already exists
-        {
-            let active_subs = self.active_subscriptions.read().unwrap();
-            if active_subs.contains_key(&subscription_id) {
-                drop(active_subs);
-                self.close_subscription(&subscription_id).await?;
+        relay_filters: FxHashMap<String, Vec<Filter>>,
+        pipeline: Rc<Mutex<Pipeline>>,
+        buffer: Rc<SharedArrayBuffer>,
+        close_on_eose: bool,
+    ) -> Result<(), RelayError> {
+        // Store this subscription's pipeline & buffer
+        self.active_subscriptions.lock().await.insert(
+            subscription_id.clone(),
+            SubscriptionMeta {
+                relay_urls: Vec::new(),
+                pipeline,
+                buffer,
+                close_on_eose,
+            },
+        );
+
+        for (url, filters) in relay_filters {
+            let conn = match self.ensure_connection(&url).await {
+                Ok(conn) => conn,
+                Err(e) => {
+                    tracing::warn!(relay = %url, error = %e, "Failed to ensure connection, skipping");
+                    continue;
+                }
+            };
+
+            // Add the relay URL to the subscription metadata
+            if let Some(meta) = self
+                .active_subscriptions
+                .lock()
+                .await
+                .get_mut(&subscription_id)
+            {
+                meta.relay_urls.push(url.clone());
             }
+
+            // Tell the connection we have interest in this sub_id
+            conn.add_subscription(subscription_id.clone(), filters.len())
+                .await;
+
+            // Send the REQ for this subscription to this relay
+            let req_message = ClientMessage::req(subscription_id.clone(), filters);
+            conn.send_message(req_message).await?;
         }
 
-        // Create event channel for this subscription
-        let (event_sender, event_receiver) = mpsc::unbounded();
-
-        // Store subscription tracking with all URLs initially
-        let urls: Vec<String> = reqs.keys().cloned().collect();
-        {
-            let mut active_subs = self.active_subscriptions.write().unwrap();
-            active_subs.insert(subscription_id.clone(), urls.clone());
-        }
-        {
-            let mut senders = self.subscription_senders.write().unwrap();
-            senders.insert(subscription_id.clone(), event_sender);
-        }
-
-        // Return handle immediately
-        let handle = SubscriptionHandle {
-            subscription_id: subscription_id.clone(),
-            relay_urls: urls,
-            event_receiver,
-            registry: Arc::new(self.clone()),
-        };
-
-        // Spawn background task for connections
-        let registry = self.clone();
-        spawn_local(async move {
-            for (url, filters) in reqs {
-                let registry = registry.clone();
-                let sub_id = subscription_id.clone();
-                let url_clone = url.clone();
-                let filters_clone = filters.clone();
-
-                // Spawn individual connection attempt
-                spawn_local(async move {
-                    match registry.ensure_connection(&url_clone).await {
-                        Ok(connection) => {
-                            // Add subscription to connection tracking
-                            connection
-                                .add_subscription(sub_id.clone(), filters_clone.len())
-                                .await;
-
-                            // Start message processing for this connection if not already started
-                            registry
-                                .ensure_message_processing(url_clone.clone(), connection.clone())
-                                .await;
-
-                            // Send REQ message
-                            let req_message = ClientMessage::req(sub_id.clone(), filters_clone);
-                            if let Err(e) = connection.send_message(req_message).await {
-                                tracing::error!(relay = %url_clone, error = %e, "Failed to send REQ message");
-                                connection.remove_subscription(&sub_id).await;
-
-                                // Remove failed URL from active subscriptions
-                                if let Ok(mut active_subs) = registry.active_subscriptions.write() {
-                                    if let Some(urls) = active_subs.get_mut(&sub_id) {
-                                        urls.retain(|u| u != &url_clone);
-                                    }
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            tracing::error!(relay = %url_clone, error = %e, "Failed to connect to relay");
-
-                            // Remove failed URL from active subscriptions
-                            if let Ok(mut active_subs) = registry.active_subscriptions.write() {
-                                if let Some(urls) = active_subs.get_mut(&sub_id) {
-                                    urls.retain(|u| u != &url_clone);
-                                }
-                            }
-                        }
-                    }
-                });
-            }
-        });
-
-        Ok(handle)
+        Ok(())
     }
 
     /// Publish an event to one or more relays
@@ -374,8 +338,10 @@ impl ConnectionRegistry {
     pub async fn close_subscription(&self, subscription_id: &str) -> Result<(), RelayError> {
         // Get relay URLs for this subscription
         let relay_urls = {
-            let mut active_subs = self.active_subscriptions.write().unwrap();
-            active_subs.remove(subscription_id)
+            let mut active_subs = self.active_subscriptions.lock().await;
+            active_subs
+                .remove(subscription_id)
+                .map(|meta| meta.relay_urls)
         };
 
         if let Some(urls) = relay_urls {
@@ -430,9 +396,15 @@ impl ConnectionRegistry {
             if let Ok(()) = connection.wait_for_ready().await {
                 return Ok(connection);
             }
-
+            let registry = Arc::new(self.clone());
+            let cb: EventCallback = Rc::new(move |sub_id, msg| {
+                let reg = registry.clone();
+                Box::pin(async move {
+                    reg.process_incoming_for_subscription(sub_id, msg).await;
+                })
+            });
             // If not ready, try to reconnect
-            if let Err(e) = connection.reconnect().await {
+            if let Err(e) = connection.reconnect(cb).await {
                 tracing::warn!(relay = %url, error = %e, "Failed to reconnect, creating new connection");
             } else {
                 return Ok(connection);
@@ -447,9 +419,15 @@ impl ConnectionRegistry {
             let mut connections = self.connections.write().unwrap();
             connections.insert(url.to_string(), connection.clone());
         }
-
+        let registry = Arc::new(self.clone());
+        let cb: EventCallback = Rc::new(move |sub_id, msg| {
+            let reg = registry.clone();
+            Box::pin(async move {
+                reg.process_incoming_for_subscription(sub_id, msg).await;
+            })
+        });
         // Connect
-        connection.connect().await?;
+        connection.connect(cb).await?;
 
         Ok(connection)
     }
@@ -664,7 +642,7 @@ impl ConnectionRegistry {
 
     /// Get all active subscription IDs
     pub async fn active_subscription_ids(&self) -> Vec<String> {
-        let active_subs = self.active_subscriptions.read().unwrap();
+        let active_subs = self.active_subscriptions.lock().await;
         active_subs.keys().cloned().collect()
     }
 
@@ -710,7 +688,7 @@ impl ConnectionRegistry {
 
         // Clear all tracking
         {
-            let mut active_subs = self.active_subscriptions.write().unwrap();
+            let mut active_subs = self.active_subscriptions.lock().await;
             active_subs.clear();
         }
         {

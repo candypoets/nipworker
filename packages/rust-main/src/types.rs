@@ -134,7 +134,6 @@ pub struct ParsedEvent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum WorkerToMainMessage {
     SubscriptionEvent {
-        subscription_id: String,
         event_type: SubscribeKind,
         event_data: Vec<Vec<ParsedEvent>>,
     },
@@ -157,12 +156,9 @@ pub enum WorkerToMainMessage {
         proofs: Vec<ProofUnion>,
     },
     Eose {
-        subscription_id: String,
         data: EOSE,
     },
-    Eoce {
-        subscription_id: String,
-    },
+    Eoce {},
     PublicKey {
         public_key: String,
     },

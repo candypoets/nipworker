@@ -9,10 +9,14 @@ use crate::relays::utils::{normalize_relay_url, validate_relay_url};
 use crate::types::network::Request;
 use crate::types::thread::{PipelineConfig, SubscriptionConfig};
 use crate::types::*;
+use crate::utils::buffer::SharedBufferManager;
 use anyhow::Result;
+use futures::lock::Mutex;
 use js_sys::{SharedArrayBuffer, Uint8Array};
 use rmp_serde;
 use rustc_hash::FxHashMap;
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::{Arc, RwLock};
 use tracing::{debug, error, info, warn};
 
@@ -76,10 +80,10 @@ impl SubscriptionManager {
         self.subscriptions
             .write()
             .unwrap()
-            .insert(subscription_id.clone(), shared_buffer);
+            .insert(subscription_id.clone(), shared_buffer.clone());
 
         // Spawn subscription processing task
-        self.process_subscription(&subscription_id, requests, config)
+        self.process_subscription(&subscription_id, requests, shared_buffer.clone(), config)
             .await?;
 
         debug!("Subscription {} opened successfully", subscription_id);
@@ -112,6 +116,7 @@ impl SubscriptionManager {
         &self,
         subscription_id: &String,
         _requests: Vec<Request>,
+        shared_buffer: SharedArrayBuffer,
         config: SubscriptionConfig,
     ) -> Result<()> {
         debug!("Processing subscription: {}", subscription_id);
@@ -140,110 +145,27 @@ impl SubscriptionManager {
                 for parsed_event in event_batch {
                     let pipeline_event = PipelineEvent::from_parsed(parsed_event);
                     if let Some(output) = pipeline.process(pipeline_event).await? {
-                        self.write_to_shared_buffer(subscription_id, &output).await;
+                        SharedBufferManager::write_to_buffer(&shared_buffer, &output).await;
                     }
                 }
             }
         }
 
-        let _ = self.send_eoce(&subscription_id).await;
+        let _ = SharedBufferManager::send_eoce(&shared_buffer).await;
 
         // Only process network requests if there are any
         if !network_requests.is_empty() {
             let relay_filters = self.group_requests_by_relay(network_requests.clone())?;
-            let subscription_handle = self
-                .connection_registry
-                .subscribe(subscription_id.clone(), relay_filters.clone())
+            // Kick off direct subscription setup — writes to SAB inside connection loop
+            self.connection_registry
+                .subscribe(
+                    subscription_id.clone(),
+                    relay_filters,
+                    Rc::new(Mutex::new(pipeline)),
+                    Rc::new(shared_buffer.clone()),
+                    config.close_on_eose,
+                )
                 .await?;
-
-            // Move pipeline into spawn_local task
-            let _cache_processor = self.cache_processor.clone();
-            let shared_buffer = {
-                let subscriptions = self.subscriptions.read().unwrap();
-                subscriptions.get(subscription_id.as_str()).cloned()
-            };
-
-            let relay_urls = subscription_handle.relay_urls();
-            let sub_id = subscription_id.clone();
-            let total_connections = relay_urls.len() as i32;
-            let mut remaining_connections = total_connections;
-            let close_on_eose = config.close_on_eose;
-
-            let mut relay_eose_status: FxHashMap<String, bool> = FxHashMap::default();
-            for relay_url in relay_urls {
-                relay_eose_status.insert(relay_url.clone(), false);
-            }
-
-            // Process events from the subscription handle
-            spawn_local(async move {
-                let mut handle = subscription_handle;
-                let mut pipeline = pipeline; // Move pipeline into task
-
-                while let Some(event) = handle.next_event().await {
-                    match event.event_type {
-                        NetworkEventType::Event => {
-                            debug!("Received event from relay: {:?}", event.relay);
-                            if let Some(raw_event) = event.event {
-                                // Process raw event through pipeline
-                                let pipeline_event =
-                                    PipelineEvent::from_raw(raw_event, event.relay);
-                                match pipeline.process(pipeline_event).await {
-                                    Ok(Some(output)) => {
-                                        // Send output to buffer
-                                        if let Some(ref buffer) = shared_buffer {
-                                            Self::write_to_buffer(buffer, &sub_id, &output).await;
-                                        }
-                                    }
-                                    Ok(None) => {
-                                        // Event was dropped by pipeline
-                                    }
-                                    Err(e) => {
-                                        warn!("Pipeline processing failed: {}", e);
-                                    }
-                                }
-                            }
-                        }
-                        NetworkEventType::EOSE => {
-                            if let Some(relay) = event.relay.clone() {
-                                relay_eose_status.insert(relay, true);
-                            }
-                            remaining_connections -= 1;
-                            // Send End of Stored Events notification
-                            debug!(
-                                "Received EOSE from relay {:?} for subscription {} (Remaining: {}/{})",
-                                event.relay, sub_id, remaining_connections, total_connections
-                            );
-                            if let Some(ref buffer) = shared_buffer {
-                                Self::send_eose(
-                                    buffer,
-                                    &sub_id,
-                                    EOSE {
-                                        total_connections: total_connections,
-                                        remaining_connections: remaining_connections,
-                                    },
-                                )
-                                .await;
-                            }
-
-                            // Check if we should close the subscription when all EOSE received
-                            if close_on_eose && remaining_connections == 0 {
-                                info!(
-                                    "All relays sent EOSE, closing subscription {} as requested",
-                                    sub_id
-                                );
-                                // Subscription will naturally close when handle completes
-                            }
-                        }
-                        NetworkEventType::Error => {
-                            warn!("Received error event from network: {:?}", event);
-                        }
-                    }
-                }
-                info!(
-                    "🔚 Subscription handle completed for subscription {}",
-                    sub_id
-                );
-            });
         }
 
         // If there are no network requests, we consider the subscription complete
@@ -323,198 +245,6 @@ impl SubscriptionManager {
         }
 
         Ok(request)
-    }
-
-    async fn send_eose(shared_buffer: &SharedArrayBuffer, subscription_id: &str, eose: EOSE) {
-        let message = crate::WorkerToMainMessage::Eose {
-            subscription_id: subscription_id.to_string(),
-            data: eose,
-        };
-
-        let data = match rmp_serde::to_vec_named(&message) {
-            Ok(msgpack) => msgpack,
-            Err(e) => {
-                error!(
-                    "Failed to serialize EOSE for subscription {}: {}",
-                    subscription_id, e
-                );
-                return;
-            }
-        };
-
-        let _ = Self::write_to_buffer(shared_buffer, subscription_id, &data).await;
-    }
-
-    async fn send_eoce(&self, subscription_id: &str) {
-        let message = crate::WorkerToMainMessage::Eoce {
-            subscription_id: subscription_id.to_string(),
-        };
-
-        let data = match rmp_serde::to_vec_named(&message) {
-            Ok(msgpack) => msgpack,
-            Err(e) => {
-                error!(
-                    "Failed to serialize EOCE for subscription {}: {}",
-                    subscription_id, e
-                );
-                return;
-            }
-        };
-
-        self.write_to_shared_buffer(subscription_id, &data).await;
-    }
-
-    async fn write_to_shared_buffer(&self, subscription_id: &str, data: &[u8]) {
-        let subscriptions = self.subscriptions.read().unwrap();
-        if let Some(shared_buffer) = subscriptions.get(subscription_id) {
-            Self::write_to_buffer(shared_buffer, subscription_id, data).await;
-        } else {
-            warn!(
-                "No SharedArrayBuffer found for subscription: {}, dropping message",
-                subscription_id
-            );
-        }
-    }
-
-    fn has_buffer_full_marker(
-        buffer_uint8: &Uint8Array,
-        current_write_pos: usize,
-        buffer_length: usize,
-    ) -> bool {
-        // Check if the last written entry is already a buffer full marker
-        if current_write_pos < 5 {
-            return false;
-        }
-
-        // Read the length of the previous entry (4 bytes before current position)
-        let prev_length_pos = current_write_pos - 5; // -5 because marker is 1 byte + 4 byte length
-        let prev_length_subarray =
-            buffer_uint8.subarray(prev_length_pos as u32, (prev_length_pos + 4) as u32);
-        let mut prev_length_bytes = vec![0u8; 4];
-        prev_length_subarray.copy_to(&mut prev_length_bytes[..]);
-
-        let mut prev_length_array = [0u8; 4];
-        prev_length_array.copy_from_slice(&prev_length_bytes);
-        let prev_length = u32::from_le_bytes(prev_length_array);
-
-        // If the previous entry has length 1, check if it's the buffer full marker (0xFF)
-        if prev_length == 1 {
-            let prev_data_pos = prev_length_pos + 4;
-            if prev_data_pos < buffer_length {
-                let prev_data_subarray =
-                    buffer_uint8.subarray(prev_data_pos as u32, (prev_data_pos + 1) as u32);
-                let mut prev_data_bytes = vec![0u8; 1];
-                prev_data_subarray.copy_to(&mut prev_data_bytes[..]);
-
-                return prev_data_bytes[0] == 0xFF;
-            }
-        }
-
-        false
-    }
-
-    async fn write_to_buffer(
-        shared_buffer: &SharedArrayBuffer,
-        subscription_id: &str,
-        data: &[u8],
-    ) {
-        // Add safety checks for data size
-        if data.len() > 1024 * 1024 {
-            // 1MB limit
-            warn!(
-                "Data too large for SharedArrayBuffer: {} bytes for subscription {}",
-                data.len(),
-                subscription_id
-            );
-            warn!("Dropping message due to size limit");
-            return;
-        }
-
-        // Get the buffer as Uint8Array for manipulation
-        let buffer_uint8 = Uint8Array::new(shared_buffer);
-        let buffer_length = buffer_uint8.length() as usize;
-
-        // Read current write position from header (first 4 bytes, little endian)
-        let header_subarray = buffer_uint8.subarray(0, 4);
-        let mut header_bytes = vec![0u8; 4];
-        header_subarray.copy_to(&mut header_bytes[..]);
-
-        let mut header_array = [0u8; 4];
-        header_array.copy_from_slice(&header_bytes);
-        let current_write_pos = u32::from_le_bytes(header_array) as usize;
-
-        // Safety check for current write position
-        if current_write_pos >= buffer_length {
-            warn!(
-                "Invalid write position {} >= buffer length {} for subscription {}",
-                current_write_pos, buffer_length, subscription_id
-            );
-            warn!("Dropping message due to invalid write position");
-            return;
-        }
-
-        // Check if we have enough space (4 bytes write position header + 4 bytes length prefix + data)
-        let new_write_pos = current_write_pos + 4 + data.len(); // +4 for length prefix
-        if new_write_pos > buffer_length {
-            // Check if the last written entry is already a buffer full marker
-            if Self::has_buffer_full_marker(&buffer_uint8, current_write_pos, buffer_length) {
-                warn!(
-                    "Buffer full for subscription {}, but marker already exists",
-                    subscription_id
-                );
-                return;
-            }
-            // Write minimal "buffer full" marker: length=1, data=0xFF
-            if current_write_pos + 5 <= buffer_length {
-                // 4 bytes length + 1 byte marker
-                let length_prefix = 1u32.to_le_bytes(); // Length = 1
-                let length_prefix_uint8 = Uint8Array::from(&length_prefix[..]);
-                buffer_uint8.set(&length_prefix_uint8, current_write_pos as u32);
-
-                let marker = [0xFF]; // Single byte marker for "buffer full"
-                let marker_uint8 = Uint8Array::from(&marker[..]);
-                buffer_uint8.set(&marker_uint8, (current_write_pos + 4) as u32);
-
-                // Update write position
-                let new_pos = current_write_pos + 5;
-                let new_header = (new_pos as u32).to_le_bytes();
-                let new_header_uint8 = Uint8Array::from(&new_header[..]);
-                buffer_uint8.set(&new_header_uint8, 0);
-
-                warn!(
-                    "Buffer full for subscription {}, wrote 1-byte marker",
-                    subscription_id
-                );
-            } else {
-                warn!(
-                    "Buffer completely full for subscription {}, cannot even write marker",
-                    subscription_id
-                );
-            }
-            return;
-        }
-
-        // Write the length prefix (4 bytes, little endian) at current write position
-        let length_prefix = (data.len() as u32).to_le_bytes();
-        let length_prefix_uint8 = Uint8Array::from(&length_prefix[..]);
-        buffer_uint8.set(&length_prefix_uint8, current_write_pos as u32);
-
-        // Write the actual data after the length prefix
-        let data_uint8 = Uint8Array::from(data);
-        buffer_uint8.set(&data_uint8, (current_write_pos + 4) as u32);
-
-        // Update the header with new write position (little endian)
-        let new_header = (new_write_pos as u32).to_le_bytes();
-        let new_header_uint8 = Uint8Array::from(&new_header[..]);
-        buffer_uint8.set(&new_header_uint8, 0);
-
-        debug!(
-            "Wrote {} bytes (+ 4 byte length prefix) to SharedArrayBuffer for subscription: {} (pos: {} -> {}) and notified waiters",
-            data.len(),
-            subscription_id,
-            current_write_pos,
-            new_write_pos
-        );
     }
 
     fn build_pipeline(
