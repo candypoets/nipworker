@@ -241,6 +241,8 @@ impl RelayConnection {
             *sink_guard = Some(ws_sink);
         }
 
+        let status_clone = self.status.clone();
+        let ws_sink_arc = self.ws_sink.clone();
         let url = self.url.clone();
 
         // Single task: read WS → parse JSON → callback
@@ -270,7 +272,18 @@ impl RelayConnection {
                     }
                     Err(e) => {
                         tracing::error!(relay = %url, error = %e, "WebSocket error");
-                        break;
+
+                        // 🔹 Mark connection as closed
+                        {
+                            let mut status = status_clone.write().unwrap();
+                            *status = ConnectionStatus::Failed; // or Disconnected
+                        }
+
+                        // 🔹 Drop sink so send_message returns ConnectionClosed
+                        {
+                            let mut sink_guard = ws_sink_arc.lock().await;
+                            *sink_guard = None;
+                        }
                     }
                 }
             }
@@ -294,12 +307,25 @@ impl RelayConnection {
             RelayError::ProtocolError(format!("Serialization error: {}", e))
         })?;
 
-        // Lock sink & send
+        // Lock the sink
         let mut sink_guard = self.ws_sink.lock().await;
         let sink = sink_guard.as_mut().ok_or(RelayError::ConnectionClosed)?;
-        sink.send(Message::Text(json))
-            .await
-            .map_err(|_| RelayError::ConnectionClosed);
+
+        // Try to send
+        if let Err(e) = sink.send(Message::Text(json)).await {
+            tracing::error!(error = %e, "Failed to send message: marking connection closed");
+
+            // 🔹 Mark connection status immediately
+            {
+                let mut status_guard = self.status.write().unwrap();
+                *status_guard = ConnectionStatus::Failed; // or ConnectionStatus::Closed
+            }
+
+            // 🔹 Drop sink so future sends fail fast
+            *sink_guard = None;
+
+            return Err(RelayError::ConnectionClosed);
+        }
 
         Ok(())
     }

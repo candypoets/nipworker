@@ -214,7 +214,10 @@ impl ConnectionRegistry {
 
             // Send the REQ for this subscription to this relay
             let req_message = ClientMessage::req(subscription_id.clone(), filters);
-            conn.send_message(req_message).await?;
+            if let Err(e) = conn.send_message(req_message).await {
+                tracing::error!(relay = %url, error = %e, "Failed to send REQ message");
+                continue;
+            }
         }
 
         Ok(())
@@ -427,7 +430,10 @@ impl ConnectionRegistry {
             })
         });
         // Connect
-        connection.connect(cb).await?;
+        if let Err(e) = connection.connect(cb).await {
+            tracing::error!(relay = %url, error = %e, "Failed to connect to relay");
+            // return Err(e);
+        }
 
         Ok(connection)
     }
