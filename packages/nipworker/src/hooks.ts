@@ -49,7 +49,7 @@ export function useSubscription(
 
     if (result.hasNewData) {
       // Found new data - reset to aggressive polling
-      pollInterval = 5;
+      pollInterval = 32;
 
       result.messages.forEach((message: WorkerToMainMessage) => {
         if ("SubscriptionEvent" in message) {
