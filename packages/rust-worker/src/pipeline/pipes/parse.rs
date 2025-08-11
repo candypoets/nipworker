@@ -44,4 +44,8 @@ impl Pipe for ParsePipe {
     fn name(&self) -> &str {
         &self.name
     }
+
+    fn run_for_cached_events(&self) -> bool {
+        false
+    }
 }

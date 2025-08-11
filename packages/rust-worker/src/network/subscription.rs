@@ -122,26 +122,7 @@ impl SubscriptionManager {
         debug!("Processing subscription: {}", subscription_id);
 
         // Create pipeline based on config
-        let pipeline = self.build_pipeline(config.pipeline.clone(), subscription_id.clone())?;
-
-        // Create a separate pipeline for cached events (without SaveToDb)
-        let mut cache_pipeline = if let Some(ref pipeline_config) = config.pipeline {
-            let mut cache_config = pipeline_config.clone();
-            // Filter out SaveToDb pipe for cached events
-            cache_config
-                .pipes
-                .retain(|pipe| !matches!(pipe.name.as_str(), "saveToDb" | "save_to_db"));
-            self.build_pipeline(Some(cache_config), subscription_id.clone())?
-        } else {
-            // Build default pipeline without SaveToDb
-            let pipes = vec![
-                // PipeType::Deduplication(DeduplicationPipe::new(10000)),
-                // PipeType::Parse(ParsePipe::new(self.parser.clone())),
-                // Explicitly exclude SaveToDb for cached events
-                PipeType::SerializeEvents(SerializeEventsPipe::new(subscription_id.clone())),
-            ];
-            Pipeline::new(pipes, subscription_id.clone())?
-        };
+        let mut pipeline = self.build_pipeline(config.pipeline.clone(), subscription_id.clone())?;
 
         let (network_requests, events) = match self
             .cache_processor
@@ -163,7 +144,7 @@ impl SubscriptionManager {
             for event_batch in events {
                 for parsed_event in event_batch {
                     let pipeline_event = PipelineEvent::from_parsed(parsed_event);
-                    if let Some(output) = cache_pipeline.process(pipeline_event).await? {
+                    if let Some(output) = pipeline.process_cached_event(pipeline_event).await? {
                         SharedBufferManager::write_to_buffer(&shared_buffer, &output).await;
                     }
                 }

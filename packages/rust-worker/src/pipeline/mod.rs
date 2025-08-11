@@ -67,6 +67,10 @@ pub trait Pipe {
     fn can_direct_output(&self) -> bool {
         false
     }
+
+    fn run_for_cached_events(&self) -> bool {
+        true
+    }
 }
 
 /// Enum representing all possible pipe types to avoid dynamic dispatch
@@ -118,6 +122,19 @@ impl PipeType {
             PipeType::Counter(pipe) => pipe.can_direct_output(),
             PipeType::KindFilter(pipe) => pipe.can_direct_output(),
             PipeType::NpubLimiter(pipe) => pipe.can_direct_output(),
+        }
+    }
+
+    pub fn run_for_cached_events(&self) -> bool {
+        match self {
+            PipeType::Deduplication(pipe) => pipe.run_for_cached_events(),
+            PipeType::Parse(pipe) => pipe.run_for_cached_events(),
+            PipeType::SaveToDb(pipe) => pipe.run_for_cached_events(),
+            PipeType::SerializeEvents(pipe) => pipe.run_for_cached_events(),
+            PipeType::ProofVerification(pipe) => pipe.run_for_cached_events(),
+            PipeType::Counter(pipe) => pipe.run_for_cached_events(),
+            PipeType::KindFilter(pipe) => pipe.run_for_cached_events(),
+            PipeType::NpubLimiter(pipe) => pipe.run_for_cached_events(),
         }
     }
 }
@@ -206,6 +223,35 @@ impl Pipeline {
 
         // If we reach here, no pipe produced DirectOutput
         // This shouldn't happen with a properly configured pipeline
+        Ok(None)
+    }
+
+    pub async fn process_cached_event(
+        &mut self,
+        mut event: PipelineEvent,
+    ) -> Result<Option<Vec<u8>>> {
+        let pipes_len = self.pipes.len();
+        for (i, pipe) in self.pipes.iter_mut().enumerate() {
+            if !pipe.run_for_cached_events() {
+                continue;
+            }
+
+            let is_last = i == pipes_len - 1;
+
+            match pipe.process(event).await? {
+                PipeOutput::Event(e) => event = e,
+                PipeOutput::Drop => return Ok(None),
+                PipeOutput::DirectOutput(data) => {
+                    if !is_last {
+                        return Err(anyhow::anyhow!(
+                            "Non-terminal pipe '{}' produced DirectOutput",
+                            pipe.name()
+                        ));
+                    }
+                    return Ok(Some(data));
+                }
+            }
+        }
         Ok(None)
     }
 
