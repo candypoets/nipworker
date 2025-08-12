@@ -116,16 +116,18 @@ export type Request = {
   noContext?: boolean;
 };
 
-export type SubscribeKind = "CACHED_EVENT" | "FETCHED_EVENT" | "COUNT" | "EOSE" | "EOCE" | "BUFFER_FULL";
+export type SubscribeKind = "CACHED_EVENT" | "FETCHED_EVENT" | "COUNT" | "CONNECTION_STATUS" | "EOCE" | "BUFFER_FULL";
 
-export type PublishStatus = "Pending" | "Sent" | "Success" | "Failed" | "Rejected" | "ConnectionError";
-
-export type RelayStatusUpdate = {
-  relay: string;
-  status: PublishStatus;
-  message: string;
-  timestamp: number;
-};
+export enum ConnectionStatus {
+  SUBSCRIBED = "SUBSCRIBED",
+  SENT = "SENT",
+  FAILED = "FAILED",
+  EOSE = "EOSE",
+  OK = "OK",
+  NOTICE = "NOTICE",
+  AUTH = "AUTH",
+  CLOSED = "CLOSED"
+}
 
 export type EOSE = {
   totalConnections: number;
@@ -186,11 +188,14 @@ export type MainToWorkerMessage =
 
 export type WorkerToMainMessage =
   | { SubscriptionEvent: { event_type: SubscribeKind; event_data: any[] } }
-  | { PublishStatus: { publish_id: string; status: RelayStatusUpdate[] } }
   | { SignedEvent: { content: string; signed_event: any } }
+  | { ConnectionStatus: {
+      status: string,
+      message: string,
+      relay_url: String,
+  } }
   | { Debug: { message: string; data: any } }
   | { Count: { kind: number; count: number; you: boolean; metadata: string } }
-  | { Eose: { data: EOSE } }
   | { Eoce: {} }
   | { PublicKey: { public_key: string } }
   | { Proofs: { mint: string; proofs: ProofUnion[] } };

@@ -58,8 +58,15 @@ impl NetworkManager {
             .await
     }
 
-    pub async fn publish_event(&self, publish_id: String, event: &mut UnsignedEvent) -> Result<()> {
-        self.publish_manager.publish_event(publish_id, event).await
+    pub async fn publish_event(
+        &self,
+        publish_id: String,
+        event: &mut UnsignedEvent,
+        shared_buffer: SharedArrayBuffer,
+    ) -> Result<()> {
+        self.publish_manager
+            .publish_event(publish_id, event, shared_buffer)
+            .await
     }
 
     pub async fn get_active_subscription_count(&self) -> u32 {

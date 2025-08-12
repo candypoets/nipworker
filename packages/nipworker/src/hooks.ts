@@ -1,3 +1,4 @@
+import { EventTemplate, NostrEvent } from "nostr-tools";
 import { nostrManager, SubscriptionOptions } from ".";
 import { SharedBufferReader } from "src/lib/sharedBuffer";
 import type { WorkerToMainMessage, Request } from "src/types";
@@ -61,11 +62,11 @@ export function useSubscription(
               callback(event, message.SubscriptionEvent.event_type);
             });
           }
-        } else if ("Eose" in message) {
-          if (options.closeOnEose) {
+        } else if ("ConnectionStatus" in message) {
+          if (options.closeOnEose && message.ConnectionStatus.status == "EOSE") {
             unsubscribe();
           }
-          callback(message.Eose.data, "EOSE");
+          callback(message.ConnectionStatus, "CONNECTION_STATUS");
         } else if ("Eoce" in message) {
           callback([], "EOCE");
         } else if ("Proofs" in message) {
@@ -93,4 +94,55 @@ export function useSubscription(
   timeoutId = window.setTimeout(processEvents, 0);
 
   return unsubscribe
+}
+
+
+export function usePublish(
+  pubId: string,
+  event: NostrEvent,
+  callback: any = () => {},
+  options: { trackStatus?: boolean } = { trackStatus: true }
+): () => void {
+  if (!pubId) {
+    console.warn("usePublish: No publish ID provided");
+    return () => {};
+  }
+
+  let buffer: SharedArrayBuffer | null = null;
+  let lastReadPos: number = 4;
+  let timeoutId: number | null = null;
+  let running = true;
+
+  const unsubscribe = (): void => {
+    running = false;
+    if (timeoutId !== null) {
+      clearTimeout(timeoutId);
+    }
+  };
+
+  buffer = nostrManager.publish(pubId, event);
+
+  if (options.trackStatus && buffer) {
+    const poll = (): void => {
+      if (!running || !buffer) {
+        if (timeoutId !== null) {
+          clearTimeout(timeoutId);
+        }
+        return;
+      }
+      const result = SharedBufferReader.readMessages(buffer, lastReadPos);
+      if (result.hasNewData) {
+        result.messages.forEach((message: WorkerToMainMessage) => {
+          if ("ConnectionStatus" in message) {
+            callback(message.ConnectionStatus, "CONNECTION_STATUS");
+          }
+        });
+        lastReadPos = result.newReadPosition;
+      }
+      timeoutId = window.setTimeout(poll, 50);
+    };
+    timeoutId = window.setTimeout(poll, 0);
+  }
+
+  return unsubscribe;
 }

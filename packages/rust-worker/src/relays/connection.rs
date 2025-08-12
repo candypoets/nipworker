@@ -8,6 +8,7 @@ use crate::relays::types::{
     ClientMessage, ConnectionStats, ConnectionStatus, RelayConfig, RelayError, RelayMessage,
     RelayResponse,
 };
+use crate::utils::json::extract_first_three;
 use futures::channel::mpsc;
 use futures::future::{AbortHandle, Abortable};
 use futures::lock::Mutex;
@@ -16,6 +17,7 @@ use futures::{SinkExt, StreamExt};
 use gloo_net::websocket::{futures::WebSocket, Message};
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::os::raw;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::RwLock;
@@ -249,37 +251,77 @@ impl RelayConnection {
         spawn_local(async move {
             while let Some(message) = ws_stream.next().await {
                 match message {
-                    Ok(Message::Text(text)) => match RelayMessage::from_json(&text) {
-                        Ok(parsed_msg) => match &parsed_msg {
-                            RelayMessage::Event {
-                                subscription_id, ..
+                    Ok(Message::Text(text)) => {
+                        if let Some(parts) = extract_first_three(&text) {
+                            if let Some(kind_raw) = parts[0] {
+                                // Strip enclosing quotes from kind
+                                let kind = kind_raw.trim_matches('"');
+                                match kind {
+                                    "EVENT" => {
+                                        let id = parts[1]
+                                            .map(|s| s.trim_matches('"').to_string())
+                                            .unwrap_or_default();
+                                        let raw_event_json = parts[2].unwrap_or("{}");
+                                        on_event(id, kind, raw_event_json, &url).await;
+                                    }
+                                    "EOSE" => {
+                                        let id = parts[1]
+                                            .map(|s| s.trim_matches('"').to_string())
+                                            .unwrap_or_default();
+                                        on_event(id, kind, "", &url).await;
+                                    }
+                                    "OK" => {
+                                        let id = parts[1]
+                                            .map(|s| s.trim_matches('"').to_string())
+                                            .unwrap_or_default();
+                                        let state = parts[2].unwrap_or("false");
+                                        on_event(id, kind, state, &url).await;
+                                    }
+                                    "CLOSED" => {
+                                        let id = parts[1]
+                                            .map(|s| s.trim_matches('"').to_string())
+                                            .unwrap_or_default();
+                                        let reason = parts[2]
+                                            .map(|s| s.trim_matches('"').to_string())
+                                            .unwrap_or_default();
+                                        on_event(id, kind, &reason, &url).await;
+                                    }
+                                    "NOTICE" => {
+                                        let id = parts[1]
+                                            .map(|s| s.trim_matches('"').to_string())
+                                            .unwrap_or_default();
+                                        let reason = parts[2]
+                                            .map(|s| s.trim_matches('"').to_string())
+                                            .unwrap_or_default();
+                                        on_event(id, kind, &reason, &url).await;
+                                    }
+                                    "AUTH" => {
+                                        let id = parts[1]
+                                            .map(|s| s.trim_matches('"').to_string())
+                                            .unwrap_or_default();
+                                        let challenge = parts[2]
+                                            .map(|s| s.trim_matches('"').to_string())
+                                            .unwrap_or_default();
+                                        on_event(id, kind, &challenge, &url).await;
+                                    }
+                                    other => {
+                                        tracing::warn!("Unknown relay message kind: {}", other);
+                                    }
+                                }
                             }
-                            | RelayMessage::Eose {
-                                subscription_id, ..
-                            } => {
-                                on_event(subscription_id.clone(), parsed_msg).await;
-                            }
-                            _ => {
-                                tracing::debug!(relay = %url, "Unhandled Nostr message type in wasm");
-                            }
-                        },
-                        Err(e) => {
-                            tracing::warn!(relay = %url, error = %e, "Failed to parse relay message");
+                        } else {
+                            tracing::warn!("Malformed message from relay: {}", text);
                         }
-                    },
+                    }
                     Ok(Message::Bytes(_)) => {
                         tracing::warn!(relay = %url, "Unexpected binary message in Nostr");
                     }
                     Err(e) => {
                         tracing::error!(relay = %url, error = %e, "WebSocket error");
-
-                        // 🔹 Mark connection as closed
                         {
                             let mut status = status_clone.write().unwrap();
-                            *status = ConnectionStatus::Failed; // or Disconnected
+                            *status = ConnectionStatus::Failed;
                         }
-
-                        // 🔹 Drop sink so send_message returns ConnectionClosed
                         {
                             let mut sink_guard = ws_sink_arc.lock().await;
                             *sink_guard = None;

@@ -15,7 +15,7 @@ use crate::{
     },
     types::{PublishStatus as MainPublishStatus, RelayStatusUpdate},
     utils::buffer::SharedBufferManager,
-    NetworkEvent, NetworkEventType, EOSE,
+    NetworkEvent, NetworkEventType, WorkerToMainMessage, EOSE,
 };
 use futures::{channel::mpsc, future::LocalBoxFuture};
 use futures::{lock::Mutex, StreamExt};
@@ -36,20 +36,6 @@ pub struct ConnectionRegistry {
     config: RelayConfig,
     /// Active subscriptions tracker (subscription_id -> relay_urls)
     active_subscriptions: Rc<Mutex<HashMap<String, SubscriptionMeta>>>,
-    /// Active publishes tracker (event_id -> relay_urls)
-    active_publishes: Arc<RwLock<HashMap<EventId, Vec<String>>>>,
-    /// Event receivers for subscriptions (subscription_id -> sender)
-    subscription_senders: Arc<RwLock<HashMap<String, mpsc::UnboundedSender<NetworkEvent>>>>,
-    /// Publish result receivers (event_id -> sender)
-    publish_result_senders: Arc<RwLock<HashMap<EventId, mpsc::UnboundedSender<RelayStatusUpdate>>>>,
-}
-
-/// Handle for a subscription that allows event streaming and cancellation
-pub struct SubscriptionHandle {
-    subscription_id: String,
-    relay_urls: Vec<String>,
-    event_receiver: mpsc::UnboundedReceiver<NetworkEvent>,
-    registry: Arc<ConnectionRegistry>,
 }
 
 struct SubscriptionMeta {
@@ -59,54 +45,7 @@ struct SubscriptionMeta {
     close_on_eose: bool,
 }
 
-/// Handle for a publish operation that allows tracking results
-pub struct PublishHandle {
-    event_id: EventId,
-    relay_urls: Vec<String>,
-    result_receiver: mpsc::UnboundedReceiver<RelayStatusUpdate>,
-    registry: Arc<ConnectionRegistry>,
-}
-
-impl PublishHandle {
-    /// Get the event ID
-    pub fn event_id(&self) -> &EventId {
-        &self.event_id
-    }
-
-    /// Get relay URLs this publish is targeting
-    pub fn relay_urls(&self) -> &[String] {
-        &self.relay_urls
-    }
-
-    /// Get the next publish result
-    pub async fn next_result(&mut self) -> Option<RelayStatusUpdate> {
-        self.result_receiver.next().await
-    }
-
-    /// Wait for all publish results
-    pub async fn wait_for_all_results(&mut self) -> Vec<RelayStatusUpdate> {
-        let mut results = Vec::new();
-        let expected_count = self.relay_urls.len();
-
-        while results.len() < expected_count {
-            if let Some(result) = self.next_result().await {
-                results.push(result);
-            } else {
-                // Channel closed, break the loop
-                break;
-            }
-        }
-
-        results
-    }
-
-    /// Cancel the publish operation
-    pub async fn cancel(self) {
-        let _ = self.registry.cancel_publish(&self.event_id).await;
-    }
-}
-
-pub type EventCallback = Rc<dyn Fn(String, RelayMessage) -> LocalBoxFuture<'static, ()>>;
+pub type EventCallback = Rc<dyn Fn(String, &str, &str, &str) -> LocalBoxFuture<'static, ()>>;
 
 impl ConnectionRegistry {
     /// Create a new connection registry
@@ -120,16 +59,19 @@ impl ConnectionRegistry {
             connections: Arc::new(RwLock::new(HashMap::new())),
             config,
             active_subscriptions: Rc::new(Mutex::new(HashMap::new())),
-            active_publishes: Arc::new(RwLock::new(HashMap::new())),
-            subscription_senders: Arc::new(RwLock::new(HashMap::new())),
-            publish_result_senders: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
-    async fn process_incoming_for_subscription(&self, sub_id: String, msg: RelayMessage) {
+    async fn process_incoming_message(
+        &self,
+        id: String,
+        kind: &str,
+        message: &str,
+        relay_url: &str,
+    ) {
         let (pipeline, buffer, relay_urls, close_on_eose) = {
             let subs = self.active_subscriptions.lock().await;
-            if let Some(meta) = subs.get(&sub_id) {
+            if let Some(meta) = subs.get(&id) {
                 (
                     meta.pipeline.clone(),
                     meta.buffer.clone(),
@@ -137,36 +79,39 @@ impl ConnectionRegistry {
                     meta.close_on_eose,
                 )
             } else {
-                tracing::warn!(?sub_id, "Message for unknown subscription");
+                tracing::warn!(?id, "Message for unknown subscription");
                 return;
             }
             // ⚠ subs.lock() guard is dropped here automatically
         };
-
-        match msg {
-            RelayMessage::Event { event, .. } => {
+        match kind {
+            "EVENT" => {
                 let mut pipeline_guard = pipeline.lock().await;
-                if let Ok(Some(output)) = pipeline_guard
-                    .process(PipelineEvent::from_raw(event, None))
-                    .await
-                {
+                if let Ok(Some(output)) = pipeline_guard.process(message).await {
                     SharedBufferManager::write_to_buffer(&buffer, &output).await;
                 }
             }
-            RelayMessage::Eose { .. } => {
-                SharedBufferManager::send_eose(
-                    &buffer,
-                    EOSE {
-                        total_connections: relay_urls.len() as i32,
-                        remaining_connections: 0,
-                    },
-                )
-                .await;
+            "EOSE" => {
+                tracing::info!(subscription_id = %id, relay_url = %relay_url, "Received EOSE");
+                let eose = WorkerToMainMessage::ConnectionStatus {
+                    status: kind.to_string(),
+                    message: message.to_string(),
+                    relay_url: relay_url.to_string(),
+                };
+                SharedBufferManager::send_connection_status(&buffer, eose).await;
                 if close_on_eose {
-                    let _ = self.close_subscription(&sub_id);
+                    let _ = self.close_subscription(&id).await;
                 }
             }
-            _ => {}
+            _ => {
+                tracing::info!(kind = %kind, relay_url = %relay_url, "Received relay message");
+                let connection_status = WorkerToMainMessage::ConnectionStatus {
+                    status: kind.to_string(),
+                    message: message.to_string(),
+                    relay_url: relay_url.to_string(),
+                };
+                SharedBufferManager::send_connection_status(&buffer, connection_status).await;
+            }
         }
     }
 
@@ -184,40 +129,59 @@ impl ConnectionRegistry {
             SubscriptionMeta {
                 relay_urls: Vec::new(),
                 pipeline,
-                buffer,
+                buffer: buffer.clone(),
                 close_on_eose,
             },
         );
 
         for (url, filters) in relay_filters {
-            let conn = match self.ensure_connection(&url).await {
-                Ok(conn) => conn,
-                Err(e) => {
-                    tracing::warn!(relay = %url, error = %e, "Failed to ensure connection, skipping");
-                    continue;
+            let subscription_id = subscription_id.clone();
+            let buffer_clone = buffer.clone();
+            let self_clone = self.clone();
+            spawn_local(async move {
+                let conn = match self_clone.ensure_connection(&url).await {
+                    Ok(conn) => conn,
+                    Err(e) => {
+                        tracing::warn!(relay = %url, error = %e, "Failed to ensure connection, skipping");
+                        let connection_status = WorkerToMainMessage::ConnectionStatus {
+                            status: "FAILED".to_string(),
+                            message: e.to_string(),
+                            relay_url: url,
+                        };
+                        SharedBufferManager::send_connection_status(
+                            &buffer_clone,
+                            connection_status,
+                        )
+                        .await;
+                        return;
+                    }
+                };
+
+                // Tell the connection we have interest in this sub_id
+                conn.add_subscription(subscription_id.clone(), filters.len())
+                    .await;
+
+                // Send the REQ for this subscription to this relay
+                let req_message = ClientMessage::req(subscription_id.clone(), filters);
+                if let Err(e) = conn.send_message(req_message).await {
+                    tracing::error!(relay = %url, error = %e, "Failed to send REQ message");
+                    let connection_status = WorkerToMainMessage::ConnectionStatus {
+                        status: "FAILED".to_string(),
+                        message: e.to_string(),
+                        relay_url: url,
+                    };
+                    SharedBufferManager::send_connection_status(&buffer_clone, connection_status)
+                        .await;
+                } else {
+                    let connection_status = WorkerToMainMessage::ConnectionStatus {
+                        status: "SUBSCRIBED".to_string(),
+                        message: "".to_string(),
+                        relay_url: url,
+                    };
+                    SharedBufferManager::send_connection_status(&buffer_clone, connection_status)
+                        .await;
                 }
-            };
-
-            // Add the relay URL to the subscription metadata
-            if let Some(meta) = self
-                .active_subscriptions
-                .lock()
-                .await
-                .get_mut(&subscription_id)
-            {
-                meta.relay_urls.push(url.clone());
-            }
-
-            // Tell the connection we have interest in this sub_id
-            conn.add_subscription(subscription_id.clone(), filters.len())
-                .await;
-
-            // Send the REQ for this subscription to this relay
-            let req_message = ClientMessage::req(subscription_id.clone(), filters);
-            if let Err(e) = conn.send_message(req_message).await {
-                tracing::error!(relay = %url, error = %e, "Failed to send REQ message");
-                continue;
-            }
+            });
         }
 
         Ok(())
@@ -228,113 +192,72 @@ impl ConnectionRegistry {
         &self,
         event: Event,
         relay_urls: Vec<String>,
-    ) -> Result<PublishHandle, RelayError> {
+        buffer: Rc<SharedArrayBuffer>,
+    ) -> Result<(), RelayError> {
         if relay_urls.is_empty() {
             return Err(RelayError::InvalidUrl("No relay URLs provided".to_string()));
         }
 
         let event_id = event.id;
 
-        // Validate and normalize URLs
+        // Validate & normalize URLs (like subscribe does)
         let mut normalized_urls = Vec::new();
         for url in relay_urls {
             if let Err(e) = validate_relay_url(&url) {
-                warn!("Invalid relay URL {}: {}, skipping", url, e);
+                tracing::warn!("Invalid relay URL {}: {}, skipping", url, e);
                 continue;
             }
             normalized_urls.push(normalize_relay_url(&url));
         }
 
-        // Log publish information
-        tracing::info!(
-            event_id = %event_id,
-            relay_count = normalized_urls.len(),
-            relays = ?normalized_urls,
-            "Publishing event to relays"
+        self.active_subscriptions.lock().await.insert(
+            event.id.to_hex(),
+            SubscriptionMeta {
+                relay_urls: normalized_urls.clone(),
+                pipeline: Rc::new(Mutex::new(Pipeline::new(vec![], "".to_string()).unwrap())),
+                buffer: buffer.clone(),
+                close_on_eose: false,
+            },
         );
 
-        // Create result channel for this publish
-        let (result_sender, result_receiver) = mpsc::unbounded::<RelayStatusUpdate>();
+        for url in normalized_urls {
+            let conn = match self.ensure_connection(&url).await {
+                Ok(conn) => conn,
+                Err(e) => {
+                    tracing::warn!(relay=%url, error=%e, "Failed to ensure connection, skipping");
+                    continue;
+                }
+            };
 
-        // Store publish tracking
-        {
-            let mut active_pubs = self.active_publishes.write().unwrap();
-            active_pubs.insert(event_id, normalized_urls.clone());
-        }
-        {
-            let mut senders = self.publish_result_senders.write().unwrap();
-            senders.insert(event_id, result_sender.clone());
-        }
-
-        // Send pending status for all relays
-        for url in &normalized_urls {
-            let _ = self
-                .send_publish_result(
-                    event_id,
-                    RelayStatusUpdate {
-                        relay: url.clone(),
-                        status: MainPublishStatus::Pending,
-                        message: "Preparing to publish".to_string(),
-                        timestamp: js_sys::Date::now() as i64,
-                    },
-                )
-                .await;
-        }
-
-        // Ensure connections to all relays and send EVENT messages
-        for url in &normalized_urls {
-            let connection = self.ensure_connection(url).await?;
-
-            // Add publish to connection tracking
-            connection
-                .add_publish(event_id.to_hex(), "".to_string())
-                .await;
-
-            // Start message processing for this connection if not already started
-            self.ensure_message_processing(url.clone(), connection.clone())
-                .await;
+            // Store publish tracking in the connection
+            conn.add_publish(event_id.to_hex(), "".into()).await;
 
             // Send EVENT message
             let event_message = ClientMessage::event(event.clone());
-            if let Err(e) = connection.send_message(event_message).await {
-                tracing::error!(relay = %url, error = %e, "Failed to send EVENT message");
-                connection.remove_publish(&event_id.to_hex()).await;
-
-                // Send failure result
-                let _ = self
-                    .send_publish_result(
-                        event_id,
-                        RelayStatusUpdate {
-                            relay: url.clone(),
-                            status: MainPublishStatus::ConnectionError,
-                            message: e.to_string(),
-                            timestamp: js_sys::Date::now() as i64,
-                        },
-                    )
+            if let Err(e) = conn.send_message(event_message).await {
+                tracing::error!(relay=%url, error=%e, "Failed to send EVENT message");
+                // Optionally remove from publish tracking if failed
+                conn.remove_publish(&event_id.to_hex()).await;
+                let connection_status = WorkerToMainMessage::ConnectionStatus {
+                    status: "FAILED".to_string(),
+                    message: e.to_string(),
+                    relay_url: url,
+                };
+                SharedBufferManager::send_connection_status(&buffer.clone(), connection_status)
                     .await;
                 continue;
             } else {
-                // Send successful sent status
-                let _ = self
-                    .send_publish_result(
-                        event_id,
-                        RelayStatusUpdate {
-                            relay: url.clone(),
-                            status: MainPublishStatus::Sent,
-                            message: "Event sent to relay".to_string(),
-                            timestamp: js_sys::Date::now() as i64,
-                        },
-                    )
+                let connection_status = WorkerToMainMessage::ConnectionStatus {
+                    status: "SENT".to_string(),
+                    message: "".to_string(),
+                    relay_url: url,
+                };
+                SharedBufferManager::send_connection_status(&buffer.clone(), connection_status)
                     .await;
             }
         }
 
-        Ok(PublishHandle {
-            event_id,
-            relay_urls: normalized_urls,
-            result_receiver,
-            registry: Arc::new(self.clone()),
-        })
+        Ok(())
     }
 
     /// Close a subscription
@@ -359,34 +282,6 @@ impl ConnectionRegistry {
                     connection.remove_subscription(subscription_id).await;
                 }
             }
-
-            // Remove sender
-            let mut senders = self.subscription_senders.write().unwrap();
-            senders.remove(subscription_id);
-        }
-
-        Ok(())
-    }
-
-    /// Cancel a publish operation
-    pub async fn cancel_publish(&self, event_id: &EventId) -> Result<(), RelayError> {
-        // Get relay URLs for this publish
-        let relay_urls = {
-            let mut active_pubs = self.active_publishes.write().unwrap();
-            active_pubs.remove(event_id)
-        };
-
-        if let Some(urls) = relay_urls {
-            // Remove publish tracking from connections
-            for url in &urls {
-                if let Some(connection) = self.get_connection(url).await {
-                    connection.remove_publish(&event_id.to_hex()).await;
-                }
-            }
-
-            // Remove sender
-            let mut senders = self.publish_result_senders.write().unwrap();
-            senders.remove(event_id);
         }
 
         Ok(())
@@ -400,15 +295,20 @@ impl ConnectionRegistry {
                 return Ok(connection);
             }
             let registry = Arc::new(self.clone());
-            let cb: EventCallback = Rc::new(move |sub_id, msg| {
+            let cb: EventCallback = Rc::new(move |sub_id, kind, event, url| {
                 let reg = registry.clone();
+                let kind_owned = kind.to_owned();
+                let event_owned = event.to_owned();
+                let url_owned = url.to_owned();
                 Box::pin(async move {
-                    reg.process_incoming_for_subscription(sub_id, msg).await;
+                    reg.process_incoming_message(sub_id, &kind_owned, &event_owned, &url_owned)
+                        .await;
                 })
             });
             // If not ready, try to reconnect
             if let Err(e) = connection.reconnect(cb).await {
                 tracing::warn!(relay = %url, error = %e, "Failed to reconnect, creating new connection");
+                return Err(e);
             } else {
                 return Ok(connection);
             }
@@ -423,16 +323,20 @@ impl ConnectionRegistry {
             connections.insert(url.to_string(), connection.clone());
         }
         let registry = Arc::new(self.clone());
-        let cb: EventCallback = Rc::new(move |sub_id, msg| {
+        let cb: EventCallback = Rc::new(move |sub_id, kind, event, url| {
             let reg = registry.clone();
+            let kind_owned = kind.to_owned();
+            let event_owned = event.to_owned();
+            let url_owned = url.to_owned();
             Box::pin(async move {
-                reg.process_incoming_for_subscription(sub_id, msg).await;
+                reg.process_incoming_message(sub_id, &kind_owned, &event_owned, &url_owned)
+                    .await;
             })
         });
         // Connect
         if let Err(e) = connection.connect(cb).await {
             tracing::error!(relay = %url, error = %e, "Failed to connect to relay");
-            // return Err(e);
+            return Err(e);
         }
 
         Ok(connection)
@@ -442,186 +346,6 @@ impl ConnectionRegistry {
     async fn get_connection(&self, url: &str) -> Option<Arc<RelayConnection>> {
         let connections = self.connections.read().unwrap();
         connections.get(url).cloned()
-    }
-
-    /// Ensure message processing is started for a connection
-    async fn ensure_message_processing(&self, url: String, connection: Arc<RelayConnection>) {
-        // Try to get the message receiver (can only be taken once)
-        if let Some(mut receiver) = connection.take_message_receiver().await {
-            let registry = Arc::new(self.clone());
-            let url_clone = url.clone();
-
-            spawn_local(async move {
-                tracing::debug!(relay = %url_clone, "Starting message processing");
-
-                while let Some(response) = receiver.next().await {
-                    if let Err(e) = registry.process_relay_message(response, url.clone()).await {
-                        tracing::error!(relay = %url_clone, error = %e, "Failed to process relay message");
-                    }
-                }
-
-                tracing::debug!(relay = %url_clone, "Message processing ended");
-            });
-        }
-    }
-
-    /// Process incoming relay message
-    async fn process_relay_message(
-        &self,
-        response: RelayResponse,
-        url: String,
-    ) -> Result<(), RelayError> {
-        match &response.message {
-            RelayMessage::Event {
-                subscription_id,
-                event,
-                ..
-            } => {
-                // Send event to subscription
-                if let Err(e) = self
-                    .send_event_to_subscription(
-                        subscription_id,
-                        NetworkEvent {
-                            event_type: NetworkEventType::Event,
-                            event: Some(event.clone()),
-                            error: None,
-                            relay: Some(url.clone()),
-                        },
-                    )
-                    .await
-                {
-                    tracing::warn!(
-                        subscription_id = %subscription_id,
-                        error = %e,
-                        "Failed to send event to subscription"
-                    );
-                }
-            }
-            RelayMessage::Ok {
-                event_id,
-                accepted,
-                message,
-                ..
-            } => {
-                // Send publish result
-                let event_id_obj = EventId::from_hex(event_id)
-                    .map_err(|e| RelayError::ProtocolError(format!("Invalid event ID: {}", e)))?;
-
-                let result = RelayStatusUpdate {
-                    relay: response.relay_url.clone(),
-                    status: if *accepted {
-                        MainPublishStatus::Success
-                    } else {
-                        MainPublishStatus::Rejected
-                    },
-                    message: message.clone(),
-                    timestamp: js_sys::Date::now() as i64,
-                };
-
-                if let Err(e) = self.send_publish_result(event_id_obj, result).await {
-                    tracing::warn!(
-                        event_id = %event_id,
-                        error = %e,
-                        "Failed to send publish result"
-                    );
-                }
-
-                // Remove publish tracking from connection
-                if let Some(connection) = self.get_connection(&response.relay_url).await {
-                    connection.remove_publish(event_id).await;
-                }
-            }
-            RelayMessage::Eose {
-                subscription_id, ..
-            } => {
-                tracing::debug!(
-                    subscription_id = %subscription_id,
-                    relay = %response.relay_url,
-                    "Received EOSE"
-                );
-
-                // Send event to subscription
-                if let Err(e) = self
-                    .send_event_to_subscription(
-                        subscription_id,
-                        NetworkEvent {
-                            event_type: NetworkEventType::EOSE,
-                            event: None,
-                            error: None,
-                            relay: Some(url.clone()),
-                        },
-                    )
-                    .await
-                {
-                    tracing::warn!(
-                        subscription_id = %subscription_id,
-                        error = %e,
-                        "Failed to send event to subscription"
-                    );
-                }
-            }
-            RelayMessage::Closed {
-                subscription_id,
-                message,
-                ..
-            } => {
-                tracing::info!(
-                    subscription_id = %subscription_id,
-                    relay = %response.relay_url,
-                    message = %message,
-                    "Subscription closed by relay"
-                );
-
-                // Remove subscription tracking from connection
-                if let Some(connection) = self.get_connection(&response.relay_url).await {
-                    connection.remove_subscription(subscription_id).await;
-                }
-            }
-            RelayMessage::Notice { message, .. } => {
-                tracing::info!(
-                    relay = %response.relay_url,
-                    message = %message,
-                    "Received notice from relay"
-                );
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Send event to subscription
-    async fn send_event_to_subscription(
-        &self,
-        subscription_id: &str,
-        network_event: NetworkEvent,
-    ) -> Result<(), RelayError> {
-        let senders = self.subscription_senders.read().unwrap();
-        if let Some(sender) = senders.get(subscription_id) {
-            tracing::debug!(
-                subscription_id = %subscription_id,
-                event_type = ?network_event.event_type,
-                "Sending event to subscription"
-            );
-            sender
-                .unbounded_send(network_event)
-                .map_err(|_| RelayError::ConnectionClosed)?;
-        }
-        Ok(())
-    }
-
-    /// Send publish result
-    async fn send_publish_result(
-        &self,
-        event_id: EventId,
-        result: RelayStatusUpdate,
-    ) -> Result<(), RelayError> {
-        let senders = self.publish_result_senders.read().unwrap();
-        if let Some(sender) = senders.get(&event_id) {
-            sender
-                .unbounded_send(result)
-                .map_err(|_| RelayError::ConnectionClosed)?;
-        }
-        Ok(())
     }
 
     /// Get connection status for a relay
@@ -650,12 +374,6 @@ impl ConnectionRegistry {
     pub async fn active_subscription_ids(&self) -> Vec<String> {
         let active_subs = self.active_subscriptions.lock().await;
         active_subs.keys().cloned().collect()
-    }
-
-    /// Get all active publish event IDs
-    pub async fn active_publish_ids(&self) -> Vec<EventId> {
-        let active_pubs = self.active_publishes.read().unwrap();
-        active_pubs.keys().cloned().collect()
     }
 
     /// Disconnect from a specific relay
@@ -697,18 +415,6 @@ impl ConnectionRegistry {
             let mut active_subs = self.active_subscriptions.lock().await;
             active_subs.clear();
         }
-        {
-            let mut active_pubs = self.active_publishes.write().unwrap();
-            active_pubs.clear();
-        }
-        {
-            let mut senders = self.subscription_senders.write().unwrap();
-            senders.clear();
-        }
-        {
-            let mut senders = self.publish_result_senders.write().unwrap();
-            senders.clear();
-        }
 
         Ok(())
     }
@@ -749,9 +455,6 @@ impl Clone for ConnectionRegistry {
             connections: self.connections.clone(),
             config: self.config.clone(),
             active_subscriptions: self.active_subscriptions.clone(),
-            active_publishes: self.active_publishes.clone(),
-            subscription_senders: self.subscription_senders.clone(),
-            publish_result_senders: self.publish_result_senders.clone(),
         }
     }
 }

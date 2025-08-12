@@ -137,13 +137,14 @@ pub enum WorkerToMainMessage {
         event_type: SubscribeKind,
         event_data: Vec<Vec<ParsedEvent>>,
     },
-    PublishStatus {
-        publish_id: String,
-        status: Vec<RelayStatusUpdate>,
-    },
     SignedEvent {
         content: String,
         signed_event: serde_json::Value,
+    },
+    ConnectionStatus {
+        status: String,
+        message: String,
+        relay_url: String,
     },
     Count {
         kind: u32,
@@ -154,9 +155,6 @@ pub enum WorkerToMainMessage {
     Proofs {
         mint: String,
         proofs: Vec<ProofUnion>,
-    },
-    Eose {
-        data: EOSE,
     },
     Eoce {},
     PublicKey {

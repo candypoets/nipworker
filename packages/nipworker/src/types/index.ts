@@ -93,7 +93,7 @@ export type SubscribeKind =
   | "CACHED_EVENT"
   | "FETCHED_EVENT"
   | "COUNT"
-  | "EOSE"
+  | "CONNECTION_STATUS"
   | "EOCE"
   | "BUFFER_FULL";
 

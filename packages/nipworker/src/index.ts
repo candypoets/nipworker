@@ -2,45 +2,30 @@ import { SharedBufferReader } from "src/lib/sharedBuffer";
 import {
   type MainToWorkerMessage,
   type PipelineConfig,
-  type RelayStatusUpdate,
   type Request,
   type SubscriptionConfig,
   type WorkerToMainMessage,
+  type ConnectionStatus
 } from "@candypoets/rust-main";
 
 import type { AnyKind, ParsedEvent } from "src/types";
 
 import { decode, encode } from "@msgpack/msgpack";
 import type { NostrEvent } from "nostr-tools";
-import type { SubscribeKind, PublishKind } from "src/types";
+import type { SubscribeKind } from "src/types";
 
 import RustWorker from "@candypoets/rust-worker/worker.js?worker";
 
 // Re-export types for external use
-export type { Request };
+export type { Request, ConnectionStatus };
+
 
 // Callback for subscription events
 export type SubscriptionCallback = (
   data: ParsedEvent<AnyKind>[] | number,
   type: SubscribeKind,
 ) => void;
-type PublishCallback = (data: RelayStatusUpdate, type: PublishKind) => void;
 
-export enum PublishStatus {
-  StatusPending = "pending",
-  StatusSent = "sent",
-  StatusSuccess = "success",
-  StatusFailed = "failed",
-  StatusRejected = "rejected",
-  StatusConnError = "connection_error",
-}
-
-export type RelayStatus = {
-  relay: string;
-  status: PublishStatus;
-  message: string;
-  timestamp: number;
-};
 
 export interface SubscriptionOptions {
   pipeline?: PipelineConfig;
@@ -85,7 +70,7 @@ class NostrManager {
       refCount: number;
     }
   >();
-  private publishes = new Map<string, PublishCallback>();
+  private publishes = new Map<string, {buffer: SharedArrayBuffer}>();
   private signers = new Map<string, string>(); // name -> secret key hex
 
   public PERPETUAL_SUBSCRIPTIONS = ["notifications", "starterpack"];
@@ -127,12 +112,7 @@ class NostrManager {
   }
 
   private handleWorkerMessage(message: WorkerToMainMessage) {
-    if ("PublishStatus" in message) {
-      this.handlePublishStatus(
-        message.PublishStatus.publish_id,
-        message.PublishStatus.status,
-      );
-    } else if ("Count" in message) {
+    if ("Count" in message) {
       // this.handleSubscriptionCount(message.Count.subscription_id, message.Count.count);
     } else if ("SignedEvent" in message) {
       this.handleSignedEvent(
@@ -143,24 +123,6 @@ class NostrManager {
       this.handlePublicKey(message.PublicKey.public_key);
     } else {
       console.warn("Unknown message type from worker:", message);
-    }
-  }
-
-  private handlePublishStatus(
-    publishId: string,
-    statuses: RelayStatusUpdate[],
-  ) {
-    const publishCallback = this.publishes.get(publishId);
-    if (!statuses[0]) return;
-    if (!publishCallback) {
-      const publishAllCallback = this.publishes.get("*");
-      return (
-        publishAllCallback && publishAllCallback(statuses[0], "PUBLISH_STATUS")
-      );
-    }
-
-    if (statuses.length > 0) {
-      publishCallback(statuses[0], "PUBLISH_STATUS");
     }
   }
 
@@ -181,22 +143,6 @@ class NostrManager {
     }
     const shortId = Math.abs(hash).toString(36);
     return shortId.substring(0, 63);
-  }
-
-  private writeToBuffer(
-      sharedBuffer: SharedArrayBuffer,
-      data: Uint8Array
-  ): void {
-      // Get the buffer as Uint8Array for manipulation
-      const bufferUint8 = new Uint8Array(sharedBuffer);
-
-      // Write the length prefix (4 bytes, little endian) at position 0
-      const lengthView = new DataView(new ArrayBuffer(4));
-      lengthView.setUint32(0, data.length, true); // little endian
-      bufferUint8.set(new Uint8Array(lengthView.buffer), 0);
-
-      // Write the actual data after the length prefix (starting at position 4)
-      bufferUint8.set(data, 4);
   }
 
   subscribe(
@@ -315,12 +261,15 @@ class NostrManager {
     }
   }
 
-  publish(publish_id: string, event: NostrEvent, callback?: PublishCallback) {
-    try {
-      if (callback) {
-        this.publishes.set(publish_id, callback);
-      }
+  publish(publish_id: string, event: NostrEvent): SharedArrayBuffer {
 
+    // a publish buffer fit in 3kb
+    const buffer = new SharedArrayBuffer(3072);
+
+    // Initialize the buffer (sets write position to 4)
+    SharedBufferReader.initializeBuffer(buffer);
+
+    try {
       const template = {
         kind: event.kind,
         content: event.content,
@@ -335,7 +284,11 @@ class NostrManager {
       };
 
       const p = encode(message);
-      this.worker.postMessage(p);
+
+      this.worker.postMessage({ serializedMessage: p, sharedBuffer: buffer });
+
+      this.publishes.set(publish_id, {buffer});
+      return buffer;
     } catch (error) {
       console.error("Failed to publish event:", error);
       throw error;
@@ -377,12 +330,6 @@ class NostrManager {
     };
     const pack = encode(message);
     this.worker.postMessage(pack);
-  }
-
-  addPublishCallbackAll(
-    callback: (status: RelayStatusUpdate, eventId: string) => void,
-  ) {
-    this.publishes.set("*", callback as any);
   }
 
   cleanup(): void {

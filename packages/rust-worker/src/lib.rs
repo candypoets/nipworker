@@ -144,7 +144,7 @@ fn setup_tracing() {
             .with_writer(|| ConsoleWriter)
             .without_time()
             .with_target(false)
-            .with_max_level(tracing::Level::ERROR)
+            .with_max_level(tracing::Level::INFO)
             .try_init();
 
         console_log!("Tracing subscriber initialized for Web Worker");
@@ -239,6 +239,7 @@ impl NostrClient {
         &self,
         publish_id: String,
         template: EventTemplate,
+        shared_buffer: SharedArrayBuffer,
     ) -> Result<String, JsValue> {
         let mut event = self
             .signer_manager
@@ -247,7 +248,7 @@ impl NostrClient {
 
         let summary = self
             .network_manager
-            .publish_event(publish_id, &mut event)
+            .publish_event(publish_id, &mut event, shared_buffer)
             .await
             .map_err(|e| JsValue::from_str(&format!("Failed to publish event: {}", e)))?;
 
@@ -378,9 +379,16 @@ impl NostrClient {
                         )
                         .await?;
                     }
+                    MainToWorkerMessage::Publish {
+                        publish_id,
+                        template,
+                    } => {
+                        self.publish_event(publish_id, template, shared_buffer)
+                            .await?;
+                    }
                     _ => {
                         return Err(JsValue::from_str(
-                            "Only Subscribe messages support new format",
+                            "Only Subscribe adn Publish messages support new format",
                         ));
                     }
                 }
@@ -415,11 +423,12 @@ impl NostrClient {
                 self.close_subscription(subscription_id).await?;
             }
             MainToWorkerMessage::Publish {
-                publish_id,
-                template,
+                publish_id: _,
+                template: _,
             } => {
-                info!("Publishing event with ID: {}", publish_id);
-                self.publish_event(publish_id, template).await?;
+                return Err(JsValue::from_str(
+                    "Publish requires SharedArrayBuffer in new format",
+                ));
             }
             MainToWorkerMessage::SignEvent { template } => {
                 self.sign_event(template)?;

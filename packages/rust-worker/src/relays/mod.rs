@@ -15,7 +15,7 @@ pub mod types;
 
 // Re-export main public API
 pub use connection::RelayConnection;
-pub use connection_registry::{ConnectionRegistry, PublishHandle, SubscriptionHandle};
+pub use connection_registry::ConnectionRegistry;
 pub use types::{
     ClientMessage, ConnectionStatus, PublishStatus, RelayError, RelayMessage, RelayResponse,
     SubscriptionStatus,
@@ -23,9 +23,6 @@ pub use types::{
 
 // Re-export nostr types for convenience
 pub use nostr::{Event, EventId, Filter, PublicKey};
-
-use futures::future::AbortHandle;
-use std::collections::HashMap;
 
 /// Main entry point for relay operations
 ///

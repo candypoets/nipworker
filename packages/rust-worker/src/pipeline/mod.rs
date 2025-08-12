@@ -1,14 +1,25 @@
 use crate::db::NostrDB;
 use crate::parser::Parser;
 use crate::types::*;
+use crate::utils::json::extract_event_id;
 use anyhow::Result;
 
+use hex::decode_to_slice;
 use nostr::Event as NostrEvent;
+use rustc_hash::FxHashSet;
+use serde_wasm_bindgen::from_value;
 use std::sync::Arc;
+use wasm_bindgen::prelude::*;
 
 pub mod pipes;
 
 pub use pipes::*;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_namespace = JSON)]
+    fn parse(s: &str) -> JsValue;
+}
 
 /// Universal event container that flows through the pipeline
 #[derive(Debug, Clone)]
@@ -75,7 +86,6 @@ pub trait Pipe {
 
 /// Enum representing all possible pipe types to avoid dynamic dispatch
 pub enum PipeType {
-    Deduplication(DeduplicationPipe),
     Parse(ParsePipe),
     SaveToDb(SaveToDbPipe),
     SerializeEvents(SerializeEventsPipe),
@@ -88,7 +98,6 @@ pub enum PipeType {
 impl PipeType {
     pub async fn process(&mut self, event: PipelineEvent) -> Result<PipeOutput> {
         match self {
-            PipeType::Deduplication(pipe) => pipe.process(event).await,
             PipeType::Parse(pipe) => pipe.process(event).await,
             PipeType::SaveToDb(pipe) => pipe.process(event).await,
             PipeType::SerializeEvents(pipe) => pipe.process(event).await,
@@ -101,7 +110,6 @@ impl PipeType {
 
     pub fn name(&self) -> &str {
         match self {
-            PipeType::Deduplication(pipe) => pipe.name(),
             PipeType::Parse(pipe) => pipe.name(),
             PipeType::SaveToDb(pipe) => pipe.name(),
             PipeType::SerializeEvents(pipe) => pipe.name(),
@@ -114,7 +122,6 @@ impl PipeType {
 
     pub fn can_direct_output(&self) -> bool {
         match self {
-            PipeType::Deduplication(pipe) => pipe.can_direct_output(),
             PipeType::Parse(pipe) => pipe.can_direct_output(),
             PipeType::SaveToDb(pipe) => pipe.can_direct_output(),
             PipeType::SerializeEvents(pipe) => pipe.can_direct_output(),
@@ -127,7 +134,6 @@ impl PipeType {
 
     pub fn run_for_cached_events(&self) -> bool {
         match self {
-            PipeType::Deduplication(pipe) => pipe.run_for_cached_events(),
             PipeType::Parse(pipe) => pipe.run_for_cached_events(),
             PipeType::SaveToDb(pipe) => pipe.run_for_cached_events(),
             PipeType::SerializeEvents(pipe) => pipe.run_for_cached_events(),
@@ -143,6 +149,8 @@ impl PipeType {
 pub struct Pipeline {
     pipes: Vec<PipeType>,
     subscription_id: String,
+    seen_ids: FxHashSet<[u8; 32]>,
+    dedup_max_size: usize,
 }
 
 impl Pipeline {
@@ -161,10 +169,12 @@ impl Pipeline {
         Ok(Self {
             pipes,
             subscription_id,
+            seen_ids: FxHashSet::with_capacity_and_hasher(10_000, Default::default()),
+            dedup_max_size: 10_000,
         })
     }
 
-    /// Create default pipeline: deduplication + parsing + save to db + serialize events
+    /// Create default pipeline: parsing + save to db + serialize events
     pub fn default(
         parser: Arc<Parser>,
         database: Arc<NostrDB>,
@@ -172,7 +182,6 @@ impl Pipeline {
     ) -> Result<Self> {
         Self::new(
             vec![
-                PipeType::Deduplication(DeduplicationPipe::new(10000)),
                 PipeType::Parse(ParsePipe::new(parser)),
                 PipeType::SaveToDb(SaveToDbPipe::new(database)),
                 PipeType::SerializeEvents(SerializeEventsPipe::new(subscription_id.clone())),
@@ -181,7 +190,7 @@ impl Pipeline {
         )
     }
 
-    /// Create proof verification pipeline: deduplication + parsing + proof verification
+    /// Create proof verification pipeline: parsing + proof verification
     pub fn proof_verification(
         parser: Arc<Parser>,
         subscription_id: String,
@@ -189,7 +198,6 @@ impl Pipeline {
     ) -> Result<Self> {
         Self::new(
             vec![
-                PipeType::Deduplication(DeduplicationPipe::new(10000)),
                 PipeType::KindFilter(KindFilterPipe::new(vec![9321, 7375])), // Only process cashu events
                 PipeType::Parse(ParsePipe::new(parser)),
                 PipeType::ProofVerification(ProofVerificationPipe::new(max_proofs)),
@@ -199,18 +207,51 @@ impl Pipeline {
     }
 
     /// Process a single event through the pipeline
-    pub async fn process(&mut self, mut event: PipelineEvent) -> Result<Option<Vec<u8>>> {
-        // Flow through each pipe
+    pub async fn process(&mut self, raw_event_json: &str) -> Result<Option<Vec<u8>>> {
+        // 1️⃣ Extract id
+        let id_hex = match extract_event_id(raw_event_json) {
+            Some(id) => id,
+            None => {
+                tracing::warn!("No id field found in incoming event");
+                return Ok(None);
+            }
+        };
+
+        // 2️⃣ Decode hex to [u8; 32]
+        let mut id_bytes = [0u8; 32];
+        if decode_to_slice(id_hex, &mut id_bytes).is_err() {
+            tracing::warn!("Invalid hex in event id: {}", id_hex);
+            return Ok(None);
+        }
+
+        // 3️⃣ Deduplicate
+        if self.seen_ids.contains(&id_bytes) {
+            return Ok(None); // already processed
+        }
+        if self.seen_ids.len() < self.dedup_max_size {
+            self.seen_ids.insert(id_bytes);
+        }
+
+        // 4️⃣ Parse full nostr::Event
+        let nostr_event: nostr::Event = match from_value(parse(raw_event_json)) {
+            Ok(ev) => ev,
+            Err(e) => {
+                tracing::debug!("Failed to parse nostr::Event: {}", e);
+                return Ok(None);
+            }
+        };
+
+        let mut event = PipelineEvent::from_raw(nostr_event, None);
+
+        // 5️⃣ Run through pipes
         let pipes_len = self.pipes.len();
         for (i, pipe) in self.pipes.iter_mut().enumerate() {
             let is_last = i == pipes_len - 1;
-
             match pipe.process(event).await? {
                 PipeOutput::Event(e) => event = e,
                 PipeOutput::Drop => return Ok(None),
                 PipeOutput::DirectOutput(data) => {
                     if !is_last {
-                        // This should never happen due to constructor validation
                         return Err(anyhow::anyhow!(
                             "Non-terminal pipe '{}' produced DirectOutput",
                             pipe.name()
@@ -221,8 +262,6 @@ impl Pipeline {
             }
         }
 
-        // If we reach here, no pipe produced DirectOutput
-        // This shouldn't happen with a properly configured pipeline
         Ok(None)
     }
 

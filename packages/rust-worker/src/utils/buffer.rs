@@ -1,18 +1,19 @@
 use js_sys::{SharedArrayBuffer, Uint8Array};
 use tracing::{debug, error, warn};
 
-use crate::EOSE;
+use crate::WorkerToMainMessage;
 
 pub struct SharedBufferManager;
 
 impl SharedBufferManager {
-    pub async fn send_eose(shared_buffer: &SharedArrayBuffer, eose: EOSE) {
-        let message = crate::WorkerToMainMessage::Eose { data: eose };
-
-        let data = match rmp_serde::to_vec_named(&message) {
+    pub async fn send_connection_status(
+        shared_buffer: &SharedArrayBuffer,
+        status: WorkerToMainMessage,
+    ) {
+        let data = match rmp_serde::to_vec_named(&status) {
             Ok(msgpack) => msgpack,
             Err(e) => {
-                error!("Failed to serialize EOSE: {}", e);
+                error!("Failed to serialize ConnectionStatus: {}", e);
                 return;
             }
         };

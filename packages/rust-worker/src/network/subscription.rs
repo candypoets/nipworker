@@ -258,16 +258,6 @@ impl SubscriptionManager {
 
                 for pipe_config in config.pipes {
                     let pipe = match pipe_config.name.as_str() {
-                        "deduplication" => {
-                            let max_size = pipe_config
-                                .params
-                                .as_ref()
-                                .and_then(|p| p.get("maxSize").or_else(|| p.get("max_size")))
-                                .and_then(|v| v.as_u64())
-                                .unwrap_or(10000)
-                                as usize;
-                            PipeType::Deduplication(DeduplicationPipe::new(max_size))
-                        }
                         "parse" => PipeType::Parse(ParsePipe::new(self.parser.clone())),
                         "saveToDb" | "save_to_db" => {
                             PipeType::SaveToDb(SaveToDbPipe::new(self.database.clone()))
