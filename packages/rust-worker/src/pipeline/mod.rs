@@ -269,6 +269,13 @@ impl Pipeline {
         &mut self,
         mut event: PipelineEvent,
     ) -> Result<Option<Vec<u8>>> {
+        if self.seen_ids.contains(&event.id) {
+            return Ok(None); // already processed
+        }
+        if self.seen_ids.len() < self.dedup_max_size {
+            self.seen_ids.insert(event.id);
+        }
+
         let pipes_len = self.pipes.len();
         for (i, pipe) in self.pipes.iter_mut().enumerate() {
             if !pipe.run_for_cached_events() {
