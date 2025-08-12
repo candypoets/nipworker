@@ -60,7 +60,7 @@ export interface NostrManagerConfig {
  * Pure TypeScript NostrClient that manages worker communication and state.
  * Uses WASM utilities for heavy lifting (encoding, decoding, crypto).
  */
-class NostrManager {
+export class NostrManager {
   private worker: Worker;
   private subscriptions = new Map<
     string,

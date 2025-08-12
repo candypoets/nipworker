@@ -1,5 +1,5 @@
-import { EventTemplate, NostrEvent } from "nostr-tools";
-import { nostrManager, SubscriptionOptions } from ".";
+import {  NostrEvent } from "nostr-tools";
+import { nostrManager, SubscriptionOptions, type NostrManager } from ".";
 import { SharedBufferReader } from "src/lib/sharedBuffer";
 import type { WorkerToMainMessage, Request } from "src/types";
 
@@ -8,6 +8,7 @@ export function useSubscription(
   requests: Request[],
   callback: any = () => {},
   options: SubscriptionOptions = { closeOnEose: false },
+  manager: NostrManager = nostrManager
 ): () => void {
   if (!subId) {
     console.warn("useSharedSubscription: No subscription ID provided");
@@ -29,12 +30,12 @@ export function useSubscription(
       clearTimeout(timeoutId);
     }
     if (hasSubscribed && !hasUnsubscribed) {
-      nostrManager.unsubscribe(subId);
+      manager.unsubscribe(subId);
       hasUnsubscribed = true;
     }
   };
 
-  buffer = nostrManager.subscribe(subId, requests, options);
+  buffer = manager.subscribe(subId, requests, options);
 
   hasSubscribed = true;
 
