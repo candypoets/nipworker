@@ -2,6 +2,14 @@ import { encode } from "@msgpack/msgpack";
 import { unpack } from "msgpackr";
 import type { WorkerToMainMessage } from "src/types";
 
+const WorkerToMainMessageBufferFull = Object.freeze({
+  SubscriptionEvent: {
+    subscription_id: "",
+    event_type: "BUFFER_FULL",
+    event_data: []
+  }
+});
+
 /**
  * Utility library for reading from SharedArrayBuffer with 4-byte header approach
  * Header format: [0-3]: Write position (4 bytes, little endian)
@@ -66,97 +74,93 @@ export class SharedBufferReader {
         return false;
       }
     }
+
+
   /**
    * Read new messages from SharedArrayBuffer since last read position
    * @param buffer The SharedArrayBuffer to read from
    * @param lastReadPosition Last position read (default: 0, meaning read from beginning)
    * @returns Object containing new messages and updated read position
    */
-  static readMessages(
-    buffer: SharedArrayBuffer,
-    lastReadPosition: number = 0,
-  ): {
-    messages: WorkerToMainMessage[];
-    newReadPosition: number;
-    hasNewData: boolean;
-  } {
-    const view = new DataView(buffer);
-    const uint8View = new Uint8Array(buffer);
+   static readMessages(buffer: SharedArrayBuffer, lastReadPosition: number = 0) {
+       const view = new DataView(buffer);
+       const uint8View = new Uint8Array(buffer);
 
-    // Read current write position from header (first 4 bytes, little endian)
-    const currentWritePosition = view.getUint32(0, true);
+       const currentWritePosition = view.getUint32(0, true);
 
-    // Check if there's new data to read
-    const dataStartOffset = 4; // Skip 4-byte write position header
-    const actualLastReadPosition = Math.max(lastReadPosition, dataStartOffset);
+       const dataStartOffset = 4;
+       let currentPos = lastReadPosition < dataStartOffset
+           ? dataStartOffset
+           : lastReadPosition;
 
-    if (currentWritePosition <= actualLastReadPosition) {
-      return {
-        messages: [],
-        newReadPosition: actualLastReadPosition,
-        hasNewData: false,
-      };
-    }
+       if (currentWritePosition <= currentPos) {
+           return { messages: [], newReadPosition: currentPos, hasNewData: false };
+       }
 
-    const messages: WorkerToMainMessage[] = [];
-    let currentPos = actualLastReadPosition;
+       const maxMessages = 256;
+       const messages = new Array(maxMessages);
+       let msgCount = 0;
 
-    try {
-      // Read length-prefixed events
-      while (currentPos < currentWritePosition) {
-        // Read 4-byte length prefix (little endian)
-        if (currentPos + 4 > currentWritePosition) break;
-        const eventLength = view.getUint32(currentPos, true);
-        currentPos += 4;
+       // Reusable decoding buffer (non-shared!)
+       let scratch = new Uint8Array(65536); // initial size — grows if needed
 
-        // Check for special "buffer full" marker
-        if (eventLength === 1) {
-          if (currentPos + 1 <= currentWritePosition) {
-            const marker = uint8View[currentPos];
-            if (marker === 0xFF) {
-              // Buffer full detected - create special message
-              const bufferFullMessage: WorkerToMainMessage = {
-                SubscriptionEvent: {
-                  subscription_id: "",
-                  event_type: "BUFFER_FULL" as any,
-                  event_data: []
-                }
-              };
-              messages.push(bufferFullMessage);
-              currentPos += 1;
-              continue;
-            }
-          }
-        }
+       try {
+           while (currentPos < currentWritePosition) {
+               if (currentPos + 4 > currentWritePosition) break;
 
-        // Read the event data
-        if (currentPos + eventLength > currentWritePosition) break;
-        const eventData = uint8View.slice(currentPos, currentPos + eventLength);
+               const eventLength = view.getUint32(currentPos, true);
+               currentPos += 4;
 
-        // Decode the event
-        const message = unpack(eventData) as WorkerToMainMessage;
-        messages.push(message);
+               if (eventLength === 1) {
+                   if (currentPos < currentWritePosition && uint8View[currentPos] === 0xFF) {
+                       if (msgCount < maxMessages) {
+                           messages[msgCount++] = WorkerToMainMessageBufferFull;
+                       }
+                       currentPos += 1;
+                       continue;
+                   }
+               }
 
-        currentPos += eventLength;
-      }
+               if (currentPos + eventLength > currentWritePosition) break;
 
-      return {
-        messages,
-        newReadPosition: currentPos,
-        hasNewData: messages.length > 0,
-      };
-    } catch (error) {
-      console.error(
-        "Failed to decode length-prefixed msgpack data from SharedArrayBuffer:",
-        error,
-      );
-      return {
-        messages,
-        newReadPosition: actualLastReadPosition,
-        hasNewData: false,
-      };
-    }
-  }
+               // Ensure scratch buffer is large enough
+               if (scratch.length < eventLength) {
+                   scratch = new Uint8Array(eventLength);
+               }
+
+               // Copy into non-shared buffer
+               scratch.set(
+                   uint8View.subarray(currentPos, currentPos + eventLength),
+                   0
+               );
+
+               const message = unpack(scratch.subarray(0, eventLength));
+               if (msgCount < maxMessages) {
+                   messages[msgCount++] = message;
+               }
+
+               currentPos += eventLength;
+           }
+
+           messages.length = msgCount;
+           return {
+               messages,
+               newReadPosition: currentPos,
+               hasNewData: msgCount > 0,
+           };
+
+       } catch (error) {
+           console.error('Failed to decode length-prefixed msgpack data from SharedArrayBuffer:', error);
+           messages.length = msgCount;
+           return {
+               messages,
+               newReadPosition: lastReadPosition < dataStartOffset ? dataStartOffset : lastReadPosition,
+               hasNewData: false,
+           };
+       }
+   }
+
+
 
   /**
    * Read all messages from SharedArrayBuffer from the beginning (ignores lastReadPosition)
