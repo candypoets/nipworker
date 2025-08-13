@@ -19,7 +19,7 @@ impl SaveToDbPipe {
 impl Pipe for SaveToDbPipe {
     async fn process(&mut self, event: PipelineEvent) -> Result<PipeOutput> {
         if let Some(ref parsed_event) = event.parsed {
-            let _ = self.database.add_event(parsed_event.clone());
+            let _ = self.database.add_event(parsed_event.clone()).await;
             tracing::debug!("Saved event {} to database", hex::encode(event.id));
         }
 

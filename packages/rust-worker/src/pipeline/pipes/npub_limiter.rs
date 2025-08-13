@@ -40,12 +40,28 @@ impl Pipe for NpubLimiterPipe {
 
         // Get kind, pubkey, and timestamp from the nostr event
         let kind = nostr_event.kind.as_u64();
-        let pubkey = nostr_event.pubkey.to_string();
+        let mut pubkey = nostr_event.pubkey.to_string();
         let created_at = nostr_event.created_at.as_u64();
 
         // Only process events of the specified kind
         if kind != self.kind {
             return Ok(PipeOutput::Drop);
+        }
+
+        if kind == 4 {
+            let recipient = nostr_event
+                .tags
+                .iter()
+                .find_map(|tag| {
+                    let tag_vec = tag.as_vec();
+                    if tag_vec.len() >= 2 && tag_vec[0] == "p" {
+                        Some(tag_vec[1].clone())
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_default();
+            pubkey = format!("{}{}", pubkey.clone(), recipient);
         }
 
         // Prevent memory explosion by limiting total tracked npubs

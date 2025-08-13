@@ -744,12 +744,13 @@ impl<S: EventStorage> NostrDB<S> {
     }
 
     /// Add an event to the to_save buffer
-    pub fn add_event_to_save_buffer(&self, event: ParsedEvent) -> Result<(), DatabaseError> {
+    pub async fn add_event_to_save_buffer(&self, event: ParsedEvent) -> Result<(), DatabaseError> {
         let mut buffer = self.to_save.write().map_err(|_| DatabaseError::LockError)?;
         buffer.push(event);
-        if buffer.len() > 200 {
+        if buffer.len() > 50 {
             drop(buffer); // Release the lock before async call
-            let _ = self.flush_save_buffer();
+            tracing::info!("Processing flushing event to db");
+            let _ = self.flush_save_buffer().await;
         }
         Ok(())
     }
@@ -763,12 +764,21 @@ impl<S: EventStorage> NostrDB<S> {
             }
             buffer.drain(..).collect::<Vec<_>>()
         };
-
+        if !events_to_save.is_empty() {
+            info!(
+                "Flushing {} events from save buffer to storage",
+                events_to_save.len()
+            );
+        }
         self.save_events_to_storage(events_to_save).await
     }
 
     /// Process a batch of pending events with throttling
     async fn process_pending_events(&self) -> Result<()> {
+        info!(
+            "Processing {} pending events",
+            self.pending_events.read().unwrap().len()
+        );
         // Check if enough time has passed since last processing
         let should_process = {
             let last_time = self.last_process_time.read().unwrap();
@@ -812,7 +822,9 @@ impl<S: EventStorage> NostrDB<S> {
     /// Process a single event (the actual indexing logic)
     async fn process_single_event(&self, event: ParsedEvent) -> Result<()> {
         if self.should_cache_event(&event) {
-            self.add_event_to_save_buffer(event.clone())
+            let _ = self
+                .add_event_to_save_buffer(event.clone())
+                .await
                 .map_err(|e| warn!("Failed to add event to save buffer: {:?}", e))
                 .ok();
         }
@@ -917,8 +929,10 @@ impl<S: EventStorage> EventDatabase for NostrDB<S> {
     }
 
     async fn add_event(&self, event: ParsedEvent) -> Result<()> {
+        tracing::info!("Processing add event");
         // Validate event ID early
         if event.event.id.to_hex().is_empty() {
+            tracing::info!("Not Processing event in db pipe for database storage");
             return Err(anyhow::anyhow!("Event ID cannot be empty"));
         }
 
@@ -932,7 +946,7 @@ impl<S: EventStorage> EventDatabase for NostrDB<S> {
                 warn!("Event queue size is large: {} events pending", queue_size);
             }
         }
-
+        tracing::info!("Processing event in db pipe for database storage");
         // Try to process some events immediately (with throttling)
         self.process_pending_events().await.ok();
 
