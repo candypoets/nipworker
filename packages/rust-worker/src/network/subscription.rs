@@ -233,7 +233,7 @@ impl SubscriptionManager {
 
             let relays = self.database.find_relay_candidates(kind, &pubkey, &false);
 
-            info!(
+            debug!(
                 "No relays specified, found {} relay candidates",
                 relays.len()
             );

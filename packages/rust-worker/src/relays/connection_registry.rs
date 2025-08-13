@@ -92,7 +92,7 @@ impl ConnectionRegistry {
                 }
             }
             "EOSE" => {
-                tracing::info!(subscription_id = %id, relay_url = %relay_url, "Received EOSE");
+                tracing::debug!(subscription_id = %id, relay_url = %relay_url, "Received EOSE");
                 let eose = WorkerToMainMessage::ConnectionStatus {
                     status: kind.to_string(),
                     message: message.to_string(),

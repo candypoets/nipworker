@@ -23,7 +23,7 @@ impl CounterPipe {
 
 impl Pipe for CounterPipe {
     async fn process(&mut self, event: PipelineEvent) -> Result<PipeOutput> {
-        tracing::info!("Processing event in CounterPipe");
+        tracing::debug!("Processing event in CounterPipe");
         // Get kind from either raw or parsed event
         let (kind, pubkey) = if let Some(ref raw) = event.raw {
             (raw.kind.as_u64(), raw.pubkey.to_string())
