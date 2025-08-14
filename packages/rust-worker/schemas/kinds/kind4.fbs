@@ -1,0 +1,10 @@
+include "../common.fbs";
+
+namespace nostr.fb;
+
+table Kind4Parsed {
+  parsed_content: [ContentBlock];
+  decrypted_content: string;
+  chat_id: string (required);
+  recipient: string (required);
+}

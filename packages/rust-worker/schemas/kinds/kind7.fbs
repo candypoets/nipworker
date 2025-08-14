@@ -1,0 +1,12 @@
+include "../common.fbs";
+
+namespace nostr.fb;
+
+table Kind7Parsed {
+  reaction_type: ReactionType;
+  event_id: string (required);
+  pubkey: string (required);
+  event_kind: ulong;
+  emoji: Emoji;
+  target_coordinates: string;
+}

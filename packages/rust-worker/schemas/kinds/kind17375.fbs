@@ -1,0 +1,10 @@
+include "../common.fbs";
+
+namespace nostr.fb;
+
+table Kind17375Parsed {
+  mints: [string] (required);
+  p2pk_priv_key: string;
+  p2pk_pub_key: string;
+  decrypted: bool;
+}

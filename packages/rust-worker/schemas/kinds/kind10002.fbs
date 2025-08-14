@@ -1,0 +1,7 @@
+include "../common.fbs";
+
+namespace nostr.fb;
+
+table Kind10002Parsed {
+  relays: [RelayInfo] (required);
+}

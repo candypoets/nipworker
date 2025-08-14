@@ -1,0 +1,9 @@
+include "../common.fbs";
+
+namespace nostr.fb;
+
+table Kind7374Parsed {
+  quote_id: string (required);
+  mint_url: string (required);
+  expiration: ulong;
+}

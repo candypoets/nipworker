@@ -1,0 +1,18 @@
+include "../common.fbs";
+
+namespace nostr.fb;
+
+table Kind9735Parsed {
+  id: string (required);
+  amount: int32;
+  content: string (required);
+  bolt11: string (required);
+  preimage: string;
+  sender: string (required);
+  recipient: string (required);
+  event: string;
+  event_coordinate: string;
+  timestamp: ulong;
+  valid: bool;
+  description: ZapRequest (required);
+}

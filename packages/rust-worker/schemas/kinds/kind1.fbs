@@ -1,0 +1,12 @@
+include "../common.fbs";
+
+namespace nostr.fb;
+
+table Kind1Parsed {
+  parsed_content: [ContentBlock] (required);
+  shortened_content: [ContentBlock];
+  quotes: [ProfilePointer];
+  mentions: [EventPointer];
+  reply: EventPointer;
+  root: EventPointer;
+}

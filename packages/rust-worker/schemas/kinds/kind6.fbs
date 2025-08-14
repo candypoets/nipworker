@@ -1,0 +1,7 @@
+include "../common.fbs";
+
+namespace nostr.fb;
+
+table Kind6Parsed {
+  reposted_event: ParsedEvent;  // Defined in common.fbs
+}

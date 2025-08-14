@@ -10,6 +10,7 @@ static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 // Re-export common types and modules
 pub mod config;
 pub mod db;
+pub mod generated;
 pub mod network;
 pub mod parser;
 pub mod pipeline;

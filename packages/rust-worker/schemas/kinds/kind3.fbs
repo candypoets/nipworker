@@ -1,0 +1,7 @@
+include "../common.fbs";
+
+namespace nostr.fb;
+
+table Kind3Parsed {
+  contacts: [Contact] (required);
+}

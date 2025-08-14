@@ -1,0 +1,9 @@
+include "../common.fbs";
+
+namespace nostr.fb;
+
+table Kind10019Parsed {
+  trusted_mints: [MintInfo];
+  p2pk_pubkey: string;
+  read_relays: [string];
+}

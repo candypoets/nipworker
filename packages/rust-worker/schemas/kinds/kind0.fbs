@@ -1,0 +1,26 @@
+include "../common.fbs";
+
+namespace nostr.fb;
+
+table Kind0Parsed {
+  pubkey: string;
+  name: string;
+  display_name: string;
+  picture: string;
+  banner: string;
+  about: string;
+  website: string;
+  nip05: string;
+  lud06: string;
+  lud16: string;
+  github: string;
+  twitter: string;
+  mastodon: string;
+  nostr: string;
+  display_name_alt: string;
+  username: string;
+  bio: string;
+  image: string;
+  avatar: string;
+  background: string;
+}
