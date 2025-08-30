@@ -1,9 +1,8 @@
 #!/bin/bash
 
-# Enable error exit but with better handling
 set -e
 
-echo "Building Nostr Worker WASM module (Memory Optimized for CI)..."
+echo "Building Nostr Worker WASM module (Performance Optimized)..."
 
 # Install required tools if not available
 if ! command -v wasm-pack &> /dev/null; then
@@ -34,43 +33,34 @@ optimize_wasm() {
         # Create backup
         cp "$file_path" "$backup_path"
 
-        # Apply performance-focused optimizations
-        # -O3: Optimize for speed, not size
-        # --enable-simd: Enable SIMD instructions for crypto operations
-        # --enable-nontrapping-float-to-int: Better float performance
-        # --inline-functions-with-loops: Inline hot functions
-        # --optimize-for-js: Optimize for JavaScript engine patterns
-        # Use memory-friendly optimizations for CI environment
-        if [ "${CI:-false}" = "true" ]; then
-            echo "Detected CI environment - using memory-conservative optimizations..."
-            # Less aggressive optimization to avoid OOM in GitHub Actions
-            if ! wasm-opt -O2 \
-                --enable-bulk-memory \
-                --enable-sign-ext \
-                --strip-debug \
-                --strip-producers \
-                --memory-max=2048 \
-                "$backup_path" -o "$file_path"; then
-                echo "Warning: wasm-opt optimization failed, using unoptimized version"
-                mv "$backup_path" "$file_path"
-                return 1
-            fi
+        # Try full optimization first
+        echo "Applying full wasm-opt optimizations..."
+        if wasm-opt -O3 \
+            --enable-simd \
+            --enable-bulk-memory \
+            --enable-sign-ext \
+            --enable-mutable-globals \
+            --enable-nontrapping-float-to-int \
+            --inline-functions-with-loops \
+            --optimize-for-js \
+            --strip-debug \
+            --strip-producers \
+            "$backup_path" -o "$file_path"; then
+            echo "✅ Full optimization successful"
         else
-            echo "Local build detected - using full optimizations..."
-            if ! wasm-opt -O3 \
-                --enable-simd \
+            echo "⚠️ Full optimization failed, trying fallback..."
+            if wasm-opt -O2 \
                 --enable-bulk-memory \
                 --enable-sign-ext \
-                --enable-mutable-globals \
-                --enable-nontrapping-float-to-int \
-                --inline-functions-with-loops \
-                --optimize-for-js \
                 --strip-debug \
                 --strip-producers \
                 "$backup_path" -o "$file_path"; then
-                echo "Warning: wasm-opt optimization failed, using unoptimized version"
+                echo "✅ Fallback optimization successful"
+            else
+                echo "⚠️ All optimizations failed, using unoptimized version"
                 mv "$backup_path" "$file_path"
-                return 1
+                rm -f "$backup_path"
+                return 0
             fi
         fi
 
@@ -89,53 +79,49 @@ optimize_wasm() {
         fi
 
         # Remove backup
-        rm "$backup_path"
+        rm -f "$backup_path"
     else
         echo "Skipping optimization for $file_path (wasm-opt not available)"
     fi
 }
 
-# Build worker WASM module with memory considerations
+# Build configuration based on environment
 echo ""
 if [ "${CI:-false}" = "true" ]; then
-    echo "Building worker WASM module (CI Memory-Safe Mode)..."
+    echo "Building in CI environment..."
     # Check available memory
     if command -v free >/dev/null 2>&1; then
         echo "Available memory:"
         free -h
     fi
 
-    # Use less aggressive Rust compilation in CI to avoid OOM
+    # Use memory-safe Rust compilation settings
     export CARGO_PROFILE_RELEASE_LTO=thin
     export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=4
-    echo "Using memory-safe build settings for CI environment"
-else
-    echo "Building worker WASM module (Performance Mode)..."
-fi
+    echo "Using CI-safe Rust compilation settings"
 
-# Build with wasm-pack using appropriate profile for environment
-if [ "${CI:-false}" = "true" ]; then
-    echo "Using CI-optimized build profile..."
-    if ! wasm-pack build --release --target web -- --profile ci-release; then
-        echo "CI build failed, falling back to standard release build..."
-        if ! wasm-pack build --release --target web; then
-            echo "Error: wasm-pack build failed"
-            exit 1
-        fi
+    # Try CI profile first, fallback to release
+    echo "Attempting CI-optimized build profile..."
+    if wasm-pack build --release --target web -- --profile ci-release; then
+        echo "✅ CI profile build successful"
+    else
+        echo "⚠️ CI profile failed, using standard release build..."
+        wasm-pack build --release --target web
     fi
 else
-    if ! wasm-pack build --release --target web; then
-        echo "Error: wasm-pack build failed"
-        exit 1
-    fi
+    echo "Building in local environment..."
+    wasm-pack build --release --target web
 fi
 
 # Optimize the generated WASM file
 if [ -f "pkg/rust_worker_bg.wasm" ]; then
     optimize_wasm "pkg/rust_worker_bg.wasm"
+else
+    echo "❌ WASM file not found - build may have failed"
+    exit 1
 fi
 
-echo "✅ Successfully built for maximum performance!"
+echo "✅ WASM build completed successfully!"
 
 # Create worker.js file
 echo ""
@@ -186,98 +172,60 @@ EOF
 echo "Updating package.json..."
 PACKAGE_JSON="pkg/package.json"
 
-# Check if worker.js is already in the files array
-if ! grep -q '"worker.js"' "$PACKAGE_JSON" 2>/dev/null; then
-    echo "Adding worker.js to package.json files array..."
+if [ -f "$PACKAGE_JSON" ]; then
+    if ! grep -q '"worker.js"' "$PACKAGE_JSON"; then
+        echo "Adding worker.js to package.json files array..."
 
-    # Simple approach: just add worker.js if package.json exists
-    if [ -f "$PACKAGE_JSON" ]; then
-        # Create a backup
-        cp "$PACKAGE_JSON" "${PACKAGE_JSON}.bak"
-
-        # Use a simpler sed approach or skip if it fails
-        if [[ "$OSTYPE" == "darwin"* ]]; then
-            # macOS
-            sed -i '' 's/"rust_worker_bg.wasm"/"rust_worker_bg.wasm",\
-    "worker.js"/' "$PACKAGE_JSON" 2>/dev/null || {
-                echo "Warning: Could not update package.json automatically"
-                mv "${PACKAGE_JSON}.bak" "$PACKAGE_JSON"
-            }
-        else
-            # Linux - use a more reliable approach
-            sed -i 's/"rust_worker_bg.wasm"/"rust_worker_bg.wasm",\n    "worker.js"/' "$PACKAGE_JSON" 2>/dev/null || {
-                echo "Warning: Could not update package.json automatically"
-                mv "${PACKAGE_JSON}.bak" "$PACKAGE_JSON"
-            }
-        fi
-
-        # Clean up backup if successful
-        if [ -f "${PACKAGE_JSON}.bak" ]; then
-            rm "${PACKAGE_JSON}.bak" 2>/dev/null || true
-        fi
-
-        echo "Added worker.js to package.json files array (if successful)"
+        # Simple and reliable approach - add after rust_worker_bg.wasm
+        sed -i.bak 's/"rust_worker_bg.wasm"/"rust_worker_bg.wasm",\
+    "worker.js"/' "$PACKAGE_JSON" && rm -f "${PACKAGE_JSON}.bak" || {
+            echo "⚠️ Could not update package.json automatically"
+        }
     else
-        echo "Warning: package.json not found at $PACKAGE_JSON"
+        echo "worker.js already present in package.json"
     fi
 else
-    echo "worker.js already present in package.json files array"
+    echo "⚠️ package.json not found at $PACKAGE_JSON"
 fi
 
 # Generate performance report
 echo ""
-echo "Build complete! Performance-optimized build generated."
-echo ""
+echo "📊 Build Report"
+echo "==============="
 
 # List generated files with sizes
 echo "Generated files:"
-if ls pkg/*.wasm pkg/*.js pkg/*.d.ts pkg/worker.js >/dev/null 2>&1; then
-    ls -lh pkg/*.wasm pkg/*.js pkg/*.d.ts pkg/worker.js 2>/dev/null | while read -r line; do
-        echo "  $line"
-    done
-else
-    echo "  Warning: Some expected files may not have been generated"
-fi
+for file in pkg/*.wasm pkg/*.js pkg/*.d.ts pkg/worker.js; do
+    if [ -f "$file" ]; then
+        ls -lh "$file" | awk '{print "  " $9 ": " $5}'
+    fi
+done
 
-# Show what optimizations are being used from Cargo.toml
+# Show optimizations applied
 echo ""
-echo "📊 Build optimizations applied (from Cargo.toml):"
-echo "  - opt-level = 3 (maximum performance)"
-echo "  - lto = true (link-time optimization)"
-echo "  - codegen-units = 1 (better optimization)"
-echo "  - panic = abort (smaller binary)"
-echo "  - strip = true (no debug symbols)"
-echo "  - overflow-checks = false (faster arithmetic)"
-
+echo "Optimizations applied:"
+if [ "${CI:-false}" = "true" ]; then
+    echo "  - CI-safe Rust compilation (thin LTO, 4 codegen units)"
+else
+    echo "  - Full Rust optimization (opt-level=3, full LTO)"
+fi
+echo "  - WASM optimization with wasm-opt"
+echo "  - Debug symbols stripped"
+echo "  - Producer info stripped"
 
 # Final size report
 if [ -f "pkg/rust_worker_bg.wasm" ]; then
     WORKER_SIZE=$(wc -c < pkg/rust_worker_bg.wasm)
-    # Calculate MB using shell arithmetic to avoid bc dependency
     MB_SIZE=$(( WORKER_SIZE / 1024 / 1024 ))
-    DECIMAL_PART=$(( (WORKER_SIZE % (1024 * 1024)) * 100 / (1024 * 1024) ))
-    # Ensure decimal part is always 2 digits
-    if [ $DECIMAL_PART -lt 10 ]; then
-        DECIMAL_PART="0$DECIMAL_PART"
-    fi
-    echo "Final WASM size: $WORKER_SIZE bytes (${MB_SIZE}.${DECIMAL_PART}MB)"
+    KB_REMAINDER=$(( (WORKER_SIZE % (1024 * 1024)) / 1024 ))
+    echo ""
+    echo "Final WASM size: $WORKER_SIZE bytes (${MB_SIZE}.$(printf "%02d" $((KB_REMAINDER * 100 / 1024)))MB)"
 fi
 
 echo ""
+echo "✅ Nostr Worker build complete!"
 if [ "${CI:-false}" = "true" ]; then
-    echo "✅ Nostr Worker build complete (CI Memory-Safe Mode)!"
-    echo ""
-    echo "This build prioritizes:"
-    echo "  - Reliable CI builds without OOM"
-    echo "  - Moderate optimization level"
-    echo "  - Memory-conservative compilation"
-    echo "  - Stable GitHub Actions execution"
+    echo "   Built with CI-safe settings for reliable GitHub Actions execution"
 else
-    echo "✅ Nostr Worker build complete (Performance Mode)!"
-    echo ""
-    echo "This build prioritizes:"
-    echo "  - Fast execution speed"
-    echo "  - Optimized crypto operations"
-    echo "  - Better memory access patterns"
-    echo "  - Improved JavaScript interop"
+    echo "   Built with full performance optimizations"
 fi
