@@ -124,7 +124,6 @@ jobs:
 
             ## 📦 Published Packages
             - **[@candypoets/nipworker](https://www.npmjs.com/package/@candypoets/nipworker)** - `${{ steps.sync_versions.outputs.version }}`
-            - **[@candypoets/rust-main](https://www.npmjs.com/package/@candypoets/rust-main)** - `${{ steps.sync_versions.outputs.version }}`
             - **[@candypoets/rust-worker](https://www.npmjs.com/package/@candypoets/rust-worker)** - `${{ steps.sync_versions.outputs.version }}`
 
             ## 🔗 Dependencies
