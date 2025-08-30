@@ -1,4 +1,3 @@
-packages/nipworker/rust-main/target
 packages/rust-worker/rust-src/target
 packages/*/node_modules
 packages/*/dist

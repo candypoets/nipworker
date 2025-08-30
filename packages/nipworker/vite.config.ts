@@ -42,7 +42,6 @@ export default defineConfig({
           "@msgpack/msgpack",
           "nostr-tools",
           "msgpackr",
-          "@candypoets/rust-main"
         ].includes(id);
       },
       input: {
