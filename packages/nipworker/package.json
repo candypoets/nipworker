@@ -60,11 +60,12 @@
     "vite-plugin-wasm": "^3.0.0"
   },
   "dependencies": {
-    "@candypoets/rust-worker": "0.0.33",
+    "@candypoets/rust-worker": "0.0.36",
     "@msgpack/msgpack": "^3.0.0",
     "flatbuffers": "^25.2.10",
     "msgpackr": "^1.11.5",
-    "nostr-tools": "^2.0.0"
+    "nostr-tools": "^2.0.0",
+    "@candypoets/rust-main": "0.0.36"
   },
   "engines": {
     "node": ">=18.0.0"
