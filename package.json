@@ -13,14 +13,12 @@
     "build:nipworker": "npm run build --workspace=packages/nipworker",
     "flatc:rust-worker": "flatc --rust --gen-object-api --gen-all --filename-suffix '' -o packages/rust-worker/src/generated schemas/message.fbs",
     "build:rust-worker": "npm run build --workspace=packages/rust-worker",
-    "build:rust-main": "npm run build --workspace=packages/rust-main",
     "test": "npm run test --workspaces --if-present",
     "clean": "npm run clean --workspaces --if-present",
     "dev": "npm run dev --workspace=packages/nipworker",
-    "publish:rust-main": "npm publish --workspace=packages/rust-main --access public",
     "publish:rust-worker": "npm publish --workspace=packages/rust-worker --access public",
     "publish:nipworker": "npm publish --workspace=packages/nipworker --access public",
-    "publish:all": "npm run publish:rust-main && npm run publish:rust-worker && npm run publish:nipworker"
+    "publish:all": "npm run publish:rust-worker && npm run publish:nipworker"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
