@@ -1,6 +1,6 @@
 {
   "name": "@candypoets/nipworker",
-  "version": "0.0.31",
+  "version": "0.0.32",
   "description": "Nostr client library with worker-based architecture using Rust WASM",
   "type": "module",
   "module": "./dist/index.js",
