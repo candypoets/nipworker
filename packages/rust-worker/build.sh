@@ -1,6 +1,7 @@
 #!/bin/bash
 
-set -e
+# Remove set -e to prevent unexpected exits on non-critical errors
+# set -e
 
 echo "Building Nostr Worker WASM module (Performance Optimized)..."
 
@@ -39,7 +40,7 @@ optimize_wasm() {
         # --enable-nontrapping-float-to-int: Better float performance
         # --inline-functions-with-loops: Inline hot functions
         # --optimize-for-js: Optimize for JavaScript engine patterns
-        wasm-opt -O3 \
+        if ! wasm-opt -O3 \
             --enable-simd \
             --enable-bulk-memory \
             --enable-sign-ext \
@@ -49,7 +50,11 @@ optimize_wasm() {
             --optimize-for-js \
             --strip-debug \
             --strip-producers \
-            "$backup_path" -o "$file_path"
+            "$backup_path" -o "$file_path"; then
+            echo "Warning: wasm-opt optimization failed, using unoptimized version"
+            mv "$backup_path" "$file_path"
+            return 1
+        fi
 
         # Get optimized size
         OPTIMIZED_SIZE=$(wc -c < "$file_path")
@@ -78,7 +83,10 @@ echo "Building worker WASM module (Performance Mode)..."
 
 # Build with wasm-pack in release mode
 # Your Cargo.toml already has opt-level=3, lto=true, codegen-units=1
-wasm-pack build --release --target web
+if ! wasm-pack build --release --target web; then
+    echo "Error: wasm-pack build failed"
+    exit 1
+fi
 
 # Optimize the generated WASM file
 if [ -f "pkg/rust_worker_bg.wasm" ]; then
@@ -137,33 +145,39 @@ echo "Updating package.json..."
 PACKAGE_JSON="pkg/package.json"
 
 # Check if worker.js is already in the files array
-if ! grep -q '"worker.js"' "$PACKAGE_JSON"; then
+if ! grep -q '"worker.js"' "$PACKAGE_JSON" 2>/dev/null; then
     echo "Adding worker.js to package.json files array..."
 
-    # Add worker.js to files array
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        # macOS
-        sed -i '' '/"files":/,/\]/{
-            /\[/!b
-            :a
-            n
-            /\]/!ba
-            s/\]/\,\
-    "worker.js"\
-  ]/
-        }' "$PACKAGE_JSON"
-    else
-        # Linux
-        sed -i '/"files":/,/\]/{
-            /\[/!b
-            :a
-            n
-            /\]/!ba
-            s/\]/\,\n    "worker.js"\n  ]/
-        }' "$PACKAGE_JSON"
-    fi
+    # Simple approach: just add worker.js if package.json exists
+    if [ -f "$PACKAGE_JSON" ]; then
+        # Create a backup
+        cp "$PACKAGE_JSON" "${PACKAGE_JSON}.bak"
 
-    echo "Added worker.js to package.json files array"
+        # Use a simpler sed approach or skip if it fails
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            # macOS
+            sed -i '' 's/"rust_worker_bg.wasm"/"rust_worker_bg.wasm",\
+    "worker.js"/' "$PACKAGE_JSON" 2>/dev/null || {
+                echo "Warning: Could not update package.json automatically"
+                mv "${PACKAGE_JSON}.bak" "$PACKAGE_JSON"
+            }
+        else
+            # Linux - use a more reliable approach
+            sed -i 's/"rust_worker_bg.wasm"/"rust_worker_bg.wasm",\n    "worker.js"/' "$PACKAGE_JSON" 2>/dev/null || {
+                echo "Warning: Could not update package.json automatically"
+                mv "${PACKAGE_JSON}.bak" "$PACKAGE_JSON"
+            }
+        fi
+
+        # Clean up backup if successful
+        if [ -f "${PACKAGE_JSON}.bak" ]; then
+            rm "${PACKAGE_JSON}.bak" 2>/dev/null || true
+        fi
+
+        echo "Added worker.js to package.json files array (if successful)"
+    else
+        echo "Warning: package.json not found at $PACKAGE_JSON"
+    fi
 else
     echo "worker.js already present in package.json files array"
 fi
@@ -175,9 +189,13 @@ echo ""
 
 # List generated files with sizes
 echo "Generated files:"
-ls -lh pkg/*.wasm pkg/*.js pkg/*.d.ts pkg/worker.js 2>/dev/null | while read -r line; do
-    echo "  $line"
-done
+if ls pkg/*.wasm pkg/*.js pkg/*.d.ts pkg/worker.js >/dev/null 2>&1; then
+    ls -lh pkg/*.wasm pkg/*.js pkg/*.d.ts pkg/worker.js 2>/dev/null | while read -r line; do
+        echo "  $line"
+    done
+else
+    echo "  Warning: Some expected files may not have been generated"
+fi
 
 # Show what optimizations are being used from Cargo.toml
 echo ""
@@ -193,7 +211,14 @@ echo "  - overflow-checks = false (faster arithmetic)"
 # Final size report
 if [ -f "pkg/rust_worker_bg.wasm" ]; then
     WORKER_SIZE=$(wc -c < pkg/rust_worker_bg.wasm)
-    echo "Final WASM size: $(printf "%'d" $WORKER_SIZE) bytes ($(echo "scale=2; $WORKER_SIZE/1024/1024" | bc -l)MB)"
+    # Calculate MB using shell arithmetic to avoid bc dependency
+    MB_SIZE=$(( WORKER_SIZE / 1024 / 1024 ))
+    DECIMAL_PART=$(( (WORKER_SIZE % (1024 * 1024)) * 100 / (1024 * 1024) ))
+    # Ensure decimal part is always 2 digits
+    if [ $DECIMAL_PART -lt 10 ]; then
+        DECIMAL_PART="0$DECIMAL_PART"
+    fi
+    echo "Final WASM size: $WORKER_SIZE bytes (${MB_SIZE}.${DECIMAL_PART}MB)"
 fi
 
 echo ""
