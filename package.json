@@ -8,7 +8,10 @@
   ],
   "scripts": {
     "build": "npm run build --workspaces",
+    "flatc:all": "npm run flatc:nipworker && npm run flatc:rust-worker",
+    "flatc:nipworker": "flatc --ts --gen-object-api --gen-all --filename-suffix '' -o packages/nipworker/src/generated schemas/message.fbs && node ./scripts/patch-strings.js",
     "build:nipworker": "npm run build --workspace=packages/nipworker",
+    "flatc:rust-worker": "flatc --rust --gen-object-api --gen-all --filename-suffix '' -o packages/rust-worker/src/generated schemas/message.fbs",
     "build:rust-worker": "npm run build --workspace=packages/rust-worker",
     "build:rust-main": "npm run build --workspace=packages/rust-main",
     "test": "npm run test --workspaces --if-present",

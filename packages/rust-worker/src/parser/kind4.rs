@@ -1,27 +1,20 @@
+use crate::parser::content::serialize_content_data;
+use crate::parser::ContentBlock;
 use crate::parser::{content::parse_content, Parser};
 use crate::types::network::Request;
 use crate::utils::request_deduplication::RequestDeduplicator;
 use anyhow::{anyhow, Result};
-use nostr::{Event, EventBuilder, Keys, UnsignedEvent};
+use nostr::{Event, EventBuilder, UnsignedEvent};
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ContentBlock {
-    #[serde(rename = "type")]
-    pub block_type: String,
-    pub text: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub data: Option<serde_json::Value>,
-}
+// NEW: Imports for FlatBuffers
+use crate::generated::nostr::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Kind4Parsed {
-    #[serde(rename = "parsedContent", skip_serializing_if = "Vec::is_empty")]
     pub parsed_content: Vec<ContentBlock>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub decrypted_content: Option<String>,
-    #[serde(rename = "chatID")]
     pub chat_id: String,
     pub recipient: String,
 }
@@ -183,6 +176,51 @@ impl Parser {
 
         Ok(new_event)
     }
+}
+
+// NEW: Build the FlatBuffer for Kind4Parsed
+pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
+    parsed: &Kind4Parsed,
+    builder: &mut flatbuffers::FlatBufferBuilder<'a, A>,
+) -> Result<flatbuffers::WIPOffset<fb::Kind4Parsed<'a>>> {
+    // Build parsed_content vector
+    let mut parsed_content_offsets = Vec::new();
+    for block in &parsed.parsed_content {
+        let block_type = builder.create_string(&block.block_type);
+        let text = builder.create_string(&block.text);
+        let (data_type, data) = match &block.data {
+            Some(d) => serialize_content_data(builder, d),
+            None => (fb::ContentData::NONE, None),
+        };
+
+        let content_block_args = fb::ContentBlockArgs {
+            type_: Some(block_type),
+            text: Some(text),
+            data_type,
+            data,
+        };
+        let content_block_offset = fb::ContentBlock::create(builder, &content_block_args);
+        parsed_content_offsets.push(content_block_offset);
+    }
+    let parsed_content_vector = builder.create_vector(&parsed_content_offsets);
+
+    let decrypted_content = parsed
+        .decrypted_content
+        .as_ref()
+        .map(|s| builder.create_string(s));
+    let chat_id = builder.create_string(&parsed.chat_id);
+    let recipient = builder.create_string(&parsed.recipient);
+
+    let args = fb::Kind4ParsedArgs {
+        parsed_content: Some(parsed_content_vector),
+        decrypted_content,
+        chat_id: Some(chat_id),
+        recipient: Some(recipient),
+    };
+
+    let offset = fb::Kind4Parsed::create(builder, &args);
+
+    Ok(offset)
 }
 
 #[cfg(test)]

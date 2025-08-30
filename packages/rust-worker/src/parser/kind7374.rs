@@ -4,6 +4,10 @@ use anyhow::{anyhow, Result};
 use nostr::{Event, UnsignedEvent};
 use serde::{Deserialize, Serialize};
 
+// NEW: Imports for FlatBuffers
+use crate::generated::nostr::*;
+use flatbuffers::FlatBufferBuilder;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Kind7374Parsed {
     #[serde(rename = "quoteId")]
@@ -93,6 +97,25 @@ impl Parser {
             Err(anyhow!("signer is required for kind 7374 events"))
         }
     }
+}
+
+// NEW: Build the FlatBuffer for Kind7374Parsed
+pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
+    parsed: &Kind7374Parsed,
+    builder: &mut flatbuffers::FlatBufferBuilder<'a, A>,
+) -> Result<flatbuffers::WIPOffset<fb::Kind7374Parsed<'a>>> {
+    let quote_id = builder.create_string(&parsed.quote_id);
+    let mint_url = builder.create_string(&parsed.mint_url);
+
+    let args = fb::Kind7374ParsedArgs {
+        quote_id: Some(quote_id),
+        mint_url: Some(mint_url),
+        expiration: parsed.expiration,
+    };
+
+    let offset = fb::Kind7374Parsed::create(builder, &args);
+
+    Ok(offset)
 }
 
 #[cfg(test)]

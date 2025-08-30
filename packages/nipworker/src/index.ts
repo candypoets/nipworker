@@ -1,29 +1,17 @@
-import { SharedBufferReader } from "src/lib/sharedBuffer";
-import {
-  type MainToWorkerMessage,
-  type PipelineConfig,
-  type Request,
-  type SubscriptionConfig,
-  type WorkerToMainMessage,
-  type ConnectionStatus
-} from "@candypoets/rust-main";
+import { SharedBufferReader } from "src/lib/SharedBuffer";
 
-import type { AnyKind, ParsedEvent } from "src/types";
+import type {  MainToWorkerMessage, PipelineConfig, RequestObject, SubscriptionConfig, WorkerMessage } from "src/types";
 
 import { decode, encode } from "@msgpack/msgpack";
 import type { NostrEvent } from "nostr-tools";
-import type { SubscribeKind } from "src/types";
 
 import RustWorker from "@candypoets/rust-worker/worker.js?worker";
 
-// Re-export types for external use
-export type { Request, ConnectionStatus };
 
 
 // Callback for subscription events
 export type SubscriptionCallback = (
-  data: ParsedEvent<AnyKind>[] | number,
-  type: SubscribeKind,
+  data: WorkerMessage,
 ) => void;
 
 
@@ -37,7 +25,7 @@ export interface SubscriptionOptions {
   skipCache?: boolean;
   force?: boolean;
   bytesPerEvent?: number;
-  initialMessage?: WorkerToMainMessage;
+  initialMessage?: Uint8Array;
 }
 
 /**
@@ -86,52 +74,12 @@ export class NostrManager {
 
   private setupWorkerListener() {
     this.worker.onmessage = async (event) => {
-      // await wasmReady;
-      if (event.data instanceof Uint8Array) {
-        let uint8Array = event.data;
-        try {
-          const message: any = decode(uint8Array);
-          this.handleWorkerMessage(message);
-        } catch (error) {
-          console.error("Failed to decode worker message:", error);
-        } finally {
-          // Aggressively clear memory references
-          if (uint8Array) {
-            uint8Array.fill(0);
-            (uint8Array as any) = null;
-          }
-        }
-      } else {
-        console.log("Received non-arrayBuffer message:", event.data);
-      }
+      console.log(event)
     };
 
     this.worker.onerror = (error) => {
       console.error("Worker error:", error);
     };
-  }
-
-  private handleWorkerMessage(message: WorkerToMainMessage) {
-    if ("Count" in message) {
-      // this.handleSubscriptionCount(message.Count.subscription_id, message.Count.count);
-    } else if ("SignedEvent" in message) {
-      this.handleSignedEvent(
-        message.SignedEvent.content,
-        message.SignedEvent.signed_event,
-      );
-    } else if ("PublicKey" in message) {
-      this.handlePublicKey(message.PublicKey.public_key);
-    } else {
-      console.warn("Unknown message type from worker:", message);
-    }
-  }
-
-  private handleSignedEvent(content: string, signedEvent: any) {
-    console.log("Signed event received:", content, signedEvent);
-  }
-
-  private handlePublicKey(publicKey: string) {
-    console.log("Public key received:", publicKey);
   }
 
   private createShortId(input: string): string {
@@ -147,7 +95,7 @@ export class NostrManager {
 
   subscribe(
     subscriptionId: string,
-    requests: Request[],
+    requests: RequestObject[],
     options: SubscriptionOptions = {},
   ): SharedArrayBuffer {
     const subId =
@@ -228,6 +176,7 @@ export class NostrManager {
     };
 
     try {
+      console.log("encoding message", message)
       const pack = encode(message);
       this.worker.postMessage({
         serializedMessage: pack,

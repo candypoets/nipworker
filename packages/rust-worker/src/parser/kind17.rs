@@ -4,6 +4,10 @@ use anyhow::{anyhow, Result};
 use nostr::Event;
 use serde::{Deserialize, Serialize};
 
+// NEW: Imports for FlatBuffers
+use crate::generated::nostr::*;
+use flatbuffers::FlatBufferBuilder;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ReactionType {
@@ -99,6 +103,51 @@ impl Parser {
 
         None
     }
+}
+
+// NEW: Build the FlatBuffer for Kind17Parsed
+pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
+    parsed: &Kind17Parsed,
+    builder: &mut flatbuffers::FlatBufferBuilder<'a, A>,
+) -> Result<flatbuffers::WIPOffset<fb::Kind17Parsed<'a>>> {
+    let reaction_type = match parsed.reaction_type {
+        crate::parser::kind7::ReactionType::Like => fb::ReactionType::Like,
+        crate::parser::kind7::ReactionType::Dislike => fb::ReactionType::Dislike,
+        crate::parser::kind7::ReactionType::Emoji => fb::ReactionType::Emoji,
+        crate::parser::kind7::ReactionType::Custom => fb::ReactionType::Custom,
+    };
+
+    let event_id = builder.create_string(&parsed.event_id);
+    let pubkey = builder.create_string(&parsed.pubkey);
+    let target_coordinates = parsed
+        .target_coordinates
+        .as_ref()
+        .map(|s| builder.create_string(s));
+
+    // Build emoji if present
+    let emoji = parsed.emoji.as_ref().map(|e| {
+        let shortcode = builder.create_string(&e.shortcode);
+        let url = builder.create_string(&e.url);
+
+        let emoji_args = fb::EmojiArgs {
+            shortcode: Some(shortcode),
+            url: Some(url),
+        };
+        fb::Emoji::create(builder, &emoji_args)
+    });
+
+    let args = fb::Kind17ParsedArgs {
+        reaction_type,
+        event_id: Some(event_id),
+        pubkey: Some(pubkey),
+        event_kind: parsed.event_kind.unwrap_or(0),
+        emoji,
+        target_coordinates,
+    };
+
+    let offset = fb::Kind17Parsed::create(builder, &args);
+
+    Ok(offset)
 }
 
 #[cfg(test)]

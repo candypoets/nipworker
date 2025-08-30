@@ -1,6 +1,7 @@
 import { encode } from "@msgpack/msgpack";
-import { unpack } from "msgpackr";
-import type { WorkerToMainMessage } from "src/types";
+import { ByteBuffer } from "flatbuffers";
+import { WorkerMessage } from "src/generated/nostr/fb";
+import { ByteString } from "src/lib/ByteString";
 
 const WorkerToMainMessageBufferFull = Object.freeze({
   SubscriptionEvent: {
@@ -9,6 +10,21 @@ const WorkerToMainMessageBufferFull = Object.freeze({
     event_data: []
   }
 });
+
+(ByteBuffer.prototype as any).__stringByteString = function(offset: number): ByteString {
+  // Follow indirect: add the relative offset stored at this location
+  offset += this.readInt32(offset);
+
+  // Now at the start of the string object → first 4 bytes = length
+  const length = this.readInt32(offset);
+  const start = offset + 4;
+
+  // Slice out exactly [start, start+length]
+  const slice = this.bytes().subarray(start, start + length);
+
+  return new ByteString(slice);
+}
+
 
 /**
  * Utility library for reading from SharedArrayBuffer with 4-byte header approach
@@ -83,83 +99,69 @@ export class SharedBufferReader {
    * @returns Object containing new messages and updated read position
    */
    static readMessages(buffer: SharedArrayBuffer, lastReadPosition: number = 0) {
-       const view = new DataView(buffer);
-       const uint8View = new Uint8Array(buffer);
+      const view = new DataView(buffer);
+      const uint8View = new Uint8Array(buffer);
 
-       const currentWritePosition = view.getUint32(0, true);
+      const currentWritePosition = view.getUint32(0, true);
+      const dataStartOffset = 4;
+      let currentPos = lastReadPosition < dataStartOffset
+          ? dataStartOffset
+          : lastReadPosition;
+      if (currentWritePosition <= currentPos) {
+          return { messages: [], newReadPosition: currentPos, hasNewData: false };
+      }
 
-       const dataStartOffset = 4;
-       let currentPos = lastReadPosition < dataStartOffset
-           ? dataStartOffset
-           : lastReadPosition;
+      const maxMessages = 256;
+      const messages: WorkerMessage[] = new Array(maxMessages);
+      let msgCount = 0;
 
-       if (currentWritePosition <= currentPos) {
-           return { messages: [], newReadPosition: currentPos, hasNewData: false };
-       }
+      try {
+          while (currentPos < currentWritePosition) {
+              // Stop if we've filled this batch; leave currentPos at the start of the next message
+              if (msgCount >= maxMessages) break;
 
-       const maxMessages = 256;
-       const messages = new Array(maxMessages);
-       let msgCount = 0;
+              // Need enough bytes for header
+              if (currentPos + 4 > currentWritePosition) break;
 
-       // Reusable decoding buffer (non-shared!)
-       let scratch = new Uint8Array(65536); // initial size — grows if needed
+              const headerPos = currentPos;
+              const eventLength = view.getUint32(headerPos, true);
+              const payloadStart = headerPos + 4;
+              const nextPos = payloadStart + eventLength;
 
-       try {
-           while (currentPos < currentWritePosition) {
-               if (currentPos + 4 > currentWritePosition) break;
+              // Need the full payload to be available
+              if (nextPos > currentWritePosition) break;
 
-               const eventLength = view.getUint32(currentPos, true);
-               currentPos += 4;
+              // ⚡ ZERO-COPY: create subarray view directly over SharedArrayBuffer
+              const flatBufferData = uint8View.subarray(payloadStart, nextPos);
 
-               if (eventLength === 1) {
-                   if (currentPos < currentWritePosition && uint8View[currentPos] === 0xFF) {
-                       if (msgCount < maxMessages) {
-                           messages[msgCount++] = WorkerToMainMessageBufferFull;
-                       }
-                       currentPos += 1;
-                       continue;
-                   }
-               }
+              // Parse directly
+              const bb = new ByteBuffer(flatBufferData);
+              const message = WorkerMessage.getRootAsWorkerMessage(bb);
 
-               if (currentPos + eventLength > currentWritePosition) break;
+              messages[msgCount++] = message;
 
-               // Ensure scratch buffer is large enough
-               if (scratch.length < eventLength) {
-                   scratch = new Uint8Array(eventLength);
-               }
+              // Advance to next message boundary
+              currentPos = nextPos;
+          }
 
-               // Copy into non-shared buffer
-               scratch.set(
-                   uint8View.subarray(currentPos, currentPos + eventLength),
-                   0
-               );
-
-               const message = unpack(scratch.subarray(0, eventLength));
-               if (msgCount < maxMessages) {
-                   messages[msgCount++] = message;
-               }
-
-               currentPos += eventLength;
-           }
-
-           messages.length = msgCount;
-           return {
-               messages,
-               newReadPosition: currentPos,
-               hasNewData: msgCount > 0,
-           };
-
-       } catch (error) {
-           console.error('Failed to decode length-prefixed msgpack data from SharedArrayBuffer:', error);
-           messages.length = msgCount;
-           return {
-               messages,
-               newReadPosition: lastReadPosition < dataStartOffset ? dataStartOffset : lastReadPosition,
-               hasNewData: false,
-           };
-       }
-   }
-
+          messages.length = msgCount;
+          return {
+              messages,
+              newReadPosition: currentPos,
+              hasNewData: msgCount > 0,
+          };
+      } catch (error) {
+          console.error('Failed to decode FlatBuffer data from SharedArrayBuffer:', error);
+          messages.length = msgCount;
+          return {
+              messages,
+              newReadPosition: lastReadPosition < dataStartOffset
+                  ? dataStartOffset
+                  : lastReadPosition,
+              hasNewData: false,
+          };
+      }
+  }
 
 
   /**
@@ -168,7 +170,7 @@ export class SharedBufferReader {
    * @returns Object containing all messages in the buffer
    */
   static readAllMessages(buffer: SharedArrayBuffer): {
-    messages: WorkerToMainMessage[];
+    messages: WorkerMessage[];
     totalMessages: number;
   } {
     const result = this.readMessages(buffer, 0); // Always start from beginning

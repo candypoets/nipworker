@@ -4,6 +4,10 @@ use anyhow::{anyhow, Result};
 use nostr::Event;
 use serde::{Deserialize, Serialize};
 
+// NEW: Imports for FlatBuffers
+use crate::generated::nostr::*;
+use flatbuffers::FlatBufferBuilder;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RelayInfo {
     pub url: String,
@@ -62,6 +66,35 @@ impl Parser {
 
         Ok((result, None))
     }
+}
+
+// NEW: Build the FlatBuffer for Kind10002Parsed
+pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
+    parsed: &Kind10002Parsed,
+    builder: &mut flatbuffers::FlatBufferBuilder<'a, A>,
+) -> Result<flatbuffers::WIPOffset<fb::Kind10002Parsed<'a>>> {
+    // Build relay info vector
+    let mut relay_info_offsets = Vec::new();
+    for relay in parsed {
+        let url = builder.create_string(&relay.url);
+
+        let relay_info_args = fb::RelayInfoArgs {
+            url: Some(url),
+            read: relay.read,
+            write: relay.write,
+        };
+        let relay_info_offset = fb::RelayInfo::create(builder, &relay_info_args);
+        relay_info_offsets.push(relay_info_offset);
+    }
+    let relay_info_vector = builder.create_vector(&relay_info_offsets);
+
+    let args = fb::Kind10002ParsedArgs {
+        relays: Some(relay_info_vector),
+    };
+
+    let offset = fb::Kind10002Parsed::create(builder, &args);
+
+    Ok(offset)
 }
 
 fn normalize_relay_url(url: &str) -> String {

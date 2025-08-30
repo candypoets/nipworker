@@ -1,0 +1,169 @@
+namespace nostr.fb;
+
+table CodeData {
+  language: string;
+  code: string (required);
+}
+
+table HashtagData {
+  tag: string (required);
+}
+
+table CashuData {
+  token: string (required);
+}
+
+table ImageData {
+  url: string (required);
+  alt: string;
+}
+
+table VideoData {
+  url: string (required);
+  thumbnail: string;
+}
+
+table MediaItem {
+  image: ImageData;
+  video: VideoData;
+}
+
+table MediaGroupData {
+  items: [MediaItem]; // self-referential union
+}
+
+table NostrData {
+  id: string (required);
+  relays: [string];
+  author: string;
+  kind: ulong;
+}
+
+table LinkPreviewData {
+  url: string (required);
+  title: string;
+  description: string;
+  image: string;
+}
+
+union ContentData {
+  CodeData,
+  HashtagData,
+  CashuData,
+  ImageData,
+  VideoData,
+  MediaGroupData,
+  NostrData,
+  LinkPreviewData
+}
+
+table ContentBlock {
+  type: string (required); // redundant but keeps compatibility
+  text: string (required);
+  data: ContentData;
+}
+
+
+// Enums (shared)
+enum ReactionType : byte { Like = 0, Dislike = 1, Emoji = 2, Custom = 3 }
+
+enum SubscribeKind : byte {
+  CachedEvent = 0,
+  FetchedEvent = 1,
+  Count = 2,
+  ConnectionStatus = 3,
+  Eoce = 4,
+  BufferFull = 5
+}
+
+// Add this wrapper table
+table StringVec {
+  items: [string];  // Single layer vector
+}
+
+table ProfilePointer {
+  public_key: string (required);
+  relays: [string];
+}
+
+table EventPointer {
+  id: string (required);
+  relays: [string];
+  author: string;
+  kind: ulong;
+}
+
+table RelayInfo {
+  url: string (required);
+  read: bool;
+  write: bool;
+}
+
+table MintInfo {
+  url: string (required);
+  base_units: [string] (required);
+}
+
+table Emoji {
+  shortcode: string (required);
+  url: string (required);
+}
+
+table Contact {
+  pubkey: string (required);
+  relays: [string];
+  petname: string;
+}
+
+table DLEQProof {
+  e: string (required);
+  s: string (required);
+  r: string (required);
+}
+
+table Proof {
+  amount: ulong;
+  id: string (required);
+  secret: string (required);
+  c: string (required);
+  dleq: DLEQProof;
+  version: ubyte;
+}
+
+table HistoryTag {
+  name: string (required);
+  value: string (required);
+  relay: string;
+  marker: string;
+}
+
+table ZapRequest {
+  kind: ushort;
+  pubkey: string (required);
+  content: string (required);
+  tags: [StringVec] (required);
+  signature: string;
+}
+
+table Request {
+  ids: [string];
+  authors: [string];
+  kinds: [ushort];
+  tags: [StringVec];
+  limit: int;
+  since: int;
+  until: int;
+  relays: [string];
+  close_on_eose: bool;
+  cache_first: bool;
+}
+
+table NostrEvent {
+  id: string (required);
+  pubkey: string (required);
+  kind: ushort;
+  content: string (required);
+  tags: [StringVec] (required);
+  created_at: int;
+  sig: string (required);
+}

@@ -27,6 +27,336 @@ pub mod fb {
   use self::flatbuffers::{EndianScalar, Follow};
 
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
+pub const ENUM_MIN_CONTENT_DATA: u8 = 0;
+#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
+pub const ENUM_MAX_CONTENT_DATA: u8 = 8;
+#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
+#[allow(non_camel_case_types)]
+pub const ENUM_VALUES_CONTENT_DATA: [ContentData; 9] = [
+  ContentData::NONE,
+  ContentData::CodeData,
+  ContentData::HashtagData,
+  ContentData::CashuData,
+  ContentData::ImageData,
+  ContentData::VideoData,
+  ContentData::MediaGroupData,
+  ContentData::NostrData,
+  ContentData::LinkPreviewData,
+];
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[repr(transparent)]
+pub struct ContentData(pub u8);
+#[allow(non_upper_case_globals)]
+impl ContentData {
+  pub const NONE: Self = Self(0);
+  pub const CodeData: Self = Self(1);
+  pub const HashtagData: Self = Self(2);
+  pub const CashuData: Self = Self(3);
+  pub const ImageData: Self = Self(4);
+  pub const VideoData: Self = Self(5);
+  pub const MediaGroupData: Self = Self(6);
+  pub const NostrData: Self = Self(7);
+  pub const LinkPreviewData: Self = Self(8);
+
+  pub const ENUM_MIN: u8 = 0;
+  pub const ENUM_MAX: u8 = 8;
+  pub const ENUM_VALUES: &'static [Self] = &[
+    Self::NONE,
+    Self::CodeData,
+    Self::HashtagData,
+    Self::CashuData,
+    Self::ImageData,
+    Self::VideoData,
+    Self::MediaGroupData,
+    Self::NostrData,
+    Self::LinkPreviewData,
+  ];
+  /// Returns the variant's name or "" if unknown.
+  pub fn variant_name(self) -> Option<&'static str> {
+    match self {
+      Self::NONE => Some("NONE"),
+      Self::CodeData => Some("CodeData"),
+      Self::HashtagData => Some("HashtagData"),
+      Self::CashuData => Some("CashuData"),
+      Self::ImageData => Some("ImageData"),
+      Self::VideoData => Some("VideoData"),
+      Self::MediaGroupData => Some("MediaGroupData"),
+      Self::NostrData => Some("NostrData"),
+      Self::LinkPreviewData => Some("LinkPreviewData"),
+      _ => None,
+    }
+  }
+}
+impl core::fmt::Debug for ContentData {
+  fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+    if let Some(name) = self.variant_name() {
+      f.write_str(name)
+    } else {
+      f.write_fmt(format_args!("<UNKNOWN {:?}>", self.0))
+    }
+  }
+}
+impl<'a> flatbuffers::Follow<'a> for ContentData {
+  type Inner = Self;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    let b = flatbuffers::read_scalar_at::<u8>(buf, loc);
+    Self(b)
+  }
+}
+
+impl flatbuffers::Push for ContentData {
+    type Output = ContentData;
+    #[inline]
+    unsafe fn push(&self, dst: &mut [u8], _written_len: usize) {
+        flatbuffers::emplace_scalar::<u8>(dst, self.0);
+    }
+}
+
+impl flatbuffers::EndianScalar for ContentData {
+  type Scalar = u8;
+  #[inline]
+  fn to_little_endian(self) -> u8 {
+    self.0.to_le()
+  }
+  #[inline]
+  #[allow(clippy::wrong_self_convention)]
+  fn from_little_endian(v: u8) -> Self {
+    let b = u8::from_le(v);
+    Self(b)
+  }
+}
+
+impl<'a> flatbuffers::Verifiable for ContentData {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    u8::run_verifier(v, pos)
+  }
+}
+
+impl flatbuffers::SimpleToVerifyInSlice for ContentData {}
+pub struct ContentDataUnionTableOffset {}
+
+#[allow(clippy::upper_case_acronyms)]
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub enum ContentDataT {
+  NONE,
+  CodeData(Box<CodeDataT>),
+  HashtagData(Box<HashtagDataT>),
+  CashuData(Box<CashuDataT>),
+  ImageData(Box<ImageDataT>),
+  VideoData(Box<VideoDataT>),
+  MediaGroupData(Box<MediaGroupDataT>),
+  NostrData(Box<NostrDataT>),
+  LinkPreviewData(Box<LinkPreviewDataT>),
+}
+impl Default for ContentDataT {
+  fn default() -> Self {
+    Self::NONE
+  }
+}
+impl ContentDataT {
+  pub fn content_data_type(&self) -> ContentData {
+    match self {
+      Self::NONE => ContentData::NONE,
+      Self::CodeData(_) => ContentData::CodeData,
+      Self::HashtagData(_) => ContentData::HashtagData,
+      Self::CashuData(_) => ContentData::CashuData,
+      Self::ImageData(_) => ContentData::ImageData,
+      Self::VideoData(_) => ContentData::VideoData,
+      Self::MediaGroupData(_) => ContentData::MediaGroupData,
+      Self::NostrData(_) => ContentData::NostrData,
+      Self::LinkPreviewData(_) => ContentData::LinkPreviewData,
+    }
+  }
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(&self, fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>) -> Option<flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>> {
+    match self {
+      Self::NONE => None,
+      Self::CodeData(v) => Some(v.pack(fbb).as_union_value()),
+      Self::HashtagData(v) => Some(v.pack(fbb).as_union_value()),
+      Self::CashuData(v) => Some(v.pack(fbb).as_union_value()),
+      Self::ImageData(v) => Some(v.pack(fbb).as_union_value()),
+      Self::VideoData(v) => Some(v.pack(fbb).as_union_value()),
+      Self::MediaGroupData(v) => Some(v.pack(fbb).as_union_value()),
+      Self::NostrData(v) => Some(v.pack(fbb).as_union_value()),
+      Self::LinkPreviewData(v) => Some(v.pack(fbb).as_union_value()),
+    }
+  }
+  /// If the union variant matches, return the owned CodeDataT, setting the union to NONE.
+  pub fn take_code_data(&mut self) -> Option<Box<CodeDataT>> {
+    if let Self::CodeData(_) = self {
+      let v = core::mem::replace(self, Self::NONE);
+      if let Self::CodeData(w) = v {
+        Some(w)
+      } else {
+        unreachable!()
+      }
+    } else {
+      None
+    }
+  }
+  /// If the union variant matches, return a reference to the CodeDataT.
+  pub fn as_code_data(&self) -> Option<&CodeDataT> {
+    if let Self::CodeData(v) = self { Some(v.as_ref()) } else { None }
+  }
+  /// If the union variant matches, return a mutable reference to the CodeDataT.
+  pub fn as_code_data_mut(&mut self) -> Option<&mut CodeDataT> {
+    if let Self::CodeData(v) = self { Some(v.as_mut()) } else { None }
+  }
+  /// If the union variant matches, return the owned HashtagDataT, setting the union to NONE.
+  pub fn take_hashtag_data(&mut self) -> Option<Box<HashtagDataT>> {
+    if let Self::HashtagData(_) = self {
+      let v = core::mem::replace(self, Self::NONE);
+      if let Self::HashtagData(w) = v {
+        Some(w)
+      } else {
+        unreachable!()
+      }
+    } else {
+      None
+    }
+  }
+  /// If the union variant matches, return a reference to the HashtagDataT.
+  pub fn as_hashtag_data(&self) -> Option<&HashtagDataT> {
+    if let Self::HashtagData(v) = self { Some(v.as_ref()) } else { None }
+  }
+  /// If the union variant matches, return a mutable reference to the HashtagDataT.
+  pub fn as_hashtag_data_mut(&mut self) -> Option<&mut HashtagDataT> {
+    if let Self::HashtagData(v) = self { Some(v.as_mut()) } else { None }
+  }
+  /// If the union variant matches, return the owned CashuDataT, setting the union to NONE.
+  pub fn take_cashu_data(&mut self) -> Option<Box<CashuDataT>> {
+    if let Self::CashuData(_) = self {
+      let v = core::mem::replace(self, Self::NONE);
+      if let Self::CashuData(w) = v {
+        Some(w)
+      } else {
+        unreachable!()
+      }
+    } else {
+      None
+    }
+  }
+  /// If the union variant matches, return a reference to the CashuDataT.
+  pub fn as_cashu_data(&self) -> Option<&CashuDataT> {
+    if let Self::CashuData(v) = self { Some(v.as_ref()) } else { None }
+  }
+  /// If the union variant matches, return a mutable reference to the CashuDataT.
+  pub fn as_cashu_data_mut(&mut self) -> Option<&mut CashuDataT> {
+    if let Self::CashuData(v) = self { Some(v.as_mut()) } else { None }
+  }
+  /// If the union variant matches, return the owned ImageDataT, setting the union to NONE.
+  pub fn take_image_data(&mut self) -> Option<Box<ImageDataT>> {
+    if let Self::ImageData(_) = self {
+      let v = core::mem::replace(self, Self::NONE);
+      if let Self::ImageData(w) = v {
+        Some(w)
+      } else {
+        unreachable!()
+      }
+    } else {
+      None
+    }
+  }
+  /// If the union variant matches, return a reference to the ImageDataT.
+  pub fn as_image_data(&self) -> Option<&ImageDataT> {
+    if let Self::ImageData(v) = self { Some(v.as_ref()) } else { None }
+  }
+  /// If the union variant matches, return a mutable reference to the ImageDataT.
+  pub fn as_image_data_mut(&mut self) -> Option<&mut ImageDataT> {
+    if let Self::ImageData(v) = self { Some(v.as_mut()) } else { None }
+  }
+  /// If the union variant matches, return the owned VideoDataT, setting the union to NONE.
+  pub fn take_video_data(&mut self) -> Option<Box<VideoDataT>> {
+    if let Self::VideoData(_) = self {
+      let v = core::mem::replace(self, Self::NONE);
+      if let Self::VideoData(w) = v {
+        Some(w)
+      } else {
+        unreachable!()
+      }
+    } else {
+      None
+    }
+  }
+  /// If the union variant matches, return a reference to the VideoDataT.
+  pub fn as_video_data(&self) -> Option<&VideoDataT> {
+    if let Self::VideoData(v) = self { Some(v.as_ref()) } else { None }
+  }
+  /// If the union variant matches, return a mutable reference to the VideoDataT.
+  pub fn as_video_data_mut(&mut self) -> Option<&mut VideoDataT> {
+    if let Self::VideoData(v) = self { Some(v.as_mut()) } else { None }
+  }
+  /// If the union variant matches, return the owned MediaGroupDataT, setting the union to NONE.
+  pub fn take_media_group_data(&mut self) -> Option<Box<MediaGroupDataT>> {
+    if let Self::MediaGroupData(_) = self {
+      let v = core::mem::replace(self, Self::NONE);
+      if let Self::MediaGroupData(w) = v {
+        Some(w)
+      } else {
+        unreachable!()
+      }
+    } else {
+      None
+    }
+  }
+  /// If the union variant matches, return a reference to the MediaGroupDataT.
+  pub fn as_media_group_data(&self) -> Option<&MediaGroupDataT> {
+    if let Self::MediaGroupData(v) = self { Some(v.as_ref()) } else { None }
+  }
+  /// If the union variant matches, return a mutable reference to the MediaGroupDataT.
+  pub fn as_media_group_data_mut(&mut self) -> Option<&mut MediaGroupDataT> {
+    if let Self::MediaGroupData(v) = self { Some(v.as_mut()) } else { None }
+  }
+  /// If the union variant matches, return the owned NostrDataT, setting the union to NONE.
+  pub fn take_nostr_data(&mut self) -> Option<Box<NostrDataT>> {
+    if let Self::NostrData(_) = self {
+      let v = core::mem::replace(self, Self::NONE);
+      if let Self::NostrData(w) = v {
+        Some(w)
+      } else {
+        unreachable!()
+      }
+    } else {
+      None
+    }
+  }
+  /// If the union variant matches, return a reference to the NostrDataT.
+  pub fn as_nostr_data(&self) -> Option<&NostrDataT> {
+    if let Self::NostrData(v) = self { Some(v.as_ref()) } else { None }
+  }
+  /// If the union variant matches, return a mutable reference to the NostrDataT.
+  pub fn as_nostr_data_mut(&mut self) -> Option<&mut NostrDataT> {
+    if let Self::NostrData(v) = self { Some(v.as_mut()) } else { None }
+  }
+  /// If the union variant matches, return the owned LinkPreviewDataT, setting the union to NONE.
+  pub fn take_link_preview_data(&mut self) -> Option<Box<LinkPreviewDataT>> {
+    if let Self::LinkPreviewData(_) = self {
+      let v = core::mem::replace(self, Self::NONE);
+      if let Self::LinkPreviewData(w) = v {
+        Some(w)
+      } else {
+        unreachable!()
+      }
+    } else {
+      None
+    }
+  }
+  /// If the union variant matches, return a reference to the LinkPreviewDataT.
+  pub fn as_link_preview_data(&self) -> Option<&LinkPreviewDataT> {
+    if let Self::LinkPreviewData(v) = self { Some(v.as_ref()) } else { None }
+  }
+  /// If the union variant matches, return a mutable reference to the LinkPreviewDataT.
+  pub fn as_link_preview_data_mut(&mut self) -> Option<&mut LinkPreviewDataT> {
+    if let Self::LinkPreviewData(v) = self { Some(v.as_mut()) } else { None }
+  }
+}
+#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_REACTION_TYPE: i8 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MAX_REACTION_TYPE: i8 = 3;
@@ -223,15 +553,16 @@ impl flatbuffers::SimpleToVerifyInSlice for SubscribeKind {}
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_MESSAGE_TYPE: u32 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MAX_MESSAGE_TYPE: u32 = 4;
+pub const ENUM_MAX_MESSAGE_TYPE: u32 = 5;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_MESSAGE_TYPE: [MessageType; 5] = [
+pub const ENUM_VALUES_MESSAGE_TYPE: [MessageType; 6] = [
   MessageType::ParsedNostrEvent,
   MessageType::ConnectionStatus,
   MessageType::CountResponse,
   MessageType::Eoce,
   MessageType::BufferFull,
+  MessageType::ValidProofs,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -244,15 +575,17 @@ impl MessageType {
   pub const CountResponse: Self = Self(2);
   pub const Eoce: Self = Self(3);
   pub const BufferFull: Self = Self(4);
+  pub const ValidProofs: Self = Self(5);
 
   pub const ENUM_MIN: u32 = 0;
-  pub const ENUM_MAX: u32 = 4;
+  pub const ENUM_MAX: u32 = 5;
   pub const ENUM_VALUES: &'static [Self] = &[
     Self::ParsedNostrEvent,
     Self::ConnectionStatus,
     Self::CountResponse,
     Self::Eoce,
     Self::BufferFull,
+    Self::ValidProofs,
   ];
   /// Returns the variant's name or "" if unknown.
   pub fn variant_name(self) -> Option<&'static str> {
@@ -262,6 +595,7 @@ impl MessageType {
       Self::CountResponse => Some("CountResponse"),
       Self::Eoce => Some("Eoce"),
       Self::BufferFull => Some("BufferFull"),
+      Self::ValidProofs => Some("ValidProofs"),
       _ => None,
     }
   }
@@ -1015,16 +1349,17 @@ impl ParsedDataT {
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_MESSAGE: u8 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MAX_MESSAGE: u8 = 5;
+pub const ENUM_MAX_MESSAGE: u8 = 6;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_MESSAGE: [Message; 6] = [
+pub const ENUM_VALUES_MESSAGE: [Message; 7] = [
   Message::NONE,
   Message::ParsedEvent,
   Message::ConnectionStatus,
   Message::CountResponse,
   Message::Eoce,
   Message::BufferFull,
+  Message::ValidProofs,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -1038,9 +1373,10 @@ impl Message {
   pub const CountResponse: Self = Self(3);
   pub const Eoce: Self = Self(4);
   pub const BufferFull: Self = Self(5);
+  pub const ValidProofs: Self = Self(6);
 
   pub const ENUM_MIN: u8 = 0;
-  pub const ENUM_MAX: u8 = 5;
+  pub const ENUM_MAX: u8 = 6;
   pub const ENUM_VALUES: &'static [Self] = &[
     Self::NONE,
     Self::ParsedEvent,
@@ -1048,6 +1384,7 @@ impl Message {
     Self::CountResponse,
     Self::Eoce,
     Self::BufferFull,
+    Self::ValidProofs,
   ];
   /// Returns the variant's name or "" if unknown.
   pub fn variant_name(self) -> Option<&'static str> {
@@ -1058,6 +1395,7 @@ impl Message {
       Self::CountResponse => Some("CountResponse"),
       Self::Eoce => Some("Eoce"),
       Self::BufferFull => Some("BufferFull"),
+      Self::ValidProofs => Some("ValidProofs"),
       _ => None,
     }
   }
@@ -1125,6 +1463,7 @@ pub enum MessageT {
   CountResponse(Box<CountResponseT>),
   Eoce(Box<EoceT>),
   BufferFull(Box<BufferFullT>),
+  ValidProofs(Box<ValidProofsT>),
 }
 impl Default for MessageT {
   fn default() -> Self {
@@ -1140,6 +1479,7 @@ impl MessageT {
       Self::CountResponse(_) => Message::CountResponse,
       Self::Eoce(_) => Message::Eoce,
       Self::BufferFull(_) => Message::BufferFull,
+      Self::ValidProofs(_) => Message::ValidProofs,
     }
   }
   pub fn pack<'b, A: flatbuffers::Allocator + 'b>(&self, fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>) -> Option<flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>> {
@@ -1150,6 +1490,7 @@ impl MessageT {
       Self::CountResponse(v) => Some(v.pack(fbb).as_union_value()),
       Self::Eoce(v) => Some(v.pack(fbb).as_union_value()),
       Self::BufferFull(v) => Some(v.pack(fbb).as_union_value()),
+      Self::ValidProofs(v) => Some(v.pack(fbb).as_union_value()),
     }
   }
   /// If the union variant matches, return the owned ParsedEventT, setting the union to NONE.
@@ -1256,6 +1597,1924 @@ impl MessageT {
   /// If the union variant matches, return a mutable reference to the BufferFullT.
   pub fn as_buffer_full_mut(&mut self) -> Option<&mut BufferFullT> {
     if let Self::BufferFull(v) = self { Some(v.as_mut()) } else { None }
+  }
+  /// If the union variant matches, return the owned ValidProofsT, setting the union to NONE.
+  pub fn take_valid_proofs(&mut self) -> Option<Box<ValidProofsT>> {
+    if let Self::ValidProofs(_) = self {
+      let v = core::mem::replace(self, Self::NONE);
+      if let Self::ValidProofs(w) = v {
+        Some(w)
+      } else {
+        unreachable!()
+      }
+    } else {
+      None
+    }
+  }
+  /// If the union variant matches, return a reference to the ValidProofsT.
+  pub fn as_valid_proofs(&self) -> Option<&ValidProofsT> {
+    if let Self::ValidProofs(v) = self { Some(v.as_ref()) } else { None }
+  }
+  /// If the union variant matches, return a mutable reference to the ValidProofsT.
+  pub fn as_valid_proofs_mut(&mut self) -> Option<&mut ValidProofsT> {
+    if let Self::ValidProofs(v) = self { Some(v.as_mut()) } else { None }
+  }
+}
+pub enum CodeDataOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct CodeData<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for CodeData<'a> {
+  type Inner = CodeData<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> CodeData<'a> {
+  pub const VT_LANGUAGE: flatbuffers::VOffsetT = 4;
+  pub const VT_CODE: flatbuffers::VOffsetT = 6;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    CodeData { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args CodeDataArgs<'args>
+  ) -> flatbuffers::WIPOffset<CodeData<'bldr>> {
+    let mut builder = CodeDataBuilder::new(_fbb);
+    if let Some(x) = args.code { builder.add_code(x); }
+    if let Some(x) = args.language { builder.add_language(x); }
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> CodeDataT {
+    let language = self.language().map(|x| {
+      x.to_string()
+    });
+    let code = {
+      let x = self.code();
+      x.to_string()
+    };
+    CodeDataT {
+      language,
+      code,
+    }
+  }
+
+  #[inline]
+  pub fn language(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(CodeData::VT_LANGUAGE, None)}
+  }
+  #[inline]
+  pub fn code(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(CodeData::VT_CODE, None).unwrap()}
+  }
+}
+
+impl flatbuffers::Verifiable for CodeData<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("language", Self::VT_LANGUAGE, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("code", Self::VT_CODE, true)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct CodeDataArgs<'a> {
+    pub language: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub code: Option<flatbuffers::WIPOffset<&'a str>>,
+}
+impl<'a> Default for CodeDataArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    CodeDataArgs {
+      language: None,
+      code: None, // required field
+    }
+  }
+}
+
+pub struct CodeDataBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> CodeDataBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_language(&mut self, language: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(CodeData::VT_LANGUAGE, language);
+  }
+  #[inline]
+  pub fn add_code(&mut self, code: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(CodeData::VT_CODE, code);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> CodeDataBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    CodeDataBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<CodeData<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, CodeData::VT_CODE,"code");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for CodeData<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("CodeData");
+      ds.field("language", &self.language());
+      ds.field("code", &self.code());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct CodeDataT {
+  pub language: Option<String>,
+  pub code: String,
+}
+impl Default for CodeDataT {
+  fn default() -> Self {
+    Self {
+      language: None,
+      code: "".to_string(),
+    }
+  }
+}
+impl CodeDataT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<CodeData<'b>> {
+    let language = self.language.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let code = Some({
+      let x = &self.code;
+      _fbb.create_string(x)
+    });
+    CodeData::create(_fbb, &CodeDataArgs{
+      language,
+      code,
+    })
+  }
+}
+pub enum HashtagDataOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct HashtagData<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for HashtagData<'a> {
+  type Inner = HashtagData<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> HashtagData<'a> {
+  pub const VT_TAG: flatbuffers::VOffsetT = 4;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    HashtagData { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args HashtagDataArgs<'args>
+  ) -> flatbuffers::WIPOffset<HashtagData<'bldr>> {
+    let mut builder = HashtagDataBuilder::new(_fbb);
+    if let Some(x) = args.tag { builder.add_tag(x); }
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> HashtagDataT {
+    let tag = {
+      let x = self.tag();
+      x.to_string()
+    };
+    HashtagDataT {
+      tag,
+    }
+  }
+
+  #[inline]
+  pub fn tag(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(HashtagData::VT_TAG, None).unwrap()}
+  }
+}
+
+impl flatbuffers::Verifiable for HashtagData<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("tag", Self::VT_TAG, true)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct HashtagDataArgs<'a> {
+    pub tag: Option<flatbuffers::WIPOffset<&'a str>>,
+}
+impl<'a> Default for HashtagDataArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    HashtagDataArgs {
+      tag: None, // required field
+    }
+  }
+}
+
+pub struct HashtagDataBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> HashtagDataBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_tag(&mut self, tag: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(HashtagData::VT_TAG, tag);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> HashtagDataBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    HashtagDataBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<HashtagData<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, HashtagData::VT_TAG,"tag");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for HashtagData<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("HashtagData");
+      ds.field("tag", &self.tag());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct HashtagDataT {
+  pub tag: String,
+}
+impl Default for HashtagDataT {
+  fn default() -> Self {
+    Self {
+      tag: "".to_string(),
+    }
+  }
+}
+impl HashtagDataT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<HashtagData<'b>> {
+    let tag = Some({
+      let x = &self.tag;
+      _fbb.create_string(x)
+    });
+    HashtagData::create(_fbb, &HashtagDataArgs{
+      tag,
+    })
+  }
+}
+pub enum CashuDataOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct CashuData<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for CashuData<'a> {
+  type Inner = CashuData<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> CashuData<'a> {
+  pub const VT_TOKEN: flatbuffers::VOffsetT = 4;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    CashuData { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args CashuDataArgs<'args>
+  ) -> flatbuffers::WIPOffset<CashuData<'bldr>> {
+    let mut builder = CashuDataBuilder::new(_fbb);
+    if let Some(x) = args.token { builder.add_token(x); }
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> CashuDataT {
+    let token = {
+      let x = self.token();
+      x.to_string()
+    };
+    CashuDataT {
+      token,
+    }
+  }
+
+  #[inline]
+  pub fn token(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(CashuData::VT_TOKEN, None).unwrap()}
+  }
+}
+
+impl flatbuffers::Verifiable for CashuData<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("token", Self::VT_TOKEN, true)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct CashuDataArgs<'a> {
+    pub token: Option<flatbuffers::WIPOffset<&'a str>>,
+}
+impl<'a> Default for CashuDataArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    CashuDataArgs {
+      token: None, // required field
+    }
+  }
+}
+
+pub struct CashuDataBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> CashuDataBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_token(&mut self, token: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(CashuData::VT_TOKEN, token);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> CashuDataBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    CashuDataBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<CashuData<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, CashuData::VT_TOKEN,"token");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for CashuData<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("CashuData");
+      ds.field("token", &self.token());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct CashuDataT {
+  pub token: String,
+}
+impl Default for CashuDataT {
+  fn default() -> Self {
+    Self {
+      token: "".to_string(),
+    }
+  }
+}
+impl CashuDataT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<CashuData<'b>> {
+    let token = Some({
+      let x = &self.token;
+      _fbb.create_string(x)
+    });
+    CashuData::create(_fbb, &CashuDataArgs{
+      token,
+    })
+  }
+}
+pub enum ImageDataOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct ImageData<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for ImageData<'a> {
+  type Inner = ImageData<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> ImageData<'a> {
+  pub const VT_URL: flatbuffers::VOffsetT = 4;
+  pub const VT_ALT: flatbuffers::VOffsetT = 6;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    ImageData { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args ImageDataArgs<'args>
+  ) -> flatbuffers::WIPOffset<ImageData<'bldr>> {
+    let mut builder = ImageDataBuilder::new(_fbb);
+    if let Some(x) = args.alt { builder.add_alt(x); }
+    if let Some(x) = args.url { builder.add_url(x); }
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> ImageDataT {
+    let url = {
+      let x = self.url();
+      x.to_string()
+    };
+    let alt = self.alt().map(|x| {
+      x.to_string()
+    });
+    ImageDataT {
+      url,
+      alt,
+    }
+  }
+
+  #[inline]
+  pub fn url(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(ImageData::VT_URL, None).unwrap()}
+  }
+  #[inline]
+  pub fn alt(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(ImageData::VT_ALT, None)}
+  }
+}
+
+impl flatbuffers::Verifiable for ImageData<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("url", Self::VT_URL, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("alt", Self::VT_ALT, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct ImageDataArgs<'a> {
+    pub url: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub alt: Option<flatbuffers::WIPOffset<&'a str>>,
+}
+impl<'a> Default for ImageDataArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    ImageDataArgs {
+      url: None, // required field
+      alt: None,
+    }
+  }
+}
+
+pub struct ImageDataBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> ImageDataBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_url(&mut self, url: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(ImageData::VT_URL, url);
+  }
+  #[inline]
+  pub fn add_alt(&mut self, alt: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(ImageData::VT_ALT, alt);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> ImageDataBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    ImageDataBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<ImageData<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, ImageData::VT_URL,"url");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for ImageData<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("ImageData");
+      ds.field("url", &self.url());
+      ds.field("alt", &self.alt());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImageDataT {
+  pub url: String,
+  pub alt: Option<String>,
+}
+impl Default for ImageDataT {
+  fn default() -> Self {
+    Self {
+      url: "".to_string(),
+      alt: None,
+    }
+  }
+}
+impl ImageDataT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<ImageData<'b>> {
+    let url = Some({
+      let x = &self.url;
+      _fbb.create_string(x)
+    });
+    let alt = self.alt.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    ImageData::create(_fbb, &ImageDataArgs{
+      url,
+      alt,
+    })
+  }
+}
+pub enum VideoDataOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct VideoData<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for VideoData<'a> {
+  type Inner = VideoData<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> VideoData<'a> {
+  pub const VT_URL: flatbuffers::VOffsetT = 4;
+  pub const VT_THUMBNAIL: flatbuffers::VOffsetT = 6;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    VideoData { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args VideoDataArgs<'args>
+  ) -> flatbuffers::WIPOffset<VideoData<'bldr>> {
+    let mut builder = VideoDataBuilder::new(_fbb);
+    if let Some(x) = args.thumbnail { builder.add_thumbnail(x); }
+    if let Some(x) = args.url { builder.add_url(x); }
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> VideoDataT {
+    let url = {
+      let x = self.url();
+      x.to_string()
+    };
+    let thumbnail = self.thumbnail().map(|x| {
+      x.to_string()
+    });
+    VideoDataT {
+      url,
+      thumbnail,
+    }
+  }
+
+  #[inline]
+  pub fn url(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(VideoData::VT_URL, None).unwrap()}
+  }
+  #[inline]
+  pub fn thumbnail(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(VideoData::VT_THUMBNAIL, None)}
+  }
+}
+
+impl flatbuffers::Verifiable for VideoData<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("url", Self::VT_URL, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("thumbnail", Self::VT_THUMBNAIL, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct VideoDataArgs<'a> {
+    pub url: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub thumbnail: Option<flatbuffers::WIPOffset<&'a str>>,
+}
+impl<'a> Default for VideoDataArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    VideoDataArgs {
+      url: None, // required field
+      thumbnail: None,
+    }
+  }
+}
+
+pub struct VideoDataBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> VideoDataBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_url(&mut self, url: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(VideoData::VT_URL, url);
+  }
+  #[inline]
+  pub fn add_thumbnail(&mut self, thumbnail: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(VideoData::VT_THUMBNAIL, thumbnail);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> VideoDataBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    VideoDataBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<VideoData<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, VideoData::VT_URL,"url");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for VideoData<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("VideoData");
+      ds.field("url", &self.url());
+      ds.field("thumbnail", &self.thumbnail());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct VideoDataT {
+  pub url: String,
+  pub thumbnail: Option<String>,
+}
+impl Default for VideoDataT {
+  fn default() -> Self {
+    Self {
+      url: "".to_string(),
+      thumbnail: None,
+    }
+  }
+}
+impl VideoDataT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<VideoData<'b>> {
+    let url = Some({
+      let x = &self.url;
+      _fbb.create_string(x)
+    });
+    let thumbnail = self.thumbnail.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    VideoData::create(_fbb, &VideoDataArgs{
+      url,
+      thumbnail,
+    })
+  }
+}
+pub enum MediaItemOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct MediaItem<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for MediaItem<'a> {
+  type Inner = MediaItem<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> MediaItem<'a> {
+  pub const VT_IMAGE: flatbuffers::VOffsetT = 4;
+  pub const VT_VIDEO: flatbuffers::VOffsetT = 6;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    MediaItem { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args MediaItemArgs<'args>
+  ) -> flatbuffers::WIPOffset<MediaItem<'bldr>> {
+    let mut builder = MediaItemBuilder::new(_fbb);
+    if let Some(x) = args.video { builder.add_video(x); }
+    if let Some(x) = args.image { builder.add_image(x); }
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> MediaItemT {
+    let image = self.image().map(|x| {
+      Box::new(x.unpack())
+    });
+    let video = self.video().map(|x| {
+      Box::new(x.unpack())
+    });
+    MediaItemT {
+      image,
+      video,
+    }
+  }
+
+  #[inline]
+  pub fn image(&self) -> Option<ImageData<'a>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<ImageData>>(MediaItem::VT_IMAGE, None)}
+  }
+  #[inline]
+  pub fn video(&self) -> Option<VideoData<'a>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<VideoData>>(MediaItem::VT_VIDEO, None)}
+  }
+}
+
+impl flatbuffers::Verifiable for MediaItem<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<ImageData>>("image", Self::VT_IMAGE, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<VideoData>>("video", Self::VT_VIDEO, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct MediaItemArgs<'a> {
+    pub image: Option<flatbuffers::WIPOffset<ImageData<'a>>>,
+    pub video: Option<flatbuffers::WIPOffset<VideoData<'a>>>,
+}
+impl<'a> Default for MediaItemArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    MediaItemArgs {
+      image: None,
+      video: None,
+    }
+  }
+}
+
+pub struct MediaItemBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> MediaItemBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_image(&mut self, image: flatbuffers::WIPOffset<ImageData<'b >>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<ImageData>>(MediaItem::VT_IMAGE, image);
+  }
+  #[inline]
+  pub fn add_video(&mut self, video: flatbuffers::WIPOffset<VideoData<'b >>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<VideoData>>(MediaItem::VT_VIDEO, video);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> MediaItemBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    MediaItemBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<MediaItem<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for MediaItem<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("MediaItem");
+      ds.field("image", &self.image());
+      ds.field("video", &self.video());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct MediaItemT {
+  pub image: Option<Box<ImageDataT>>,
+  pub video: Option<Box<VideoDataT>>,
+}
+impl Default for MediaItemT {
+  fn default() -> Self {
+    Self {
+      image: None,
+      video: None,
+    }
+  }
+}
+impl MediaItemT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<MediaItem<'b>> {
+    let image = self.image.as_ref().map(|x|{
+      x.pack(_fbb)
+    });
+    let video = self.video.as_ref().map(|x|{
+      x.pack(_fbb)
+    });
+    MediaItem::create(_fbb, &MediaItemArgs{
+      image,
+      video,
+    })
+  }
+}
+pub enum MediaGroupDataOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct MediaGroupData<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for MediaGroupData<'a> {
+  type Inner = MediaGroupData<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> MediaGroupData<'a> {
+  pub const VT_ITEMS: flatbuffers::VOffsetT = 4;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    MediaGroupData { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args MediaGroupDataArgs<'args>
+  ) -> flatbuffers::WIPOffset<MediaGroupData<'bldr>> {
+    let mut builder = MediaGroupDataBuilder::new(_fbb);
+    if let Some(x) = args.items { builder.add_items(x); }
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> MediaGroupDataT {
+    let items = self.items().map(|x| {
+      x.iter().map(|t| t.unpack()).collect()
+    });
+    MediaGroupDataT {
+      items,
+    }
+  }
+
+  #[inline]
+  pub fn items(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<MediaItem<'a>>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<MediaItem>>>>(MediaGroupData::VT_ITEMS, None)}
+  }
+}
+
+impl flatbuffers::Verifiable for MediaGroupData<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<MediaItem>>>>("items", Self::VT_ITEMS, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct MediaGroupDataArgs<'a> {
+    pub items: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<MediaItem<'a>>>>>,
+}
+impl<'a> Default for MediaGroupDataArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    MediaGroupDataArgs {
+      items: None,
+    }
+  }
+}
+
+pub struct MediaGroupDataBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> MediaGroupDataBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_items(&mut self, items: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<MediaItem<'b >>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(MediaGroupData::VT_ITEMS, items);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> MediaGroupDataBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    MediaGroupDataBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<MediaGroupData<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for MediaGroupData<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("MediaGroupData");
+      ds.field("items", &self.items());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct MediaGroupDataT {
+  pub items: Option<Vec<MediaItemT>>,
+}
+impl Default for MediaGroupDataT {
+  fn default() -> Self {
+    Self {
+      items: None,
+    }
+  }
+}
+impl MediaGroupDataT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<MediaGroupData<'b>> {
+    let items = self.items.as_ref().map(|x|{
+      let w: Vec<_> = x.iter().map(|t| t.pack(_fbb)).collect();_fbb.create_vector(&w)
+    });
+    MediaGroupData::create(_fbb, &MediaGroupDataArgs{
+      items,
+    })
+  }
+}
+pub enum NostrDataOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct NostrData<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for NostrData<'a> {
+  type Inner = NostrData<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> NostrData<'a> {
+  pub const VT_ID: flatbuffers::VOffsetT = 4;
+  pub const VT_RELAYS: flatbuffers::VOffsetT = 6;
+  pub const VT_AUTHOR: flatbuffers::VOffsetT = 8;
+  pub const VT_KIND: flatbuffers::VOffsetT = 10;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    NostrData { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args NostrDataArgs<'args>
+  ) -> flatbuffers::WIPOffset<NostrData<'bldr>> {
+    let mut builder = NostrDataBuilder::new(_fbb);
+    builder.add_kind(args.kind);
+    if let Some(x) = args.author { builder.add_author(x); }
+    if let Some(x) = args.relays { builder.add_relays(x); }
+    if let Some(x) = args.id { builder.add_id(x); }
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> NostrDataT {
+    let id = {
+      let x = self.id();
+      x.to_string()
+    };
+    let relays = self.relays().map(|x| {
+      x.iter().map(|s| s.to_string()).collect()
+    });
+    let author = self.author().map(|x| {
+      x.to_string()
+    });
+    let kind = self.kind();
+    NostrDataT {
+      id,
+      relays,
+      author,
+      kind,
+    }
+  }
+
+  #[inline]
+  pub fn id(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(NostrData::VT_ID, None).unwrap()}
+  }
+  #[inline]
+  pub fn relays(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>(NostrData::VT_RELAYS, None)}
+  }
+  #[inline]
+  pub fn author(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(NostrData::VT_AUTHOR, None)}
+  }
+  #[inline]
+  pub fn kind(&self) -> u64 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u64>(NostrData::VT_KIND, Some(0)).unwrap()}
+  }
+}
+
+impl flatbuffers::Verifiable for NostrData<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("id", Self::VT_ID, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("relays", Self::VT_RELAYS, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("author", Self::VT_AUTHOR, false)?
+     .visit_field::<u64>("kind", Self::VT_KIND, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct NostrDataArgs<'a> {
+    pub id: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub relays: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>,
+    pub author: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub kind: u64,
+}
+impl<'a> Default for NostrDataArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    NostrDataArgs {
+      id: None, // required field
+      relays: None,
+      author: None,
+      kind: 0,
+    }
+  }
+}
+
+pub struct NostrDataBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> NostrDataBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_id(&mut self, id: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(NostrData::VT_ID, id);
+  }
+  #[inline]
+  pub fn add_relays(&mut self, relays: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<&'b  str>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(NostrData::VT_RELAYS, relays);
+  }
+  #[inline]
+  pub fn add_author(&mut self, author: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(NostrData::VT_AUTHOR, author);
+  }
+  #[inline]
+  pub fn add_kind(&mut self, kind: u64) {
+    self.fbb_.push_slot::<u64>(NostrData::VT_KIND, kind, 0);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> NostrDataBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    NostrDataBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<NostrData<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, NostrData::VT_ID,"id");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for NostrData<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("NostrData");
+      ds.field("id", &self.id());
+      ds.field("relays", &self.relays());
+      ds.field("author", &self.author());
+      ds.field("kind", &self.kind());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct NostrDataT {
+  pub id: String,
+  pub relays: Option<Vec<String>>,
+  pub author: Option<String>,
+  pub kind: u64,
+}
+impl Default for NostrDataT {
+  fn default() -> Self {
+    Self {
+      id: "".to_string(),
+      relays: None,
+      author: None,
+      kind: 0,
+    }
+  }
+}
+impl NostrDataT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<NostrData<'b>> {
+    let id = Some({
+      let x = &self.id;
+      _fbb.create_string(x)
+    });
+    let relays = self.relays.as_ref().map(|x|{
+      let w: Vec<_> = x.iter().map(|s| _fbb.create_string(s)).collect();_fbb.create_vector(&w)
+    });
+    let author = self.author.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let kind = self.kind;
+    NostrData::create(_fbb, &NostrDataArgs{
+      id,
+      relays,
+      author,
+      kind,
+    })
+  }
+}
+pub enum LinkPreviewDataOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct LinkPreviewData<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for LinkPreviewData<'a> {
+  type Inner = LinkPreviewData<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> LinkPreviewData<'a> {
+  pub const VT_URL: flatbuffers::VOffsetT = 4;
+  pub const VT_TITLE: flatbuffers::VOffsetT = 6;
+  pub const VT_DESCRIPTION: flatbuffers::VOffsetT = 8;
+  pub const VT_IMAGE: flatbuffers::VOffsetT = 10;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    LinkPreviewData { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args LinkPreviewDataArgs<'args>
+  ) -> flatbuffers::WIPOffset<LinkPreviewData<'bldr>> {
+    let mut builder = LinkPreviewDataBuilder::new(_fbb);
+    if let Some(x) = args.image { builder.add_image(x); }
+    if let Some(x) = args.description { builder.add_description(x); }
+    if let Some(x) = args.title { builder.add_title(x); }
+    if let Some(x) = args.url { builder.add_url(x); }
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> LinkPreviewDataT {
+    let url = {
+      let x = self.url();
+      x.to_string()
+    };
+    let title = self.title().map(|x| {
+      x.to_string()
+    });
+    let description = self.description().map(|x| {
+      x.to_string()
+    });
+    let image = self.image().map(|x| {
+      x.to_string()
+    });
+    LinkPreviewDataT {
+      url,
+      title,
+      description,
+      image,
+    }
+  }
+
+  #[inline]
+  pub fn url(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(LinkPreviewData::VT_URL, None).unwrap()}
+  }
+  #[inline]
+  pub fn title(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(LinkPreviewData::VT_TITLE, None)}
+  }
+  #[inline]
+  pub fn description(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(LinkPreviewData::VT_DESCRIPTION, None)}
+  }
+  #[inline]
+  pub fn image(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(LinkPreviewData::VT_IMAGE, None)}
+  }
+}
+
+impl flatbuffers::Verifiable for LinkPreviewData<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("url", Self::VT_URL, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("title", Self::VT_TITLE, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("description", Self::VT_DESCRIPTION, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("image", Self::VT_IMAGE, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct LinkPreviewDataArgs<'a> {
+    pub url: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub title: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub description: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub image: Option<flatbuffers::WIPOffset<&'a str>>,
+}
+impl<'a> Default for LinkPreviewDataArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    LinkPreviewDataArgs {
+      url: None, // required field
+      title: None,
+      description: None,
+      image: None,
+    }
+  }
+}
+
+pub struct LinkPreviewDataBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> LinkPreviewDataBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_url(&mut self, url: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(LinkPreviewData::VT_URL, url);
+  }
+  #[inline]
+  pub fn add_title(&mut self, title: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(LinkPreviewData::VT_TITLE, title);
+  }
+  #[inline]
+  pub fn add_description(&mut self, description: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(LinkPreviewData::VT_DESCRIPTION, description);
+  }
+  #[inline]
+  pub fn add_image(&mut self, image: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(LinkPreviewData::VT_IMAGE, image);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> LinkPreviewDataBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    LinkPreviewDataBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<LinkPreviewData<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, LinkPreviewData::VT_URL,"url");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for LinkPreviewData<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("LinkPreviewData");
+      ds.field("url", &self.url());
+      ds.field("title", &self.title());
+      ds.field("description", &self.description());
+      ds.field("image", &self.image());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct LinkPreviewDataT {
+  pub url: String,
+  pub title: Option<String>,
+  pub description: Option<String>,
+  pub image: Option<String>,
+}
+impl Default for LinkPreviewDataT {
+  fn default() -> Self {
+    Self {
+      url: "".to_string(),
+      title: None,
+      description: None,
+      image: None,
+    }
+  }
+}
+impl LinkPreviewDataT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<LinkPreviewData<'b>> {
+    let url = Some({
+      let x = &self.url;
+      _fbb.create_string(x)
+    });
+    let title = self.title.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let description = self.description.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let image = self.image.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    LinkPreviewData::create(_fbb, &LinkPreviewDataArgs{
+      url,
+      title,
+      description,
+      image,
+    })
+  }
+}
+pub enum ContentBlockOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct ContentBlock<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for ContentBlock<'a> {
+  type Inner = ContentBlock<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> ContentBlock<'a> {
+  pub const VT_TYPE_: flatbuffers::VOffsetT = 4;
+  pub const VT_TEXT: flatbuffers::VOffsetT = 6;
+  pub const VT_DATA_TYPE: flatbuffers::VOffsetT = 8;
+  pub const VT_DATA: flatbuffers::VOffsetT = 10;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    ContentBlock { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args ContentBlockArgs<'args>
+  ) -> flatbuffers::WIPOffset<ContentBlock<'bldr>> {
+    let mut builder = ContentBlockBuilder::new(_fbb);
+    if let Some(x) = args.data { builder.add_data(x); }
+    if let Some(x) = args.text { builder.add_text(x); }
+    if let Some(x) = args.type_ { builder.add_type_(x); }
+    builder.add_data_type(args.data_type);
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> ContentBlockT {
+    let type_ = {
+      let x = self.type_();
+      x.to_string()
+    };
+    let text = {
+      let x = self.text();
+      x.to_string()
+    };
+    let data = match self.data_type() {
+      ContentData::NONE => ContentDataT::NONE,
+      ContentData::CodeData => ContentDataT::CodeData(Box::new(
+        self.data_as_code_data()
+            .expect("Invalid union table, expected `ContentData::CodeData`.")
+            .unpack()
+      )),
+      ContentData::HashtagData => ContentDataT::HashtagData(Box::new(
+        self.data_as_hashtag_data()
+            .expect("Invalid union table, expected `ContentData::HashtagData`.")
+            .unpack()
+      )),
+      ContentData::CashuData => ContentDataT::CashuData(Box::new(
+        self.data_as_cashu_data()
+            .expect("Invalid union table, expected `ContentData::CashuData`.")
+            .unpack()
+      )),
+      ContentData::ImageData => ContentDataT::ImageData(Box::new(
+        self.data_as_image_data()
+            .expect("Invalid union table, expected `ContentData::ImageData`.")
+            .unpack()
+      )),
+      ContentData::VideoData => ContentDataT::VideoData(Box::new(
+        self.data_as_video_data()
+            .expect("Invalid union table, expected `ContentData::VideoData`.")
+            .unpack()
+      )),
+      ContentData::MediaGroupData => ContentDataT::MediaGroupData(Box::new(
+        self.data_as_media_group_data()
+            .expect("Invalid union table, expected `ContentData::MediaGroupData`.")
+            .unpack()
+      )),
+      ContentData::NostrData => ContentDataT::NostrData(Box::new(
+        self.data_as_nostr_data()
+            .expect("Invalid union table, expected `ContentData::NostrData`.")
+            .unpack()
+      )),
+      ContentData::LinkPreviewData => ContentDataT::LinkPreviewData(Box::new(
+        self.data_as_link_preview_data()
+            .expect("Invalid union table, expected `ContentData::LinkPreviewData`.")
+            .unpack()
+      )),
+      _ => ContentDataT::NONE,
+    };
+    ContentBlockT {
+      type_,
+      text,
+      data,
+    }
+  }
+
+  #[inline]
+  pub fn type_(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(ContentBlock::VT_TYPE_, None).unwrap()}
+  }
+  #[inline]
+  pub fn text(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(ContentBlock::VT_TEXT, None).unwrap()}
+  }
+  #[inline]
+  pub fn data_type(&self) -> ContentData {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<ContentData>(ContentBlock::VT_DATA_TYPE, Some(ContentData::NONE)).unwrap()}
+  }
+  #[inline]
+  pub fn data(&self) -> Option<flatbuffers::Table<'a>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Table<'a>>>(ContentBlock::VT_DATA, None)}
+  }
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn data_as_code_data(&self) -> Option<CodeData<'a>> {
+    if self.data_type() == ContentData::CodeData {
+      self.data().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { CodeData::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn data_as_hashtag_data(&self) -> Option<HashtagData<'a>> {
+    if self.data_type() == ContentData::HashtagData {
+      self.data().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { HashtagData::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn data_as_cashu_data(&self) -> Option<CashuData<'a>> {
+    if self.data_type() == ContentData::CashuData {
+      self.data().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { CashuData::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn data_as_image_data(&self) -> Option<ImageData<'a>> {
+    if self.data_type() == ContentData::ImageData {
+      self.data().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { ImageData::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn data_as_video_data(&self) -> Option<VideoData<'a>> {
+    if self.data_type() == ContentData::VideoData {
+      self.data().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { VideoData::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn data_as_media_group_data(&self) -> Option<MediaGroupData<'a>> {
+    if self.data_type() == ContentData::MediaGroupData {
+      self.data().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { MediaGroupData::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn data_as_nostr_data(&self) -> Option<NostrData<'a>> {
+    if self.data_type() == ContentData::NostrData {
+      self.data().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { NostrData::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn data_as_link_preview_data(&self) -> Option<LinkPreviewData<'a>> {
+    if self.data_type() == ContentData::LinkPreviewData {
+      self.data().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { LinkPreviewData::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+}
+
+impl flatbuffers::Verifiable for ContentBlock<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("type_", Self::VT_TYPE_, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("text", Self::VT_TEXT, true)?
+     .visit_union::<ContentData, _>("data_type", Self::VT_DATA_TYPE, "data", Self::VT_DATA, false, |key, v, pos| {
+        match key {
+          ContentData::CodeData => v.verify_union_variant::<flatbuffers::ForwardsUOffset<CodeData>>("ContentData::CodeData", pos),
+          ContentData::HashtagData => v.verify_union_variant::<flatbuffers::ForwardsUOffset<HashtagData>>("ContentData::HashtagData", pos),
+          ContentData::CashuData => v.verify_union_variant::<flatbuffers::ForwardsUOffset<CashuData>>("ContentData::CashuData", pos),
+          ContentData::ImageData => v.verify_union_variant::<flatbuffers::ForwardsUOffset<ImageData>>("ContentData::ImageData", pos),
+          ContentData::VideoData => v.verify_union_variant::<flatbuffers::ForwardsUOffset<VideoData>>("ContentData::VideoData", pos),
+          ContentData::MediaGroupData => v.verify_union_variant::<flatbuffers::ForwardsUOffset<MediaGroupData>>("ContentData::MediaGroupData", pos),
+          ContentData::NostrData => v.verify_union_variant::<flatbuffers::ForwardsUOffset<NostrData>>("ContentData::NostrData", pos),
+          ContentData::LinkPreviewData => v.verify_union_variant::<flatbuffers::ForwardsUOffset<LinkPreviewData>>("ContentData::LinkPreviewData", pos),
+          _ => Ok(()),
+        }
+     })?
+     .finish();
+    Ok(())
+  }
+}
+pub struct ContentBlockArgs<'a> {
+    pub type_: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub text: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub data_type: ContentData,
+    pub data: Option<flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>>,
+}
+impl<'a> Default for ContentBlockArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    ContentBlockArgs {
+      type_: None, // required field
+      text: None, // required field
+      data_type: ContentData::NONE,
+      data: None,
+    }
+  }
+}
+
+pub struct ContentBlockBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> ContentBlockBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_type_(&mut self, type_: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(ContentBlock::VT_TYPE_, type_);
+  }
+  #[inline]
+  pub fn add_text(&mut self, text: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(ContentBlock::VT_TEXT, text);
+  }
+  #[inline]
+  pub fn add_data_type(&mut self, data_type: ContentData) {
+    self.fbb_.push_slot::<ContentData>(ContentBlock::VT_DATA_TYPE, data_type, ContentData::NONE);
+  }
+  #[inline]
+  pub fn add_data(&mut self, data: flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(ContentBlock::VT_DATA, data);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> ContentBlockBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    ContentBlockBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<ContentBlock<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, ContentBlock::VT_TYPE_,"type_");
+    self.fbb_.required(o, ContentBlock::VT_TEXT,"text");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for ContentBlock<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("ContentBlock");
+      ds.field("type_", &self.type_());
+      ds.field("text", &self.text());
+      ds.field("data_type", &self.data_type());
+      match self.data_type() {
+        ContentData::CodeData => {
+          if let Some(x) = self.data_as_code_data() {
+            ds.field("data", &x)
+          } else {
+            ds.field("data", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        ContentData::HashtagData => {
+          if let Some(x) = self.data_as_hashtag_data() {
+            ds.field("data", &x)
+          } else {
+            ds.field("data", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        ContentData::CashuData => {
+          if let Some(x) = self.data_as_cashu_data() {
+            ds.field("data", &x)
+          } else {
+            ds.field("data", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        ContentData::ImageData => {
+          if let Some(x) = self.data_as_image_data() {
+            ds.field("data", &x)
+          } else {
+            ds.field("data", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        ContentData::VideoData => {
+          if let Some(x) = self.data_as_video_data() {
+            ds.field("data", &x)
+          } else {
+            ds.field("data", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        ContentData::MediaGroupData => {
+          if let Some(x) = self.data_as_media_group_data() {
+            ds.field("data", &x)
+          } else {
+            ds.field("data", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        ContentData::NostrData => {
+          if let Some(x) = self.data_as_nostr_data() {
+            ds.field("data", &x)
+          } else {
+            ds.field("data", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        ContentData::LinkPreviewData => {
+          if let Some(x) = self.data_as_link_preview_data() {
+            ds.field("data", &x)
+          } else {
+            ds.field("data", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        _ => {
+          let x: Option<()> = None;
+          ds.field("data", &x)
+        },
+      };
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct ContentBlockT {
+  pub type_: String,
+  pub text: String,
+  pub data: ContentDataT,
+}
+impl Default for ContentBlockT {
+  fn default() -> Self {
+    Self {
+      type_: "".to_string(),
+      text: "".to_string(),
+      data: ContentDataT::NONE,
+    }
+  }
+}
+impl ContentBlockT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<ContentBlock<'b>> {
+    let type_ = Some({
+      let x = &self.type_;
+      _fbb.create_string(x)
+    });
+    let text = Some({
+      let x = &self.text;
+      _fbb.create_string(x)
+    });
+    let data_type = self.data.content_data_type();
+    let data = self.data.pack(_fbb);
+    ContentBlock::create(_fbb, &ContentBlockArgs{
+      type_,
+      text,
+      data_type,
+      data,
+    })
   }
 }
 pub enum StringVecOffset {}
@@ -1385,196 +3644,6 @@ impl StringVecT {
     });
     StringVec::create(_fbb, &StringVecArgs{
       items,
-    })
-  }
-}
-pub enum ContentBlockOffset {}
-#[derive(Copy, Clone, PartialEq)]
-
-pub struct ContentBlock<'a> {
-  pub _tab: flatbuffers::Table<'a>,
-}
-
-impl<'a> flatbuffers::Follow<'a> for ContentBlock<'a> {
-  type Inner = ContentBlock<'a>;
-  #[inline]
-  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
-    Self { _tab: flatbuffers::Table::new(buf, loc) }
-  }
-}
-
-impl<'a> ContentBlock<'a> {
-  pub const VT_TYPE_: flatbuffers::VOffsetT = 4;
-  pub const VT_TEXT: flatbuffers::VOffsetT = 6;
-  pub const VT_DATA: flatbuffers::VOffsetT = 8;
-
-  #[inline]
-  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
-    ContentBlock { _tab: table }
-  }
-  #[allow(unused_mut)]
-  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
-    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
-    args: &'args ContentBlockArgs<'args>
-  ) -> flatbuffers::WIPOffset<ContentBlock<'bldr>> {
-    let mut builder = ContentBlockBuilder::new(_fbb);
-    if let Some(x) = args.data { builder.add_data(x); }
-    if let Some(x) = args.text { builder.add_text(x); }
-    if let Some(x) = args.type_ { builder.add_type_(x); }
-    builder.finish()
-  }
-
-  pub fn unpack(&self) -> ContentBlockT {
-    let type_ = {
-      let x = self.type_();
-      x.to_string()
-    };
-    let text = {
-      let x = self.text();
-      x.to_string()
-    };
-    let data = self.data().map(|x| {
-      x.into_iter().collect()
-    });
-    ContentBlockT {
-      type_,
-      text,
-      data,
-    }
-  }
-
-  #[inline]
-  pub fn type_(&self) -> &'a str {
-    // Safety:
-    // Created from valid Table for this object
-    // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(ContentBlock::VT_TYPE_, None).unwrap()}
-  }
-  #[inline]
-  pub fn text(&self) -> &'a str {
-    // Safety:
-    // Created from valid Table for this object
-    // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(ContentBlock::VT_TEXT, None).unwrap()}
-  }
-  #[inline]
-  pub fn data(&self) -> Option<flatbuffers::Vector<'a, u8>> {
-    // Safety:
-    // Created from valid Table for this object
-    // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, u8>>>(ContentBlock::VT_DATA, None)}
-  }
-}
-
-impl flatbuffers::Verifiable for ContentBlock<'_> {
-  #[inline]
-  fn run_verifier(
-    v: &mut flatbuffers::Verifier, pos: usize
-  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
-    use self::flatbuffers::Verifiable;
-    v.visit_table(pos)?
-     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("type_", Self::VT_TYPE_, true)?
-     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("text", Self::VT_TEXT, true)?
-     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>("data", Self::VT_DATA, false)?
-     .finish();
-    Ok(())
-  }
-}
-pub struct ContentBlockArgs<'a> {
-    pub type_: Option<flatbuffers::WIPOffset<&'a str>>,
-    pub text: Option<flatbuffers::WIPOffset<&'a str>>,
-    pub data: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
-}
-impl<'a> Default for ContentBlockArgs<'a> {
-  #[inline]
-  fn default() -> Self {
-    ContentBlockArgs {
-      type_: None, // required field
-      text: None, // required field
-      data: None,
-    }
-  }
-}
-
-pub struct ContentBlockBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
-  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
-  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
-}
-impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> ContentBlockBuilder<'a, 'b, A> {
-  #[inline]
-  pub fn add_type_(&mut self, type_: flatbuffers::WIPOffset<&'b  str>) {
-    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(ContentBlock::VT_TYPE_, type_);
-  }
-  #[inline]
-  pub fn add_text(&mut self, text: flatbuffers::WIPOffset<&'b  str>) {
-    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(ContentBlock::VT_TEXT, text);
-  }
-  #[inline]
-  pub fn add_data(&mut self, data: flatbuffers::WIPOffset<flatbuffers::Vector<'b , u8>>) {
-    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(ContentBlock::VT_DATA, data);
-  }
-  #[inline]
-  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> ContentBlockBuilder<'a, 'b, A> {
-    let start = _fbb.start_table();
-    ContentBlockBuilder {
-      fbb_: _fbb,
-      start_: start,
-    }
-  }
-  #[inline]
-  pub fn finish(self) -> flatbuffers::WIPOffset<ContentBlock<'a>> {
-    let o = self.fbb_.end_table(self.start_);
-    self.fbb_.required(o, ContentBlock::VT_TYPE_,"type_");
-    self.fbb_.required(o, ContentBlock::VT_TEXT,"text");
-    flatbuffers::WIPOffset::new(o.value())
-  }
-}
-
-impl core::fmt::Debug for ContentBlock<'_> {
-  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-    let mut ds = f.debug_struct("ContentBlock");
-      ds.field("type_", &self.type_());
-      ds.field("text", &self.text());
-      ds.field("data", &self.data());
-      ds.finish()
-  }
-}
-#[non_exhaustive]
-#[derive(Debug, Clone, PartialEq)]
-pub struct ContentBlockT {
-  pub type_: String,
-  pub text: String,
-  pub data: Option<Vec<u8>>,
-}
-impl Default for ContentBlockT {
-  fn default() -> Self {
-    Self {
-      type_: "".to_string(),
-      text: "".to_string(),
-      data: None,
-    }
-  }
-}
-impl ContentBlockT {
-  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
-    &self,
-    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
-  ) -> flatbuffers::WIPOffset<ContentBlock<'b>> {
-    let type_ = Some({
-      let x = &self.type_;
-      _fbb.create_string(x)
-    });
-    let text = Some({
-      let x = &self.text;
-      _fbb.create_string(x)
-    });
-    let data = self.data.as_ref().map(|x|{
-      _fbb.create_vector(x)
-    });
-    ContentBlock::create(_fbb, &ContentBlockArgs{
-      type_,
-      text,
-      data,
     })
   }
 }
@@ -2166,9 +4235,10 @@ impl<'a> MintInfo<'a> {
       let x = self.url();
       x.to_string()
     };
-    let base_units = self.base_units().map(|x| {
+    let base_units = {
+      let x = self.base_units();
       x.iter().map(|s| s.to_string()).collect()
-    });
+    };
     MintInfoT {
       url,
       base_units,
@@ -2183,11 +4253,11 @@ impl<'a> MintInfo<'a> {
     unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(MintInfo::VT_URL, None).unwrap()}
   }
   #[inline]
-  pub fn base_units(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>> {
+  pub fn base_units(&self) -> flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>> {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>(MintInfo::VT_BASE_UNITS, None)}
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>(MintInfo::VT_BASE_UNITS, None).unwrap()}
   }
 }
 
@@ -2199,7 +4269,7 @@ impl flatbuffers::Verifiable for MintInfo<'_> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("url", Self::VT_URL, true)?
-     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("base_units", Self::VT_BASE_UNITS, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("base_units", Self::VT_BASE_UNITS, true)?
      .finish();
     Ok(())
   }
@@ -2213,7 +4283,7 @@ impl<'a> Default for MintInfoArgs<'a> {
   fn default() -> Self {
     MintInfoArgs {
       url: None, // required field
-      base_units: None,
+      base_units: None, // required field
     }
   }
 }
@@ -2243,6 +4313,7 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> MintInfoBuilder<'a, 'b, A> {
   pub fn finish(self) -> flatbuffers::WIPOffset<MintInfo<'a>> {
     let o = self.fbb_.end_table(self.start_);
     self.fbb_.required(o, MintInfo::VT_URL,"url");
+    self.fbb_.required(o, MintInfo::VT_BASE_UNITS,"base_units");
     flatbuffers::WIPOffset::new(o.value())
   }
 }
@@ -2259,13 +4330,13 @@ impl core::fmt::Debug for MintInfo<'_> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct MintInfoT {
   pub url: String,
-  pub base_units: Option<Vec<String>>,
+  pub base_units: Vec<String>,
 }
 impl Default for MintInfoT {
   fn default() -> Self {
     Self {
       url: "".to_string(),
-      base_units: None,
+      base_units: Default::default(),
     }
   }
 }
@@ -2278,7 +4349,8 @@ impl MintInfoT {
       let x = &self.url;
       _fbb.create_string(x)
     });
-    let base_units = self.base_units.as_ref().map(|x|{
+    let base_units = Some({
+      let x = &self.base_units;
       let w: Vec<_> = x.iter().map(|s| _fbb.create_string(s)).collect();_fbb.create_vector(&w)
     });
     MintInfo::create(_fbb, &MintInfoArgs{
@@ -2830,22 +4902,22 @@ impl DLEQProofT {
     })
   }
 }
-pub enum ProofUnionOffset {}
+pub enum ProofOffset {}
 #[derive(Copy, Clone, PartialEq)]
 
-pub struct ProofUnion<'a> {
+pub struct Proof<'a> {
   pub _tab: flatbuffers::Table<'a>,
 }
 
-impl<'a> flatbuffers::Follow<'a> for ProofUnion<'a> {
-  type Inner = ProofUnion<'a>;
+impl<'a> flatbuffers::Follow<'a> for Proof<'a> {
+  type Inner = Proof<'a>;
   #[inline]
   unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
     Self { _tab: flatbuffers::Table::new(buf, loc) }
   }
 }
 
-impl<'a> ProofUnion<'a> {
+impl<'a> Proof<'a> {
   pub const VT_AMOUNT: flatbuffers::VOffsetT = 4;
   pub const VT_ID: flatbuffers::VOffsetT = 6;
   pub const VT_SECRET: flatbuffers::VOffsetT = 8;
@@ -2855,14 +4927,14 @@ impl<'a> ProofUnion<'a> {
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
-    ProofUnion { _tab: table }
+    Proof { _tab: table }
   }
   #[allow(unused_mut)]
   pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
     _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
-    args: &'args ProofUnionArgs<'args>
-  ) -> flatbuffers::WIPOffset<ProofUnion<'bldr>> {
-    let mut builder = ProofUnionBuilder::new(_fbb);
+    args: &'args ProofArgs<'args>
+  ) -> flatbuffers::WIPOffset<Proof<'bldr>> {
+    let mut builder = ProofBuilder::new(_fbb);
     builder.add_amount(args.amount);
     if let Some(x) = args.dleq { builder.add_dleq(x); }
     if let Some(x) = args.c { builder.add_c(x); }
@@ -2872,7 +4944,7 @@ impl<'a> ProofUnion<'a> {
     builder.finish()
   }
 
-  pub fn unpack(&self) -> ProofUnionT {
+  pub fn unpack(&self) -> ProofT {
     let amount = self.amount();
     let id = {
       let x = self.id();
@@ -2890,7 +4962,7 @@ impl<'a> ProofUnion<'a> {
       Box::new(x.unpack())
     });
     let version = self.version();
-    ProofUnionT {
+    ProofT {
       amount,
       id,
       secret,
@@ -2905,46 +4977,46 @@ impl<'a> ProofUnion<'a> {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u64>(ProofUnion::VT_AMOUNT, Some(0)).unwrap()}
+    unsafe { self._tab.get::<u64>(Proof::VT_AMOUNT, Some(0)).unwrap()}
   }
   #[inline]
   pub fn id(&self) -> &'a str {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(ProofUnion::VT_ID, None).unwrap()}
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Proof::VT_ID, None).unwrap()}
   }
   #[inline]
   pub fn secret(&self) -> &'a str {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(ProofUnion::VT_SECRET, None).unwrap()}
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Proof::VT_SECRET, None).unwrap()}
   }
   #[inline]
   pub fn c(&self) -> &'a str {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(ProofUnion::VT_C, None).unwrap()}
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Proof::VT_C, None).unwrap()}
   }
   #[inline]
   pub fn dleq(&self) -> Option<DLEQProof<'a>> {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<DLEQProof>>(ProofUnion::VT_DLEQ, None)}
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<DLEQProof>>(Proof::VT_DLEQ, None)}
   }
   #[inline]
   pub fn version(&self) -> u8 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u8>(ProofUnion::VT_VERSION, Some(0)).unwrap()}
+    unsafe { self._tab.get::<u8>(Proof::VT_VERSION, Some(0)).unwrap()}
   }
 }
 
-impl flatbuffers::Verifiable for ProofUnion<'_> {
+impl flatbuffers::Verifiable for Proof<'_> {
   #[inline]
   fn run_verifier(
     v: &mut flatbuffers::Verifier, pos: usize
@@ -2961,7 +5033,7 @@ impl flatbuffers::Verifiable for ProofUnion<'_> {
     Ok(())
   }
 }
-pub struct ProofUnionArgs<'a> {
+pub struct ProofArgs<'a> {
     pub amount: u64,
     pub id: Option<flatbuffers::WIPOffset<&'a str>>,
     pub secret: Option<flatbuffers::WIPOffset<&'a str>>,
@@ -2969,10 +5041,10 @@ pub struct ProofUnionArgs<'a> {
     pub dleq: Option<flatbuffers::WIPOffset<DLEQProof<'a>>>,
     pub version: u8,
 }
-impl<'a> Default for ProofUnionArgs<'a> {
+impl<'a> Default for ProofArgs<'a> {
   #[inline]
   fn default() -> Self {
-    ProofUnionArgs {
+    ProofArgs {
       amount: 0,
       id: None, // required field
       secret: None, // required field
@@ -2983,56 +5055,56 @@ impl<'a> Default for ProofUnionArgs<'a> {
   }
 }
 
-pub struct ProofUnionBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+pub struct ProofBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
   fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
   start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
 }
-impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> ProofUnionBuilder<'a, 'b, A> {
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> ProofBuilder<'a, 'b, A> {
   #[inline]
   pub fn add_amount(&mut self, amount: u64) {
-    self.fbb_.push_slot::<u64>(ProofUnion::VT_AMOUNT, amount, 0);
+    self.fbb_.push_slot::<u64>(Proof::VT_AMOUNT, amount, 0);
   }
   #[inline]
   pub fn add_id(&mut self, id: flatbuffers::WIPOffset<&'b  str>) {
-    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(ProofUnion::VT_ID, id);
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Proof::VT_ID, id);
   }
   #[inline]
   pub fn add_secret(&mut self, secret: flatbuffers::WIPOffset<&'b  str>) {
-    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(ProofUnion::VT_SECRET, secret);
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Proof::VT_SECRET, secret);
   }
   #[inline]
   pub fn add_c(&mut self, c: flatbuffers::WIPOffset<&'b  str>) {
-    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(ProofUnion::VT_C, c);
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Proof::VT_C, c);
   }
   #[inline]
   pub fn add_dleq(&mut self, dleq: flatbuffers::WIPOffset<DLEQProof<'b >>) {
-    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<DLEQProof>>(ProofUnion::VT_DLEQ, dleq);
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<DLEQProof>>(Proof::VT_DLEQ, dleq);
   }
   #[inline]
   pub fn add_version(&mut self, version: u8) {
-    self.fbb_.push_slot::<u8>(ProofUnion::VT_VERSION, version, 0);
+    self.fbb_.push_slot::<u8>(Proof::VT_VERSION, version, 0);
   }
   #[inline]
-  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> ProofUnionBuilder<'a, 'b, A> {
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> ProofBuilder<'a, 'b, A> {
     let start = _fbb.start_table();
-    ProofUnionBuilder {
+    ProofBuilder {
       fbb_: _fbb,
       start_: start,
     }
   }
   #[inline]
-  pub fn finish(self) -> flatbuffers::WIPOffset<ProofUnion<'a>> {
+  pub fn finish(self) -> flatbuffers::WIPOffset<Proof<'a>> {
     let o = self.fbb_.end_table(self.start_);
-    self.fbb_.required(o, ProofUnion::VT_ID,"id");
-    self.fbb_.required(o, ProofUnion::VT_SECRET,"secret");
-    self.fbb_.required(o, ProofUnion::VT_C,"c");
+    self.fbb_.required(o, Proof::VT_ID,"id");
+    self.fbb_.required(o, Proof::VT_SECRET,"secret");
+    self.fbb_.required(o, Proof::VT_C,"c");
     flatbuffers::WIPOffset::new(o.value())
   }
 }
 
-impl core::fmt::Debug for ProofUnion<'_> {
+impl core::fmt::Debug for Proof<'_> {
   fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-    let mut ds = f.debug_struct("ProofUnion");
+    let mut ds = f.debug_struct("Proof");
       ds.field("amount", &self.amount());
       ds.field("id", &self.id());
       ds.field("secret", &self.secret());
@@ -3044,7 +5116,7 @@ impl core::fmt::Debug for ProofUnion<'_> {
 }
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq)]
-pub struct ProofUnionT {
+pub struct ProofT {
   pub amount: u64,
   pub id: String,
   pub secret: String,
@@ -3052,7 +5124,7 @@ pub struct ProofUnionT {
   pub dleq: Option<Box<DLEQProofT>>,
   pub version: u8,
 }
-impl Default for ProofUnionT {
+impl Default for ProofT {
   fn default() -> Self {
     Self {
       amount: 0,
@@ -3064,11 +5136,11 @@ impl Default for ProofUnionT {
     }
   }
 }
-impl ProofUnionT {
+impl ProofT {
   pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
     &self,
     _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
-  ) -> flatbuffers::WIPOffset<ProofUnion<'b>> {
+  ) -> flatbuffers::WIPOffset<Proof<'b>> {
     let amount = self.amount;
     let id = Some({
       let x = &self.id;
@@ -3086,7 +5158,7 @@ impl ProofUnionT {
       x.pack(_fbb)
     });
     let version = self.version;
-    ProofUnion::create(_fbb, &ProofUnionArgs{
+    Proof::create(_fbb, &ProofArgs{
       amount,
       id,
       secret,
@@ -3345,11 +5417,11 @@ impl<'a> ZapRequest<'a> {
     args: &'args ZapRequestArgs<'args>
   ) -> flatbuffers::WIPOffset<ZapRequest<'bldr>> {
     let mut builder = ZapRequestBuilder::new(_fbb);
-    builder.add_kind(args.kind);
     if let Some(x) = args.signature { builder.add_signature(x); }
     if let Some(x) = args.tags { builder.add_tags(x); }
     if let Some(x) = args.content { builder.add_content(x); }
     if let Some(x) = args.pubkey { builder.add_pubkey(x); }
+    builder.add_kind(args.kind);
     builder.finish()
   }
 
@@ -3380,11 +5452,11 @@ impl<'a> ZapRequest<'a> {
   }
 
   #[inline]
-  pub fn kind(&self) -> u64 {
+  pub fn kind(&self) -> u16 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u64>(ZapRequest::VT_KIND, Some(0)).unwrap()}
+    unsafe { self._tab.get::<u16>(ZapRequest::VT_KIND, Some(0)).unwrap()}
   }
   #[inline]
   pub fn pubkey(&self) -> &'a str {
@@ -3423,7 +5495,7 @@ impl flatbuffers::Verifiable for ZapRequest<'_> {
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
-     .visit_field::<u64>("kind", Self::VT_KIND, false)?
+     .visit_field::<u16>("kind", Self::VT_KIND, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("pubkey", Self::VT_PUBKEY, true)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("content", Self::VT_CONTENT, true)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<StringVec>>>>("tags", Self::VT_TAGS, true)?
@@ -3433,7 +5505,7 @@ impl flatbuffers::Verifiable for ZapRequest<'_> {
   }
 }
 pub struct ZapRequestArgs<'a> {
-    pub kind: u64,
+    pub kind: u16,
     pub pubkey: Option<flatbuffers::WIPOffset<&'a str>>,
     pub content: Option<flatbuffers::WIPOffset<&'a str>>,
     pub tags: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<StringVec<'a>>>>>,
@@ -3458,8 +5530,8 @@ pub struct ZapRequestBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
 }
 impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> ZapRequestBuilder<'a, 'b, A> {
   #[inline]
-  pub fn add_kind(&mut self, kind: u64) {
-    self.fbb_.push_slot::<u64>(ZapRequest::VT_KIND, kind, 0);
+  pub fn add_kind(&mut self, kind: u16) {
+    self.fbb_.push_slot::<u16>(ZapRequest::VT_KIND, kind, 0);
   }
   #[inline]
   pub fn add_pubkey(&mut self, pubkey: flatbuffers::WIPOffset<&'b  str>) {
@@ -3509,7 +5581,7 @@ impl core::fmt::Debug for ZapRequest<'_> {
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq)]
 pub struct ZapRequestT {
-  pub kind: u64,
+  pub kind: u16,
   pub pubkey: String,
   pub content: String,
   pub tags: Vec<StringVecT>,
@@ -3593,10 +5665,10 @@ impl<'a> Request<'a> {
     args: &'args RequestArgs<'args>
   ) -> flatbuffers::WIPOffset<Request<'bldr>> {
     let mut builder = RequestBuilder::new(_fbb);
+    if let Some(x) = args.relays { builder.add_relays(x); }
     builder.add_until(args.until);
     builder.add_since(args.since);
     builder.add_limit(args.limit);
-    if let Some(x) = args.relays { builder.add_relays(x); }
     if let Some(x) = args.tags { builder.add_tags(x); }
     if let Some(x) = args.kinds { builder.add_kinds(x); }
     if let Some(x) = args.authors { builder.add_authors(x); }
@@ -3656,11 +5728,11 @@ impl<'a> Request<'a> {
     unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>(Request::VT_AUTHORS, None)}
   }
   #[inline]
-  pub fn kinds(&self) -> Option<flatbuffers::Vector<'a, u64>> {
+  pub fn kinds(&self) -> Option<flatbuffers::Vector<'a, u16>> {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, u64>>>(Request::VT_KINDS, None)}
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, u16>>>(Request::VT_KINDS, None)}
   }
   #[inline]
   pub fn tags(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<StringVec<'a>>>> {
@@ -3670,25 +5742,25 @@ impl<'a> Request<'a> {
     unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<StringVec>>>>(Request::VT_TAGS, None)}
   }
   #[inline]
-  pub fn limit(&self) -> u64 {
+  pub fn limit(&self) -> i32 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u64>(Request::VT_LIMIT, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i32>(Request::VT_LIMIT, Some(0)).unwrap()}
   }
   #[inline]
-  pub fn since(&self) -> u64 {
+  pub fn since(&self) -> i32 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u64>(Request::VT_SINCE, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i32>(Request::VT_SINCE, Some(0)).unwrap()}
   }
   #[inline]
-  pub fn until(&self) -> u64 {
+  pub fn until(&self) -> i32 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u64>(Request::VT_UNTIL, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i32>(Request::VT_UNTIL, Some(0)).unwrap()}
   }
   #[inline]
   pub fn relays(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>> {
@@ -3722,11 +5794,11 @@ impl flatbuffers::Verifiable for Request<'_> {
     v.visit_table(pos)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("ids", Self::VT_IDS, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("authors", Self::VT_AUTHORS, false)?
-     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u64>>>("kinds", Self::VT_KINDS, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u16>>>("kinds", Self::VT_KINDS, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<StringVec>>>>("tags", Self::VT_TAGS, false)?
-     .visit_field::<u64>("limit", Self::VT_LIMIT, false)?
-     .visit_field::<u64>("since", Self::VT_SINCE, false)?
-     .visit_field::<u64>("until", Self::VT_UNTIL, false)?
+     .visit_field::<i32>("limit", Self::VT_LIMIT, false)?
+     .visit_field::<i32>("since", Self::VT_SINCE, false)?
+     .visit_field::<i32>("until", Self::VT_UNTIL, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("relays", Self::VT_RELAYS, false)?
      .visit_field::<bool>("close_on_eose", Self::VT_CLOSE_ON_EOSE, false)?
      .visit_field::<bool>("cache_first", Self::VT_CACHE_FIRST, false)?
@@ -3737,11 +5809,11 @@ impl flatbuffers::Verifiable for Request<'_> {
 pub struct RequestArgs<'a> {
     pub ids: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>,
     pub authors: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>,
-    pub kinds: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u64>>>,
+    pub kinds: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u16>>>,
     pub tags: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<StringVec<'a>>>>>,
-    pub limit: u64,
-    pub since: u64,
-    pub until: u64,
+    pub limit: i32,
+    pub since: i32,
+    pub until: i32,
     pub relays: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>,
     pub close_on_eose: bool,
     pub cache_first: bool,
@@ -3778,7 +5850,7 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> RequestBuilder<'a, 'b, A> {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Request::VT_AUTHORS, authors);
   }
   #[inline]
-  pub fn add_kinds(&mut self, kinds: flatbuffers::WIPOffset<flatbuffers::Vector<'b , u64>>) {
+  pub fn add_kinds(&mut self, kinds: flatbuffers::WIPOffset<flatbuffers::Vector<'b , u16>>) {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Request::VT_KINDS, kinds);
   }
   #[inline]
@@ -3786,16 +5858,16 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> RequestBuilder<'a, 'b, A> {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Request::VT_TAGS, tags);
   }
   #[inline]
-  pub fn add_limit(&mut self, limit: u64) {
-    self.fbb_.push_slot::<u64>(Request::VT_LIMIT, limit, 0);
+  pub fn add_limit(&mut self, limit: i32) {
+    self.fbb_.push_slot::<i32>(Request::VT_LIMIT, limit, 0);
   }
   #[inline]
-  pub fn add_since(&mut self, since: u64) {
-    self.fbb_.push_slot::<u64>(Request::VT_SINCE, since, 0);
+  pub fn add_since(&mut self, since: i32) {
+    self.fbb_.push_slot::<i32>(Request::VT_SINCE, since, 0);
   }
   #[inline]
-  pub fn add_until(&mut self, until: u64) {
-    self.fbb_.push_slot::<u64>(Request::VT_UNTIL, until, 0);
+  pub fn add_until(&mut self, until: i32) {
+    self.fbb_.push_slot::<i32>(Request::VT_UNTIL, until, 0);
   }
   #[inline]
   pub fn add_relays(&mut self, relays: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<&'b  str>>>) {
@@ -3845,11 +5917,11 @@ impl core::fmt::Debug for Request<'_> {
 pub struct RequestT {
   pub ids: Option<Vec<String>>,
   pub authors: Option<Vec<String>>,
-  pub kinds: Option<Vec<u64>>,
+  pub kinds: Option<Vec<u16>>,
   pub tags: Option<Vec<StringVecT>>,
-  pub limit: u64,
-  pub since: u64,
-  pub until: u64,
+  pub limit: i32,
+  pub since: i32,
+  pub until: i32,
   pub relays: Option<Vec<String>>,
   pub close_on_eose: bool,
   pub cache_first: bool,
@@ -3943,13 +6015,13 @@ impl<'a> NostrEvent<'a> {
     args: &'args NostrEventArgs<'args>
   ) -> flatbuffers::WIPOffset<NostrEvent<'bldr>> {
     let mut builder = NostrEventBuilder::new(_fbb);
-    builder.add_created_at(args.created_at);
-    builder.add_kind(args.kind);
     if let Some(x) = args.sig { builder.add_sig(x); }
+    builder.add_created_at(args.created_at);
     if let Some(x) = args.tags { builder.add_tags(x); }
     if let Some(x) = args.content { builder.add_content(x); }
     if let Some(x) = args.pubkey { builder.add_pubkey(x); }
     if let Some(x) = args.id { builder.add_id(x); }
+    builder.add_kind(args.kind);
     builder.finish()
   }
 
@@ -4002,11 +6074,11 @@ impl<'a> NostrEvent<'a> {
     unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(NostrEvent::VT_PUBKEY, None).unwrap()}
   }
   #[inline]
-  pub fn kind(&self) -> u64 {
+  pub fn kind(&self) -> u16 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u64>(NostrEvent::VT_KIND, Some(0)).unwrap()}
+    unsafe { self._tab.get::<u16>(NostrEvent::VT_KIND, Some(0)).unwrap()}
   }
   #[inline]
   pub fn content(&self) -> &'a str {
@@ -4023,11 +6095,11 @@ impl<'a> NostrEvent<'a> {
     unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<StringVec>>>>(NostrEvent::VT_TAGS, None).unwrap()}
   }
   #[inline]
-  pub fn created_at(&self) -> u64 {
+  pub fn created_at(&self) -> i32 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u64>(NostrEvent::VT_CREATED_AT, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i32>(NostrEvent::VT_CREATED_AT, Some(0)).unwrap()}
   }
   #[inline]
   pub fn sig(&self) -> &'a str {
@@ -4047,10 +6119,10 @@ impl flatbuffers::Verifiable for NostrEvent<'_> {
     v.visit_table(pos)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("id", Self::VT_ID, true)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("pubkey", Self::VT_PUBKEY, true)?
-     .visit_field::<u64>("kind", Self::VT_KIND, false)?
+     .visit_field::<u16>("kind", Self::VT_KIND, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("content", Self::VT_CONTENT, true)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<StringVec>>>>("tags", Self::VT_TAGS, true)?
-     .visit_field::<u64>("created_at", Self::VT_CREATED_AT, false)?
+     .visit_field::<i32>("created_at", Self::VT_CREATED_AT, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("sig", Self::VT_SIG, true)?
      .finish();
     Ok(())
@@ -4059,10 +6131,10 @@ impl flatbuffers::Verifiable for NostrEvent<'_> {
 pub struct NostrEventArgs<'a> {
     pub id: Option<flatbuffers::WIPOffset<&'a str>>,
     pub pubkey: Option<flatbuffers::WIPOffset<&'a str>>,
-    pub kind: u64,
+    pub kind: u16,
     pub content: Option<flatbuffers::WIPOffset<&'a str>>,
     pub tags: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<StringVec<'a>>>>>,
-    pub created_at: u64,
+    pub created_at: i32,
     pub sig: Option<flatbuffers::WIPOffset<&'a str>>,
 }
 impl<'a> Default for NostrEventArgs<'a> {
@@ -4094,8 +6166,8 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> NostrEventBuilder<'a, 'b, A> {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(NostrEvent::VT_PUBKEY, pubkey);
   }
   #[inline]
-  pub fn add_kind(&mut self, kind: u64) {
-    self.fbb_.push_slot::<u64>(NostrEvent::VT_KIND, kind, 0);
+  pub fn add_kind(&mut self, kind: u16) {
+    self.fbb_.push_slot::<u16>(NostrEvent::VT_KIND, kind, 0);
   }
   #[inline]
   pub fn add_content(&mut self, content: flatbuffers::WIPOffset<&'b  str>) {
@@ -4106,8 +6178,8 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> NostrEventBuilder<'a, 'b, A> {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(NostrEvent::VT_TAGS, tags);
   }
   #[inline]
-  pub fn add_created_at(&mut self, created_at: u64) {
-    self.fbb_.push_slot::<u64>(NostrEvent::VT_CREATED_AT, created_at, 0);
+  pub fn add_created_at(&mut self, created_at: i32) {
+    self.fbb_.push_slot::<i32>(NostrEvent::VT_CREATED_AT, created_at, 0);
   }
   #[inline]
   pub fn add_sig(&mut self, sig: flatbuffers::WIPOffset<&'b  str>) {
@@ -4151,10 +6223,10 @@ impl core::fmt::Debug for NostrEvent<'_> {
 pub struct NostrEventT {
   pub id: String,
   pub pubkey: String,
-  pub kind: u64,
+  pub kind: u16,
   pub content: String,
   pub tags: Vec<StringVecT>,
-  pub created_at: u64,
+  pub created_at: i32,
   pub sig: String,
 }
 impl Default for NostrEventT {
@@ -7149,11 +9221,11 @@ impl<'a> Kind7375Parsed<'a> {
     unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Kind7375Parsed::VT_MINT_URL, None).unwrap()}
   }
   #[inline]
-  pub fn proofs(&self) -> flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<ProofUnion<'a>>> {
+  pub fn proofs(&self) -> flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Proof<'a>>> {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<ProofUnion>>>>(Kind7375Parsed::VT_PROOFS, None).unwrap()}
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Proof>>>>(Kind7375Parsed::VT_PROOFS, None).unwrap()}
   }
   #[inline]
   pub fn deleted_ids(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>> {
@@ -7179,7 +9251,7 @@ impl flatbuffers::Verifiable for Kind7375Parsed<'_> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("mint_url", Self::VT_MINT_URL, true)?
-     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<ProofUnion>>>>("proofs", Self::VT_PROOFS, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<Proof>>>>("proofs", Self::VT_PROOFS, true)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("deleted_ids", Self::VT_DELETED_IDS, false)?
      .visit_field::<bool>("decrypted", Self::VT_DECRYPTED, false)?
      .finish();
@@ -7188,7 +9260,7 @@ impl flatbuffers::Verifiable for Kind7375Parsed<'_> {
 }
 pub struct Kind7375ParsedArgs<'a> {
     pub mint_url: Option<flatbuffers::WIPOffset<&'a str>>,
-    pub proofs: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<ProofUnion<'a>>>>>,
+    pub proofs: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Proof<'a>>>>>,
     pub deleted_ids: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>,
     pub decrypted: bool,
 }
@@ -7214,7 +9286,7 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> Kind7375ParsedBuilder<'a, 'b, A
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind7375Parsed::VT_MINT_URL, mint_url);
   }
   #[inline]
-  pub fn add_proofs(&mut self, proofs: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<ProofUnion<'b >>>>) {
+  pub fn add_proofs(&mut self, proofs: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<Proof<'b >>>>) {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind7375Parsed::VT_PROOFS, proofs);
   }
   #[inline]
@@ -7256,7 +9328,7 @@ impl core::fmt::Debug for Kind7375Parsed<'_> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Kind7375ParsedT {
   pub mint_url: String,
-  pub proofs: Vec<ProofUnionT>,
+  pub proofs: Vec<ProofT>,
   pub deleted_ids: Option<Vec<String>>,
   pub decrypted: bool,
 }
@@ -7345,18 +9417,15 @@ impl<'a> Kind7376Parsed<'a> {
       x.to_string()
     };
     let amount = self.amount();
-    let created_events = {
-      let x = self.created_events();
+    let created_events = self.created_events().map(|x| {
       x.iter().map(|s| s.to_string()).collect()
-    };
-    let destroyed_events = {
-      let x = self.destroyed_events();
+    });
+    let destroyed_events = self.destroyed_events().map(|x| {
       x.iter().map(|s| s.to_string()).collect()
-    };
-    let redeemed_events = {
-      let x = self.redeemed_events();
+    });
+    let redeemed_events = self.redeemed_events().map(|x| {
       x.iter().map(|s| s.to_string()).collect()
-    };
+    });
     let tags = self.tags().map(|x| {
       x.iter().map(|t| t.unpack()).collect()
     });
@@ -7387,25 +9456,25 @@ impl<'a> Kind7376Parsed<'a> {
     unsafe { self._tab.get::<i32>(Kind7376Parsed::VT_AMOUNT, Some(0)).unwrap()}
   }
   #[inline]
-  pub fn created_events(&self) -> flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>> {
+  pub fn created_events(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>> {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>(Kind7376Parsed::VT_CREATED_EVENTS, None).unwrap()}
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>(Kind7376Parsed::VT_CREATED_EVENTS, None)}
   }
   #[inline]
-  pub fn destroyed_events(&self) -> flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>> {
+  pub fn destroyed_events(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>> {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>(Kind7376Parsed::VT_DESTROYED_EVENTS, None).unwrap()}
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>(Kind7376Parsed::VT_DESTROYED_EVENTS, None)}
   }
   #[inline]
-  pub fn redeemed_events(&self) -> flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>> {
+  pub fn redeemed_events(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>> {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>(Kind7376Parsed::VT_REDEEMED_EVENTS, None).unwrap()}
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>(Kind7376Parsed::VT_REDEEMED_EVENTS, None)}
   }
   #[inline]
   pub fn tags(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<HistoryTag<'a>>>> {
@@ -7432,9 +9501,9 @@ impl flatbuffers::Verifiable for Kind7376Parsed<'_> {
     v.visit_table(pos)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("direction", Self::VT_DIRECTION, true)?
      .visit_field::<i32>("amount", Self::VT_AMOUNT, false)?
-     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("created_events", Self::VT_CREATED_EVENTS, true)?
-     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("destroyed_events", Self::VT_DESTROYED_EVENTS, true)?
-     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("redeemed_events", Self::VT_REDEEMED_EVENTS, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("created_events", Self::VT_CREATED_EVENTS, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("destroyed_events", Self::VT_DESTROYED_EVENTS, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("redeemed_events", Self::VT_REDEEMED_EVENTS, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<HistoryTag>>>>("tags", Self::VT_TAGS, false)?
      .visit_field::<bool>("decrypted", Self::VT_DECRYPTED, false)?
      .finish();
@@ -7456,9 +9525,9 @@ impl<'a> Default for Kind7376ParsedArgs<'a> {
     Kind7376ParsedArgs {
       direction: None, // required field
       amount: 0,
-      created_events: None, // required field
-      destroyed_events: None, // required field
-      redeemed_events: None, // required field
+      created_events: None,
+      destroyed_events: None,
+      redeemed_events: None,
       tags: None,
       decrypted: false,
     }
@@ -7510,9 +9579,6 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> Kind7376ParsedBuilder<'a, 'b, A
   pub fn finish(self) -> flatbuffers::WIPOffset<Kind7376Parsed<'a>> {
     let o = self.fbb_.end_table(self.start_);
     self.fbb_.required(o, Kind7376Parsed::VT_DIRECTION,"direction");
-    self.fbb_.required(o, Kind7376Parsed::VT_CREATED_EVENTS,"created_events");
-    self.fbb_.required(o, Kind7376Parsed::VT_DESTROYED_EVENTS,"destroyed_events");
-    self.fbb_.required(o, Kind7376Parsed::VT_REDEEMED_EVENTS,"redeemed_events");
     flatbuffers::WIPOffset::new(o.value())
   }
 }
@@ -7535,9 +9601,9 @@ impl core::fmt::Debug for Kind7376Parsed<'_> {
 pub struct Kind7376ParsedT {
   pub direction: String,
   pub amount: i32,
-  pub created_events: Vec<String>,
-  pub destroyed_events: Vec<String>,
-  pub redeemed_events: Vec<String>,
+  pub created_events: Option<Vec<String>>,
+  pub destroyed_events: Option<Vec<String>>,
+  pub redeemed_events: Option<Vec<String>>,
   pub tags: Option<Vec<HistoryTagT>>,
   pub decrypted: bool,
 }
@@ -7546,9 +9612,9 @@ impl Default for Kind7376ParsedT {
     Self {
       direction: "".to_string(),
       amount: 0,
-      created_events: Default::default(),
-      destroyed_events: Default::default(),
-      redeemed_events: Default::default(),
+      created_events: None,
+      destroyed_events: None,
+      redeemed_events: None,
       tags: None,
       decrypted: false,
     }
@@ -7564,16 +9630,13 @@ impl Kind7376ParsedT {
       _fbb.create_string(x)
     });
     let amount = self.amount;
-    let created_events = Some({
-      let x = &self.created_events;
+    let created_events = self.created_events.as_ref().map(|x|{
       let w: Vec<_> = x.iter().map(|s| _fbb.create_string(s)).collect();_fbb.create_vector(&w)
     });
-    let destroyed_events = Some({
-      let x = &self.destroyed_events;
+    let destroyed_events = self.destroyed_events.as_ref().map(|x|{
       let w: Vec<_> = x.iter().map(|s| _fbb.create_string(s)).collect();_fbb.create_vector(&w)
     });
-    let redeemed_events = Some({
-      let x = &self.redeemed_events;
+    let redeemed_events = self.redeemed_events.as_ref().map(|x|{
       let w: Vec<_> = x.iter().map(|s| _fbb.create_string(s)).collect();_fbb.create_vector(&w)
     });
     let tags = self.tags.as_ref().map(|x|{
@@ -7713,11 +9776,11 @@ impl<'a> Kind9321Parsed<'a> {
     unsafe { self._tab.get::<bool>(Kind9321Parsed::VT_REDEEMED, Some(false)).unwrap()}
   }
   #[inline]
-  pub fn proofs(&self) -> flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<ProofUnion<'a>>> {
+  pub fn proofs(&self) -> flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Proof<'a>>> {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<ProofUnion>>>>(Kind9321Parsed::VT_PROOFS, None).unwrap()}
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Proof>>>>(Kind9321Parsed::VT_PROOFS, None).unwrap()}
   }
   #[inline]
   pub fn comment(&self) -> Option<&'a str> {
@@ -7754,7 +9817,7 @@ impl flatbuffers::Verifiable for Kind9321Parsed<'_> {
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("event_id", Self::VT_EVENT_ID, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("mint_url", Self::VT_MINT_URL, true)?
      .visit_field::<bool>("redeemed", Self::VT_REDEEMED, false)?
-     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<ProofUnion>>>>("proofs", Self::VT_PROOFS, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<Proof>>>>("proofs", Self::VT_PROOFS, true)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("comment", Self::VT_COMMENT, false)?
      .visit_field::<bool>("is_p2pk_locked", Self::VT_IS_P2PK_LOCKED, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("p2pk_pubkey", Self::VT_P2PK_PUBKEY, false)?
@@ -7768,7 +9831,7 @@ pub struct Kind9321ParsedArgs<'a> {
     pub event_id: Option<flatbuffers::WIPOffset<&'a str>>,
     pub mint_url: Option<flatbuffers::WIPOffset<&'a str>>,
     pub redeemed: bool,
-    pub proofs: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<ProofUnion<'a>>>>>,
+    pub proofs: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Proof<'a>>>>>,
     pub comment: Option<flatbuffers::WIPOffset<&'a str>>,
     pub is_p2pk_locked: bool,
     pub p2pk_pubkey: Option<flatbuffers::WIPOffset<&'a str>>,
@@ -7816,7 +9879,7 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> Kind9321ParsedBuilder<'a, 'b, A
     self.fbb_.push_slot::<bool>(Kind9321Parsed::VT_REDEEMED, redeemed, false);
   }
   #[inline]
-  pub fn add_proofs(&mut self, proofs: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<ProofUnion<'b >>>>) {
+  pub fn add_proofs(&mut self, proofs: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<Proof<'b >>>>) {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind9321Parsed::VT_PROOFS, proofs);
   }
   #[inline]
@@ -7872,7 +9935,7 @@ pub struct Kind9321ParsedT {
   pub event_id: Option<String>,
   pub mint_url: String,
   pub redeemed: bool,
-  pub proofs: Vec<ProofUnionT>,
+  pub proofs: Vec<ProofT>,
   pub comment: Option<String>,
   pub is_p2pk_locked: bool,
   pub p2pk_pubkey: Option<String>,
@@ -8383,10 +10446,14 @@ impl<'a> flatbuffers::Follow<'a> for ParsedEvent<'a> {
 }
 
 impl<'a> ParsedEvent<'a> {
-  pub const VT_EVENT: flatbuffers::VOffsetT = 4;
-  pub const VT_PARSED: flatbuffers::VOffsetT = 6;
-  pub const VT_REQUESTS: flatbuffers::VOffsetT = 8;
-  pub const VT_RELAYS: flatbuffers::VOffsetT = 10;
+  pub const VT_ID: flatbuffers::VOffsetT = 4;
+  pub const VT_PUBKEY: flatbuffers::VOffsetT = 6;
+  pub const VT_KIND: flatbuffers::VOffsetT = 8;
+  pub const VT_CREATED_AT: flatbuffers::VOffsetT = 10;
+  pub const VT_PARSED_TYPE: flatbuffers::VOffsetT = 12;
+  pub const VT_PARSED: flatbuffers::VOffsetT = 14;
+  pub const VT_REQUESTS: flatbuffers::VOffsetT = 16;
+  pub const VT_RELAYS: flatbuffers::VOffsetT = 18;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -8401,18 +10468,108 @@ impl<'a> ParsedEvent<'a> {
     if let Some(x) = args.relays { builder.add_relays(x); }
     if let Some(x) = args.requests { builder.add_requests(x); }
     if let Some(x) = args.parsed { builder.add_parsed(x); }
-    if let Some(x) = args.event { builder.add_event(x); }
+    builder.add_created_at(args.created_at);
+    if let Some(x) = args.pubkey { builder.add_pubkey(x); }
+    if let Some(x) = args.id { builder.add_id(x); }
+    builder.add_kind(args.kind);
+    builder.add_parsed_type(args.parsed_type);
     builder.finish()
   }
 
   pub fn unpack(&self) -> ParsedEventT {
-    let event = {
-      let x = self.event();
-      Box::new(x.unpack())
+    let id = {
+      let x = self.id();
+      x.to_string()
     };
-    let parsed = {
-      let x = self.parsed();
-      x.into_iter().collect()
+    let pubkey = {
+      let x = self.pubkey();
+      x.to_string()
+    };
+    let kind = self.kind();
+    let created_at = self.created_at();
+    let parsed = match self.parsed_type() {
+      ParsedData::NONE => ParsedDataT::NONE,
+      ParsedData::Kind0Parsed => ParsedDataT::Kind0Parsed(Box::new(
+        self.parsed_as_kind_0_parsed()
+            .expect("Invalid union table, expected `ParsedData::Kind0Parsed`.")
+            .unpack()
+      )),
+      ParsedData::Kind1Parsed => ParsedDataT::Kind1Parsed(Box::new(
+        self.parsed_as_kind_1_parsed()
+            .expect("Invalid union table, expected `ParsedData::Kind1Parsed`.")
+            .unpack()
+      )),
+      ParsedData::Kind3Parsed => ParsedDataT::Kind3Parsed(Box::new(
+        self.parsed_as_kind_3_parsed()
+            .expect("Invalid union table, expected `ParsedData::Kind3Parsed`.")
+            .unpack()
+      )),
+      ParsedData::Kind4Parsed => ParsedDataT::Kind4Parsed(Box::new(
+        self.parsed_as_kind_4_parsed()
+            .expect("Invalid union table, expected `ParsedData::Kind4Parsed`.")
+            .unpack()
+      )),
+      ParsedData::Kind6Parsed => ParsedDataT::Kind6Parsed(Box::new(
+        self.parsed_as_kind_6_parsed()
+            .expect("Invalid union table, expected `ParsedData::Kind6Parsed`.")
+            .unpack()
+      )),
+      ParsedData::Kind7Parsed => ParsedDataT::Kind7Parsed(Box::new(
+        self.parsed_as_kind_7_parsed()
+            .expect("Invalid union table, expected `ParsedData::Kind7Parsed`.")
+            .unpack()
+      )),
+      ParsedData::Kind17Parsed => ParsedDataT::Kind17Parsed(Box::new(
+        self.parsed_as_kind_17_parsed()
+            .expect("Invalid union table, expected `ParsedData::Kind17Parsed`.")
+            .unpack()
+      )),
+      ParsedData::Kind10002Parsed => ParsedDataT::Kind10002Parsed(Box::new(
+        self.parsed_as_kind_10002_parsed()
+            .expect("Invalid union table, expected `ParsedData::Kind10002Parsed`.")
+            .unpack()
+      )),
+      ParsedData::Kind10019Parsed => ParsedDataT::Kind10019Parsed(Box::new(
+        self.parsed_as_kind_10019_parsed()
+            .expect("Invalid union table, expected `ParsedData::Kind10019Parsed`.")
+            .unpack()
+      )),
+      ParsedData::Kind17375Parsed => ParsedDataT::Kind17375Parsed(Box::new(
+        self.parsed_as_kind_17375_parsed()
+            .expect("Invalid union table, expected `ParsedData::Kind17375Parsed`.")
+            .unpack()
+      )),
+      ParsedData::Kind39089Parsed => ParsedDataT::Kind39089Parsed(Box::new(
+        self.parsed_as_kind_39089_parsed()
+            .expect("Invalid union table, expected `ParsedData::Kind39089Parsed`.")
+            .unpack()
+      )),
+      ParsedData::Kind7374Parsed => ParsedDataT::Kind7374Parsed(Box::new(
+        self.parsed_as_kind_7374_parsed()
+            .expect("Invalid union table, expected `ParsedData::Kind7374Parsed`.")
+            .unpack()
+      )),
+      ParsedData::Kind7375Parsed => ParsedDataT::Kind7375Parsed(Box::new(
+        self.parsed_as_kind_7375_parsed()
+            .expect("Invalid union table, expected `ParsedData::Kind7375Parsed`.")
+            .unpack()
+      )),
+      ParsedData::Kind7376Parsed => ParsedDataT::Kind7376Parsed(Box::new(
+        self.parsed_as_kind_7376_parsed()
+            .expect("Invalid union table, expected `ParsedData::Kind7376Parsed`.")
+            .unpack()
+      )),
+      ParsedData::Kind9321Parsed => ParsedDataT::Kind9321Parsed(Box::new(
+        self.parsed_as_kind_9321_parsed()
+            .expect("Invalid union table, expected `ParsedData::Kind9321Parsed`.")
+            .unpack()
+      )),
+      ParsedData::Kind9735Parsed => ParsedDataT::Kind9735Parsed(Box::new(
+        self.parsed_as_kind_9735_parsed()
+            .expect("Invalid union table, expected `ParsedData::Kind9735Parsed`.")
+            .unpack()
+      )),
+      _ => ParsedDataT::NONE,
     };
     let requests = self.requests().map(|x| {
       x.iter().map(|t| t.unpack()).collect()
@@ -8421,7 +10578,10 @@ impl<'a> ParsedEvent<'a> {
       x.iter().map(|s| s.to_string()).collect()
     });
     ParsedEventT {
-      event,
+      id,
+      pubkey,
+      kind,
+      created_at,
       parsed,
       requests,
       relays,
@@ -8429,18 +10589,46 @@ impl<'a> ParsedEvent<'a> {
   }
 
   #[inline]
-  pub fn event(&self) -> NostrEvent<'a> {
+  pub fn id(&self) -> &'a str {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<NostrEvent>>(ParsedEvent::VT_EVENT, None).unwrap()}
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(ParsedEvent::VT_ID, None).unwrap()}
   }
   #[inline]
-  pub fn parsed(&self) -> flatbuffers::Vector<'a, u8> {
+  pub fn pubkey(&self) -> &'a str {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, u8>>>(ParsedEvent::VT_PARSED, None).unwrap()}
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(ParsedEvent::VT_PUBKEY, None).unwrap()}
+  }
+  #[inline]
+  pub fn kind(&self) -> u16 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u16>(ParsedEvent::VT_KIND, Some(0)).unwrap()}
+  }
+  #[inline]
+  pub fn created_at(&self) -> u32 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u32>(ParsedEvent::VT_CREATED_AT, Some(0)).unwrap()}
+  }
+  #[inline]
+  pub fn parsed_type(&self) -> ParsedData {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<ParsedData>(ParsedEvent::VT_PARSED_TYPE, Some(ParsedData::NONE)).unwrap()}
+  }
+  #[inline]
+  pub fn parsed(&self) -> Option<flatbuffers::Table<'a>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Table<'a>>>(ParsedEvent::VT_PARSED, None)}
   }
   #[inline]
   pub fn requests(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Request<'a>>>> {
@@ -8456,6 +10644,246 @@ impl<'a> ParsedEvent<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>(ParsedEvent::VT_RELAYS, None)}
   }
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn parsed_as_kind_0_parsed(&self) -> Option<Kind0Parsed<'a>> {
+    if self.parsed_type() == ParsedData::Kind0Parsed {
+      self.parsed().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { Kind0Parsed::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn parsed_as_kind_1_parsed(&self) -> Option<Kind1Parsed<'a>> {
+    if self.parsed_type() == ParsedData::Kind1Parsed {
+      self.parsed().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { Kind1Parsed::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn parsed_as_kind_3_parsed(&self) -> Option<Kind3Parsed<'a>> {
+    if self.parsed_type() == ParsedData::Kind3Parsed {
+      self.parsed().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { Kind3Parsed::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn parsed_as_kind_4_parsed(&self) -> Option<Kind4Parsed<'a>> {
+    if self.parsed_type() == ParsedData::Kind4Parsed {
+      self.parsed().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { Kind4Parsed::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn parsed_as_kind_6_parsed(&self) -> Option<Kind6Parsed<'a>> {
+    if self.parsed_type() == ParsedData::Kind6Parsed {
+      self.parsed().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { Kind6Parsed::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn parsed_as_kind_7_parsed(&self) -> Option<Kind7Parsed<'a>> {
+    if self.parsed_type() == ParsedData::Kind7Parsed {
+      self.parsed().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { Kind7Parsed::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn parsed_as_kind_17_parsed(&self) -> Option<Kind17Parsed<'a>> {
+    if self.parsed_type() == ParsedData::Kind17Parsed {
+      self.parsed().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { Kind17Parsed::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn parsed_as_kind_10002_parsed(&self) -> Option<Kind10002Parsed<'a>> {
+    if self.parsed_type() == ParsedData::Kind10002Parsed {
+      self.parsed().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { Kind10002Parsed::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn parsed_as_kind_10019_parsed(&self) -> Option<Kind10019Parsed<'a>> {
+    if self.parsed_type() == ParsedData::Kind10019Parsed {
+      self.parsed().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { Kind10019Parsed::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn parsed_as_kind_17375_parsed(&self) -> Option<Kind17375Parsed<'a>> {
+    if self.parsed_type() == ParsedData::Kind17375Parsed {
+      self.parsed().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { Kind17375Parsed::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn parsed_as_kind_39089_parsed(&self) -> Option<Kind39089Parsed<'a>> {
+    if self.parsed_type() == ParsedData::Kind39089Parsed {
+      self.parsed().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { Kind39089Parsed::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn parsed_as_kind_7374_parsed(&self) -> Option<Kind7374Parsed<'a>> {
+    if self.parsed_type() == ParsedData::Kind7374Parsed {
+      self.parsed().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { Kind7374Parsed::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn parsed_as_kind_7375_parsed(&self) -> Option<Kind7375Parsed<'a>> {
+    if self.parsed_type() == ParsedData::Kind7375Parsed {
+      self.parsed().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { Kind7375Parsed::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn parsed_as_kind_7376_parsed(&self) -> Option<Kind7376Parsed<'a>> {
+    if self.parsed_type() == ParsedData::Kind7376Parsed {
+      self.parsed().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { Kind7376Parsed::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn parsed_as_kind_9321_parsed(&self) -> Option<Kind9321Parsed<'a>> {
+    if self.parsed_type() == ParsedData::Kind9321Parsed {
+      self.parsed().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { Kind9321Parsed::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn parsed_as_kind_9735_parsed(&self) -> Option<Kind9735Parsed<'a>> {
+    if self.parsed_type() == ParsedData::Kind9735Parsed {
+      self.parsed().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { Kind9735Parsed::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
 }
 
 impl flatbuffers::Verifiable for ParsedEvent<'_> {
@@ -8465,8 +10893,31 @@ impl flatbuffers::Verifiable for ParsedEvent<'_> {
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
-     .visit_field::<flatbuffers::ForwardsUOffset<NostrEvent>>("event", Self::VT_EVENT, true)?
-     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>("parsed", Self::VT_PARSED, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("id", Self::VT_ID, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("pubkey", Self::VT_PUBKEY, true)?
+     .visit_field::<u16>("kind", Self::VT_KIND, false)?
+     .visit_field::<u32>("created_at", Self::VT_CREATED_AT, false)?
+     .visit_union::<ParsedData, _>("parsed_type", Self::VT_PARSED_TYPE, "parsed", Self::VT_PARSED, false, |key, v, pos| {
+        match key {
+          ParsedData::Kind0Parsed => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Kind0Parsed>>("ParsedData::Kind0Parsed", pos),
+          ParsedData::Kind1Parsed => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Kind1Parsed>>("ParsedData::Kind1Parsed", pos),
+          ParsedData::Kind3Parsed => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Kind3Parsed>>("ParsedData::Kind3Parsed", pos),
+          ParsedData::Kind4Parsed => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Kind4Parsed>>("ParsedData::Kind4Parsed", pos),
+          ParsedData::Kind6Parsed => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Kind6Parsed>>("ParsedData::Kind6Parsed", pos),
+          ParsedData::Kind7Parsed => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Kind7Parsed>>("ParsedData::Kind7Parsed", pos),
+          ParsedData::Kind17Parsed => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Kind17Parsed>>("ParsedData::Kind17Parsed", pos),
+          ParsedData::Kind10002Parsed => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Kind10002Parsed>>("ParsedData::Kind10002Parsed", pos),
+          ParsedData::Kind10019Parsed => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Kind10019Parsed>>("ParsedData::Kind10019Parsed", pos),
+          ParsedData::Kind17375Parsed => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Kind17375Parsed>>("ParsedData::Kind17375Parsed", pos),
+          ParsedData::Kind39089Parsed => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Kind39089Parsed>>("ParsedData::Kind39089Parsed", pos),
+          ParsedData::Kind7374Parsed => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Kind7374Parsed>>("ParsedData::Kind7374Parsed", pos),
+          ParsedData::Kind7375Parsed => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Kind7375Parsed>>("ParsedData::Kind7375Parsed", pos),
+          ParsedData::Kind7376Parsed => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Kind7376Parsed>>("ParsedData::Kind7376Parsed", pos),
+          ParsedData::Kind9321Parsed => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Kind9321Parsed>>("ParsedData::Kind9321Parsed", pos),
+          ParsedData::Kind9735Parsed => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Kind9735Parsed>>("ParsedData::Kind9735Parsed", pos),
+          _ => Ok(()),
+        }
+     })?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<Request>>>>("requests", Self::VT_REQUESTS, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("relays", Self::VT_RELAYS, false)?
      .finish();
@@ -8474,8 +10925,12 @@ impl flatbuffers::Verifiable for ParsedEvent<'_> {
   }
 }
 pub struct ParsedEventArgs<'a> {
-    pub event: Option<flatbuffers::WIPOffset<NostrEvent<'a>>>,
-    pub parsed: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
+    pub id: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub pubkey: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub kind: u16,
+    pub created_at: u32,
+    pub parsed_type: ParsedData,
+    pub parsed: Option<flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>>,
     pub requests: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Request<'a>>>>>,
     pub relays: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>,
 }
@@ -8483,8 +10938,12 @@ impl<'a> Default for ParsedEventArgs<'a> {
   #[inline]
   fn default() -> Self {
     ParsedEventArgs {
-      event: None, // required field
-      parsed: None, // required field
+      id: None, // required field
+      pubkey: None, // required field
+      kind: 0,
+      created_at: 0,
+      parsed_type: ParsedData::NONE,
+      parsed: None,
       requests: None,
       relays: None,
     }
@@ -8497,11 +10956,27 @@ pub struct ParsedEventBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
 }
 impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> ParsedEventBuilder<'a, 'b, A> {
   #[inline]
-  pub fn add_event(&mut self, event: flatbuffers::WIPOffset<NostrEvent<'b >>) {
-    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<NostrEvent>>(ParsedEvent::VT_EVENT, event);
+  pub fn add_id(&mut self, id: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(ParsedEvent::VT_ID, id);
   }
   #[inline]
-  pub fn add_parsed(&mut self, parsed: flatbuffers::WIPOffset<flatbuffers::Vector<'b , u8>>) {
+  pub fn add_pubkey(&mut self, pubkey: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(ParsedEvent::VT_PUBKEY, pubkey);
+  }
+  #[inline]
+  pub fn add_kind(&mut self, kind: u16) {
+    self.fbb_.push_slot::<u16>(ParsedEvent::VT_KIND, kind, 0);
+  }
+  #[inline]
+  pub fn add_created_at(&mut self, created_at: u32) {
+    self.fbb_.push_slot::<u32>(ParsedEvent::VT_CREATED_AT, created_at, 0);
+  }
+  #[inline]
+  pub fn add_parsed_type(&mut self, parsed_type: ParsedData) {
+    self.fbb_.push_slot::<ParsedData>(ParsedEvent::VT_PARSED_TYPE, parsed_type, ParsedData::NONE);
+  }
+  #[inline]
+  pub fn add_parsed(&mut self, parsed: flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>) {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(ParsedEvent::VT_PARSED, parsed);
   }
   #[inline]
@@ -8523,8 +10998,8 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> ParsedEventBuilder<'a, 'b, A> {
   #[inline]
   pub fn finish(self) -> flatbuffers::WIPOffset<ParsedEvent<'a>> {
     let o = self.fbb_.end_table(self.start_);
-    self.fbb_.required(o, ParsedEvent::VT_EVENT,"event");
-    self.fbb_.required(o, ParsedEvent::VT_PARSED,"parsed");
+    self.fbb_.required(o, ParsedEvent::VT_ID,"id");
+    self.fbb_.required(o, ParsedEvent::VT_PUBKEY,"pubkey");
     flatbuffers::WIPOffset::new(o.value())
   }
 }
@@ -8532,8 +11007,129 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> ParsedEventBuilder<'a, 'b, A> {
 impl core::fmt::Debug for ParsedEvent<'_> {
   fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
     let mut ds = f.debug_struct("ParsedEvent");
-      ds.field("event", &self.event());
-      ds.field("parsed", &self.parsed());
+      ds.field("id", &self.id());
+      ds.field("pubkey", &self.pubkey());
+      ds.field("kind", &self.kind());
+      ds.field("created_at", &self.created_at());
+      ds.field("parsed_type", &self.parsed_type());
+      match self.parsed_type() {
+        ParsedData::Kind0Parsed => {
+          if let Some(x) = self.parsed_as_kind_0_parsed() {
+            ds.field("parsed", &x)
+          } else {
+            ds.field("parsed", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        ParsedData::Kind1Parsed => {
+          if let Some(x) = self.parsed_as_kind_1_parsed() {
+            ds.field("parsed", &x)
+          } else {
+            ds.field("parsed", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        ParsedData::Kind3Parsed => {
+          if let Some(x) = self.parsed_as_kind_3_parsed() {
+            ds.field("parsed", &x)
+          } else {
+            ds.field("parsed", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        ParsedData::Kind4Parsed => {
+          if let Some(x) = self.parsed_as_kind_4_parsed() {
+            ds.field("parsed", &x)
+          } else {
+            ds.field("parsed", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        ParsedData::Kind6Parsed => {
+          if let Some(x) = self.parsed_as_kind_6_parsed() {
+            ds.field("parsed", &x)
+          } else {
+            ds.field("parsed", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        ParsedData::Kind7Parsed => {
+          if let Some(x) = self.parsed_as_kind_7_parsed() {
+            ds.field("parsed", &x)
+          } else {
+            ds.field("parsed", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        ParsedData::Kind17Parsed => {
+          if let Some(x) = self.parsed_as_kind_17_parsed() {
+            ds.field("parsed", &x)
+          } else {
+            ds.field("parsed", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        ParsedData::Kind10002Parsed => {
+          if let Some(x) = self.parsed_as_kind_10002_parsed() {
+            ds.field("parsed", &x)
+          } else {
+            ds.field("parsed", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        ParsedData::Kind10019Parsed => {
+          if let Some(x) = self.parsed_as_kind_10019_parsed() {
+            ds.field("parsed", &x)
+          } else {
+            ds.field("parsed", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        ParsedData::Kind17375Parsed => {
+          if let Some(x) = self.parsed_as_kind_17375_parsed() {
+            ds.field("parsed", &x)
+          } else {
+            ds.field("parsed", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        ParsedData::Kind39089Parsed => {
+          if let Some(x) = self.parsed_as_kind_39089_parsed() {
+            ds.field("parsed", &x)
+          } else {
+            ds.field("parsed", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        ParsedData::Kind7374Parsed => {
+          if let Some(x) = self.parsed_as_kind_7374_parsed() {
+            ds.field("parsed", &x)
+          } else {
+            ds.field("parsed", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        ParsedData::Kind7375Parsed => {
+          if let Some(x) = self.parsed_as_kind_7375_parsed() {
+            ds.field("parsed", &x)
+          } else {
+            ds.field("parsed", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        ParsedData::Kind7376Parsed => {
+          if let Some(x) = self.parsed_as_kind_7376_parsed() {
+            ds.field("parsed", &x)
+          } else {
+            ds.field("parsed", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        ParsedData::Kind9321Parsed => {
+          if let Some(x) = self.parsed_as_kind_9321_parsed() {
+            ds.field("parsed", &x)
+          } else {
+            ds.field("parsed", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        ParsedData::Kind9735Parsed => {
+          if let Some(x) = self.parsed_as_kind_9735_parsed() {
+            ds.field("parsed", &x)
+          } else {
+            ds.field("parsed", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        _ => {
+          let x: Option<()> = None;
+          ds.field("parsed", &x)
+        },
+      };
       ds.field("requests", &self.requests());
       ds.field("relays", &self.relays());
       ds.finish()
@@ -8542,16 +11138,22 @@ impl core::fmt::Debug for ParsedEvent<'_> {
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParsedEventT {
-  pub event: Box<NostrEventT>,
-  pub parsed: Vec<u8>,
+  pub id: String,
+  pub pubkey: String,
+  pub kind: u16,
+  pub created_at: u32,
+  pub parsed: ParsedDataT,
   pub requests: Option<Vec<RequestT>>,
   pub relays: Option<Vec<String>>,
 }
 impl Default for ParsedEventT {
   fn default() -> Self {
     Self {
-      event: Default::default(),
-      parsed: Default::default(),
+      id: "".to_string(),
+      pubkey: "".to_string(),
+      kind: 0,
+      created_at: 0,
+      parsed: ParsedDataT::NONE,
       requests: None,
       relays: None,
     }
@@ -8562,14 +11164,18 @@ impl ParsedEventT {
     &self,
     _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
   ) -> flatbuffers::WIPOffset<ParsedEvent<'b>> {
-    let event = Some({
-      let x = &self.event;
-      x.pack(_fbb)
+    let id = Some({
+      let x = &self.id;
+      _fbb.create_string(x)
     });
-    let parsed = Some({
-      let x = &self.parsed;
-      _fbb.create_vector(x)
+    let pubkey = Some({
+      let x = &self.pubkey;
+      _fbb.create_string(x)
     });
+    let kind = self.kind;
+    let created_at = self.created_at;
+    let parsed_type = self.parsed.parsed_data_type();
+    let parsed = self.parsed.pack(_fbb);
     let requests = self.requests.as_ref().map(|x|{
       let w: Vec<_> = x.iter().map(|t| t.pack(_fbb)).collect();_fbb.create_vector(&w)
     });
@@ -8577,7 +11183,11 @@ impl ParsedEventT {
       let w: Vec<_> = x.iter().map(|s| _fbb.create_string(s)).collect();_fbb.create_vector(&w)
     });
     ParsedEvent::create(_fbb, &ParsedEventArgs{
-      event,
+      id,
+      pubkey,
+      kind,
+      created_at,
+      parsed_type,
       parsed,
       requests,
       relays,
@@ -8791,7 +11401,8 @@ impl<'a> flatbuffers::Follow<'a> for CountResponse<'a> {
 
 impl<'a> CountResponse<'a> {
   pub const VT_COUNT: flatbuffers::VOffsetT = 4;
-  pub const VT_SUBSCRIPTION_ID: flatbuffers::VOffsetT = 6;
+  pub const VT_KIND: flatbuffers::VOffsetT = 6;
+  pub const VT_YOU: flatbuffers::VOffsetT = 8;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -8800,39 +11411,46 @@ impl<'a> CountResponse<'a> {
   #[allow(unused_mut)]
   pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
     _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
-    args: &'args CountResponseArgs<'args>
+    args: &'args CountResponseArgs
   ) -> flatbuffers::WIPOffset<CountResponse<'bldr>> {
     let mut builder = CountResponseBuilder::new(_fbb);
     builder.add_count(args.count);
-    if let Some(x) = args.subscription_id { builder.add_subscription_id(x); }
+    builder.add_kind(args.kind);
+    builder.add_you(args.you);
     builder.finish()
   }
 
   pub fn unpack(&self) -> CountResponseT {
     let count = self.count();
-    let subscription_id = {
-      let x = self.subscription_id();
-      x.to_string()
-    };
+    let kind = self.kind();
+    let you = self.you();
     CountResponseT {
       count,
-      subscription_id,
+      kind,
+      you,
     }
   }
 
   #[inline]
-  pub fn count(&self) -> u64 {
+  pub fn count(&self) -> u32 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u64>(CountResponse::VT_COUNT, Some(0)).unwrap()}
+    unsafe { self._tab.get::<u32>(CountResponse::VT_COUNT, Some(0)).unwrap()}
   }
   #[inline]
-  pub fn subscription_id(&self) -> &'a str {
+  pub fn kind(&self) -> u16 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(CountResponse::VT_SUBSCRIPTION_ID, None).unwrap()}
+    unsafe { self._tab.get::<u16>(CountResponse::VT_KIND, Some(0)).unwrap()}
+  }
+  #[inline]
+  pub fn you(&self) -> bool {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<bool>(CountResponse::VT_YOU, Some(false)).unwrap()}
   }
 }
 
@@ -8843,22 +11461,25 @@ impl flatbuffers::Verifiable for CountResponse<'_> {
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
-     .visit_field::<u64>("count", Self::VT_COUNT, false)?
-     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("subscription_id", Self::VT_SUBSCRIPTION_ID, true)?
+     .visit_field::<u32>("count", Self::VT_COUNT, false)?
+     .visit_field::<u16>("kind", Self::VT_KIND, false)?
+     .visit_field::<bool>("you", Self::VT_YOU, false)?
      .finish();
     Ok(())
   }
 }
-pub struct CountResponseArgs<'a> {
-    pub count: u64,
-    pub subscription_id: Option<flatbuffers::WIPOffset<&'a str>>,
+pub struct CountResponseArgs {
+    pub count: u32,
+    pub kind: u16,
+    pub you: bool,
 }
-impl<'a> Default for CountResponseArgs<'a> {
+impl<'a> Default for CountResponseArgs {
   #[inline]
   fn default() -> Self {
     CountResponseArgs {
       count: 0,
-      subscription_id: None, // required field
+      kind: 0,
+      you: false,
     }
   }
 }
@@ -8869,12 +11490,16 @@ pub struct CountResponseBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
 }
 impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> CountResponseBuilder<'a, 'b, A> {
   #[inline]
-  pub fn add_count(&mut self, count: u64) {
-    self.fbb_.push_slot::<u64>(CountResponse::VT_COUNT, count, 0);
+  pub fn add_count(&mut self, count: u32) {
+    self.fbb_.push_slot::<u32>(CountResponse::VT_COUNT, count, 0);
   }
   #[inline]
-  pub fn add_subscription_id(&mut self, subscription_id: flatbuffers::WIPOffset<&'b  str>) {
-    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(CountResponse::VT_SUBSCRIPTION_ID, subscription_id);
+  pub fn add_kind(&mut self, kind: u16) {
+    self.fbb_.push_slot::<u16>(CountResponse::VT_KIND, kind, 0);
+  }
+  #[inline]
+  pub fn add_you(&mut self, you: bool) {
+    self.fbb_.push_slot::<bool>(CountResponse::VT_YOU, you, false);
   }
   #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> CountResponseBuilder<'a, 'b, A> {
@@ -8887,7 +11512,6 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> CountResponseBuilder<'a, 'b, A>
   #[inline]
   pub fn finish(self) -> flatbuffers::WIPOffset<CountResponse<'a>> {
     let o = self.fbb_.end_table(self.start_);
-    self.fbb_.required(o, CountResponse::VT_SUBSCRIPTION_ID,"subscription_id");
     flatbuffers::WIPOffset::new(o.value())
   }
 }
@@ -8896,21 +11520,24 @@ impl core::fmt::Debug for CountResponse<'_> {
   fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
     let mut ds = f.debug_struct("CountResponse");
       ds.field("count", &self.count());
-      ds.field("subscription_id", &self.subscription_id());
+      ds.field("kind", &self.kind());
+      ds.field("you", &self.you());
       ds.finish()
   }
 }
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq)]
 pub struct CountResponseT {
-  pub count: u64,
-  pub subscription_id: String,
+  pub count: u32,
+  pub kind: u16,
+  pub you: bool,
 }
 impl Default for CountResponseT {
   fn default() -> Self {
     Self {
       count: 0,
-      subscription_id: "".to_string(),
+      kind: 0,
+      you: false,
     }
   }
 }
@@ -8920,13 +11547,12 @@ impl CountResponseT {
     _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
   ) -> flatbuffers::WIPOffset<CountResponse<'b>> {
     let count = self.count;
-    let subscription_id = Some({
-      let x = &self.subscription_id;
-      _fbb.create_string(x)
-    });
+    let kind = self.kind;
+    let you = self.you;
     CountResponse::create(_fbb, &CountResponseArgs{
       count,
-      subscription_id,
+      kind,
+      you,
     })
   }
 }
@@ -9092,8 +11718,8 @@ impl<'a> BufferFull<'a> {
     args: &'args BufferFullArgs<'args>
   ) -> flatbuffers::WIPOffset<BufferFull<'bldr>> {
     let mut builder = BufferFullBuilder::new(_fbb);
-    builder.add_dropped_events(args.dropped_events);
     if let Some(x) = args.subscription_id { builder.add_subscription_id(x); }
+    builder.add_dropped_events(args.dropped_events);
     builder.finish()
   }
 
@@ -9117,11 +11743,11 @@ impl<'a> BufferFull<'a> {
     unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(BufferFull::VT_SUBSCRIPTION_ID, None).unwrap()}
   }
   #[inline]
-  pub fn dropped_events(&self) -> u64 {
+  pub fn dropped_events(&self) -> u16 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u64>(BufferFull::VT_DROPPED_EVENTS, Some(0)).unwrap()}
+    unsafe { self._tab.get::<u16>(BufferFull::VT_DROPPED_EVENTS, Some(0)).unwrap()}
   }
 }
 
@@ -9133,14 +11759,14 @@ impl flatbuffers::Verifiable for BufferFull<'_> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("subscription_id", Self::VT_SUBSCRIPTION_ID, true)?
-     .visit_field::<u64>("dropped_events", Self::VT_DROPPED_EVENTS, false)?
+     .visit_field::<u16>("dropped_events", Self::VT_DROPPED_EVENTS, false)?
      .finish();
     Ok(())
   }
 }
 pub struct BufferFullArgs<'a> {
     pub subscription_id: Option<flatbuffers::WIPOffset<&'a str>>,
-    pub dropped_events: u64,
+    pub dropped_events: u16,
 }
 impl<'a> Default for BufferFullArgs<'a> {
   #[inline]
@@ -9162,8 +11788,8 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> BufferFullBuilder<'a, 'b, A> {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(BufferFull::VT_SUBSCRIPTION_ID, subscription_id);
   }
   #[inline]
-  pub fn add_dropped_events(&mut self, dropped_events: u64) {
-    self.fbb_.push_slot::<u64>(BufferFull::VT_DROPPED_EVENTS, dropped_events, 0);
+  pub fn add_dropped_events(&mut self, dropped_events: u16) {
+    self.fbb_.push_slot::<u16>(BufferFull::VT_DROPPED_EVENTS, dropped_events, 0);
   }
   #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> BufferFullBuilder<'a, 'b, A> {
@@ -9193,7 +11819,7 @@ impl core::fmt::Debug for BufferFull<'_> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct BufferFullT {
   pub subscription_id: String,
-  pub dropped_events: u64,
+  pub dropped_events: u16,
 }
 impl Default for BufferFullT {
   fn default() -> Self {
@@ -9216,6 +11842,302 @@ impl BufferFullT {
     BufferFull::create(_fbb, &BufferFullArgs{
       subscription_id,
       dropped_events,
+    })
+  }
+}
+pub enum ValidProofsOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct ValidProofs<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for ValidProofs<'a> {
+  type Inner = ValidProofs<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> ValidProofs<'a> {
+  pub const VT_PROOFS: flatbuffers::VOffsetT = 4;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    ValidProofs { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args ValidProofsArgs<'args>
+  ) -> flatbuffers::WIPOffset<ValidProofs<'bldr>> {
+    let mut builder = ValidProofsBuilder::new(_fbb);
+    if let Some(x) = args.proofs { builder.add_proofs(x); }
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> ValidProofsT {
+    let proofs = {
+      let x = self.proofs();
+      x.iter().map(|t| t.unpack()).collect()
+    };
+    ValidProofsT {
+      proofs,
+    }
+  }
+
+  #[inline]
+  pub fn proofs(&self) -> flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<MintProofs<'a>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<MintProofs>>>>(ValidProofs::VT_PROOFS, None).unwrap()}
+  }
+}
+
+impl flatbuffers::Verifiable for ValidProofs<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<MintProofs>>>>("proofs", Self::VT_PROOFS, true)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct ValidProofsArgs<'a> {
+    pub proofs: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<MintProofs<'a>>>>>,
+}
+impl<'a> Default for ValidProofsArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    ValidProofsArgs {
+      proofs: None, // required field
+    }
+  }
+}
+
+pub struct ValidProofsBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> ValidProofsBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_proofs(&mut self, proofs: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<MintProofs<'b >>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(ValidProofs::VT_PROOFS, proofs);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> ValidProofsBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    ValidProofsBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<ValidProofs<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, ValidProofs::VT_PROOFS,"proofs");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for ValidProofs<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("ValidProofs");
+      ds.field("proofs", &self.proofs());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct ValidProofsT {
+  pub proofs: Vec<MintProofsT>,
+}
+impl Default for ValidProofsT {
+  fn default() -> Self {
+    Self {
+      proofs: Default::default(),
+    }
+  }
+}
+impl ValidProofsT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<ValidProofs<'b>> {
+    let proofs = Some({
+      let x = &self.proofs;
+      let w: Vec<_> = x.iter().map(|t| t.pack(_fbb)).collect();_fbb.create_vector(&w)
+    });
+    ValidProofs::create(_fbb, &ValidProofsArgs{
+      proofs,
+    })
+  }
+}
+pub enum MintProofsOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct MintProofs<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for MintProofs<'a> {
+  type Inner = MintProofs<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> MintProofs<'a> {
+  pub const VT_MINT: flatbuffers::VOffsetT = 4;
+  pub const VT_PROOFS: flatbuffers::VOffsetT = 6;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    MintProofs { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args MintProofsArgs<'args>
+  ) -> flatbuffers::WIPOffset<MintProofs<'bldr>> {
+    let mut builder = MintProofsBuilder::new(_fbb);
+    if let Some(x) = args.proofs { builder.add_proofs(x); }
+    if let Some(x) = args.mint { builder.add_mint(x); }
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> MintProofsT {
+    let mint = {
+      let x = self.mint();
+      x.to_string()
+    };
+    let proofs = {
+      let x = self.proofs();
+      x.iter().map(|t| t.unpack()).collect()
+    };
+    MintProofsT {
+      mint,
+      proofs,
+    }
+  }
+
+  #[inline]
+  pub fn mint(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(MintProofs::VT_MINT, None).unwrap()}
+  }
+  #[inline]
+  pub fn proofs(&self) -> flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Proof<'a>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Proof>>>>(MintProofs::VT_PROOFS, None).unwrap()}
+  }
+}
+
+impl flatbuffers::Verifiable for MintProofs<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("mint", Self::VT_MINT, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<Proof>>>>("proofs", Self::VT_PROOFS, true)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct MintProofsArgs<'a> {
+    pub mint: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub proofs: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Proof<'a>>>>>,
+}
+impl<'a> Default for MintProofsArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    MintProofsArgs {
+      mint: None, // required field
+      proofs: None, // required field
+    }
+  }
+}
+
+pub struct MintProofsBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> MintProofsBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_mint(&mut self, mint: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(MintProofs::VT_MINT, mint);
+  }
+  #[inline]
+  pub fn add_proofs(&mut self, proofs: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<Proof<'b >>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(MintProofs::VT_PROOFS, proofs);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> MintProofsBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    MintProofsBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<MintProofs<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, MintProofs::VT_MINT,"mint");
+    self.fbb_.required(o, MintProofs::VT_PROOFS,"proofs");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for MintProofs<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("MintProofs");
+      ds.field("mint", &self.mint());
+      ds.field("proofs", &self.proofs());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct MintProofsT {
+  pub mint: String,
+  pub proofs: Vec<ProofT>,
+}
+impl Default for MintProofsT {
+  fn default() -> Self {
+    Self {
+      mint: "".to_string(),
+      proofs: Default::default(),
+    }
+  }
+}
+impl MintProofsT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<MintProofs<'b>> {
+    let mint = Some({
+      let x = &self.mint;
+      _fbb.create_string(x)
+    });
+    let proofs = Some({
+      let x = &self.proofs;
+      let w: Vec<_> = x.iter().map(|t| t.pack(_fbb)).collect();_fbb.create_vector(&w)
+    });
+    MintProofs::create(_fbb, &MintProofsArgs{
+      mint,
+      proofs,
     })
   }
 }
@@ -9282,6 +12204,11 @@ impl<'a> WorkerMessage<'a> {
       Message::BufferFull => MessageT::BufferFull(Box::new(
         self.content_as_buffer_full()
             .expect("Invalid union table, expected `Message::BufferFull`.")
+            .unpack()
+      )),
+      Message::ValidProofs => MessageT::ValidProofs(Box::new(
+        self.content_as_valid_proofs()
+            .expect("Invalid union table, expected `Message::ValidProofs`.")
             .unpack()
       )),
       _ => MessageT::NONE,
@@ -9388,6 +12315,21 @@ impl<'a> WorkerMessage<'a> {
     }
   }
 
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn content_as_valid_proofs(&self) -> Option<ValidProofs<'a>> {
+    if self.content_type() == Message::ValidProofs {
+      self.content().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { ValidProofs::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
 }
 
 impl flatbuffers::Verifiable for WorkerMessage<'_> {
@@ -9405,6 +12347,7 @@ impl flatbuffers::Verifiable for WorkerMessage<'_> {
           Message::CountResponse => v.verify_union_variant::<flatbuffers::ForwardsUOffset<CountResponse>>("Message::CountResponse", pos),
           Message::Eoce => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Eoce>>("Message::Eoce", pos),
           Message::BufferFull => v.verify_union_variant::<flatbuffers::ForwardsUOffset<BufferFull>>("Message::BufferFull", pos),
+          Message::ValidProofs => v.verify_union_variant::<flatbuffers::ForwardsUOffset<ValidProofs>>("Message::ValidProofs", pos),
           _ => Ok(()),
         }
      })?
@@ -9496,6 +12439,13 @@ impl core::fmt::Debug for WorkerMessage<'_> {
         },
         Message::BufferFull => {
           if let Some(x) = self.content_as_buffer_full() {
+            ds.field("content", &x)
+          } else {
+            ds.field("content", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        Message::ValidProofs => {
+          if let Some(x) = self.content_as_valid_proofs() {
             ds.field("content", &x)
           } else {
             ds.field("content", &"InvalidFlatbuffer: Union discriminant does not match value.")

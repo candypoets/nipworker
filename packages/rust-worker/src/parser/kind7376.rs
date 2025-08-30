@@ -4,6 +4,10 @@ use anyhow::{anyhow, Result};
 use nostr::{Event, UnsignedEvent};
 use serde::{Deserialize, Serialize};
 
+// NEW: Imports for FlatBuffers
+use crate::generated::nostr::*;
+use flatbuffers::FlatBufferBuilder;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HistoryTag {
     pub name: String,
@@ -183,6 +187,87 @@ impl Parser {
             .sign_event(unsigned_event)
             .map_err(|e| anyhow!("failed to sign event: {}", e))
     }
+}
+
+// NEW: Build the FlatBuffer for Kind7376Parsed
+pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
+    parsed: &Kind7376Parsed,
+    builder: &mut flatbuffers::FlatBufferBuilder<'a, A>,
+) -> Result<flatbuffers::WIPOffset<fb::Kind7376Parsed<'a>>> {
+    let direction = builder.create_string(&parsed.direction);
+
+    // Build created_events vector
+    let created_events_offsets: Vec<_> = parsed
+        .created_events
+        .iter()
+        .map(|id| builder.create_string(id))
+        .collect();
+    let created_events_vector = if created_events_offsets.is_empty() {
+        None
+    } else {
+        Some(builder.create_vector(&created_events_offsets))
+    };
+
+    // Build destroyed_events vector
+    let destroyed_events_offsets: Vec<_> = parsed
+        .destroyed_events
+        .iter()
+        .map(|id| builder.create_string(id))
+        .collect();
+    let destroyed_events_vector = if destroyed_events_offsets.is_empty() {
+        None
+    } else {
+        Some(builder.create_vector(&destroyed_events_offsets))
+    };
+
+    // Build redeemed_events vector
+    let redeemed_events_offsets: Vec<_> = parsed
+        .redeemed_events
+        .iter()
+        .map(|id| builder.create_string(id))
+        .collect();
+    let redeemed_events_vector = if redeemed_events_offsets.is_empty() {
+        None
+    } else {
+        Some(builder.create_vector(&redeemed_events_offsets))
+    };
+
+    // Build tags vector
+    let mut tags_offsets = Vec::new();
+    for tag in &parsed.tags {
+        let name = builder.create_string(&tag.name);
+        let value = builder.create_string(&tag.value);
+        let relay = tag.relay.as_ref().map(|r| builder.create_string(r));
+        let marker = tag.marker.as_ref().map(|m| builder.create_string(m));
+
+        let history_tag_args = fb::HistoryTagArgs {
+            name: Some(name),
+            value: Some(value),
+            relay,
+            marker,
+        };
+        let history_tag_offset = fb::HistoryTag::create(builder, &history_tag_args);
+        tags_offsets.push(history_tag_offset);
+    }
+    let tags_vector = if tags_offsets.is_empty() {
+        None
+    } else {
+        Some(builder.create_vector(&tags_offsets))
+    };
+
+    let args = fb::Kind7376ParsedArgs {
+        direction: Some(direction),
+        amount: parsed.amount,
+        created_events: created_events_vector,
+        destroyed_events: destroyed_events_vector,
+        redeemed_events: redeemed_events_vector,
+        tags: tags_vector,
+        decrypted: parsed.decrypted,
+    };
+
+    let offset = fb::Kind7376Parsed::create(builder, &args);
+
+    Ok(offset)
 }
 
 #[cfg(test)]

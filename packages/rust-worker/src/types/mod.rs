@@ -9,7 +9,7 @@ pub mod thread;
 
 // Re-export module types
 pub use network::EOSE;
-pub use proof::{ProofData, ProofUnion};
+pub use proof::Proof;
 pub use thread::*;
 
 // Re-export nostr types for convenience
@@ -17,9 +17,16 @@ pub use nostr::{
     Alphabet, Event, EventId, Filter, Kind, PublicKey, SingleLetterTag, Tag, Timestamp,
 };
 
+// Import parsed types from parser module
+use crate::parser::{
+    Kind0Parsed, Kind10002Parsed, Kind10019Parsed, Kind17375Parsed, Kind17Parsed, Kind1Parsed,
+    Kind3Parsed, Kind4Parsed, Kind6Parsed, Kind7374Parsed, Kind7375Parsed, Kind7376Parsed,
+    Kind7Parsed, Kind9321Parsed, Kind9735Parsed,
+};
+
 use nostr::{EventBuilder, UnsignedEvent};
 use serde::{Deserialize, Serialize};
-use std::str::FromStr;
+
 use wasm_bindgen::prelude::*;
 
 use crate::types::network::Request;
@@ -77,16 +84,131 @@ impl From<ParsedEvent> for SerializableParsedEvent {
             pubkey: parsed_event.event.pubkey.to_hex(),
             created_at: parsed_event.event.created_at.as_i64(),
             kind: parsed_event.event.kind.as_u32(),
-            tags: parsed_event
-                .event
-                .tags
-                .iter()
-                .map(|tag| tag.as_vec().clone())
-                .collect(),
+            tags: parsed_event.event.tags.iter().map(|t| t.as_vec()).collect(),
             content: parsed_event.event.content.clone(),
-            parsed: parsed_event.parsed,
+            parsed: parsed_event
+                .parsed
+                .and_then(|p| serde_json::to_value(p).ok()),
             requests: parsed_event.requests,
             relays: parsed_event.relays,
+        }
+    }
+}
+
+/// Strongly typed parsed data for different event kinds
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "data")]
+pub enum ParsedData {
+    #[serde(rename = "0")]
+    Kind0(Kind0Parsed),
+    #[serde(rename = "1")]
+    Kind1(Kind1Parsed),
+    #[serde(rename = "3")]
+    Kind3(Kind3Parsed),
+    #[serde(rename = "4")]
+    Kind4(Kind4Parsed),
+    #[serde(rename = "6")]
+    Kind6(Kind6Parsed),
+    #[serde(rename = "7")]
+    Kind7(Kind7Parsed),
+    #[serde(rename = "17")]
+    Kind17(Kind17Parsed),
+    #[serde(rename = "7374")]
+    Kind7374(Kind7374Parsed),
+    #[serde(rename = "7375")]
+    Kind7375(Kind7375Parsed),
+    #[serde(rename = "7376")]
+    Kind7376(Kind7376Parsed),
+    #[serde(rename = "9321")]
+    Kind9321(Kind9321Parsed),
+    #[serde(rename = "9735")]
+    Kind9735(Kind9735Parsed),
+    #[serde(rename = "10002")]
+    Kind10002(Kind10002Parsed),
+    #[serde(rename = "10019")]
+    Kind10019(Kind10019Parsed),
+    #[serde(rename = "17375")]
+    Kind17375(Kind17375Parsed),
+    #[serde(rename = "39089")]
+    Kind39089(crate::parser::Kind39089Parsed),
+}
+
+impl ParsedData {
+    /// Build FlatBuffer for the parsed data, returning the union type and offset
+    pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
+        &self,
+        builder: &mut flatbuffers::FlatBufferBuilder<'a, A>,
+    ) -> anyhow::Result<(
+        crate::generated::nostr::fb::ParsedData,
+        flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>,
+    )> {
+        use crate::generated::nostr::fb;
+
+        match self {
+            ParsedData::Kind0(data) => {
+                let offset = crate::parser::kind0::build_flatbuffer(data, builder)?;
+                Ok((fb::ParsedData::Kind0Parsed, offset.as_union_value()))
+            }
+            ParsedData::Kind1(data) => {
+                let offset = crate::parser::kind1::build_flatbuffer(data, builder)?;
+                Ok((fb::ParsedData::Kind1Parsed, offset.as_union_value()))
+            }
+            ParsedData::Kind3(data) => {
+                let offset = crate::parser::kind3::build_flatbuffer(data, builder)?;
+                Ok((fb::ParsedData::Kind3Parsed, offset.as_union_value()))
+            }
+            ParsedData::Kind4(data) => {
+                let offset = crate::parser::kind4::build_flatbuffer(data, builder)?;
+                Ok((fb::ParsedData::Kind4Parsed, offset.as_union_value()))
+            }
+            ParsedData::Kind6(data) => {
+                let offset = crate::parser::kind6::build_flatbuffer(data, builder)?;
+                Ok((fb::ParsedData::Kind6Parsed, offset.as_union_value()))
+            }
+            ParsedData::Kind7(data) => {
+                let offset = crate::parser::kind7::build_flatbuffer(data, builder)?;
+                Ok((fb::ParsedData::Kind7Parsed, offset.as_union_value()))
+            }
+            ParsedData::Kind17(data) => {
+                let offset = crate::parser::kind17::build_flatbuffer(data, builder)?;
+                Ok((fb::ParsedData::Kind17Parsed, offset.as_union_value()))
+            }
+            ParsedData::Kind7374(data) => {
+                let offset = crate::parser::kind7374::build_flatbuffer(data, builder)?;
+                Ok((fb::ParsedData::Kind7374Parsed, offset.as_union_value()))
+            }
+            ParsedData::Kind7375(data) => {
+                let offset = crate::parser::kind7375::build_flatbuffer(data, builder)?;
+                Ok((fb::ParsedData::Kind7375Parsed, offset.as_union_value()))
+            }
+            ParsedData::Kind7376(data) => {
+                let offset = crate::parser::kind7376::build_flatbuffer(data, builder)?;
+                Ok((fb::ParsedData::Kind7376Parsed, offset.as_union_value()))
+            }
+            ParsedData::Kind9321(data) => {
+                let offset = crate::parser::kind9321::build_flatbuffer(data, builder)?;
+                Ok((fb::ParsedData::Kind9321Parsed, offset.as_union_value()))
+            }
+            ParsedData::Kind9735(data) => {
+                let offset = crate::parser::kind9735::build_flatbuffer(data, builder)?;
+                Ok((fb::ParsedData::Kind9735Parsed, offset.as_union_value()))
+            }
+            ParsedData::Kind10002(data) => {
+                let offset = crate::parser::kind10002::build_flatbuffer(data, builder)?;
+                Ok((fb::ParsedData::Kind10002Parsed, offset.as_union_value()))
+            }
+            ParsedData::Kind10019(data) => {
+                let offset = crate::parser::kind10019::build_flatbuffer(data, builder)?;
+                Ok((fb::ParsedData::Kind10019Parsed, offset.as_union_value()))
+            }
+            ParsedData::Kind17375(data) => {
+                let offset = crate::parser::kind17375::build_flatbuffer(data, builder)?;
+                Ok((fb::ParsedData::Kind17375Parsed, offset.as_union_value()))
+            }
+            ParsedData::Kind39089(data) => {
+                let offset = crate::parser::kind39089::build_flatbuffer(data, builder)?;
+                Ok((fb::ParsedData::Kind39089Parsed, offset.as_union_value()))
+            }
         }
     }
 }
@@ -98,7 +220,7 @@ pub struct ParsedEvent {
     pub event: Event,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub parsed: Option<serde_json::Value>,
+    pub parsed: Option<ParsedData>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub requests: Option<Vec<Request>>,
@@ -117,7 +239,7 @@ impl ParsedEvent {
         }
     }
 
-    pub fn with_parsed(mut self, parsed: serde_json::Value) -> Self {
+    pub fn with_parsed(mut self, parsed: ParsedData) -> Self {
         self.parsed = Some(parsed);
         self
     }

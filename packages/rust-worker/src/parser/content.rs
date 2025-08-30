@@ -3,13 +3,68 @@ use nostr::nips::nip19::{self, Nip19};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
+use crate::generated::nostr::fb;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MediaItem {
+    pub image: Option<Image>,
+    pub video: Option<Video>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Image {
+    pub url: String,
+    pub alt: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Video {
+    pub url: String,
+    pub thumbnail: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ContentData {
+    Code {
+        language: Option<String>, // optional, might be extracted or None
+        code: String,
+    },
+    Hashtag {
+        tag: String,
+    },
+    Cashu {
+        token: String, // serialized cashu token string
+    },
+    Image {
+        url: String,
+        alt: Option<String>,
+    },
+    Video {
+        url: String,
+        thumbnail: Option<String>,
+    },
+    MediaGroup {
+        items: Vec<MediaItem>, // only Image/Video variants
+    },
+    Nostr {
+        id: String, // e.g. note id or npub or nprofile
+        relays: Vec<String>,
+        author: Option<String>,
+        kind: Option<u64>,
+    },
+    Link {
+        url: String,
+        title: Option<String>,
+        description: Option<String>,
+        image: Option<String>,
+    },
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContentBlock {
-    #[serde(rename = "type")]
     pub block_type: String,
     pub text: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub data: Option<serde_json::Value>,
+    pub data: Option<ContentData>,
 }
 
 impl ContentBlock {
@@ -21,7 +76,7 @@ impl ContentBlock {
         }
     }
 
-    pub fn with_data(mut self, data: serde_json::Value) -> Self {
+    pub fn with_data(mut self, data: ContentData) -> Self {
         self.data = Some(data);
         self
     }
@@ -225,22 +280,33 @@ impl ContentParser {
                 // Add media group if it contains more than one item
                 if media_group.len() > 1 {
                     let media_texts: Vec<_> = media_group.iter().map(|m| m.text.clone()).collect();
-                    let media_items: Vec<_> = media_group
-                        .iter()
-                        .map(|media| {
-                            serde_json::json!({
-                                "type": media.block_type,
-                                "src": media.data.as_ref()
-                                    .and_then(|d| d.get("src"))
-                                    .and_then(|s| s.as_str())
-                                    .unwrap_or(&media.text)
-                            })
-                        })
-                        .collect();
 
                     processed_blocks.push(
                         ContentBlock::new("mediaGrid".to_string(), media_texts.join("\n"))
-                            .with_data(serde_json::json!({ "items": media_items })),
+                            .with_data(ContentData::MediaGroup {
+                                items: media_group
+                                    .iter()
+                                    .filter_map(|block| match &block.data {
+                                        Some(ContentData::Image { url, alt }) => Some(MediaItem {
+                                            image: Some(Image {
+                                                url: url.clone(),
+                                                alt: alt.clone(),
+                                            }),
+                                            video: None,
+                                        }),
+                                        Some(ContentData::Video { url, thumbnail }) => {
+                                            Some(MediaItem {
+                                                image: None,
+                                                video: Some(Video {
+                                                    url: url.clone(),
+                                                    thumbnail: thumbnail.clone(),
+                                                }),
+                                            })
+                                        }
+                                        _ => None,
+                                    })
+                                    .collect(),
+                            }),
                     );
                 } else {
                     // Just add the single media item
@@ -257,22 +323,34 @@ impl ContentParser {
         if !media_group.is_empty() {
             if media_group.len() > 1 {
                 let media_texts: Vec<_> = media_group.iter().map(|m| m.text.clone()).collect();
-                let media_items: Vec<_> = media_group
-                    .iter()
-                    .map(|media| {
-                        serde_json::json!({
-                            "type": media.block_type,
-                            "src": media.data.as_ref()
-                                .and_then(|d| d.get("src"))
-                                .and_then(|s| s.as_str())
-                                .unwrap_or(&media.text)
-                        })
-                    })
-                    .collect();
 
                 processed_blocks.push(
-                    ContentBlock::new("mediaGrid".to_string(), media_texts.join("\n"))
-                        .with_data(serde_json::json!({ "items": media_items })),
+                    ContentBlock::new("mediaGrid".to_string(), media_texts.join("\n")).with_data(
+                        ContentData::MediaGroup {
+                            items: media_group
+                                .iter()
+                                .filter_map(|block| match &block.data {
+                                    Some(ContentData::Image { url, alt }) => Some(MediaItem {
+                                        image: Some(Image {
+                                            url: url.clone(),
+                                            alt: alt.clone(),
+                                        }),
+                                        video: None,
+                                    }),
+                                    Some(ContentData::Video { url, thumbnail }) => {
+                                        Some(MediaItem {
+                                            image: None,
+                                            video: Some(Video {
+                                                url: url.clone(),
+                                                thumbnail: thumbnail.clone(),
+                                            }),
+                                        })
+                                    }
+                                    _ => None,
+                                })
+                                .collect(),
+                        },
+                    ),
                 );
             } else {
                 processed_blocks.push(media_group[0].clone());
@@ -439,13 +517,20 @@ impl Default for ContentParser {
 
 fn process_code(text: &str, caps: &regex::Captures) -> Result<ContentBlock> {
     let code = caps.get(1).map_or("", |m| m.as_str());
-    Ok(ContentBlock::new("code".to_string(), text.to_string())
-        .with_data(serde_json::json!({ "code": code })))
+    Ok(
+        ContentBlock::new("code".to_string(), text.to_string()).with_data(ContentData::Code {
+            language: None,
+            code: code.to_string(),
+        }),
+    )
 }
 
 fn process_cashu(text: &str, _caps: &regex::Captures) -> Result<ContentBlock> {
-    Ok(ContentBlock::new("cashu".to_string(), text.to_string())
-        .with_data(serde_json::json!({ "token": text })))
+    Ok(
+        ContentBlock::new("cashu".to_string(), text.to_string()).with_data(ContentData::Cashu {
+            token: text.to_string(),
+        }),
+    )
 }
 
 fn process_hashtag(text: &str, caps: &regex::Captures) -> Result<ContentBlock> {
@@ -460,18 +545,29 @@ fn process_hashtag(text: &str, caps: &regex::Captures) -> Result<ContentBlock> {
 
     // Include the prefix in the text but only process the hashtag part
     let full_text = format!("{}{}", prefix, hashtag);
-    Ok(ContentBlock::new("hashtag".to_string(), full_text)
-        .with_data(serde_json::json!({ "tag": tag })))
+    Ok(
+        ContentBlock::new("hashtag".to_string(), full_text).with_data(ContentData::Hashtag {
+            tag: tag.to_string(),
+        }),
+    )
 }
 
 fn process_image(text: &str, _caps: &regex::Captures) -> Result<ContentBlock> {
-    Ok(ContentBlock::new("image".to_string(), text.to_string())
-        .with_data(serde_json::json!({ "src": text })))
+    Ok(
+        ContentBlock::new("image".to_string(), text.to_string()).with_data(ContentData::Image {
+            url: text.to_string(),
+            alt: None,
+        }),
+    )
 }
 
 fn process_video(text: &str, _caps: &regex::Captures) -> Result<ContentBlock> {
-    Ok(ContentBlock::new("video".to_string(), text.to_string())
-        .with_data(serde_json::json!({ "src": text })))
+    Ok(
+        ContentBlock::new("video".to_string(), text.to_string()).with_data(ContentData::Video {
+            url: text.to_string(),
+            thumbnail: None,
+        }),
+    )
 }
 
 fn process_nostr(text: &str, _caps: &regex::Captures) -> Result<ContentBlock> {
@@ -485,46 +581,44 @@ fn process_nostr(text: &str, _caps: &regex::Captures) -> Result<ContentBlock> {
     // Try to decode the identifier
     match nip19::FromBech32::from_bech32(entity) {
         Ok(decoded) => {
-            let (prefix, data) = match decoded {
-                Nip19::Pubkey(pk) => ("npub", serde_json::json!({ "pubkey": pk.to_string() })),
-                Nip19::Secret(sk) => ("nsec", serde_json::json!({ "secret": sk.to_string() })),
+            let (prefix, relays, author, kind) = match decoded {
+                Nip19::Pubkey(pk) => ("npub", Vec::<String>::new(), Some(pk.to_string()), None),
+                Nip19::Secret(sk) => ("nsec", Vec::<String>::new(), Some(sk.to_string()), None),
                 // Nip19::EncryptedSecret(enc_sk) => (
                 //     "ncryptsec",
-                //     serde_json::json!({ "encrypted_secret": format!("{:?}", enc_sk) }),
+                //     Vec::new(),
+                //     None,
+                //     None,
                 // ),
-                Nip19::EventId(note) => ("note", serde_json::json!({ "id": note.to_string() })),
+                Nip19::EventId(note) => ("note", Vec::<String>::new(), None, None),
                 Nip19::Profile(profile) => (
                     "nprofile",
-                    serde_json::json!({
-                        "pubkey": profile.public_key.to_string(),
-                        "relays": profile.relays
-                    }),
+                    profile.relays.into_iter().map(|r| r.to_string()).collect(),
+                    Some(profile.public_key.to_string()),
+                    None,
                 ),
                 Nip19::Event(event) => (
                     "nevent",
-                    serde_json::json!({
-                        "id": event.event_id.to_string(),
-                        "author": event.author.map(|pk| pk.to_string()),
-                        "relays": event.relays
-                    }),
+                    event.relays.into_iter().map(|r| r.to_string()).collect(),
+                    event.author.map(|pk| pk.to_string()),
+                    None,
                 ),
                 Nip19::Coordinate(coord) => (
                     "naddr",
-                    serde_json::json!({
-                        "kind": coord.kind.as_u64(),
-                        "pubkey": coord.public_key.to_string(),
-                        "identifier": coord.identifier,
-                        "relays": coord.relays
-                    }),
+                    coord.relays.into_iter().map(|r| r.to_string()).collect(),
+                    Some(coord.public_key.to_string()),
+                    Some(coord.kind.as_u64()),
                 ),
             };
 
             Ok(
                 ContentBlock::new(prefix.to_string(), text.to_string()).with_data(
-                    serde_json::json!({
-                        "decoded": data,
-                        "bech32": entity
-                    }),
+                    ContentData::Nostr {
+                        id: entity.to_string(),
+                        relays,
+                        author,
+                        kind,
+                    },
                 ),
             )
         }
@@ -546,10 +640,22 @@ fn process_link(text: &str, _caps: &regex::Captures) -> Result<ContentBlock> {
     let preview = get_link_preview(&url);
 
     Ok(
-        ContentBlock::new("link".to_string(), text.to_string()).with_data(serde_json::json!({
-            "href": text,
-            "preview": preview
-        })),
+        ContentBlock::new("link".to_string(), text.to_string()).with_data(ContentData::Link {
+            url: text.to_string(),
+            title: Some(
+                preview["title"]
+                    .as_str()
+                    .unwrap_or("Link Preview")
+                    .to_string(),
+            ),
+            description: Some(
+                preview["description"]
+                    .as_str()
+                    .unwrap_or("Link preview not implemented")
+                    .to_string(),
+            ),
+            image: preview["url"].as_str().map(|s| s.to_string()),
+        }),
     )
 }
 
@@ -566,6 +672,172 @@ fn get_link_preview(url: &str) -> serde_json::Value {
 pub fn parse_content(content: &str) -> Result<Vec<ContentBlock>> {
     let parser = ContentParser::new();
     parser.parse_content(content)
+}
+
+pub fn serialize_content_data<'a, A: flatbuffers::Allocator + 'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a, A>,
+    data: &ContentData,
+) -> (
+    fb::ContentData,
+    Option<flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>>,
+) {
+    match data {
+        ContentData::Code { language, code } => {
+            let code_off = builder.create_string(code);
+            let lang_off = language.as_ref().map(|l| builder.create_string(l));
+            let code_fb = fb::CodeData::create(
+                builder,
+                &fb::CodeDataArgs {
+                    language: lang_off,
+                    code: Some(code_off),
+                },
+            );
+            (fb::ContentData::CodeData, Some(code_fb.as_union_value()))
+        }
+        ContentData::Hashtag { tag } => {
+            let tag_off = builder.create_string(tag);
+            let hashtag_fb =
+                fb::HashtagData::create(builder, &fb::HashtagDataArgs { tag: Some(tag_off) });
+            (
+                fb::ContentData::HashtagData,
+                Some(hashtag_fb.as_union_value()),
+            )
+        }
+        ContentData::Cashu { token } => {
+            let token_off = builder.create_string(token);
+            let cashu_fb = fb::CashuData::create(
+                builder,
+                &fb::CashuDataArgs {
+                    token: Some(token_off),
+                },
+            );
+            (fb::ContentData::CashuData, Some(cashu_fb.as_union_value()))
+        }
+        ContentData::Image { url, alt } => {
+            let url_off = builder.create_string(url);
+            let alt_off = alt.as_ref().map(|a| builder.create_string(a));
+            let image_fb = fb::ImageData::create(
+                builder,
+                &fb::ImageDataArgs {
+                    url: Some(url_off),
+                    alt: alt_off,
+                },
+            );
+            (fb::ContentData::ImageData, Some(image_fb.as_union_value()))
+        }
+        ContentData::Video { url, thumbnail } => {
+            let url_off = builder.create_string(url);
+            let thumb_off = thumbnail.as_ref().map(|t| builder.create_string(t));
+            let video_fb = fb::VideoData::create(
+                builder,
+                &fb::VideoDataArgs {
+                    url: Some(url_off),
+                    thumbnail: thumb_off,
+                },
+            );
+            (fb::ContentData::VideoData, Some(video_fb.as_union_value()))
+        }
+        ContentData::MediaGroup { items } => {
+            let fb_items: Vec<_> = items
+                .iter()
+                .map(|item| {
+                    // Serialize inner ImageData if present
+                    let img_off = item.image.as_ref().map(|img| {
+                        let url_off = builder.create_string(&img.url);
+                        let alt_off = img.alt.as_ref().map(|a| builder.create_string(a));
+                        fb::ImageData::create(
+                            builder,
+                            &fb::ImageDataArgs {
+                                url: Some(url_off),
+                                alt: alt_off,
+                            },
+                        )
+                    });
+
+                    // Serialize inner VideoData if present
+                    let vid_off = item.video.as_ref().map(|vid| {
+                        let url_off = builder.create_string(&vid.url);
+                        let thumb_off = vid.thumbnail.as_ref().map(|t| builder.create_string(t));
+                        fb::VideoData::create(
+                            builder,
+                            &fb::VideoDataArgs {
+                                url: Some(url_off),
+                                thumbnail: thumb_off,
+                            },
+                        )
+                    });
+
+                    // Build MediaItem table with one side set
+                    fb::MediaItem::create(
+                        builder,
+                        &fb::MediaItemArgs {
+                            image: img_off,
+                            video: vid_off,
+                        },
+                    )
+                })
+                .collect();
+
+            let items_vec = builder.create_vector(&fb_items);
+
+            let mg_fb = fb::MediaGroupData::create(
+                builder,
+                &fb::MediaGroupDataArgs {
+                    items: Some(items_vec),
+                },
+            );
+
+            (
+                fb::ContentData::MediaGroupData,
+                Some(mg_fb.as_union_value()),
+            )
+        }
+        ContentData::Nostr {
+            id,
+            relays,
+            author,
+            kind,
+        } => {
+            let id_off = builder.create_string(id);
+            let relays_strs: Vec<_> = relays.iter().map(|r| builder.create_string(r)).collect();
+            let relays_off = Some(builder.create_vector(&relays_strs));
+            let author_off = author.as_ref().map(|a| builder.create_string(a));
+            let nostr_fb = fb::NostrData::create(
+                builder,
+                &fb::NostrDataArgs {
+                    id: Some(id_off),
+                    relays: relays_off,
+                    author: author_off,
+                    kind: kind.unwrap_or(0),
+                },
+            );
+            (fb::ContentData::NostrData, Some(nostr_fb.as_union_value()))
+        }
+        ContentData::Link {
+            url,
+            title,
+            description,
+            image,
+        } => {
+            let url_off = builder.create_string(url);
+            let title_off = title.as_ref().map(|t| builder.create_string(t));
+            let desc_off = description.as_ref().map(|d| builder.create_string(d));
+            let img_off = image.as_ref().map(|i| builder.create_string(i));
+            let link_fb = fb::LinkPreviewData::create(
+                builder,
+                &fb::LinkPreviewDataArgs {
+                    url: Some(url_off),
+                    title: title_off,
+                    description: desc_off,
+                    image: img_off,
+                },
+            );
+            (
+                fb::ContentData::LinkPreviewData,
+                Some(link_fb.as_union_value()),
+            )
+        }
+    }
 }
 
 #[cfg(test)]

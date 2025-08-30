@@ -1,11 +1,16 @@
+use crate::parser::Parser;
 use crate::types::network::Request;
+use crate::types::proof::Proof;
 use crate::utils::request_deduplication::RequestDeduplicator;
-use crate::{parser::Parser, ProofUnion};
 use anyhow::{anyhow, Result};
 use nostr::{Event, UnsignedEvent};
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tracing::{debug, error};
+
+// NEW: Imports for FlatBuffers
+use crate::generated::nostr::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Kind9321Parsed {
@@ -17,7 +22,7 @@ pub struct Kind9321Parsed {
     #[serde(rename = "mintUrl")]
     pub mint_url: String,
     pub redeemed: bool,
-    pub proofs: Vec<ProofUnion>,
+    pub proofs: Vec<Proof>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub comment: Option<String>,
     #[serde(rename = "isP2PKLocked")]
@@ -156,7 +161,7 @@ impl Parser {
                     }
                 }
 
-                if let Ok(proof_union) = serde_json::from_value::<ProofUnion>(proof_data) {
+                if let Ok(proof_union) = serde_json::from_value::<Proof>(proof_data) {
                     proofs.push(proof_union);
                 }
             }
@@ -222,6 +227,65 @@ impl Parser {
             .sign_event(unsigned_event)
             .map_err(|e| anyhow!("failed to sign event: {}", e))
     }
+}
+
+// NEW: Build the FlatBuffer for Kind9321Parsed
+pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
+    parsed: &Kind9321Parsed,
+    builder: &mut flatbuffers::FlatBufferBuilder<'a, A>,
+) -> Result<flatbuffers::WIPOffset<fb::Kind9321Parsed<'a>>> {
+    debug!(
+        "Building FlatBuffer for Kind9321Parsed with {} proofs",
+        parsed.proofs.len()
+    );
+
+    let recipient = builder.create_string(&parsed.recipient);
+    let event_id = parsed.event_id.as_ref().map(|id| builder.create_string(id));
+    let mint_url = builder.create_string(&parsed.mint_url);
+    let comment = parsed.comment.as_ref().map(|c| builder.create_string(c));
+    let p2pk_pubkey = parsed
+        .p2pk_pubkey
+        .as_ref()
+        .map(|p| builder.create_string(p));
+
+    // Debug required fields
+    debug!(
+        "Kind9321 required fields - recipient: '{}', mint_url: '{}', proofs count: {}",
+        parsed.recipient,
+        parsed.mint_url,
+        parsed.proofs.len()
+    );
+
+    // Build proofs vector
+    let mut proofs_offsets = Vec::new();
+    for proof in &parsed.proofs {
+        proofs_offsets.push(proof.to_offset(builder));
+    }
+    let proofs_vector = builder.create_vector(&proofs_offsets);
+
+    if parsed.recipient.is_empty() {
+        error!("Kind9321 recipient is empty!");
+    }
+    if parsed.mint_url.is_empty() {
+        error!("Kind9321 mint_url is empty!");
+    }
+
+    let args = fb::Kind9321ParsedArgs {
+        amount: parsed.amount,
+        recipient: Some(recipient),
+        event_id,
+        mint_url: Some(mint_url),
+        redeemed: parsed.redeemed,
+        proofs: Some(proofs_vector),
+        comment,
+        is_p2pk_locked: parsed.is_p2pk_locked,
+        p2pk_pubkey,
+    };
+
+    let offset = fb::Kind9321Parsed::create(builder, &args);
+
+    debug!("Successfully built Kind9321Parsed FlatBuffer offset");
+    Ok(offset)
 }
 
 #[cfg(test)]

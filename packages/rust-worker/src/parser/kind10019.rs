@@ -3,12 +3,16 @@ use crate::types::network::Request;
 use anyhow::{anyhow, Result};
 use nostr::{Event, UnsignedEvent};
 use serde::{Deserialize, Serialize};
+use tracing::info;
+
+// NEW: Imports for FlatBuffers
+use crate::generated::nostr::*;
+use flatbuffers::FlatBufferBuilder;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MintInfo {
     pub url: String,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub base_units: Vec<String>,
+    pub base_units: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -17,8 +21,8 @@ pub struct Kind10019Parsed {
     pub trusted_mints: Vec<MintInfo>,
     #[serde(skip_serializing_if = "Option::is_none", rename = "p2pkPubkey")]
     pub p2pk_pubkey: Option<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty", rename = "readRelays")]
-    pub read_relays: Vec<String>,
+    #[serde(rename = "readRelays")]
+    pub read_relays: Option<Vec<String>>,
 }
 
 impl Parser {
@@ -33,7 +37,7 @@ impl Parser {
         let mut parsed = Kind10019Parsed {
             trusted_mints: Vec::new(),
             p2pk_pubkey: None,
-            read_relays: Vec::new(),
+            read_relays: Some(Vec::new()),
         };
 
         // Extract relay, mint, and pubkey tags
@@ -42,18 +46,22 @@ impl Parser {
             if tag_vec.len() >= 2 {
                 match tag_vec[0].as_str() {
                     "relay" => {
-                        parsed.read_relays.push(tag_vec[1].clone());
+                        if let Some(ref mut relays) = parsed.read_relays {
+                            relays.push(tag_vec[1].clone());
+                        }
                     }
                     "mint" => {
                         let mut mint_info = MintInfo {
                             url: tag_vec[1].clone(),
-                            base_units: Vec::new(),
+                            base_units: Some(Vec::new()),
                         };
 
                         // Extract base units if provided (position 2 and beyond)
                         for i in 2..tag_vec.len() {
                             if !tag_vec[i].is_empty() {
-                                mint_info.base_units.push(tag_vec[i].clone());
+                                if let Some(ref mut units) = mint_info.base_units {
+                                    units.push(tag_vec[i].clone());
+                                }
                             }
                         }
 
@@ -108,6 +116,64 @@ impl Parser {
     }
 }
 
+// NEW: Build the FlatBuffer for Kind10019Parsed
+pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
+    parsed: &Kind10019Parsed,
+    builder: &mut flatbuffers::FlatBufferBuilder<'a, A>,
+) -> Result<flatbuffers::WIPOffset<fb::Kind10019Parsed<'a>>> {
+    // Build trusted_mints vector
+    let mut trusted_mints_offsets = Vec::new();
+    for mint in &parsed.trusted_mints {
+        let url = builder.create_string(&mint.url);
+        let base_units_offsets: Vec<_> = mint
+            .base_units
+            .iter()
+            .flatten()
+            .map(|unit| {
+                info!("[10019] Adding base_unit: {}", unit);
+                builder.create_string(unit)
+            })
+            .collect();
+        let base_units = Some(builder.create_vector(&base_units_offsets));
+
+        let mint_info_args = fb::MintInfoArgs {
+            url: Some(url),
+            base_units,
+        };
+        let mint_info_offset = fb::MintInfo::create(builder, &mint_info_args);
+        trusted_mints_offsets.push(mint_info_offset);
+    }
+    let trusted_mints_vector = builder.create_vector(&trusted_mints_offsets);
+
+    let p2pk_pubkey = parsed
+        .p2pk_pubkey
+        .as_ref()
+        .map(|p| builder.create_string(p));
+
+    // Build read_relays vector
+    let read_relays_offsets: Vec<_> = parsed
+        .read_relays
+        .iter()
+        .flatten()
+        .map(|relay| builder.create_string(relay))
+        .collect();
+    let read_relays_vector = if read_relays_offsets.is_empty() {
+        None
+    } else {
+        Some(builder.create_vector(&read_relays_offsets))
+    };
+
+    let args = fb::Kind10019ParsedArgs {
+        trusted_mints: Some(trusted_mints_vector),
+        p2pk_pubkey,
+        read_relays: read_relays_vector,
+    };
+
+    let offset = fb::Kind10019Parsed::create(builder, &args);
+
+    Ok(offset)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -133,9 +199,9 @@ mod tests {
 
         assert_eq!(parsed.trusted_mints.len(), 1);
         assert_eq!(parsed.trusted_mints[0].url, mint_url);
-        assert!(parsed.trusted_mints[0].base_units.is_empty());
+        assert_eq!(parsed.trusted_mints[0].base_units, Some(Vec::new()));
         assert_eq!(parsed.p2pk_pubkey, Some(pubkey.to_string()));
-        assert!(parsed.read_relays.is_empty());
+        assert_eq!(parsed.read_relays, Some(Vec::new()));
     }
 
     #[test]
@@ -163,7 +229,10 @@ mod tests {
         let (parsed, _) = parser.parse_kind_10019(&event).unwrap();
 
         assert_eq!(parsed.trusted_mints.len(), 1);
-        assert_eq!(parsed.trusted_mints[0].base_units, vec!["sat", "usd"]);
+        assert_eq!(
+            parsed.trusted_mints[0].base_units,
+            Some(vec!["sat".to_string(), "usd".to_string()])
+        );
     }
 
     #[test]
@@ -186,7 +255,7 @@ mod tests {
         let parser = Parser::default();
         let (parsed, _) = parser.parse_kind_10019(&event).unwrap();
 
-        assert_eq!(parsed.read_relays, vec![relay_url]);
+        assert_eq!(parsed.read_relays, Some(vec![relay_url.to_string()]));
     }
 
     #[test]

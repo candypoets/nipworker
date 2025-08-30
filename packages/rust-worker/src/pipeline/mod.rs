@@ -9,6 +9,7 @@ use nostr::Event as NostrEvent;
 use rustc_hash::FxHashSet;
 use serde_wasm_bindgen::from_value;
 use std::sync::Arc;
+use tracing::debug;
 use wasm_bindgen::prelude::*;
 
 pub mod pipes;

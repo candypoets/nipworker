@@ -5,27 +5,24 @@
 //! subscriptions and publishes per connection.
 
 use crate::{
-    pipeline::{Pipeline, PipelineEvent},
+    pipeline::Pipeline,
     relays::{
         connection::RelayConnection,
-        types::{
-            ClientMessage, ConnectionStatus, RelayConfig, RelayError, RelayMessage, RelayResponse,
-        },
+        types::{ClientMessage, ConnectionStatus, RelayConfig, RelayError},
         utils::{normalize_relay_url, validate_relay_url},
     },
-    types::{PublishStatus as MainPublishStatus, RelayStatusUpdate},
     utils::buffer::SharedBufferManager,
-    NetworkEvent, NetworkEventType, WorkerToMainMessage, EOSE,
+    WorkerToMainMessage,
 };
-use futures::{channel::mpsc, future::LocalBoxFuture};
-use futures::{lock::Mutex, StreamExt};
+use futures::future::LocalBoxFuture;
+use futures::lock::Mutex;
 use js_sys::SharedArrayBuffer;
-use nostr::{Event, EventId, Filter};
+use nostr::{Event, Filter};
 use rustc_hash::FxHashMap;
+use std::sync::Arc;
 use std::sync::RwLock;
-use std::{cell::RefCell, sync::Arc};
 use std::{collections::HashMap, rc::Rc};
-use tracing::{info, warn};
+use tracing::info;
 use wasm_bindgen_futures::spawn_local;
 
 /// Main connection registry for managing relay operations

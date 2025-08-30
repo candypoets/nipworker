@@ -1,0 +1,10 @@
+include "../common.fbs";
+
+namespace nostr.fb;
+
+table Kind7375Parsed {
+  mint_url: string (required);
+  proofs: [Proof] (required);
+  deleted_ids: [string];
+  decrypted: bool;
+}

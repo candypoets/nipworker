@@ -1,0 +1,128 @@
+// Top-level schema that includes all dependencies
+include "common.fbs";
+include "kinds/kind0.fbs";
+include "kinds/kind1.fbs";
+include "kinds/kind3.fbs";
+include "kinds/kind4.fbs";
+include "kinds/kind6.fbs";
+include "kinds/kind7.fbs";
+include "kinds/kind17.fbs";
+include "kinds/kind10002.fbs";
+include "kinds/kind10019.fbs";
+include "kinds/kind17375.fbs";
+include "kinds/kind39089.fbs";
+include "kinds/kind7374.fbs";
+include "kinds/kind7375.fbs";
+include "kinds/kind7376.fbs";
+include "kinds/kind9321.fbs";
+include "kinds/kind9735.fbs";
+
+namespace nostr.fb;
+
+// -- Union Types --
+enum MessageType : uint32 {
+  ParsedNostrEvent = 0,
+  ConnectionStatus = 1,
+  CountResponse = 2,
+  Eoce = 3,
+  BufferFull = 4,
+  ValidProofs = 5
+}
+
+enum ParsedDataUnion : uint32 {
+  Kind0Parsed = 0,
+  Kind1Parsed = 1,
+  Kind3Parsed = 3,
+  Kind4Parsed = 4,
+  Kind6Parsed = 6,
+  Kind7Parsed = 7,
+  Kind17Parsed = 17,
+  Kind10002Parsed = 10002,
+  Kind10019Parsed = 10019,
+  Kind17375Parsed = 17375,
+  Kind39089Parsed = 39089,
+  Kind7374Parsed = 7374,
+  Kind7375Parsed = 7375,
+  Kind7376Parsed = 7376,
+  Kind9321Parsed = 9321,
+  Kind9735Parsed = 9735
+}
+
+// -- Core Structures --
+union ParsedData {
+  Kind0Parsed,
+  Kind1Parsed,
+  Kind3Parsed,
+  Kind4Parsed,
+  Kind6Parsed,
+  Kind7Parsed,
+  Kind17Parsed,
+  Kind10002Parsed,
+  Kind10019Parsed,
+  Kind17375Parsed,
+  Kind39089Parsed,
+  Kind7374Parsed,
+  Kind7375Parsed,
+  Kind7376Parsed,
+  Kind9321Parsed,
+  Kind9735Parsed
+}
+
+table ParsedEvent {
+  id: string (required);
+  pubkey: string (required);
+  kind: ushort;
+  created_at: uint;
+  parsed: ParsedData;
+  requests: [Request];
+  relays: [string];
+}
+
+// Non-event messages
+table ConnectionStatus {
+  relay_url: string (required);
+  status: string (required);
+  message: string;
+}
+
+table CountResponse {
+  count: uint;
+  kind: ushort;
+  you: bool;
+}
+
+table Eoce {
+  subscription_id: string (required);
+}
+
+table BufferFull {
+  subscription_id: string (required);
+  dropped_events: ushort;
+}
+
+table ValidProofs {
+  proofs: [MintProofs] (required);
+}
+
+table MintProofs {
+  mint: string (required);
+  proofs: [Proof] (required);
+}
+
+// Root union type
+union Message {
+  ParsedEvent,
+  ConnectionStatus,
+  CountResponse,
+  Eoce,
+  BufferFull,
+  ValidProofs
+}
+
+// NEW: Wrapper table
+table WorkerMessage {
+  type: MessageType;
+  content: Message;
+}
+
+root_type WorkerMessage;

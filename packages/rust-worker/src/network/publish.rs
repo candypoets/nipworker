@@ -70,7 +70,8 @@ impl PublishManager {
             relays
         );
 
-        self.connection_registry
+        let _ = self
+            .connection_registry
             .publish(event.clone(), relays.clone(), shared_buffer.into())
             .await;
 

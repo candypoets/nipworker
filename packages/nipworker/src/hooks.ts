@@ -1,12 +1,13 @@
 import {  NostrEvent } from "nostr-tools";
 import { nostrManager, SubscriptionOptions, type NostrManager } from ".";
-import { SharedBufferReader } from "src/lib/sharedBuffer";
-import type { WorkerToMainMessage, Request } from "src/types";
+import { SharedBufferReader } from "src/lib/SharedBuffer";
+import type { RequestObject } from "src/types";
+import { WorkerMessage } from "./generated/nostr/fb";
 
 export function useSubscription(
   subId: string,
-  requests: Request[],
-  callback: any = () => {},
+  requests: RequestObject[],
+  callback: (message: WorkerMessage) => void = () => {},
   options: SubscriptionOptions = { closeOnEose: false },
   manager: NostrManager = nostrManager
 ): () => void {
@@ -46,36 +47,17 @@ export function useSubscription(
       }
       return;
     }
-
     const result = SharedBufferReader.readMessages(buffer, lastReadPos);
 
     if (result.hasNewData) {
       // Found new data - reset to aggressive polling
       pollInterval = 32;
 
-      result.messages.forEach((message: WorkerToMainMessage) => {
-        if ("SubscriptionEvent" in message) {
-          if (message.SubscriptionEvent.event_type === "BUFFER_FULL" as any) {
-            callback([], "BUFFER_FULL");
-            unsubscribe()
-          } else {
-            message.SubscriptionEvent.event_data.forEach((event) => {
-              callback(event, message.SubscriptionEvent.event_type);
-            });
-          }
-        } else if ("ConnectionStatus" in message) {
-          if (options.closeOnEose && message.ConnectionStatus.status == "EOSE") {
-            unsubscribe();
-          }
-          callback(message.ConnectionStatus, "CONNECTION_STATUS");
-        } else if ("Eoce" in message) {
-          callback([], "EOCE");
-        } else if ("Proofs" in message) {
-          callback(message.Proofs);
-        } else if ("Count" in message) {
-          callback([message.Count], "Count")
-        }
-      });
+
+      for (const message of result.messages) {
+        callback(message)
+      }
+
       lastReadPos = result.newReadPosition;
     } else {
       // No new data - back off exponentially (faster backoff)
@@ -133,10 +115,8 @@ export function usePublish(
       }
       const result = SharedBufferReader.readMessages(buffer, lastReadPos);
       if (result.hasNewData) {
-        result.messages.forEach((message: WorkerToMainMessage) => {
-          if ("ConnectionStatus" in message) {
-            callback(message.ConnectionStatus, "CONNECTION_STATUS");
-          }
+        result.messages.forEach((message: WorkerMessage) => {
+            callback(message);
         });
         lastReadPos = result.newReadPosition;
       }

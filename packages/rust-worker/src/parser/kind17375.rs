@@ -5,6 +5,10 @@ use nostr::{Event, EventBuilder, UnsignedEvent};
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
+// NEW: Imports for FlatBuffers
+use crate::generated::nostr::*;
+use flatbuffers::FlatBufferBuilder;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Kind17375Parsed {
     pub mints: Vec<String>,
@@ -143,6 +147,40 @@ impl Parser {
 
         Ok(new_event)
     }
+}
+
+// NEW: Build the FlatBuffer for Kind17375Parsed
+pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
+    parsed: &Kind17375Parsed,
+    builder: &mut flatbuffers::FlatBufferBuilder<'a, A>,
+) -> Result<flatbuffers::WIPOffset<fb::Kind17375Parsed<'a>>> {
+    // Build mints vector
+    let mints_offsets: Vec<_> = parsed
+        .mints
+        .iter()
+        .map(|mint| builder.create_string(mint))
+        .collect();
+    let mints_vector = builder.create_vector(&mints_offsets);
+
+    let p2pk_priv_key = parsed
+        .p2pk_priv_key
+        .as_ref()
+        .map(|key| builder.create_string(key));
+    let p2pk_pub_key = parsed
+        .p2pk_pub_key
+        .as_ref()
+        .map(|key| builder.create_string(key));
+
+    let args = fb::Kind17375ParsedArgs {
+        mints: Some(mints_vector),
+        p2pk_priv_key,
+        p2pk_pub_key,
+        decrypted: parsed.decrypted,
+    };
+
+    let offset = fb::Kind17375Parsed::create(builder, &args);
+
+    Ok(offset)
 }
 
 #[cfg(test)]

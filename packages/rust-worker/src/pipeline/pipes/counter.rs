@@ -1,4 +1,7 @@
+use crate::generated::nostr::fb;
+
 use super::super::*;
+use flatbuffers::FlatBufferBuilder;
 use rustc_hash::{FxHashMap, FxHashSet};
 use tracing::error;
 
@@ -36,20 +39,30 @@ impl Pipe for CounterPipe {
         if self.kinds.contains(&kind) {
             *self.counts.entry(kind).or_insert(0) += 1;
 
-            let message = WorkerToMainMessage::Count {
+            let mut fbb = FlatBufferBuilder::new();
+
+            let counter_args = fb::CountResponseArgs {
                 count: *self.counts.get(&kind).unwrap_or(&0) as u32,
-                kind: kind as u32,
-                you: pubkey == self.pubkey,
-                metadata: String::new(),
+                kind: kind as u16,
+                you: self.pubkey == pubkey,
             };
 
-            match rmp_serde::to_vec_named(&message) {
-                Ok(msgpack) => Ok(PipeOutput::DirectOutput(msgpack)),
-                Err(e) => {
-                    error!("Failed to serialize counter event: {}", e);
-                    Ok(PipeOutput::Drop)
-                }
-            }
+            let counter_offset = fb::CountResponse::create(&mut fbb, &counter_args);
+
+            let worker_msg = {
+                let args = fb::WorkerMessageArgs {
+                    type_: fb::MessageType::CountResponse,
+                    content_type: fb::Message::CountResponse,
+                    content: Some(counter_offset.as_union_value()),
+                };
+                fb::WorkerMessage::create(&mut fbb, &args)
+            };
+
+            fbb.finish(worker_msg, None);
+
+            let flatbuffer_data = fbb.finished_data().to_vec();
+
+            Ok(PipeOutput::DirectOutput(flatbuffer_data))
         } else {
             // Drop all events - we're only counting
             Ok(PipeOutput::Drop)

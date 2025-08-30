@@ -1,18 +1,15 @@
 use super::super::*;
-use crate::parser::{Kind7375Parsed, Kind9321Parsed};
-use crate::types::proof::ProofUnion;
+use crate::{generated::nostr::fb, types::proof::Proof};
 use anyhow::Result;
+use flatbuffers::FlatBufferBuilder;
 use gloo_net;
-use gloo_timers;
 use hex;
-use k256::{
-    elliptic_curve::{ops::Reduce, sec1::ToEncodedPoint},
-    ProjectivePoint, PublicKey, Scalar, U256,
-};
+use k256::{elliptic_curve::sec1::ToEncodedPoint, PublicKey};
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, warn};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct CheckStateRequest {
@@ -37,7 +34,7 @@ struct CheckStateResponse {
 pub struct ProofVerificationPipe {
     seen_proofs: FxHashSet<String>, // secrets we've already seen
     pending_verifications: FxHashMap<String, String>, // secret -> Y point
-    pending_proofs: FxHashMap<String, FxHashMap<String, ProofUnion>>, // mint_url -> secret -> proof
+    pending_proofs: FxHashMap<String, FxHashMap<String, Proof>>, // mint_url -> secret -> proof
     max_proofs: usize,
     name: String,
     verification_running: bool,
@@ -89,52 +86,51 @@ impl ProofVerificationPipe {
     }
 
     /// Add proofs to tracking, with deduplication
-    fn add_proofs(&mut self, proofs: Vec<ProofUnion>, mint_url: String) {
+    fn add_proofs(&mut self, proofs: Vec<Proof>, mint_url: String) {
         for proof in proofs {
-            if let Some(secret) = proof.secret() {
-                // Skip if we've already seen this proof
-                if self.seen_proofs.contains(&secret) {
-                    debug!(
-                        "{}: Skipping duplicate proof with secret {}",
-                        self.name,
-                        &secret[..8.min(secret.len())]
-                    );
-                    continue;
-                }
+            let secret = proof.secret.clone();
+            // Skip if we've already seen this proof
+            if self.seen_proofs.contains(&secret) {
+                debug!(
+                    "{}: Skipping duplicate proof with secret {}",
+                    self.name,
+                    &secret[..8.min(secret.len())]
+                );
+                continue;
+            }
 
-                // Enforce max proofs limit
-                if self.seen_proofs.len() >= self.max_proofs {
-                    // Remove oldest proof (simple cleanup)
-                    if let Some(oldest_secret) = self.seen_proofs.iter().next().cloned() {
-                        self.seen_proofs.remove(&oldest_secret);
-                        self.pending_verifications.remove(&oldest_secret);
+            // Enforce max proofs limit
+            if self.seen_proofs.len() >= self.max_proofs {
+                // Remove oldest proof (simple cleanup)
+                if let Some(oldest_secret) = self.seen_proofs.iter().next().cloned() {
+                    self.seen_proofs.remove(&oldest_secret);
+                    self.pending_verifications.remove(&oldest_secret);
 
-                        // Remove from pending_proofs
-                        for mint_proofs in self.pending_proofs.values_mut() {
-                            mint_proofs.remove(&oldest_secret);
-                        }
+                    // Remove from pending_proofs
+                    for mint_proofs in self.pending_proofs.values_mut() {
+                        mint_proofs.remove(&oldest_secret);
                     }
                 }
-
-                debug!(
-                    "Adding new proof to verification queue: secret={}, mint={}",
-                    &secret[..8.min(secret.len())],
-                    mint_url
-                );
-
-                // Compute Y point and add to pending verifications
-                let y_point = self.compute_y_point(&secret);
-                self.pending_verifications.insert(secret.clone(), y_point);
-
-                // Add to pending proofs by mint
-                self.pending_proofs
-                    .entry(mint_url.clone())
-                    .or_default()
-                    .insert(secret.clone(), proof);
-
-                // Mark as seen
-                self.seen_proofs.insert(secret);
             }
+
+            debug!(
+                "Adding new proof to verification queue: secret={}, mint={}",
+                &secret[..8.min(secret.len())],
+                mint_url
+            );
+
+            // Compute Y point and add to pending verifications
+            let y_point = self.compute_y_point(&secret);
+            self.pending_verifications.insert(secret.clone(), y_point);
+
+            // Add to pending proofs by mint
+            self.pending_proofs
+                .entry(mint_url.clone())
+                .or_default()
+                .insert(secret.clone(), proof);
+
+            // Mark as seen
+            self.seen_proofs.insert(secret);
         }
     }
 
@@ -143,7 +139,7 @@ impl ProofVerificationPipe {
         // Set the running state
         self.verification_running = true;
 
-        let mut valid_proofs: FxHashMap<String, Vec<ProofUnion>> = FxHashMap::default();
+        let mut valid_proofs: FxHashMap<String, Vec<Proof>> = FxHashMap::default();
 
         // Keep processing until no more pending proofs
         loop {
@@ -269,28 +265,53 @@ impl ProofVerificationPipe {
         self.verification_running = false;
 
         // Serialize valid proofs to bytes
-        let mut result_bytes = Vec::new();
+        let mut builder = FlatBufferBuilder::new();
+
+        let mut proofs_mint = Vec::new();
 
         for (mint_url, proofs) in &valid_proofs {
-            let message = WorkerToMainMessage::Proofs {
-                mint: mint_url.clone(),
-                proofs: proofs.clone(),
-            };
-            match rmp_serde::to_vec_named(&message) {
-                Ok(bytes) => {
-                    result_bytes.extend(&bytes);
-                    debug!(
-                        "Serialized {} proofs from mint {} to {} bytes",
-                        proofs.len(),
-                        mint_url,
-                        bytes.len()
-                    );
-                }
-                Err(e) => {
-                    error!("Failed to serialize proofs from mint {}: {}", mint_url, e);
-                }
+            let mut proofs_offsets = Vec::new();
+            for proof in proofs {
+                proofs_offsets.push(proof.to_offset(&mut builder));
             }
+            let proofs_vector = builder.create_vector(&proofs_offsets);
+            let mint_offset = builder.create_string(mint_url);
+            let mint_proofs = fb::MintProofs::create(
+                &mut builder,
+                &fb::MintProofsArgs {
+                    mint: Some(mint_offset),
+                    proofs: Some(proofs_vector),
+                },
+            );
+            proofs_mint.push(mint_proofs);
         }
+
+        let proofs_mint_vector = builder.create_vector(&proofs_mint);
+        let valid_proofs_msg = fb::ValidProofs::create(
+            &mut builder,
+            &fb::ValidProofsArgs {
+                proofs: Some(proofs_mint_vector),
+            },
+        );
+
+        // Build root WorkerMessage
+        let union_value = valid_proofs_msg.as_union_value();
+        tracing::info!("Union value for ValidProofs created");
+
+        let message_args = fb::WorkerMessageArgs {
+            type_: fb::MessageType::ValidProofs,
+            content_type: fb::Message::ValidProofs,
+            content: Some(union_value),
+        };
+        tracing::info!(
+            "WorkerMessage args - content is Some: {}",
+            message_args.content.is_some()
+        );
+
+        let root = fb::WorkerMessage::create(&mut builder, &message_args);
+        builder.finish(root, None);
+
+        let result_bytes = builder.finished_data().to_vec();
 
         debug!("Total serialized bytes: {}", result_bytes.len());
         Ok(result_bytes)
@@ -351,38 +372,22 @@ impl Pipe for ProofVerificationPipe {
                 9321 => {
                     debug!("Attempting to parse Kind 9321 event data");
                     if let Some(parsed_data) = &parsed_event.parsed {
-                        // Extract fields directly from the JSON object
-                        if let Some(kind9321_object) = parsed_data.as_object() {
-                            let mint_url = kind9321_object
-                                .get("mintUrl")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("")
-                                .to_string();
+                        // Check if parsed_data is Kind9321Parsed variant
+                        if let crate::types::ParsedData::Kind9321(kind9321) = parsed_data {
+                            let mint_url = kind9321.mint_url.clone();
 
                             debug!("Kind 9321 event - mint_url: {}", mint_url);
 
-                            // Extract proofs from the JSON array
-                            if let Some(proofs_array) =
-                                kind9321_object.get("proofs").and_then(|v| v.as_array())
-                            {
-                                let mut proofs = Vec::new();
-                                for proof_value in proofs_array {
-                                    if let Ok(proof) =
-                                        serde_json::from_value::<ProofUnion>(proof_value.clone())
-                                    {
-                                        proofs.push(proof);
-                                    }
-                                }
-                                debug!(
-                                    "Successfully extracted {} proofs from Kind 9321 event",
-                                    proofs.len()
-                                );
-                                (proofs, mint_url)
-                            } else {
-                                (Vec::new(), mint_url)
-                            }
+                            // Extract proofs directly from the Kind9321Parsed struct
+                            let proofs = kind9321.proofs.clone();
+
+                            debug!(
+                                "Successfully extracted {} proofs from Kind 9321 event",
+                                proofs.len()
+                            );
+                            (proofs, mint_url)
                         } else {
-                            error!("Kind 9321 parsed_data is not a JSON object");
+                            error!("parsed_data is not Kind9321Parsed variant");
                             (Vec::new(), String::new())
                         }
                     } else {
@@ -393,18 +398,10 @@ impl Pipe for ProofVerificationPipe {
                 7375 => {
                     debug!("Attempting to parse Kind 7375 event data");
                     if let Some(parsed_data) = &parsed_event.parsed {
-                        // Extract fields directly from the JSON object
-                        if let Some(kind7375_object) = parsed_data.as_object() {
-                            let mint_url = kind7375_object
-                                .get("mintUrl")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("")
-                                .to_string();
-
-                            let decrypted = kind7375_object
-                                .get("decrypted")
-                                .and_then(|v| v.as_bool())
-                                .unwrap_or(false);
+                        // Check if parsed_data is Kind7375Parsed variant
+                        if let crate::types::ParsedData::Kind7375(kind7375) = parsed_data {
+                            let mint_url = kind7375.mint_url.clone();
+                            let decrypted = kind7375.decrypted;
 
                             debug!(
                                 "Kind 7375 event - mint_url: {}, decrypted: {}",
@@ -412,30 +409,17 @@ impl Pipe for ProofVerificationPipe {
                             );
 
                             if decrypted {
-                                // Extract proofs from the JSON array
-                                if let Some(proofs_array) =
-                                    kind7375_object.get("proofs").and_then(|v| v.as_array())
-                                {
-                                    let mut proofs = Vec::new();
-                                    for proof_value in proofs_array {
-                                        if let Ok(proof) = serde_json::from_value::<ProofUnion>(
-                                            proof_value.clone(),
-                                        ) {
-                                            proofs.push(proof);
-                                        }
-                                    }
-                                    debug!(
-                                        "Successfully extracted {} proofs from Kind 7375 event",
-                                        proofs.len()
-                                    );
-                                    (proofs, mint_url)
-                                } else {
-                                    (Vec::new(), mint_url)
-                                }
+                                debug!(
+                                    "Successfully extracted {} proofs from Kind 7375 event",
+                                    kind7375.proofs.len()
+                                );
+                                let proofs = kind7375.proofs.clone();
+                                (proofs, mint_url)
                             } else {
                                 (Vec::new(), String::new())
                             }
                         } else {
+                            error!("parsed_data is not Kind7375Parsed variant");
                             (Vec::new(), String::new())
                         }
                     } else {

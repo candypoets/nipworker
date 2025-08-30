@@ -4,7 +4,6 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::Arc;
 
 /// Represents a Nostr event with extracted tags for easier filtering
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -22,7 +21,7 @@ pub struct ProcessedNostrEvent {
     pub d_tags: Vec<String>,
     /// Parsed content (if any)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub parsed: Option<serde_json::Value>,
+    pub parsed: Option<crate::types::ParsedData>,
     /// Associated requests
     #[serde(skip_serializing_if = "Option::is_none")]
     pub requests: Option<Vec<Request>>,
@@ -378,7 +377,6 @@ impl DatabaseIndexes {
         }
 
         // Index overhead
-        let events_by_id = self.events_by_id.borrow();
         let events_by_kind = self.events_by_kind.borrow();
         let events_by_pubkey = self.events_by_pubkey.borrow();
         let events_by_e_tag = self.events_by_e_tag.borrow();

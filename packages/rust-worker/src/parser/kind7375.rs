@@ -1,35 +1,18 @@
-use crate::parser::Parser;
 use crate::types::network::Request;
+use crate::{parser::Parser, Proof};
 use anyhow::{anyhow, Result};
 use nostr::{Event, UnsignedEvent};
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DLEQProof {
-    pub e: String,
-    pub s: String,
-    pub r: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProofUnion {
-    pub amount: u64,
-    pub id: String,
-    pub secret: String,
-    #[serde(rename = "C")]
-    pub c: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub dleq: Option<DLEQProof>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub version: Option<u8>,
-}
+// NEW: Imports for FlatBuffers
+use crate::generated::nostr::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Kind7375Parsed {
     #[serde(rename = "mintUrl")]
     pub mint_url: String,
-    pub proofs: Vec<ProofUnion>,
+    pub proofs: Vec<Proof>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     #[serde(rename = "deletedIds")]
     pub deleted_ids: Vec<String>,
@@ -39,7 +22,7 @@ pub struct Kind7375Parsed {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct TokenContent {
     pub mint: String,
-    pub proofs: Vec<ProofUnion>,
+    pub proofs: Vec<Proof>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub del: Option<Vec<String>>,
@@ -114,6 +97,44 @@ impl Parser {
 
         Ok(event)
     }
+}
+
+// NEW: Build the FlatBuffer for Kind7375Parsed
+pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
+    parsed: &Kind7375Parsed,
+    builder: &mut flatbuffers::FlatBufferBuilder<'a, A>,
+) -> Result<flatbuffers::WIPOffset<fb::Kind7375Parsed<'a>>> {
+    let mint_url = builder.create_string(&parsed.mint_url);
+
+    // Build proofs vector
+    let mut proofs_offsets = Vec::new();
+    for proof in &parsed.proofs {
+        proofs_offsets.push(proof.to_offset(builder));
+    }
+    let proofs_vector = builder.create_vector(&proofs_offsets);
+
+    // Build deleted_ids vector
+    let deleted_ids_offsets: Vec<_> = parsed
+        .deleted_ids
+        .iter()
+        .map(|id| builder.create_string(id))
+        .collect();
+    let deleted_ids_vector = if deleted_ids_offsets.is_empty() {
+        None
+    } else {
+        Some(builder.create_vector(&deleted_ids_offsets))
+    };
+
+    let args = fb::Kind7375ParsedArgs {
+        mint_url: Some(mint_url),
+        proofs: Some(proofs_vector),
+        deleted_ids: deleted_ids_vector,
+        decrypted: parsed.decrypted,
+    };
+
+    let offset = fb::Kind7375Parsed::create(builder, &args);
+
+    Ok(offset)
 }
 
 #[cfg(test)]

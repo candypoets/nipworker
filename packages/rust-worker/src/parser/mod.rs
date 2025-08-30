@@ -34,7 +34,7 @@ pub use kind10019::{Kind10019Parsed, MintInfo};
 pub use kind17::Kind17Parsed;
 pub use kind17375::Kind17375Parsed;
 pub use kind3::{Contact, Kind3Parsed};
-pub use kind39089::Kind30000Parsed;
+pub use kind39089::Kind39089Parsed;
 pub use kind4::Kind4Parsed;
 pub use kind6::Kind6Parsed;
 pub use kind7::{Emoji, Kind7Parsed, ReactionType};
@@ -71,67 +71,67 @@ impl Parser {
         let (parsed, requests) = match kind {
             0 => {
                 let (parsed, requests) = self.parse_kind_0(&event)?;
-                (Some(serde_json::to_value(parsed)?), requests)
+                (Some(crate::types::ParsedData::Kind0(parsed)), requests)
             }
             1 => {
                 let (parsed, requests) = self.parse_kind_1(&event)?;
-                (Some(serde_json::to_value(parsed)?), requests)
+                (Some(crate::types::ParsedData::Kind1(parsed)), requests)
             }
             3 => {
                 let (parsed, requests) = self.parse_kind_3(&event)?;
-                (Some(serde_json::to_value(parsed)?), requests)
+                (Some(crate::types::ParsedData::Kind3(parsed)), requests)
             }
             4 => {
                 let (parsed, requests) = self.parse_kind_4(&event)?;
-                (Some(serde_json::to_value(parsed)?), requests)
+                (Some(crate::types::ParsedData::Kind4(parsed)), requests)
             }
             6 => {
                 let (parsed, requests) = self.parse_kind_6(&event)?;
-                (Some(serde_json::to_value(parsed)?), requests)
+                (Some(crate::types::ParsedData::Kind6(parsed)), requests)
             }
             7 => {
                 let (parsed, requests) = self.parse_kind_7(&event)?;
-                (Some(serde_json::to_value(parsed)?), requests)
+                (Some(crate::types::ParsedData::Kind7(parsed)), requests)
             }
             17 => {
                 let (parsed, requests) = self.parse_kind_17(&event)?;
-                (Some(serde_json::to_value(parsed)?), requests)
+                (Some(crate::types::ParsedData::Kind17(parsed)), requests)
             }
             7374 => {
                 let (parsed, requests) = self.parse_kind_7374(&event)?;
-                (Some(serde_json::to_value(parsed)?), requests)
+                (Some(crate::types::ParsedData::Kind7374(parsed)), requests)
             }
             7375 => {
                 let (parsed, requests) = self.parse_kind_7375(&event)?;
-                (Some(serde_json::to_value(parsed)?), requests)
+                (Some(crate::types::ParsedData::Kind7375(parsed)), requests)
             }
             7376 => {
                 let (parsed, requests) = self.parse_kind_7376(&event)?;
-                (Some(serde_json::to_value(parsed)?), requests)
+                (Some(crate::types::ParsedData::Kind7376(parsed)), requests)
             }
             9321 => {
                 let (parsed, requests) = self.parse_kind_9321(&event)?;
-                (Some(serde_json::to_value(parsed)?), requests)
+                (Some(crate::types::ParsedData::Kind9321(parsed)), requests)
             }
             9735 => {
                 let (parsed, requests) = self.parse_kind_9735(&event)?;
-                (Some(serde_json::to_value(parsed)?), requests)
+                (Some(crate::types::ParsedData::Kind9735(parsed)), requests)
             }
             10002 => {
                 let (parsed, requests) = self.parse_kind_10002(&event)?;
-                (Some(serde_json::to_value(parsed)?), requests)
+                (Some(crate::types::ParsedData::Kind10002(parsed)), requests)
             }
             10019 => {
                 let (parsed, requests) = self.parse_kind_10019(&event)?;
-                (Some(serde_json::to_value(parsed)?), requests)
+                (Some(crate::types::ParsedData::Kind10019(parsed)), requests)
             }
             17375 => {
                 let (parsed, requests) = self.parse_kind_17375(&event)?;
-                (Some(serde_json::to_value(parsed)?), requests)
+                (Some(crate::types::ParsedData::Kind17375(parsed)), requests)
             }
             39089 => {
                 let (parsed, requests) = self.parse_kind_39089(&event)?;
-                (Some(serde_json::to_value(parsed)?), requests)
+                (Some(crate::types::ParsedData::Kind39089(parsed)), requests)
             }
             _ => {
                 return Err(anyhow!("no parser available for kind {}", kind));
@@ -165,6 +165,8 @@ impl Parser {
         }
     }
 }
+
+// Removed build_parsed_flatbuffer - now building directly in serialize_events with shared builder
 
 // Helper function to find tag values
 pub fn find_tag_value(tags: &[Tag], tag_name: &str) -> Option<String> {

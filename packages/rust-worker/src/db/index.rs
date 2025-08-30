@@ -531,15 +531,12 @@ impl<S: EventStorage> NostrDB<S> {
         match parsed_event {
             Some(parsed_event) => {
                 if let Some(parsed_data) = &parsed_event.parsed {
-                    if let Ok(kind10002_parsed) = serde_json::from_value::<
-                        crate::parser::Kind10002Parsed,
-                    >(parsed_data.clone())
-                    {
+                    if let crate::types::ParsedData::Kind10002(kind10002_parsed) = parsed_data {
                         return Some(
                             kind10002_parsed
-                                .into_iter()
+                                .iter()
                                 .filter(|relay| relay.read)
-                                .map(|relay| relay.url)
+                                .map(|relay| relay.url.clone())
                                 .collect::<Vec<_>>(),
                         );
                     } else {
@@ -564,15 +561,12 @@ impl<S: EventStorage> NostrDB<S> {
         match parsed_event {
             Some(parsed_event) => {
                 if let Some(parsed_data) = &parsed_event.parsed {
-                    if let Ok(kind10002_parsed) = serde_json::from_value::<
-                        crate::parser::Kind10002Parsed,
-                    >(parsed_data.clone())
-                    {
+                    if let crate::types::ParsedData::Kind10002(kind10002_parsed) = parsed_data {
                         return Some(
                             kind10002_parsed
-                                .into_iter()
+                                .iter()
                                 .filter(|relay| relay.write)
-                                .map(|relay| relay.url)
+                                .map(|relay| relay.url.clone())
                                 .collect::<Vec<_>>(),
                         );
                     } else {
@@ -775,7 +769,7 @@ impl<S: EventStorage> NostrDB<S> {
 
     /// Process a batch of pending events with throttling
     async fn process_pending_events(&self) -> Result<()> {
-        info!(
+        debug!(
             "Processing {} pending events",
             self.pending_events.read().unwrap().len()
         );
@@ -929,10 +923,9 @@ impl<S: EventStorage> EventDatabase for NostrDB<S> {
     }
 
     async fn add_event(&self, event: ParsedEvent) -> Result<()> {
-        tracing::info!("Processing add event");
+        debug!("Processing add event");
         // Validate event ID early
         if event.event.id.to_hex().is_empty() {
-            tracing::info!("Not Processing event in db pipe for database storage");
             return Err(anyhow::anyhow!("Event ID cannot be empty"));
         }
 
@@ -946,7 +939,6 @@ impl<S: EventStorage> EventDatabase for NostrDB<S> {
                 warn!("Event queue size is large: {} events pending", queue_size);
             }
         }
-        tracing::info!("Processing event in db pipe for database storage");
         // Try to process some events immediately (with throttling)
         self.process_pending_events().await.ok();
 

@@ -141,17 +141,17 @@ impl CacheProcessorTrait for CacheProcessor {
 
                                 for event in &events {
                                     // Store the main event
-                                    let mut events_with_context = vec![event.clone()];
+                                    let events_with_context = vec![event.clone()];
 
-                                    // Handle recursive requests from parsed event (like Go)
-                                    if !request.no_context
-                                        && event.requests.is_some()
-                                        && !event.requests.as_ref().unwrap().is_empty()
-                                    {
-                                        let context_events =
-                                            self.find_context_events_simple(event, 3).await;
-                                        events_with_context.extend(context_events);
-                                    }
+                                    // Handle recursive requests from parsed event
+                                    // if !request.no_context
+                                    //     && event.requests.is_some()
+                                    //     && !event.requests.as_ref().unwrap().is_empty()
+                                    // {
+                                    //     let context_events =
+                                    //         self.find_context_events_simple(event, 3).await;
+                                    //     events_with_context.extend(context_events);
+                                    // }
 
                                     processed_events.push(events_with_context);
                                 }

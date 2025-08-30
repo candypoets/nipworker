@@ -5,8 +5,12 @@ use nostr::Event;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+// NEW: Imports for FlatBuffers
+use crate::generated::nostr::*;
+use flatbuffers::FlatBufferBuilder;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Kind30000Parsed {
+pub struct Kind39089Parsed {
     #[serde(rename = "list_identifier")]
     pub list_identifier: String,
     pub people: Vec<String>,
@@ -22,13 +26,13 @@ impl Parser {
     pub fn parse_kind_39089(
         &self,
         event: &Event,
-    ) -> Result<(Kind30000Parsed, Option<Vec<Request>>)> {
+    ) -> Result<(Kind39089Parsed, Option<Vec<Request>>)> {
         if event.kind.as_u64() != 39089 {
             return Err(anyhow!("event is not kind 39089"));
         }
 
         let mut requests = Vec::new();
-        let mut result = Kind30000Parsed {
+        let mut result = Kind39089Parsed {
             list_identifier: String::new(),
             people: Vec::new(),
             title: None,
@@ -113,6 +117,41 @@ impl Parser {
 
         Ok((result, Some(requests)))
     }
+}
+
+// NEW: Build the FlatBuffer for Kind30000Parsed (Kind39089)
+pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
+    parsed: &Kind39089Parsed,
+    builder: &mut flatbuffers::FlatBufferBuilder<'a, A>,
+) -> Result<flatbuffers::WIPOffset<fb::Kind39089Parsed<'a>>> {
+    let list_identifier = builder.create_string(&parsed.list_identifier);
+
+    // Build people vector
+    let people_offsets: Vec<_> = parsed
+        .people
+        .iter()
+        .map(|person| builder.create_string(person))
+        .collect();
+    let people_vector = builder.create_vector(&people_offsets);
+
+    let title = parsed.title.as_ref().map(|t| builder.create_string(t));
+    let description = parsed
+        .description
+        .as_ref()
+        .map(|d| builder.create_string(d));
+    let image = parsed.image.as_ref().map(|i| builder.create_string(i));
+
+    let args = fb::Kind39089ParsedArgs {
+        list_identifier: Some(list_identifier),
+        people: Some(people_vector),
+        title,
+        description,
+        image,
+    };
+
+    let offset = fb::Kind39089Parsed::create(builder, &args);
+
+    Ok(offset)
 }
 
 #[cfg(test)]

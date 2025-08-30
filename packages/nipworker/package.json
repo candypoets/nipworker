@@ -63,6 +63,7 @@
     "@candypoets/rust-main": "0.0.26",
     "@candypoets/rust-worker": "0.0.26",
     "@msgpack/msgpack": "^3.0.0",
+    "flatbuffers": "^25.2.10",
     "msgpackr": "^1.11.5",
     "nostr-tools": "^2.0.0"
   },

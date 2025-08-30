@@ -6,10 +6,14 @@ use nostr::{Event, Kind};
 use serde::{Deserialize, Serialize};
 use tracing::debug;
 
+// NEW: Imports for FlatBuffers
+use crate::generated::nostr::*;
+use flatbuffers::FlatBufferBuilder;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Kind6Parsed {
     #[serde(rename = "repostedEvent", skip_serializing_if = "Option::is_none")]
-    pub reposted_event: Option<ParsedEvent>,
+    pub reposted_event: Option<serde_json::Value>,
 }
 
 impl Parser {
@@ -67,13 +71,14 @@ impl Parser {
                     // Parse the event using kind1 parser
                     match self.parse_kind_1(&parsed_event) {
                         Ok((parsed_content, parsed_requests)) => {
-                            // Create a ParsedEvent with the parsed content
-                            reposted_event = Some(ParsedEvent {
+                            // Create a ParsedEvent with the parsed content and serialize to JSON
+                            let parsed_event_struct = ParsedEvent {
                                 event: parsed_event,
-                                parsed: serde_json::to_value(parsed_content).ok(),
+                                parsed: Some(crate::types::ParsedData::Kind1(parsed_content)),
                                 relays: vec![],
                                 requests: Some(vec![]),
-                            });
+                            };
+                            reposted_event = serde_json::to_value(parsed_event_struct).ok();
 
                             // Add all requests from kind1 parsing
                             if let Some(reqs) = parsed_requests {
@@ -113,4 +118,22 @@ impl Parser {
 
         Ok((result, Some(deduplicated_requests)))
     }
+}
+
+// NEW: Build the FlatBuffer for Kind6Parsed
+pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
+    _parsed: &Kind6Parsed,
+    builder: &mut flatbuffers::FlatBufferBuilder<'a, A>,
+) -> Result<flatbuffers::WIPOffset<fb::Kind6Parsed<'a>>> {
+    // For now, we'll set reposted_event to None since building a full ParsedEvent
+    // FlatBuffer requires complex nested structures (NostrEvent + parsed data)
+    // This would need a complete implementation to properly deserialize the JSON
+    // and rebuild the FlatBuffer structures
+    let reposted_event = None;
+
+    let args = fb::Kind6ParsedArgs { reposted_event };
+
+    let offset = fb::Kind6Parsed::create(builder, &args);
+
+    Ok(offset)
 }

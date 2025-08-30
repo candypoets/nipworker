@@ -218,7 +218,7 @@ impl SignerManager for SignerManagerImpl {
 
     /// Returns the public key of the current signer
     fn get_public_key(&self) -> Result<String> {
-        info!("Getting public key");
+        debug!("Getting public key");
 
         let current_lock = self.current.lock().unwrap();
         let signer = current_lock
@@ -285,7 +285,7 @@ impl SignerManager for SignerManagerImpl {
 
     /// Decrypts a message from a sender using NIP-04
     fn nip04_decrypt(&self, sender_pubkey: &str, ciphertext: &str) -> Result<String> {
-        info!(
+        debug!(
             "Decrypting message using NIP-04 from sender: {}",
             sender_pubkey
         );
@@ -321,7 +321,7 @@ impl SignerManager for SignerManagerImpl {
 
     /// Decrypts a message from a sender using NIP-44
     fn nip44_decrypt(&self, sender_pubkey: &str, ciphertext: &str) -> Result<String> {
-        info!(
+        debug!(
             "Decrypting message using NIP-44 from sender: {}",
             sender_pubkey
         );

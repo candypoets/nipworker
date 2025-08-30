@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     types::{network::SubscribeKind, Request, SerializableParsedEvent, EOSE},
-    EventTemplate, ProofUnion, RelayStatusUpdate,
+    EventTemplate, Proof, RelayStatusUpdate,
 };
 
 /// Configuration for individual pipes in the pipeline
@@ -111,7 +111,7 @@ pub enum WorkerToMainMessage {
     },
     Proofs {
         mint: String,
-        proofs: Vec<ProofUnion>,
+        proofs: Vec<Proof>,
     },
     Eoce {},
     PublicKey {

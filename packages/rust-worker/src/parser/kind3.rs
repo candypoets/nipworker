@@ -4,6 +4,10 @@ use anyhow::{anyhow, Result};
 use nostr::Event;
 use serde::{Deserialize, Serialize};
 
+// NEW: Imports for FlatBuffers
+use crate::generated::nostr::*;
+use flatbuffers::FlatBufferBuilder;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Contact {
     pub pubkey: String,
@@ -49,6 +53,46 @@ impl Parser {
 
         Ok((contacts, None))
     }
+}
+
+// NEW: Build the FlatBuffer for Kind3Parsed
+pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
+    parsed: &Kind3Parsed,
+    builder: &mut flatbuffers::FlatBufferBuilder<'a, A>,
+) -> Result<flatbuffers::WIPOffset<fb::Kind3Parsed<'a>>> {
+    // Build contacts vector
+    let mut contacts_offsets = Vec::new();
+    for contact in parsed {
+        let pubkey = builder.create_string(&contact.pubkey);
+        let relays_offsets: Vec<_> = contact
+            .relays
+            .iter()
+            .map(|r| builder.create_string(r))
+            .collect();
+        let relays = if relays_offsets.is_empty() {
+            None
+        } else {
+            Some(builder.create_vector(&relays_offsets))
+        };
+        let petname = contact.petname.as_ref().map(|p| builder.create_string(p));
+
+        let contact_args = fb::ContactArgs {
+            pubkey: Some(pubkey),
+            relays,
+            petname,
+        };
+        let contact_offset = fb::Contact::create(builder, &contact_args);
+        contacts_offsets.push(contact_offset);
+    }
+    let contacts_vector = builder.create_vector(&contacts_offsets);
+
+    let args = fb::Kind3ParsedArgs {
+        contacts: Some(contacts_vector),
+    };
+
+    let offset = fb::Kind3Parsed::create(builder, &args);
+
+    Ok(offset)
 }
 
 #[cfg(test)]

@@ -1,5 +1,5 @@
 use crate::parser::{
-    content::{parse_content, ContentBlock, ContentParser},
+    content::{parse_content, serialize_content_data, ContentBlock, ContentData, ContentParser},
     Parser,
 };
 use crate::types::network::Request;
@@ -8,41 +8,30 @@ use anyhow::{anyhow, Result};
 use nostr::{Event, Tag};
 use serde::{Deserialize, Serialize};
 
+// NEW: Imports for FlatBuffers
+use crate::generated::nostr::*;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProfilePointer {
     pub public_key: String,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub relays: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EventPointer {
     pub id: String,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub relays: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub author: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub kind: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Kind1Parsed {
-    #[serde(rename = "parsedContent", default)]
     pub parsed_content: Vec<ContentBlock>,
-    #[serde(
-        rename = "shortenedContent",
-        default,
-        skip_serializing_if = "Vec::is_empty"
-    )]
     pub shortened_content: Vec<ContentBlock>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub quotes: Vec<ProfilePointer>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub mentions: Vec<EventPointer>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub reply: Option<EventPointer>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub root: Option<EventPointer>,
 }
 
@@ -325,7 +314,180 @@ impl Parser {
 
         mentions
     }
+}
 
+// NEW: Build the FlatBuffer for Kind1Parsed
+pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
+    parsed: &Kind1Parsed,
+    builder: &mut flatbuffers::FlatBufferBuilder<'a, A>,
+) -> Result<flatbuffers::WIPOffset<fb::Kind1Parsed<'a>>> {
+    // Build content blocks vectors
+    let mut parsed_content_offsets = Vec::new();
+    for block in &parsed.parsed_content {
+        let block_type = builder.create_string(&block.block_type);
+        let text = builder.create_string(&block.text);
+        let (data_type, data) = match &block.data {
+            Some(d) => serialize_content_data(builder, d),
+            None => (fb::ContentData::NONE, None),
+        };
+
+        let content_block_args = fb::ContentBlockArgs {
+            type_: Some(block_type),
+            text: Some(text),
+            data_type,
+            data,
+        };
+        let content_block_offset = fb::ContentBlock::create(builder, &content_block_args);
+        parsed_content_offsets.push(content_block_offset);
+    }
+    let parsed_content_vector = builder.create_vector(&parsed_content_offsets);
+
+    let mut shortened_content_offsets = Vec::new();
+    for block in &parsed.shortened_content {
+        let block_type = builder.create_string(&block.block_type);
+        let text = builder.create_string(&block.text);
+        let (data_type, data) = match &block.data {
+            Some(d) => serialize_content_data(builder, d),
+            None => (fb::ContentData::NONE, None),
+        };
+
+        let content_block_args = fb::ContentBlockArgs {
+            type_: Some(block_type),
+            text: Some(text),
+            data_type,
+            data,
+        };
+        let content_block_offset = fb::ContentBlock::create(builder, &content_block_args);
+        shortened_content_offsets.push(content_block_offset);
+    }
+    let shortened_content_vector = if shortened_content_offsets.is_empty() {
+        None
+    } else {
+        Some(builder.create_vector(&shortened_content_offsets))
+    };
+
+    // Build quotes (ProfilePointer)
+    let mut quotes_offsets = Vec::new();
+    for quote in &parsed.quotes {
+        let public_key = builder.create_string(&quote.public_key);
+        let relays_offsets: Vec<_> = quote
+            .relays
+            .iter()
+            .map(|r| builder.create_string(r))
+            .collect();
+        let relays = if relays_offsets.is_empty() {
+            None
+        } else {
+            Some(builder.create_vector(&relays_offsets))
+        };
+
+        let profile_pointer_args = fb::ProfilePointerArgs {
+            public_key: Some(public_key),
+            relays,
+        };
+        let profile_pointer_offset = fb::ProfilePointer::create(builder, &profile_pointer_args);
+        quotes_offsets.push(profile_pointer_offset);
+    }
+    let quotes_vector = if quotes_offsets.is_empty() {
+        None
+    } else {
+        Some(builder.create_vector(&quotes_offsets))
+    };
+
+    // Build mentions (EventPointer)
+    let mut mentions_offsets = Vec::new();
+    for mention in &parsed.mentions {
+        let id = builder.create_string(&mention.id);
+        let relays_offsets: Vec<_> = mention
+            .relays
+            .iter()
+            .map(|r| builder.create_string(r))
+            .collect();
+        let relays = if relays_offsets.is_empty() {
+            None
+        } else {
+            Some(builder.create_vector(&relays_offsets))
+        };
+        let author = mention.author.as_ref().map(|a| builder.create_string(a));
+
+        let event_pointer_args = fb::EventPointerArgs {
+            id: Some(id),
+            relays,
+            author,
+            kind: mention.kind.unwrap_or(0),
+        };
+        let event_pointer_offset = fb::EventPointer::create(builder, &event_pointer_args);
+        mentions_offsets.push(event_pointer_offset);
+    }
+    let mentions_vector = if mentions_offsets.is_empty() {
+        None
+    } else {
+        Some(builder.create_vector(&mentions_offsets))
+    };
+
+    // Build reply EventPointer
+    let reply = parsed.reply.as_ref().map(|r| {
+        let id = builder.create_string(&r.id);
+        let relays_offsets: Vec<_> = r
+            .relays
+            .iter()
+            .map(|rel| builder.create_string(rel))
+            .collect();
+        let relays = if relays_offsets.is_empty() {
+            None
+        } else {
+            Some(builder.create_vector(&relays_offsets))
+        };
+        let author = r.author.as_ref().map(|a| builder.create_string(a));
+
+        let event_pointer_args = fb::EventPointerArgs {
+            id: Some(id),
+            relays,
+            author,
+            kind: r.kind.unwrap_or(0),
+        };
+        fb::EventPointer::create(builder, &event_pointer_args)
+    });
+
+    // Build root EventPointer
+    let root = parsed.root.as_ref().map(|r| {
+        let id = builder.create_string(&r.id);
+        let relays_offsets: Vec<_> = r
+            .relays
+            .iter()
+            .map(|rel| builder.create_string(rel))
+            .collect();
+        let relays = if relays_offsets.is_empty() {
+            None
+        } else {
+            Some(builder.create_vector(&relays_offsets))
+        };
+        let author = r.author.as_ref().map(|a| builder.create_string(a));
+
+        let event_pointer_args = fb::EventPointerArgs {
+            id: Some(id),
+            relays,
+            author,
+            kind: r.kind.unwrap_or(0),
+        };
+        fb::EventPointer::create(builder, &event_pointer_args)
+    });
+
+    let args = fb::Kind1ParsedArgs {
+        parsed_content: Some(parsed_content_vector),
+        shortened_content: shortened_content_vector,
+        quotes: quotes_vector,
+        mentions: mentions_vector,
+        reply,
+        root,
+    };
+
+    let offset = fb::Kind1Parsed::create(builder, &args);
+
+    Ok(offset)
+}
+
+impl Parser {
     fn get_immediate_parent(&self, tags: &[Tag]) -> Option<EventPointer> {
         // Find the last 'e' tag with 'reply' marker or the last 'e' tag if no markers
         let mut reply_tag = None;

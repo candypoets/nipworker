@@ -12,15 +12,11 @@ use crate::types::*;
 use crate::utils::buffer::SharedBufferManager;
 use anyhow::Result;
 use futures::lock::Mutex;
-use js_sys::{SharedArrayBuffer, Uint8Array};
-use rmp_serde;
+use js_sys::SharedArrayBuffer;
 use rustc_hash::FxHashMap;
-use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Arc, RwLock};
 use tracing::{debug, error, info, warn};
-
-use wasm_bindgen_futures::spawn_local;
 
 pub struct SubscriptionManager {
     database: Arc<NostrDB>,
@@ -145,13 +141,18 @@ impl SubscriptionManager {
                 for parsed_event in event_batch {
                     let pipeline_event = PipelineEvent::from_parsed(parsed_event);
                     if let Some(output) = pipeline.process_cached_event(pipeline_event).await? {
+                        info!(
+                            "Processing cached event for subscription {}",
+                            subscription_id
+                        );
                         SharedBufferManager::write_to_buffer(&shared_buffer, &output).await;
                     }
                 }
             }
         }
 
-        let _ = SharedBufferManager::send_eoce(&shared_buffer).await;
+        info!("Sending eoce event {}", subscription_id);
+        SharedBufferManager::send_eoce(&shared_buffer).await;
 
         // Only process network requests if there are any
         if !network_requests.is_empty() {

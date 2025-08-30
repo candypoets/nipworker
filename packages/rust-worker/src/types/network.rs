@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 use tracing::debug;
 use wasm_bindgen::prelude::*;
 
+use crate::generated::nostr::fb;
+
 /// Request represents a subscription request
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Request {
@@ -21,10 +23,10 @@ pub struct Request {
     pub tags: FxHashMap<String, Vec<String>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub since: Option<i64>,
+    pub since: Option<i32>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub until: Option<i64>,
+    pub until: Option<i32>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limit: Option<i32>,
@@ -51,6 +53,80 @@ pub struct Request {
 }
 
 impl Request {
+    pub fn build_flatbuffer<'a>(
+        &self,
+        fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
+    ) -> flatbuffers::WIPOffset<fb::Request<'a>> {
+        // Vec<String> -> Flatbuffer string vector
+        let ids = if !self.ids.is_empty() {
+            let strs: Vec<_> = self.ids.iter().map(|s| fbb.create_string(s)).collect();
+            Some(fbb.create_vector(&strs))
+        } else {
+            None
+        };
+
+        let authors = if !self.authors.is_empty() {
+            let strs: Vec<_> = self.authors.iter().map(|s| fbb.create_string(s)).collect();
+            Some(fbb.create_vector(&strs))
+        } else {
+            None
+        };
+
+        let relays = if !self.relays.is_empty() {
+            let strs: Vec<_> = self.relays.iter().map(|s| fbb.create_string(s)).collect();
+            Some(fbb.create_vector(&strs))
+        } else {
+            None
+        };
+
+        let kinds = if !self.kinds.is_empty() {
+            let vals: Vec<u16> = self.kinds.iter().map(|k| *k as u16).collect();
+            Some(fbb.create_vector(&vals))
+        } else {
+            None
+        };
+
+        // tags are just [StringVec] where StringVec { items: [string]; }
+        let tags = if !self.tags.is_empty() {
+            let mut tag_offsets = Vec::new();
+            for (k, vs) in &self.tags {
+                // Put the key as the first element, followed by values
+                let mut items_vec = Vec::with_capacity(1 + vs.len());
+                items_vec.push(fbb.create_string(k));
+                for v in vs {
+                    items_vec.push(fbb.create_string(v));
+                }
+                let fb_items = fbb.create_vector(&items_vec);
+                let sv = fb::StringVec::create(
+                    fbb,
+                    &fb::StringVecArgs {
+                        items: Some(fb_items),
+                    },
+                );
+                tag_offsets.push(sv);
+            }
+            Some(fbb.create_vector(&tag_offsets))
+        } else {
+            None
+        };
+
+        fb::Request::create(
+            fbb,
+            &fb::RequestArgs {
+                ids,
+                authors,
+                kinds,
+                tags,
+                limit: self.limit.unwrap_or_default(),
+                since: self.since.unwrap_or_default(),
+                until: self.until.unwrap_or_default(),
+                relays,
+                close_on_eose: self.close_on_eose,
+                cache_first: self.cache_first,
+            },
+        )
+    }
+
     pub fn new(relays: Vec<String>, filter: Filter) -> Self {
         Self {
             ids: filter
@@ -66,8 +142,8 @@ impl Request {
                 .map(|kinds| kinds.into_iter().map(|k| k.as_u64() as i32).collect())
                 .unwrap_or_default(),
             tags: FxHashMap::default(), // TODO: Convert filter tags properly
-            since: filter.since.map(|ts| ts.as_u64() as i64),
-            until: filter.until.map(|ts| ts.as_u64() as i64),
+            since: filter.since.map(|ts| ts.as_u64() as i32),
+            until: filter.until.map(|ts| ts.as_u64() as i32),
             limit: filter.limit.map(|l| l as i32),
             search: filter.search.unwrap_or_default(),
             relays,

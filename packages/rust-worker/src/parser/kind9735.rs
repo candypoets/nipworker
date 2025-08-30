@@ -5,9 +5,13 @@ use anyhow::{anyhow, Result};
 use nostr::Event;
 use serde::{Deserialize, Serialize};
 
+// NEW: Imports for FlatBuffers
+use crate::generated::nostr::*;
+use flatbuffers::FlatBufferBuilder;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ZapRequest {
-    pub kind: u64,
+    pub kind: u16,
     pub pubkey: String,
     pub content: String,
     pub tags: Vec<Vec<String>>,
@@ -195,6 +199,84 @@ impl Parser {
 
         Ok((receipt, Some(deduplicated_requests)))
     }
+}
+
+// NEW: Build the FlatBuffer for Kind9735Parsed
+pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
+    parsed: &Kind9735Parsed,
+    builder: &mut flatbuffers::FlatBufferBuilder<'a, A>,
+) -> Result<flatbuffers::WIPOffset<fb::Kind9735Parsed<'a>>> {
+    let id = builder.create_string(&parsed.id);
+    let content = builder.create_string(&parsed.content);
+    let bolt11 = builder.create_string(&parsed.bolt11);
+    let preimage = parsed.preimage.as_ref().map(|p| builder.create_string(p));
+    let sender = builder.create_string(&parsed.sender);
+    let recipient = builder.create_string(&parsed.recipient);
+    let event = parsed.event.as_ref().map(|e| builder.create_string(e));
+    let event_coordinate = parsed
+        .event_coordinate
+        .as_ref()
+        .map(|ec| builder.create_string(ec));
+
+    // Build ZapRequest
+    let description_content = builder.create_string(&parsed.description.content);
+    let description_pubkey = builder.create_string(&parsed.description.pubkey);
+    let description_signature = parsed
+        .description
+        .signature
+        .as_ref()
+        .map(|s| builder.create_string(s));
+
+    // Build description tags
+    let mut description_tags_offsets = Vec::new();
+    for tag in &parsed.description.tags {
+        let tag_offsets: Vec<_> = tag.iter().map(|t| builder.create_string(t)).collect();
+        let tag_vector = builder.create_vector(&tag_offsets);
+        description_tags_offsets.push(tag_vector);
+    }
+    let description_tags_vector = builder.create_vector(&description_tags_offsets);
+
+    let zap_request_args = fb::ZapRequestArgs {
+        kind: parsed.description.kind,
+        pubkey: Some(description_pubkey),
+        content: Some(description_content),
+        tags: Some({
+            let mut string_vec_offsets = Vec::new();
+            for tag in &parsed.description.tags {
+                let tag_strings: Vec<_> = tag.iter().map(|t| builder.create_string(t)).collect();
+                let tag_vector = builder.create_vector(&tag_strings);
+                let string_vec = fb::StringVec::create(
+                    builder,
+                    &fb::StringVecArgs {
+                        items: Some(tag_vector),
+                    },
+                );
+                string_vec_offsets.push(string_vec);
+            }
+            builder.create_vector(&string_vec_offsets)
+        }),
+        signature: description_signature,
+    };
+    let zap_request_offset = fb::ZapRequest::create(builder, &zap_request_args);
+
+    let args = fb::Kind9735ParsedArgs {
+        id: Some(id),
+        amount: parsed.amount,
+        content: Some(content),
+        bolt11: Some(bolt11),
+        preimage,
+        sender: Some(sender),
+        recipient: Some(recipient),
+        event,
+        event_coordinate,
+        timestamp: parsed.timestamp,
+        valid: parsed.valid,
+        description: Some(zap_request_offset),
+    };
+
+    let offset = fb::Kind9735Parsed::create(builder, &args);
+
+    Ok(offset)
 }
 
 // Helper function to find a tag by name in a vec of vec of strings
