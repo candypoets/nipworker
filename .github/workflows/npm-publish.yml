@@ -67,14 +67,6 @@ jobs:
           echo "version=$MAIN_VERSION" >> $GITHUB_OUTPUT
           echo "Syncing all packages to version: $MAIN_VERSION"
 
-          # Update rust-main package.json version
-          node -e "
-            const fs = require('fs');
-            const pkg = require('./packages/rust-main/package.json');
-            pkg.version = '$MAIN_VERSION';
-            fs.writeFileSync('./packages/rust-main/package.json', JSON.stringify(pkg, null, 2) + '\n');
-          "
-
           # Update rust-worker package.json version
           node -e "
             const fs = require('fs');
