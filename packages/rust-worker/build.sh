@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# Remove set -e to prevent unexpected exits on non-critical errors
-# set -e
+# Enable error exit but with better handling
+set -e
 
-echo "Building Nostr Worker WASM module (Performance Optimized)..."
+echo "Building Nostr Worker WASM module (Memory Optimized for CI)..."
 
 # Install required tools if not available
 if ! command -v wasm-pack &> /dev/null; then
@@ -40,20 +40,38 @@ optimize_wasm() {
         # --enable-nontrapping-float-to-int: Better float performance
         # --inline-functions-with-loops: Inline hot functions
         # --optimize-for-js: Optimize for JavaScript engine patterns
-        if ! wasm-opt -O3 \
-            --enable-simd \
-            --enable-bulk-memory \
-            --enable-sign-ext \
-            --enable-mutable-globals \
-            --enable-nontrapping-float-to-int \
-            --inline-functions-with-loops \
-            --optimize-for-js \
-            --strip-debug \
-            --strip-producers \
-            "$backup_path" -o "$file_path"; then
-            echo "Warning: wasm-opt optimization failed, using unoptimized version"
-            mv "$backup_path" "$file_path"
-            return 1
+        # Use memory-friendly optimizations for CI environment
+        if [ "${CI:-false}" = "true" ]; then
+            echo "Detected CI environment - using memory-conservative optimizations..."
+            # Less aggressive optimization to avoid OOM in GitHub Actions
+            if ! wasm-opt -O2 \
+                --enable-bulk-memory \
+                --enable-sign-ext \
+                --strip-debug \
+                --strip-producers \
+                --memory-max=2048 \
+                "$backup_path" -o "$file_path"; then
+                echo "Warning: wasm-opt optimization failed, using unoptimized version"
+                mv "$backup_path" "$file_path"
+                return 1
+            fi
+        else
+            echo "Local build detected - using full optimizations..."
+            if ! wasm-opt -O3 \
+                --enable-simd \
+                --enable-bulk-memory \
+                --enable-sign-ext \
+                --enable-mutable-globals \
+                --enable-nontrapping-float-to-int \
+                --inline-functions-with-loops \
+                --optimize-for-js \
+                --strip-debug \
+                --strip-producers \
+                "$backup_path" -o "$file_path"; then
+                echo "Warning: wasm-opt optimization failed, using unoptimized version"
+                mv "$backup_path" "$file_path"
+                return 1
+            fi
         fi
 
         # Get optimized size
@@ -77,15 +95,39 @@ optimize_wasm() {
     fi
 }
 
-# Build worker WASM module optimized for performance
+# Build worker WASM module with memory considerations
 echo ""
-echo "Building worker WASM module (Performance Mode)..."
+if [ "${CI:-false}" = "true" ]; then
+    echo "Building worker WASM module (CI Memory-Safe Mode)..."
+    # Check available memory
+    if command -v free >/dev/null 2>&1; then
+        echo "Available memory:"
+        free -h
+    fi
 
-# Build with wasm-pack in release mode
-# Your Cargo.toml already has opt-level=3, lto=true, codegen-units=1
-if ! wasm-pack build --release --target web; then
-    echo "Error: wasm-pack build failed"
-    exit 1
+    # Use less aggressive Rust compilation in CI to avoid OOM
+    export CARGO_PROFILE_RELEASE_LTO=thin
+    export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=4
+    echo "Using memory-safe build settings for CI environment"
+else
+    echo "Building worker WASM module (Performance Mode)..."
+fi
+
+# Build with wasm-pack using appropriate profile for environment
+if [ "${CI:-false}" = "true" ]; then
+    echo "Using CI-optimized build profile..."
+    if ! wasm-pack build --release --target web -- --profile ci-release; then
+        echo "CI build failed, falling back to standard release build..."
+        if ! wasm-pack build --release --target web; then
+            echo "Error: wasm-pack build failed"
+            exit 1
+        fi
+    fi
+else
+    if ! wasm-pack build --release --target web; then
+        echo "Error: wasm-pack build failed"
+        exit 1
+    fi
 fi
 
 # Optimize the generated WASM file
@@ -222,10 +264,20 @@ if [ -f "pkg/rust_worker_bg.wasm" ]; then
 fi
 
 echo ""
-echo "✅ Nostr Worker build complete (Performance Mode)!"
-echo ""
-echo "This build prioritizes:"
-echo "  - Fast execution speed"
-echo "  - Optimized crypto operations"
-echo "  - Better memory access patterns"
-echo "  - Improved JavaScript interop"
+if [ "${CI:-false}" = "true" ]; then
+    echo "✅ Nostr Worker build complete (CI Memory-Safe Mode)!"
+    echo ""
+    echo "This build prioritizes:"
+    echo "  - Reliable CI builds without OOM"
+    echo "  - Moderate optimization level"
+    echo "  - Memory-conservative compilation"
+    echo "  - Stable GitHub Actions execution"
+else
+    echo "✅ Nostr Worker build complete (Performance Mode)!"
+    echo ""
+    echo "This build prioritizes:"
+    echo "  - Fast execution speed"
+    echo "  - Optimized crypto operations"
+    echo "  - Better memory access patterns"
+    echo "  - Improved JavaScript interop"
+fi

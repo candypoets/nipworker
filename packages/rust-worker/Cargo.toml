@@ -27,6 +27,13 @@ strip = true            # Strip symbols from binary
 debug = false           # Disable debug info in release builds
 overflow-checks = false # Disable overflow checks in release
 
+# CI-friendly profile to avoid OOM in GitHub Actions
+[profile.ci-release]
+inherits = "release"
+opt-level = 2        # Less aggressive optimization
+lto = "thin"         # Thinner LTO to use less memory
+codegen-units = 4    # More codegen units = less memory per unit
+
 [dependencies]
 # Lightweight async utilities (replacing tokio)
 futures = "0.3"
