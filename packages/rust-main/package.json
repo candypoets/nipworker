@@ -1,7 +1,7 @@
 {
   "name": "@candypoets/rust-main",
   "type": "module",
-  "version": "0.0.28",
+  "version": "0.0.29",
   "description": "Rust WASM main library for Nostr protocol operations",
   "files": [
     "dist"
