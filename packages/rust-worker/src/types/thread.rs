@@ -5,10 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    types::{network::SubscribeKind, Request, SerializableParsedEvent, EOSE},
-    EventTemplate, Proof, RelayStatusUpdate,
-};
+use crate::{types::Request, EventTemplate};
 
 /// Configuration for individual pipes in the pipeline
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -85,38 +82,6 @@ impl Default for SubscriptionConfig {
             bytes_per_event: None,
         }
     }
-}
-
-/// Messages sent from worker to main thread
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum WorkerToMainMessage {
-    SubscriptionEvent {
-        event_type: SubscribeKind,
-        event_data: Vec<Vec<SerializableParsedEvent>>,
-    },
-    SignedEvent {
-        content: String,
-        signed_event: serde_json::Value,
-    },
-    ConnectionStatus {
-        status: String,
-        message: String,
-        relay_url: String,
-    },
-    Count {
-        kind: u32,
-        count: u32,
-        you: bool,
-        metadata: String,
-    },
-    Proofs {
-        mint: String,
-        proofs: Vec<Proof>,
-    },
-    Eoce {},
-    PublicKey {
-        public_key: String,
-    },
 }
 
 /// Messages sent from main thread to worker

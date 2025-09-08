@@ -98,6 +98,16 @@ version = "0.3"
 default-features = false
 features = [
     "console",
+    "DomStringList",
+    "IdbFactory",
+    "IdbDatabase",
+    "IdbObjectStore",
+    "IdbOpenDbRequest",
+    "IdbRequest",
+    "IdbTransaction",
+    "IdbTransactionMode",
+    "IdbVersionChangeEvent",
+    "Window",
     "WorkerGlobalScope",
     "DedicatedWorkerGlobalScope",
     "WebSocket",

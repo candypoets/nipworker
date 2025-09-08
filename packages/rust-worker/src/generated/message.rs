@@ -10454,6 +10454,7 @@ impl<'a> ParsedEvent<'a> {
   pub const VT_PARSED: flatbuffers::VOffsetT = 14;
   pub const VT_REQUESTS: flatbuffers::VOffsetT = 16;
   pub const VT_RELAYS: flatbuffers::VOffsetT = 18;
+  pub const VT_TAGS: flatbuffers::VOffsetT = 20;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -10465,6 +10466,7 @@ impl<'a> ParsedEvent<'a> {
     args: &'args ParsedEventArgs<'args>
   ) -> flatbuffers::WIPOffset<ParsedEvent<'bldr>> {
     let mut builder = ParsedEventBuilder::new(_fbb);
+    if let Some(x) = args.tags { builder.add_tags(x); }
     if let Some(x) = args.relays { builder.add_relays(x); }
     if let Some(x) = args.requests { builder.add_requests(x); }
     if let Some(x) = args.parsed { builder.add_parsed(x); }
@@ -10577,6 +10579,10 @@ impl<'a> ParsedEvent<'a> {
     let relays = self.relays().map(|x| {
       x.iter().map(|s| s.to_string()).collect()
     });
+    let tags = {
+      let x = self.tags();
+      x.iter().map(|t| t.unpack()).collect()
+    };
     ParsedEventT {
       id,
       pubkey,
@@ -10585,6 +10591,7 @@ impl<'a> ParsedEvent<'a> {
       parsed,
       requests,
       relays,
+      tags,
     }
   }
 
@@ -10643,6 +10650,13 @@ impl<'a> ParsedEvent<'a> {
     // Created from valid Table for this object
     // which contains a valid value in this slot
     unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>(ParsedEvent::VT_RELAYS, None)}
+  }
+  #[inline]
+  pub fn tags(&self) -> flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<StringVec<'a>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<StringVec>>>>(ParsedEvent::VT_TAGS, None).unwrap()}
   }
   #[inline]
   #[allow(non_snake_case)]
@@ -10920,6 +10934,7 @@ impl flatbuffers::Verifiable for ParsedEvent<'_> {
      })?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<Request>>>>("requests", Self::VT_REQUESTS, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("relays", Self::VT_RELAYS, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<StringVec>>>>("tags", Self::VT_TAGS, true)?
      .finish();
     Ok(())
   }
@@ -10933,6 +10948,7 @@ pub struct ParsedEventArgs<'a> {
     pub parsed: Option<flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>>,
     pub requests: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Request<'a>>>>>,
     pub relays: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>,
+    pub tags: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<StringVec<'a>>>>>,
 }
 impl<'a> Default for ParsedEventArgs<'a> {
   #[inline]
@@ -10946,6 +10962,7 @@ impl<'a> Default for ParsedEventArgs<'a> {
       parsed: None,
       requests: None,
       relays: None,
+      tags: None, // required field
     }
   }
 }
@@ -10988,6 +11005,10 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> ParsedEventBuilder<'a, 'b, A> {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(ParsedEvent::VT_RELAYS, relays);
   }
   #[inline]
+  pub fn add_tags(&mut self, tags: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<StringVec<'b >>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(ParsedEvent::VT_TAGS, tags);
+  }
+  #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> ParsedEventBuilder<'a, 'b, A> {
     let start = _fbb.start_table();
     ParsedEventBuilder {
@@ -11000,6 +11021,7 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> ParsedEventBuilder<'a, 'b, A> {
     let o = self.fbb_.end_table(self.start_);
     self.fbb_.required(o, ParsedEvent::VT_ID,"id");
     self.fbb_.required(o, ParsedEvent::VT_PUBKEY,"pubkey");
+    self.fbb_.required(o, ParsedEvent::VT_TAGS,"tags");
     flatbuffers::WIPOffset::new(o.value())
   }
 }
@@ -11132,6 +11154,7 @@ impl core::fmt::Debug for ParsedEvent<'_> {
       };
       ds.field("requests", &self.requests());
       ds.field("relays", &self.relays());
+      ds.field("tags", &self.tags());
       ds.finish()
   }
 }
@@ -11145,6 +11168,7 @@ pub struct ParsedEventT {
   pub parsed: ParsedDataT,
   pub requests: Option<Vec<RequestT>>,
   pub relays: Option<Vec<String>>,
+  pub tags: Vec<StringVecT>,
 }
 impl Default for ParsedEventT {
   fn default() -> Self {
@@ -11156,6 +11180,7 @@ impl Default for ParsedEventT {
       parsed: ParsedDataT::NONE,
       requests: None,
       relays: None,
+      tags: Default::default(),
     }
   }
 }
@@ -11182,6 +11207,10 @@ impl ParsedEventT {
     let relays = self.relays.as_ref().map(|x|{
       let w: Vec<_> = x.iter().map(|s| _fbb.create_string(s)).collect();_fbb.create_vector(&w)
     });
+    let tags = Some({
+      let x = &self.tags;
+      let w: Vec<_> = x.iter().map(|t| t.pack(_fbb)).collect();_fbb.create_vector(&w)
+    });
     ParsedEvent::create(_fbb, &ParsedEventArgs{
       id,
       pubkey,
@@ -11191,6 +11220,7 @@ impl ParsedEventT {
       parsed,
       requests,
       relays,
+      tags,
     })
   }
 }

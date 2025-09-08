@@ -23,6 +23,7 @@ import { Kind9321Parsed, Kind9321ParsedT } from '../../nostr/fb/kind9321-parsed.
 import { Kind9735Parsed, Kind9735ParsedT } from '../../nostr/fb/kind9735-parsed.js';
 import { ParsedData, unionToParsedData, unionListToParsedData } from '../../nostr/fb/parsed-data.js';
 import { Request, RequestT } from '../../nostr/fb/request.js';
+import { StringVec, StringVecT } from '../../nostr/fb/string-vec.js';
 
 
 export class ParsedEvent implements flatbuffers.IUnpackableObject<ParsedEventT> {
@@ -99,8 +100,18 @@ relaysLength():number {
   return offset ? this.bb!.__vector_len(this.bb_pos + offset) : 0;
 }
 
+tags(index: number, obj?:StringVec):StringVec|null {
+  const offset = this.bb!.__offset(this.bb_pos, 20);
+  return offset ? (obj || new StringVec()).__init(this.bb!.__indirect(this.bb!.__vector(this.bb_pos + offset) + index * 4), this.bb!) : null;
+}
+
+tagsLength():number {
+  const offset = this.bb!.__offset(this.bb_pos, 20);
+  return offset ? this.bb!.__vector_len(this.bb_pos + offset) : 0;
+}
+
 static startParsedEvent(builder:flatbuffers.Builder) {
-  builder.startObject(8);
+  builder.startObject(9);
 }
 
 static addId(builder:flatbuffers.Builder, idOffset:flatbuffers.Offset) {
@@ -159,14 +170,31 @@ static startRelaysVector(builder:flatbuffers.Builder, numElems:number) {
   builder.startVector(4, numElems, 4);
 }
 
+static addTags(builder:flatbuffers.Builder, tagsOffset:flatbuffers.Offset) {
+  builder.addFieldOffset(8, tagsOffset, 0);
+}
+
+static createTagsVector(builder:flatbuffers.Builder, data:flatbuffers.Offset[]):flatbuffers.Offset {
+  builder.startVector(4, data.length, 4);
+  for (let i = data.length - 1; i >= 0; i--) {
+    builder.addOffset(data[i]!);
+  }
+  return builder.endVector();
+}
+
+static startTagsVector(builder:flatbuffers.Builder, numElems:number) {
+  builder.startVector(4, numElems, 4);
+}
+
 static endParsedEvent(builder:flatbuffers.Builder):flatbuffers.Offset {
   const offset = builder.endObject();
   builder.requiredField(offset, 4) // id
   builder.requiredField(offset, 6) // pubkey
+  builder.requiredField(offset, 20) // tags
   return offset;
 }
 
-static createParsedEvent(builder:flatbuffers.Builder, idOffset:flatbuffers.Offset, pubkeyOffset:flatbuffers.Offset, kind:number, createdAt:number, parsedType:ParsedData, parsedOffset:flatbuffers.Offset, requestsOffset:flatbuffers.Offset, relaysOffset:flatbuffers.Offset):flatbuffers.Offset {
+static createParsedEvent(builder:flatbuffers.Builder, idOffset:flatbuffers.Offset, pubkeyOffset:flatbuffers.Offset, kind:number, createdAt:number, parsedType:ParsedData, parsedOffset:flatbuffers.Offset, requestsOffset:flatbuffers.Offset, relaysOffset:flatbuffers.Offset, tagsOffset:flatbuffers.Offset):flatbuffers.Offset {
   ParsedEvent.startParsedEvent(builder);
   ParsedEvent.addId(builder, idOffset);
   ParsedEvent.addPubkey(builder, pubkeyOffset);
@@ -176,6 +204,7 @@ static createParsedEvent(builder:flatbuffers.Builder, idOffset:flatbuffers.Offse
   ParsedEvent.addParsed(builder, parsedOffset);
   ParsedEvent.addRequests(builder, requestsOffset);
   ParsedEvent.addRelays(builder, relaysOffset);
+  ParsedEvent.addTags(builder, tagsOffset);
   return ParsedEvent.endParsedEvent(builder);
 }
 
@@ -192,7 +221,8 @@ unpack(): ParsedEventT {
       return temp.unpack()
   })(),
     this.bb!.createObjList<Request, RequestT>(this.requests.bind(this), this.requestsLength()),
-    this.bb!.createScalarList<string>(this.relays.bind(this), this.relaysLength())
+    this.bb!.createScalarList<string>(this.relays.bind(this), this.relaysLength()),
+    this.bb!.createObjList<StringVec, StringVecT>(this.tags.bind(this), this.tagsLength())
   );
 }
 
@@ -210,6 +240,7 @@ unpackTo(_o: ParsedEventT): void {
   })();
   _o.requests = this.bb!.createObjList<Request, RequestT>(this.requests.bind(this), this.requestsLength());
   _o.relays = this.bb!.createScalarList<string>(this.relays.bind(this), this.relaysLength());
+  _o.tags = this.bb!.createObjList<StringVec, StringVecT>(this.tags.bind(this), this.tagsLength());
 }
 }
 
@@ -222,7 +253,8 @@ constructor(
   public parsedType: ParsedData = ParsedData.NONE,
   public parsed: Kind0ParsedT|Kind10002ParsedT|Kind10019ParsedT|Kind17375ParsedT|Kind17ParsedT|Kind1ParsedT|Kind39089ParsedT|Kind3ParsedT|Kind4ParsedT|Kind6ParsedT|Kind7374ParsedT|Kind7375ParsedT|Kind7376ParsedT|Kind7ParsedT|Kind9321ParsedT|Kind9735ParsedT|null = null,
   public requests: (RequestT)[] = [],
-  public relays: (string)[] = []
+  public relays: (string)[] = [],
+  public tags: (StringVecT)[] = []
 ){}
 
 
@@ -232,6 +264,7 @@ pack(builder:flatbuffers.Builder): flatbuffers.Offset {
   const parsed = builder.createObjectOffset(this.parsed);
   const requests = ParsedEvent.createRequestsVector(builder, builder.createObjectOffsetList(this.requests));
   const relays = ParsedEvent.createRelaysVector(builder, builder.createObjectOffsetList(this.relays));
+  const tags = ParsedEvent.createTagsVector(builder, builder.createObjectOffsetList(this.tags));
 
   return ParsedEvent.createParsedEvent(builder,
     id,
@@ -241,7 +274,8 @@ pack(builder:flatbuffers.Builder): flatbuffers.Offset {
     this.parsedType,
     parsed,
     requests,
-    relays
+    relays,
+    tags
   );
 }
 }

@@ -32,14 +32,8 @@ export interface SubscriptionOptions {
  * Configuration for the Nostr Manager
  */
 export interface NostrManagerConfig {
-  /**
-   * Custom worker URL. If not provided, uses the bundled worker.
-   */
-  workerUrl?: string;
-  /**
-   * Custom worker instance. If provided, workerUrl is ignored.
-   */
-  worker?: Worker;
+  bufferKey: string;
+  maxBufferSize: number;
 }
 
 // const wasmReady = init(mainWasmUrl);
@@ -63,12 +57,13 @@ export class NostrManager {
 
   public PERPETUAL_SUBSCRIPTIONS = ["notifications", "starterpack"];
 
-  constructor(config: NostrManagerConfig = {}) {
-    this.worker = this.createWorker(config);
+  constructor(config: NostrManagerConfig = {bufferKey: "general", maxBufferSize: 10_000_000}) {
+    this.worker = this.createWorker();
+    this.worker.postMessage({ type: "init", payload: config });
     this.setupWorkerListener();
   }
 
-  private createWorker(config: NostrManagerConfig): Worker {
+  private createWorker(): Worker {
     return new RustWorker();
   }
 
@@ -315,7 +310,7 @@ export class NostrManager {
  * @returns A new instance of NostrManager.
  */
 export function createNostrManager(
-  config: NostrManagerConfig = {},
+  config: NostrManagerConfig,
 ): NostrManager {
   return new NostrManager(config);
 }

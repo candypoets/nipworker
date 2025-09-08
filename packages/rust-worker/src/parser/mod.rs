@@ -1,4 +1,5 @@
 use crate::db::index::NostrDB;
+use crate::parsed_event::{ParsedData, ParsedEvent};
 use crate::signer::{create_shared_signer_manager, SharedSignerManager};
 use crate::types::*;
 use anyhow::{anyhow, Result};
@@ -71,67 +72,67 @@ impl Parser {
         let (parsed, requests) = match kind {
             0 => {
                 let (parsed, requests) = self.parse_kind_0(&event)?;
-                (Some(crate::types::ParsedData::Kind0(parsed)), requests)
+                (Some(ParsedData::Kind0(parsed)), requests)
             }
             1 => {
                 let (parsed, requests) = self.parse_kind_1(&event)?;
-                (Some(crate::types::ParsedData::Kind1(parsed)), requests)
+                (Some(ParsedData::Kind1(parsed)), requests)
             }
             3 => {
                 let (parsed, requests) = self.parse_kind_3(&event)?;
-                (Some(crate::types::ParsedData::Kind3(parsed)), requests)
+                (Some(ParsedData::Kind3(parsed)), requests)
             }
             4 => {
                 let (parsed, requests) = self.parse_kind_4(&event)?;
-                (Some(crate::types::ParsedData::Kind4(parsed)), requests)
+                (Some(ParsedData::Kind4(parsed)), requests)
             }
             6 => {
                 let (parsed, requests) = self.parse_kind_6(&event)?;
-                (Some(crate::types::ParsedData::Kind6(parsed)), requests)
+                (Some(ParsedData::Kind6(parsed)), requests)
             }
             7 => {
                 let (parsed, requests) = self.parse_kind_7(&event)?;
-                (Some(crate::types::ParsedData::Kind7(parsed)), requests)
+                (Some(ParsedData::Kind7(parsed)), requests)
             }
             17 => {
                 let (parsed, requests) = self.parse_kind_17(&event)?;
-                (Some(crate::types::ParsedData::Kind17(parsed)), requests)
+                (Some(ParsedData::Kind17(parsed)), requests)
             }
             7374 => {
                 let (parsed, requests) = self.parse_kind_7374(&event)?;
-                (Some(crate::types::ParsedData::Kind7374(parsed)), requests)
+                (Some(ParsedData::Kind7374(parsed)), requests)
             }
             7375 => {
                 let (parsed, requests) = self.parse_kind_7375(&event)?;
-                (Some(crate::types::ParsedData::Kind7375(parsed)), requests)
+                (Some(ParsedData::Kind7375(parsed)), requests)
             }
             7376 => {
                 let (parsed, requests) = self.parse_kind_7376(&event)?;
-                (Some(crate::types::ParsedData::Kind7376(parsed)), requests)
+                (Some(ParsedData::Kind7376(parsed)), requests)
             }
             9321 => {
                 let (parsed, requests) = self.parse_kind_9321(&event)?;
-                (Some(crate::types::ParsedData::Kind9321(parsed)), requests)
+                (Some(ParsedData::Kind9321(parsed)), requests)
             }
             9735 => {
                 let (parsed, requests) = self.parse_kind_9735(&event)?;
-                (Some(crate::types::ParsedData::Kind9735(parsed)), requests)
+                (Some(ParsedData::Kind9735(parsed)), requests)
             }
             10002 => {
                 let (parsed, requests) = self.parse_kind_10002(&event)?;
-                (Some(crate::types::ParsedData::Kind10002(parsed)), requests)
+                (Some(ParsedData::Kind10002(parsed)), requests)
             }
             10019 => {
                 let (parsed, requests) = self.parse_kind_10019(&event)?;
-                (Some(crate::types::ParsedData::Kind10019(parsed)), requests)
+                (Some(ParsedData::Kind10019(parsed)), requests)
             }
             17375 => {
                 let (parsed, requests) = self.parse_kind_17375(&event)?;
-                (Some(crate::types::ParsedData::Kind17375(parsed)), requests)
+                (Some(ParsedData::Kind17375(parsed)), requests)
             }
             39089 => {
                 let (parsed, requests) = self.parse_kind_39089(&event)?;
-                (Some(crate::types::ParsedData::Kind39089(parsed)), requests)
+                (Some(ParsedData::Kind39089(parsed)), requests)
             }
             _ => {
                 return Err(anyhow!("no parser available for kind {}", kind));
@@ -213,7 +214,13 @@ impl Clone for Parser {
 
 impl Default for Parser {
     fn default() -> Self {
-        let database = Arc::new(NostrDB::new());
+        let database = Arc::new(NostrDB::new_with_ringbuffer(
+            "nostr".to_string(),
+            "test".to_string(),
+            10_000_000,
+            Vec::new(),
+            Vec::new(),
+        ));
         Self::new(database)
     }
 }

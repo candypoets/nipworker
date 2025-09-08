@@ -1,6 +1,7 @@
+use crate::parsed_event::ParsedData;
 use crate::types::network::Request;
 use crate::utils::request_deduplication::RequestDeduplicator;
-use crate::{parser::Parser, ParsedEvent};
+use crate::{parsed_event::ParsedEvent, parser::Parser};
 use anyhow::{anyhow, Result};
 use nostr::{Event, Kind};
 use serde::{Deserialize, Serialize};
@@ -74,7 +75,7 @@ impl Parser {
                             // Create a ParsedEvent with the parsed content and serialize to JSON
                             let parsed_event_struct = ParsedEvent {
                                 event: parsed_event,
-                                parsed: Some(crate::types::ParsedData::Kind1(parsed_content)),
+                                parsed: Some(ParsedData::Kind1(parsed_content)),
                                 relays: vec![],
                                 requests: Some(vec![]),
                             };

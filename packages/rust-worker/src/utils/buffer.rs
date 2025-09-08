@@ -2,49 +2,41 @@ use flatbuffers::FlatBufferBuilder;
 use js_sys::{SharedArrayBuffer, Uint8Array};
 use tracing::{debug, error, info, warn};
 
-use crate::{generated::nostr::fb, WorkerToMainMessage};
+use crate::generated::nostr::fb;
 
 pub struct SharedBufferManager;
 
 impl SharedBufferManager {
     pub async fn send_connection_status(
         shared_buffer: &SharedArrayBuffer,
-        status: WorkerToMainMessage,
+        relay_url: &str,
+        status: &str,
+        message: &str,
     ) {
-        // Assuming status is WorkerToMainMessage::ConnectionStatus variant
-        if let WorkerToMainMessage::ConnectionStatus {
-            relay_url,
-            status: conn_status,
-            message,
-        } = status
-        {
-            let mut builder = FlatBufferBuilder::new();
+        let mut builder = FlatBufferBuilder::new();
 
-            let relay_url_offset = builder.create_string(&relay_url);
-            let status_offset = builder.create_string(&conn_status);
-            let message_offset = builder.create_string(&message);
+        let relay_url_offset = builder.create_string(&relay_url);
+        let status_offset = builder.create_string(&status);
+        let message_offset = builder.create_string(&message);
 
-            let conn_status_args = fb::ConnectionStatusArgs {
-                relay_url: Some(relay_url_offset),
-                status: Some(status_offset),
-                message: Some(message_offset),
-            };
-            let conn_status_offset = fb::ConnectionStatus::create(&mut builder, &conn_status_args);
+        let conn_status_args = fb::ConnectionStatusArgs {
+            relay_url: Some(relay_url_offset),
+            status: Some(status_offset),
+            message: Some(message_offset),
+        };
+        let conn_status_offset = fb::ConnectionStatus::create(&mut builder, &conn_status_args);
 
-            let message_args = fb::WorkerMessageArgs {
-                type_: fb::MessageType::ConnectionStatus,
-                content_type: fb::Message::ConnectionStatus,
-                content: Some(conn_status_offset.as_union_value()),
-            };
-            let root = fb::WorkerMessage::create(&mut builder, &message_args);
-            builder.finish(root, None);
+        let message_args = fb::WorkerMessageArgs {
+            type_: fb::MessageType::ConnectionStatus,
+            content_type: fb::Message::ConnectionStatus,
+            content: Some(conn_status_offset.as_union_value()),
+        };
+        let root = fb::WorkerMessage::create(&mut builder, &message_args);
+        builder.finish(root, None);
 
-            let flatbuffer_data = builder.finished_data();
+        let flatbuffer_data = builder.finished_data();
 
-            let _ = Self::write_to_buffer(shared_buffer, flatbuffer_data).await;
-        } else {
-            error!("Invalid message type for send_connection_status");
-        }
+        let _ = Self::write_to_buffer(shared_buffer, flatbuffer_data).await;
     }
 
     pub async fn send_eoce(shared_buffer: &SharedArrayBuffer) {

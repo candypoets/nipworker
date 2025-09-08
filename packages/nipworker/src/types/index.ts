@@ -40,7 +40,8 @@ export type MainToWorkerMessage =
   | { Publish: { publish_id: string; template: EventTemplate } }
   | { SignEvent: { template: EventTemplate } }
   | { GetPublicKey: {} }
-  | { SetSigner: { signer_type: string; private_key: string } };
+  | { SetSigner: { signer_type: string; private_key: string } }
+  | { Initialize: { buffer_key: string } };
 
 
 export type SubscriptionConfig = {

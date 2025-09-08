@@ -1,5 +1,5 @@
 use super::super::*;
-use crate::{generated::nostr::fb, types::proof::Proof};
+use crate::{generated::nostr::fb, parsed_event::ParsedData, types::proof::Proof};
 use anyhow::Result;
 use flatbuffers::FlatBufferBuilder;
 use gloo_net;
@@ -373,7 +373,7 @@ impl Pipe for ProofVerificationPipe {
                     debug!("Attempting to parse Kind 9321 event data");
                     if let Some(parsed_data) = &parsed_event.parsed {
                         // Check if parsed_data is Kind9321Parsed variant
-                        if let crate::types::ParsedData::Kind9321(kind9321) = parsed_data {
+                        if let ParsedData::Kind9321(kind9321) = parsed_data {
                             let mint_url = kind9321.mint_url.clone();
 
                             debug!("Kind 9321 event - mint_url: {}", mint_url);
@@ -399,7 +399,7 @@ impl Pipe for ProofVerificationPipe {
                     debug!("Attempting to parse Kind 7375 event data");
                     if let Some(parsed_data) = &parsed_event.parsed {
                         // Check if parsed_data is Kind7375Parsed variant
-                        if let crate::types::ParsedData::Kind7375(kind7375) = parsed_data {
+                        if let ParsedData::Kind7375(kind7375) = parsed_data {
                             let mint_url = kind7375.mint_url.clone();
                             let decrypted = kind7375.decrypted;
 

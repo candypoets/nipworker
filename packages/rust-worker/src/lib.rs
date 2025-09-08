@@ -28,7 +28,7 @@ use types::EventTemplate;
 pub use types::*;
 
 // Re-export communication types for external use
-pub use types::thread::{MainToWorkerMessage, WorkerToMainMessage};
+pub use types::thread::MainToWorkerMessage;
 
 // Type aliases to match Go implementation
 pub type NostrEvent = Event;
@@ -175,16 +175,20 @@ pub struct NostrClient {
 
 #[wasm_bindgen]
 impl NostrClient {
-    pub async fn new() -> Self {
+    pub async fn new(buffer_key: String, max_buffer_size: usize) -> Self {
         // Set up enhanced panic handling
         setup_panic_hook();
         setup_tracing();
 
         info!("Initializing NostrClient...");
-        let database = Arc::new(NostrDB::with_relays(
+        let database = Arc::new(NostrDB::new_with_ringbuffer(
+            "nostr".to_string(),
+            buffer_key,
+            max_buffer_size,
             DEFAULT_RELAYS.iter().map(|s| s.to_string()).collect(),
             INDEXER_RELAYS.iter().map(|s| s.to_string()).collect(),
         ));
+
         database
             .initialize()
             .await
@@ -193,12 +197,16 @@ impl NostrClient {
                 e
             })
             .expect("Database initialization failed");
+
         let shared_signer_manager: SharedSignerManager = Arc::new(SignerManagerImpl::new());
+
         let connection_registry = Arc::new(relays::ConnectionRegistry::new());
+
         let parser = Arc::new(Parser::new_with_signer(
             shared_signer_manager.clone(),
             database.clone(),
         ));
+
         let network_manager = Arc::new(NetworkManager::new(
             database.clone(),
             connection_registry.clone() as Arc<relays::ConnectionRegistry>,
@@ -270,13 +278,12 @@ impl NostrClient {
             .map_err(|e| JsValue::from_str(&format!("Failed to sign event: {}", e)))?;
 
         // Convert signed event back to JSON
-        let signed_event_json = serde_json::to_value(&signed_event)
+        let signed_event_pack = rmp_serde::to_vec_named(&signed_event)
             .map_err(|e| JsValue::from_str(&format!("Failed to serialize signed event: {}", e)))?;
 
         // Send signed event back to main thread
-        let signed_event_message = WorkerToMainMessage::SignedEvent {
-            content: signed_event.content.clone(),
-            signed_event: signed_event_json,
+        let signed_event_message = SignerMessage::Signed {
+            payload: signed_event_pack,
         };
 
         let data = match rmp_serde::to_vec_named(&signed_event_message) {
@@ -313,7 +320,7 @@ impl NostrClient {
             .get_public_key()
             .map_err(|e| JsValue::from_str(&format!("Failed to get public key: {}", e)))?;
 
-        let pubkey_message = WorkerToMainMessage::PublicKey { public_key: pubkey };
+        let pubkey_message = SignerMessage::PubKey { payload: pubkey };
 
         let data = match rmp_serde::to_vec_named(&pubkey_message) {
             Ok(msgpack) => msgpack,
@@ -469,8 +476,11 @@ impl NostrClient {
 
 // Expose a function to initialize NostrClient
 #[wasm_bindgen]
-pub async fn init_nostr_client() -> Result<NostrClient, JsValue> {
-    match NostrClient::new().await {
+pub async fn init_nostr_client(
+    buffer_key: String,
+    max_buffer_size: usize,
+) -> Result<NostrClient, JsValue> {
+    match NostrClient::new(buffer_key, max_buffer_size).await {
         client => Ok(client),
         #[allow(unreachable_patterns)]
         _ => Err(JsValue::from_str("Failed to initialize NostrClient")),

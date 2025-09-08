@@ -1,4 +1,5 @@
 use crate::db::NostrDB;
+use crate::parsed_event::ParsedEvent;
 use crate::parser::Parser;
 use crate::types::*;
 use crate::utils::json::extract_event_id;

@@ -130,24 +130,34 @@ cat > pkg/worker.js << 'EOF'
 import init, { init_nostr_client } from "./rust_worker.js";
 
 // Pre-initialize for faster first message handling
-const initPromise = (async () => {
+const initPromise = async (config) => {
   try {
     console.log("Initializing WASM worker module...");
     await init();
-    const client = await init_nostr_client();
+    const client = await init_nostr_client(config.bufferKey, config.maxBufferSize);
     console.log("WASM worker module initialized successfully");
     return client;
   } catch (error) {
     console.error("Failed to initialize WASM worker module:", error);
     throw error;
   }
-})();
+};
+
+let client;
 
 // Handle messages
 self.onmessage = async (event) => {
   try {
-    const client = await initPromise;
-    client.handle_message(event.data);
+    if(event.data.type === "init") {
+      const config = event.data.payload;
+      client = initPromise(config);
+    } else {
+      if(client) {
+        const c = await client;
+        console.log(client, c)
+        c.handle_message(event.data);
+      }
+    }
   } catch (error) {
     console.error("Worker message handling error:", error);
     self.postMessage({
@@ -156,16 +166,6 @@ self.onmessage = async (event) => {
     });
   }
 };
-
-// Notify that worker is ready
-initPromise.then(() => {
-  self.postMessage({ type: "ready" });
-}).catch(error => {
-  self.postMessage({
-    type: "init_error",
-    error: error.toString()
-  });
-});
 EOF
 
 # Update package.json to include worker.js in files array

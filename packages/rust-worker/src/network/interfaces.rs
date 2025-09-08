@@ -1,4 +1,7 @@
-use crate::types::{network::Request, *};
+use crate::{
+    parsed_event::ParsedEvent,
+    types::{network::Request, *},
+};
 use anyhow::Result;
 use futures::channel::mpsc;
 
@@ -8,11 +11,10 @@ pub trait EventDatabase {
         &self,
         requests: Vec<Request>,
         skip_filtered: bool,
-    ) -> Result<(Vec<Request>, Vec<ParsedEvent>)>;
+    ) -> Result<(Vec<Request>, Vec<Vec<u8>>)>;
 
-    async fn query_events(&self, filter: nostr::Filter) -> Result<Vec<ParsedEvent>>;
+    async fn query_events(&self, filter: nostr::Filter) -> Result<Vec<Vec<u8>>>;
     async fn add_event(&self, event: ParsedEvent) -> Result<()>;
-    async fn save_events_to_persistent_storage(&self, events: Vec<ParsedEvent>) -> Result<()>;
 }
 
 pub trait EventParser {
@@ -34,9 +36,9 @@ pub trait CacheProcessor {
         &self,
         requests: Vec<Request>,
         max_depth: usize,
-    ) -> Result<(Vec<Request>, Vec<Vec<ParsedEvent>>)>;
+    ) -> Result<(Vec<Request>, Vec<Vec<Vec<u8>>>)>;
 
-    async fn find_event_context(&self, event: &ParsedEvent, max_depth: usize) -> Vec<ParsedEvent>;
+    async fn find_event_context(&self, event: &ParsedEvent, max_depth: usize) -> Vec<Vec<u8>>;
 }
 
 pub trait NetworkProcessor {

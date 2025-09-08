@@ -23,61 +23,8 @@ impl Pipe for SerializeEventsPipe {
         if let Some(parsed_event) = event.parsed {
             let mut builder = FlatBufferBuilder::new();
 
-            // Get the parsed data and build the ParsedData union using shared builder
-            let parsed_data = parsed_event
-                .parsed
-                .as_ref()
-                .ok_or_else(|| anyhow::anyhow!("No parsed data available"))?;
+            let parsed_event_offset = parsed_event.build_flatbuffer(&mut builder)?;
 
-            // Build the ParsedData union directly in our builder
-            let (parsed_type, parsed_union_offset) = parsed_data.build_flatbuffer(&mut builder)?;
-            tracing::debug!("ParsedData union built - type: {:?}", parsed_type);
-            tracing::debug!("Parsed union offset created successfully");
-
-            // Build the NostrEvent from parsed_event.event
-            let id_offset = builder.create_string(&parsed_event.event.id.to_hex());
-            let pubkey_offset = builder.create_string(&parsed_event.event.pubkey.to_hex());
-
-            // Build relays based on source
-            let relays_offsets: Vec<_> = if let Some(relay) = event.source_relay {
-                vec![builder.create_string(&relay)]
-            } else {
-                vec![]
-            };
-            let relays_offset = if relays_offsets.is_empty() {
-                None
-            } else {
-                Some(builder.create_vector(&relays_offsets))
-            };
-
-            let requests_offset = if let Some(reqs) = parsed_event.requests.as_ref() {
-                if !reqs.is_empty() {
-                    let req_offsets: Vec<_> = reqs
-                        .iter()
-                        .map(|r| r.build_flatbuffer(&mut builder))
-                        .collect();
-                    Some(builder.create_vector(&req_offsets))
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
-
-            // Build ParsedEvent with the union
-            tracing::debug!("Building ParsedEvent with parsed_union_offset");
-            let parsed_event_args = fb::ParsedEventArgs {
-                id: Some(id_offset),
-                pubkey: Some(pubkey_offset),
-                created_at: parsed_event.event.created_at.as_u64() as u32,
-                kind: parsed_event.event.kind.as_u32() as u16,
-                parsed_type,
-                parsed: Some(parsed_union_offset),
-                requests: requests_offset,
-                relays: relays_offset,
-            };
-
-            let parsed_event_offset = fb::ParsedEvent::create(&mut builder, &parsed_event_args);
             tracing::debug!("Created ParsedEvent offset successfully");
 
             // Build root WorkerMessage

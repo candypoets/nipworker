@@ -76,6 +76,7 @@ table ParsedEvent {
   parsed: ParsedData;
   requests: [Request];
   relays: [string];
+  tags: [StringVec] (required);
 }
 
 // Non-event messages

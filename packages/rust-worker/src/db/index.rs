@@ -1,10 +1,12 @@
-use crate::db::storage::IndexedDbStorage;
+use crate::db::ring_buffer::RingBufferStorage;
 use crate::db::types::{
-    intersect_event_sets, DatabaseConfig, DatabaseError, DatabaseIndexes, DatabaseStats,
-    EventStorage, ProcessedNostrEvent, QueryFilter, QueryResult,
+    intersect_event_sets, DatabaseConfig, DatabaseError, DatabaseIndexes, EventStorage,
+    QueryFilter, QueryResult,
 };
+use crate::generated::nostr::fb;
 use crate::network::interfaces::EventDatabase;
-use crate::types::{network::Request, ParsedEvent};
+use crate::parsed_event::ParsedEvent;
+use crate::types::network::Request;
 use crate::utils::relay::RelayUtils;
 use anyhow::Result;
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -13,13 +15,14 @@ use instant::Instant;
 use nostr::{Event, EventId, Filter, PublicKey};
 use std::sync::{Arc, RwLock};
 use tracing::{debug, error, info, warn};
+use tracing_subscriber::registry::Data;
 
 /// Constants for event processing
 const MAX_EVENTS_PER_PROCESS: usize = 10; // Process max 10 events per add_event call
 const MIN_PROCESS_INTERVAL_MS: u64 = 20; // Minimum time between processing batches
 
 /// Main NostrDB implementation with RefCell indexes for single-threaded async access
-pub struct NostrDB<S = IndexedDbStorage> {
+pub struct NostrDB<S = RingBufferStorage> {
     /// Database configuration
     config: DatabaseConfig,
     /// Event indexes
@@ -40,113 +43,34 @@ pub struct NostrDB<S = IndexedDbStorage> {
     indexer_relay_counter: Arc<RwLock<usize>>,
     /// Counter for round-robin default relay selection
     default_relay_counter: Arc<RwLock<usize>>,
-    /// Pending events queue for rate-limited processing
-    pending_events: Arc<RwLock<Vec<ParsedEvent>>>,
-    /// Last time we processed events
-    last_process_time: Arc<RwLock<Instant>>,
 }
 
-impl NostrDB<IndexedDbStorage> {
-    /// Create a new NostrDB instance with default IndexedDB storage
-    pub fn new() -> Self {
-        info!("Creating new nostr db");
+impl NostrDB<RingBufferStorage> {
+    pub fn new_with_ringbuffer(
+        db_name: String,
+        buffer_key: String,
+        max_buffer_size: usize,
+        default_relays: Vec<String>,
+        indexer_relays: Vec<String>,
+    ) -> Self {
         let config = DatabaseConfig::default();
-        let storage = IndexedDbStorage::new("nostr-local-relay".to_string(), config.clone());
-
+        let storage = RingBufferStorage::new(db_name, buffer_key, max_buffer_size, config.clone());
         Self {
             config,
             indexes: DatabaseIndexes::new(),
             storage,
             is_initialized: Arc::new(RwLock::new(false)),
             to_save: Arc::new(RwLock::new(Vec::new())),
-            default_relays: vec![
-                "wss://relay.damus.io".to_string(),
-                "wss://nos.lol".to_string(),
-                "wss://relay.primal.net".to_string(),
-            ],
-            indexer_relays: vec![
-                "wss://relay.nostr.band".to_string(),
-                "wss://nostr.wine".to_string(),
-            ],
-            relay_hints: Arc::new(RwLock::new(FxHashMap::default())),
-            indexer_relay_counter: Arc::new(RwLock::new(0)),
-            default_relay_counter: Arc::new(RwLock::new(0)),
-            pending_events: Arc::new(RwLock::new(Vec::new())),
-            last_process_time: Arc::new(RwLock::new(Instant::now())),
-        }
-    }
-
-    /// Create a new NostrDB instance with custom relay configurations
-    pub fn with_relays(default_relays: Vec<String>, indexer_relays: Vec<String>) -> Self {
-        info!("Creating new nostr db with custom relays");
-        let config = DatabaseConfig::default();
-        let storage = IndexedDbStorage::new("nostr-local-relay".to_string(), config.clone());
-
-        Self {
-            config,
-            indexes: DatabaseIndexes::new(),
-            storage,
-            to_save: Arc::new(RwLock::new(Vec::new())),
-            is_initialized: Arc::new(RwLock::new(false)),
             default_relays,
             indexer_relays,
             relay_hints: Arc::new(RwLock::new(FxHashMap::default())),
             indexer_relay_counter: Arc::new(RwLock::new(0)),
             default_relay_counter: Arc::new(RwLock::new(0)),
-            pending_events: Arc::new(RwLock::new(Vec::new())),
-            last_process_time: Arc::new(RwLock::new(Instant::now())),
         }
     }
 }
 
 impl<S: EventStorage> NostrDB<S> {
-    /// Create a new NostrDB instance with custom storage
-    pub fn with_storage(storage: S) -> Self {
-        Self {
-            config: DatabaseConfig::default(),
-            indexes: DatabaseIndexes::new(),
-            storage,
-            is_initialized: Arc::new(RwLock::new(false)),
-            to_save: Arc::new(RwLock::new(Vec::new())),
-            default_relays: vec![
-                "wss://relay.damus.io".to_string(),
-                "wss://nos.lol".to_string(),
-                "wss://relay.primal.net".to_string(),
-            ],
-            indexer_relays: vec![
-                "wss://relay.nostr.band".to_string(),
-                "wss://nostr.wine".to_string(),
-            ],
-            relay_hints: Arc::new(RwLock::new(FxHashMap::default())),
-            indexer_relay_counter: Arc::new(RwLock::new(0)),
-            default_relay_counter: Arc::new(RwLock::new(0)),
-            pending_events: Arc::new(RwLock::new(Vec::new())),
-            last_process_time: Arc::new(RwLock::new(Instant::now())),
-        }
-    }
-
-    /// Create a new NostrDB instance with custom storage and relays
-    pub fn with_storage_and_relays(
-        storage: S,
-        default_relays: Vec<String>,
-        indexer_relays: Vec<String>,
-    ) -> Self {
-        Self {
-            config: DatabaseConfig::default(),
-            indexes: DatabaseIndexes::new(),
-            storage,
-            is_initialized: Arc::new(RwLock::new(false)),
-            to_save: Arc::new(RwLock::new(Vec::new())),
-            default_relays,
-            indexer_relays,
-            relay_hints: Arc::new(RwLock::new(FxHashMap::default())),
-            indexer_relay_counter: Arc::new(RwLock::new(0)),
-            default_relay_counter: Arc::new(RwLock::new(0)),
-            pending_events: Arc::new(RwLock::new(Vec::new())),
-            last_process_time: Arc::new(RwLock::new(Instant::now())),
-        }
-    }
-
     /// Initialize the database by loading events from persistent storage
     pub async fn initialize(&self) -> Result<(), DatabaseError> {
         info!("Initializing NostrDB...");
@@ -190,20 +114,22 @@ impl<S: EventStorage> NostrDB<S> {
     }
 
     /// Build indexes from a collection of events
-    fn build_indexes_from_events(
-        &self,
-        events: Vec<ProcessedNostrEvent>,
-    ) -> Result<(), DatabaseError> {
-        let start_time = Instant::now();
-        // Build indexes using RefCell for interior mutability
-
+    fn build_indexes_from_events(&self, events: Vec<Vec<u8>>) -> Result<(), DatabaseError> {
         // Pre-allocate maps based on event count for better performance
         let event_count = events.len();
         let mut pubkey_frequency = FxHashMap::default();
         let mut kind_frequency = FxHashMap::default();
 
-        // First pass: count frequencies for optimal map sizing
+        // Convert all events to flatbuffer representation
+        let mut fb_events = Vec::with_capacity(event_count);
         for event in &events {
+            if let Some(parsed_event_fb) = Self::extract_parsed_event(&event) {
+                fb_events.push(parsed_event_fb);
+            }
+        }
+
+        // First pass: count frequencies for optimal map sizing
+        for event in &fb_events {
             *pubkey_frequency.entry(event.pubkey()).or_insert(0) += 1;
             *kind_frequency.entry(event.kind()).or_insert(0) += 1;
         }
@@ -212,7 +138,7 @@ impl<S: EventStorage> NostrDB<S> {
         for (pubkey, count) in pubkey_frequency {
             if count > 5 {
                 self.indexes.events_by_pubkey.borrow_mut().insert(
-                    pubkey,
+                    pubkey.to_string(),
                     FxHashSet::with_capacity_and_hasher(count, Default::default()),
                 );
             }
@@ -226,30 +152,33 @@ impl<S: EventStorage> NostrDB<S> {
         }
 
         // Second pass: build all indexes
-        for event in events {
-            self.index_event(event);
+        for (i, event) in fb_events.iter().enumerate() {
+            self.index_event(*event, &events[i]);
         }
-
-        let duration = start_time.elapsed();
-        info!(
-            "Built indexes for {} events in {:?} (memory: ~{} bytes)",
-            event_count,
-            duration,
-            self.indexes.estimate_memory_usage()
-        );
 
         Ok(())
     }
 
-    /// Add an event to all relevant indexes
-    fn index_event(&self, event: ProcessedNostrEvent) {
-        let event_id = event.id();
+    /// Extract ParsedEvent from WorkerMessage
+    fn extract_parsed_event(worker_message: &Vec<u8>) -> Option<fb::ParsedEvent<'_>> {
+        if let Ok(message) = flatbuffers::root::<fb::WorkerMessage>(&worker_message) {
+            match message.content_type() {
+                fb::Message::ParsedEvent => message.content_as_parsed_event(),
+                _ => None,
+            }
+        } else {
+            None
+        }
+    }
 
+    /// Add an event to all relevant indexes
+    fn index_event(&self, event: fb::ParsedEvent<'_>, bytes: &[u8]) {
+        let event_id = event.id();
         // Primary index
         self.indexes
             .events_by_id
             .borrow_mut()
-            .insert(event_id.clone(), event.clone());
+            .insert(event_id.to_string(), bytes.to_vec());
 
         // Kind index
         self.indexes
@@ -257,68 +186,79 @@ impl<S: EventStorage> NostrDB<S> {
             .borrow_mut()
             .entry(event.kind())
             .or_insert_with(FxHashSet::default)
-            .insert(event_id.clone());
+            .insert(event_id.to_string());
 
         // Pubkey index
         self.indexes
             .events_by_pubkey
             .borrow_mut()
-            .entry(event.pubkey())
+            .entry(event.pubkey().to_string())
             .or_insert_with(FxHashSet::default)
-            .insert(event_id.clone());
+            .insert(event_id.to_string());
 
-        // Tag indexes
-        for e_tag in &event.e_tags {
-            self.indexes
-                .events_by_e_tag
-                .borrow_mut()
-                .entry(e_tag.clone())
-                .or_insert_with(FxHashSet::default)
-                .insert(event_id.clone());
+        let tags = event.tags();
+
+        for i in 0..tags.len() {
+            let tag = tags.get(i);
+            if let Some(tag_vec) = tag.items() {
+                if tag_vec.len() >= 2 {
+                    let tag_kind = tag_vec.get(0);
+                    let tag_value = tag_vec.get(1);
+
+                    match tag_kind {
+                        "e" => {
+                            self.indexes
+                                .events_by_e_tag
+                                .borrow_mut()
+                                .entry(tag_value.to_string())
+                                .or_insert_with(FxHashSet::default)
+                                .insert(event_id.to_string());
+                        }
+                        "p" => {
+                            self.indexes
+                                .events_by_p_tag
+                                .borrow_mut()
+                                .entry(tag_value.to_string())
+                                .or_insert_with(FxHashSet::default)
+                                .insert(event_id.to_string());
+                        }
+                        "a" => {
+                            self.indexes
+                                .events_by_a_tag
+                                .borrow_mut()
+                                .entry(tag_value.to_string())
+                                .or_insert_with(FxHashSet::default)
+                                .insert(event_id.to_string());
+                        }
+                        "d" => {
+                            self.indexes
+                                .events_by_d_tag
+                                .borrow_mut()
+                                .entry(tag_value.to_string())
+                                .or_insert_with(FxHashSet::default)
+                                .insert(event_id.to_string());
+                        }
+                        _ => {}
+                    }
+                }
+            }
         }
 
-        for p_tag in &event.p_tags {
-            self.indexes
-                .events_by_p_tag
-                .borrow_mut()
-                .entry(p_tag.clone())
-                .or_insert_with(FxHashSet::default)
-                .insert(event_id.clone());
-        }
+        // // Special handling for profiles (kind 0)
+        // if event.kind() == 0 {
+        //     self.indexes
+        //         .profiles_by_pubkey
+        //         .borrow_mut()
+        //         .insert(event.pubkey(), event.clone());
+        // }
 
-        for a_tag in &event.a_tags {
-            self.indexes
-                .events_by_a_tag
-                .borrow_mut()
-                .entry(a_tag.clone())
-                .or_insert_with(FxHashSet::default)
-                .insert(event_id.clone());
-        }
-
-        for d_tag in &event.d_tags {
-            self.indexes
-                .events_by_d_tag
-                .borrow_mut()
-                .entry(d_tag.clone())
-                .or_insert_with(FxHashSet::default)
-                .insert(event_id.clone());
-        }
-
-        // Special handling for profiles (kind 0)
-        if event.kind() == 0 {
-            self.indexes
-                .profiles_by_pubkey
-                .borrow_mut()
-                .insert(event.pubkey(), event.clone());
-        }
-
-        // Special handling for relay lists (kind 10002)
-        if event.kind() == 10002 {
-            self.indexes
-                .relays_by_pubkey
-                .borrow_mut()
-                .insert(event.pubkey(), event);
-        }
+        // // Special handling for relay lists (kind 10002)
+        // if event.kind() == 10002 {
+        //     self.indexes
+        //         .relays_by_pubkey
+        //         .borrow_mut()
+        //         .insert(event.pubkey(), event);
+        // }
     }
 
     /// Query events using the internal filter format
@@ -347,7 +287,9 @@ impl<S: EventStorage> NostrDB<S> {
             let mut kind_events = FxHashSet::default();
             for kind in kinds {
                 let kind_u64 = kind.as_u64();
-                if let Some(event_ids) = self.indexes.events_by_kind.borrow().get(&kind_u64) {
+                if let Some(event_ids) =
+                    self.indexes.events_by_kind.borrow().get(&(kind_u64 as u16))
+                {
                     kind_events.extend(event_ids.iter().cloned());
                 }
             }
@@ -434,35 +376,42 @@ impl<S: EventStorage> NostrDB<S> {
 
         for event_id in candidate_ids {
             // Clone the event to avoid holding the borrow
-            if let Some(event) = self.indexes.events_by_id.borrow().get(&event_id).cloned() {
-                // Time range filters
-                if let Some(since) = filter.since {
-                    if event.created_at() < since {
-                        continue;
+            if let Some(b) = self.indexes.events_by_id.borrow().get(&event_id).cloned() {
+                if let Some(event) = Self::extract_parsed_event(&b) {
+                    // Time range filters
+                    if let Some(since) = filter.since {
+                        if event.created_at() < since.as_u64() as u32 {
+                            continue;
+                        }
                     }
-                }
 
-                if let Some(until) = filter.until {
-                    if event.created_at() > until {
-                        continue;
+                    if let Some(until) = filter.until {
+                        if event.created_at() > until.as_u64() as u32 {
+                            continue;
+                        }
                     }
-                }
 
-                // Search filter
-                if let Some(search) = &search_lower {
-                    if !event.event.content.to_lowercase().contains(search) {
-                        continue;
-                    }
-                }
+                    // Search filter
+                    // if let Some(search) = &search_lower {
+                    //     if !event.content().to_lowercase().contains(search) {
+                    //         continue;
+                    //     }
+                    // }
 
-                results.push(event.to_parsed_event());
+                    // Store the underlying bytes (event borrowing b prevents moving b)
+                    results.push(b);
+                }
             }
         }
 
         let total_found = results.len();
 
         // Sort by created_at (newest first)
-        results.sort_by(|a, b| b.event.created_at.cmp(&a.event.created_at));
+        results.sort_by(|a, b| {
+            let a_event = Self::extract_parsed_event(a).unwrap();
+            let b_event = Self::extract_parsed_event(b).unwrap();
+            b_event.created_at().cmp(&a_event.created_at())
+        });
 
         // Apply limit
         let has_more = if let Some(limit) = filter.limit {
@@ -495,12 +444,12 @@ impl<S: EventStorage> NostrDB<S> {
     }
 
     /// Get a single event by ID
-    pub fn get_event(&self, id: &EventId) -> Option<ParsedEvent> {
+    pub fn get_event(&self, id: &EventId) -> Option<Vec<u8>> {
         self.indexes
             .events_by_id
             .borrow()
             .get(&id.to_hex())
-            .map(|e| e.to_parsed_event())
+            .cloned()
     }
 
     /// Check if an event exists
@@ -512,71 +461,89 @@ impl<S: EventStorage> NostrDB<S> {
     }
 
     /// Get a profile for a given pubkey
-    pub fn get_profile(&self, pubkey: &PublicKey) -> Option<ParsedEvent> {
-        self.indexes
-            .profiles_by_pubkey
-            .borrow()
-            .get(&pubkey.to_hex())
-            .map(|event| event.to_parsed_event())
+    pub fn get_profile(&self, pubkey: &PublicKey) -> Option<Vec<u8>> {
+        let mut filter = QueryFilter::new();
+        filter.kinds = Some(vec![nostr::Kind::Metadata]);
+        filter.authors = Some(vec![*pubkey]);
+        filter.limit = Some(1);
+        let events = self.query_events_internal(filter);
+        match events {
+            Ok(result) => {
+                if !result.events.is_empty() {
+                    Some(result.events[0].clone())
+                } else {
+                    None
+                }
+            }
+            Err(_) => None,
+        }
     }
 
     pub fn get_read_relays(&self, pubkey: &str) -> Option<Vec<String>> {
-        let parsed_event = self
-            .indexes
-            .relays_by_pubkey
-            .borrow()
-            .get(pubkey)
-            .map(|e| e.to_parsed_event());
-
-        match parsed_event {
-            Some(parsed_event) => {
-                if let Some(parsed_data) = &parsed_event.parsed {
-                    if let crate::types::ParsedData::Kind10002(kind10002_parsed) = parsed_data {
-                        return Some(
-                            kind10002_parsed
-                                .iter()
-                                .filter(|relay| relay.read)
-                                .map(|relay| relay.url.clone())
-                                .collect::<Vec<_>>(),
-                        );
+        let mut filter = QueryFilter::new();
+        filter.kinds = Some(vec![nostr::Kind::RelayList]);
+        filter.authors = Some(vec![PublicKey::from_hex(pubkey).ok()?]);
+        filter.limit = Some(1);
+        let events = self.query_events_internal(filter);
+        match events {
+            Ok(result) => {
+                if !result.events.is_empty() {
+                    // Parse the flatbuffer event to get relay data
+                    if let Some(event) = Self::extract_parsed_event(&result.events[0]) {
+                        if let Some(kind10002) = event.parsed_as_kind_10002_parsed() {
+                            return Some(
+                                kind10002
+                                    .relays()
+                                    .iter()
+                                    .filter(|relay| relay.read())
+                                    .map(|relay| relay.url().to_string())
+                                    .collect::<Vec<_>>(),
+                            );
+                        } else {
+                            return None;
+                        }
                     } else {
-                        return Some(Vec::new());
+                        return None;
                     }
                 } else {
-                    return Some(Vec::new());
+                    return None;
                 }
             }
-            None => None,
+            Err(_) => return None,
         }
     }
 
     pub fn get_write_relays(&self, pubkey: &str) -> Option<Vec<String>> {
-        let parsed_event = self
-            .indexes
-            .relays_by_pubkey
-            .borrow()
-            .get(pubkey)
-            .map(|e| e.to_parsed_event());
-
-        match parsed_event {
-            Some(parsed_event) => {
-                if let Some(parsed_data) = &parsed_event.parsed {
-                    if let crate::types::ParsedData::Kind10002(kind10002_parsed) = parsed_data {
-                        return Some(
-                            kind10002_parsed
-                                .iter()
-                                .filter(|relay| relay.write)
-                                .map(|relay| relay.url.clone())
-                                .collect::<Vec<_>>(),
-                        );
+        let mut filter = QueryFilter::new();
+        filter.kinds = Some(vec![nostr::Kind::RelayList]);
+        filter.authors = Some(vec![PublicKey::from_hex(pubkey).ok()?]);
+        filter.limit = Some(1);
+        let events = self.query_events_internal(filter);
+        match events {
+            Ok(result) => {
+                if !result.events.is_empty() {
+                    // Parse the flatbuffer event to get relay data
+                    if let Some(event) = Self::extract_parsed_event(&result.events[0]) {
+                        if let Some(kind10002) = event.parsed_as_kind_10002_parsed() {
+                            return Some(
+                                kind10002
+                                    .relays()
+                                    .iter()
+                                    .filter(|relay| relay.write())
+                                    .map(|relay| relay.url().to_string())
+                                    .collect::<Vec<_>>(),
+                            );
+                        } else {
+                            return None;
+                        }
                     } else {
-                        return Some(Vec::new());
+                        return None;
                     }
                 } else {
-                    return Some(Vec::new());
+                    return None;
                 }
             }
-            None => None,
+            Err(_) => return None,
         }
     }
 
@@ -681,178 +648,56 @@ impl<S: EventStorage> NostrDB<S> {
         relays_found
     }
 
-    /// Get database statistics
-    pub fn get_stats(&self) -> DatabaseStats {
-        self.indexes.get_stats()
-    }
-
-    /// Reset and refill persistent storage with recent events
-    pub async fn reset_and_refill_storage(&self) -> Result<(), DatabaseError> {
-        let events: Vec<ProcessedNostrEvent> = self
-            .indexes
-            .events_by_id
-            .borrow()
-            .values()
-            .cloned()
-            .collect();
-
-        // Clear and save events using the storage trait
-        self.storage.clear_storage().await?;
-        self.storage.save_events(events).await?;
-
-        Ok(())
-    }
-
-    /// Save events to persistent storage
-    pub async fn save_events_to_storage(
-        &self,
-        events: Vec<ParsedEvent>,
-    ) -> Result<(), DatabaseError> {
-        if events.is_empty() {
-            return Ok(());
-        }
-
-        info!("Saving {} events to persistent storage", events.len());
-
-        let processed_events: Vec<ProcessedNostrEvent> = events
-            .into_iter()
-            .map(ProcessedNostrEvent::from_parsed_event)
-            .collect();
-
-        self.storage.save_events(processed_events).await?;
-        Ok(())
-    }
-
-    fn should_cache_event(&self, event: &ParsedEvent) -> bool {
-        // Match Go implementation - only cache specific kinds
-        let kind = event.event.kind.as_u64() as i32;
-        match kind {
-            0 => true,     // Metadata events
-            3 => true,     // Contact lists
-            4 => true,     // Direct messages
-            10002 => true, // Relay list metadata
-            10019 => true, // nuts.cash user settings
-            17375 => true, // nuts.cash encrypted wallet event
-            _ => false,
-        }
-    }
-
-    /// Add an event to the to_save buffer
-    pub async fn add_event_to_save_buffer(&self, event: ParsedEvent) -> Result<(), DatabaseError> {
-        let mut buffer = self.to_save.write().map_err(|_| DatabaseError::LockError)?;
-        buffer.push(event);
-        if buffer.len() > 50 {
-            drop(buffer); // Release the lock before async call
-            tracing::info!("Processing flushing event to db");
-            let _ = self.flush_save_buffer().await;
-        }
-        Ok(())
-    }
-
-    /// Flush the to_save buffer immediately
-    pub async fn flush_save_buffer(&self) -> Result<(), DatabaseError> {
-        let events_to_save = {
-            let mut buffer = self.to_save.write().map_err(|_| DatabaseError::LockError)?;
-            if buffer.is_empty() {
-                return Ok(());
-            }
-            buffer.drain(..).collect::<Vec<_>>()
-        };
-        if !events_to_save.is_empty() {
-            info!(
-                "Flushing {} events from save buffer to storage",
-                events_to_save.len()
-            );
-        }
-        self.save_events_to_storage(events_to_save).await
-    }
-
-    /// Process a batch of pending events with throttling
-    async fn process_pending_events(&self) -> Result<()> {
-        debug!(
-            "Processing {} pending events",
-            self.pending_events.read().unwrap().len()
-        );
-        // Check if enough time has passed since last processing
-        let should_process = {
-            let last_time = self.last_process_time.read().unwrap();
-            let elapsed = last_time.elapsed();
-            elapsed.as_millis() >= MIN_PROCESS_INTERVAL_MS as u128
-        };
-
-        if !should_process {
-            return Ok(());
-        }
-
-        // Take a small batch of events to process
-        let events_to_process = {
-            let mut pending = self.pending_events.write().unwrap();
-            if pending.is_empty() {
-                return Ok(());
-            }
-
-            // Take up to MAX_EVENTS_PER_PROCESS events
-            let count = pending.len().min(MAX_EVENTS_PER_PROCESS);
-            pending.drain(0..count).collect::<Vec<_>>()
-        };
-
-        if events_to_process.is_empty() {
-            return Ok(());
-        }
-
-        // Update last process time
-        *self.last_process_time.write().unwrap() = Instant::now();
-
-        // Process the events
-        for event in events_to_process {
-            if let Err(e) = self.process_single_event(event).await {
-                warn!("Failed to process event: {:?}", e);
-            }
-        }
-
-        Ok(())
-    }
-
     /// Process a single event (the actual indexing logic)
     async fn process_single_event(&self, event: ParsedEvent) -> Result<()> {
-        if self.should_cache_event(&event) {
-            let _ = self
-                .add_event_to_save_buffer(event.clone())
-                .await
-                .map_err(|e| warn!("Failed to add event to save buffer: {:?}", e))
-                .ok();
-        }
-
         if event.event.id.to_hex().is_empty() {
             return Err(anyhow::anyhow!("Event ID cannot be empty"));
         }
+        let mut fbb = flatbuffers::FlatBufferBuilder::new();
+        let fb_parsed_event = match event.build_flatbuffer(&mut fbb) {
+            Ok(parsed_event) => parsed_event,
+            Err(e) => {
+                warn!("Failed to build flatbuffer for event: {:?}", e);
+                return Err(e);
+            }
+        };
 
-        let processed_event = ProcessedNostrEvent::from_parsed_event(event);
-        let event_id = processed_event.id();
+        let union_value = fb_parsed_event.as_union_value();
 
-        // Add to indexes
-        self.index_event(processed_event);
+        let message_args = fb::WorkerMessageArgs {
+            type_: fb::MessageType::ParsedNostrEvent,
+            content_type: fb::Message::ParsedEvent,
+            content: Some(union_value),
+        };
+
+        let root = fb::WorkerMessage::create(&mut fbb, &message_args);
+
+        // Finish the flatbuffer to get the bytes
+        fbb.finish(root, None);
+        let finished_data = fbb.finished_data();
+
+        // Parse the flatbuffer to get the event for indexing
+        if let Ok(worker_message) = flatbuffers::root::<fb::WorkerMessage>(&finished_data) {
+            // Add to indexes
+            if let Some(parsed_event) = worker_message.content_as_parsed_event() {
+                self.index_event(parsed_event, &finished_data);
+                self.storage.add_event_data(&finished_data).await?;
+            } else {
+                warn!("Failed to get parsed event from worker message");
+                return Err(anyhow::anyhow!(
+                    "Failed to get parsed event from worker message"
+                ));
+            }
+        } else {
+            warn!("Failed to parse flatbuffer data for indexing");
+            return Err(anyhow::anyhow!("Failed to parse flatbuffer data"));
+        }
 
         if self.config.debug_logging {
-            debug!("Processed event {} from queue", event_id);
+            debug!("Processed event {} from queue", event.event.id);
         }
 
         Ok(())
-    }
-}
-
-impl Default for NostrDB<IndexedDbStorage> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<S: EventStorage> std::fmt::Debug for NostrDB<S> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("NostrDB")
-            .field("config", &self.config)
-            .field("is_initialized", &"...")
-            .finish()
     }
 }
 
@@ -861,7 +706,7 @@ impl<S: EventStorage> EventDatabase for NostrDB<S> {
         &self,
         requests: Vec<Request>,
         cache_only: bool,
-    ) -> Result<(Vec<Request>, Vec<ParsedEvent>)> {
+    ) -> Result<(Vec<Request>, Vec<Vec<u8>>)> {
         if requests.is_empty() {
             return Ok((Vec::new(), Vec::new()));
         }
@@ -898,12 +743,16 @@ impl<S: EventStorage> EventDatabase for NostrDB<S> {
         }
 
         // Sort all events by creation time (newest first)
-        all_events.sort_by(|a, b| b.event.created_at.cmp(&a.event.created_at));
+        all_events.sort_by(|a, b| {
+            let a_event = Self::extract_parsed_event(a).unwrap();
+            let b_event = Self::extract_parsed_event(b).unwrap();
+            b_event.created_at().cmp(&a_event.created_at())
+        });
 
         Ok((remaining_requests, all_events))
     }
 
-    async fn query_events(&self, filter: Filter) -> Result<Vec<ParsedEvent>> {
+    async fn query_events(&self, filter: Filter) -> Result<Vec<Vec<u8>>> {
         let query_filter = QueryFilter::from_nostr_filter(&filter);
         debug!(
                 "Query filter: kinds={:?}, authors={:?}, ids={:?}, e_tags={:?}, p_tags={:?}, since={:?}, until={:?}, limit={:?}",
@@ -923,190 +772,14 @@ impl<S: EventStorage> EventDatabase for NostrDB<S> {
     }
 
     async fn add_event(&self, event: ParsedEvent) -> Result<()> {
-        debug!("Processing add event");
         // Validate event ID early
         if event.event.id.to_hex().is_empty() {
             return Err(anyhow::anyhow!("Event ID cannot be empty"));
         }
 
-        // Add event to pending queue
-        {
-            let mut pending = self.pending_events.write().unwrap();
-            pending.push(event);
-            let queue_size = pending.len();
-
-            if queue_size > 1000 {
-                warn!("Event queue size is large: {} events pending", queue_size);
-            }
-        }
         // Try to process some events immediately (with throttling)
-        self.process_pending_events().await.ok();
+        self.process_single_event(event).await.ok();
 
         Ok(())
-    }
-
-    async fn save_events_to_persistent_storage(&self, events: Vec<ParsedEvent>) -> Result<()> {
-        self.save_events_to_storage(events)
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to save events to storage: {}", e))
-    }
-}
-
-/// Global database instance
-static mut GLOBAL_DB: Option<Arc<NostrDB<IndexedDbStorage>>> = None;
-static INIT: std::sync::Once = std::sync::Once::new();
-
-/// Initialize the global database instance
-pub async fn init_nostr_db() -> Arc<NostrDB<IndexedDbStorage>> {
-    unsafe {
-        INIT.call_once(|| {
-            GLOBAL_DB = Some(Arc::new(NostrDB::<IndexedDbStorage>::new()));
-        });
-
-        let db = GLOBAL_DB.as_ref().unwrap().clone();
-
-        // Initialize the database if not already done
-        if !db.is_initialized() {
-            if let Err(e) = db.initialize().await {
-                error!("Failed to initialize NostrDB: {}", e);
-            }
-        }
-
-        db
-    }
-}
-
-/// Get the global database instance
-pub fn get_global_db() -> Option<Arc<NostrDB<IndexedDbStorage>>> {
-    unsafe { GLOBAL_DB.clone() }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    use nostr::{Event, EventBuilder, Keys, Kind, Tag};
-
-    // Import MockStorage for tests
-    use crate::db::tests::MockStorage;
-
-    async fn create_test_db() -> NostrDB<MockStorage> {
-        let mock_storage = MockStorage::new();
-        NostrDB::with_storage(mock_storage)
-    }
-
-    fn create_test_event(keys: &Keys, kind: Kind, content: &str, tags: Vec<Tag>) -> Event {
-        EventBuilder::new(kind, content, tags)
-            .to_event(keys)
-            .unwrap()
-    }
-
-    #[wasm_bindgen_test::wasm_bindgen_test]
-    async fn test_add_and_get_event() {
-        let db = create_test_db().await;
-        let keys = Keys::generate();
-
-        let event = create_test_event(&keys, Kind::TextNote, "Hello world", vec![]);
-        let parsed_event = ParsedEvent::new(event.clone());
-
-        db.add_event(parsed_event.clone()).await.unwrap();
-
-        let retrieved = db.get_event(&event.id);
-        assert!(retrieved.is_some());
-        assert_eq!(retrieved.unwrap().event.id, event.id);
-    }
-
-    #[wasm_bindgen_test::wasm_bindgen_test]
-    async fn test_has_event() {
-        let db = create_test_db().await;
-        let keys = Keys::generate();
-
-        let event = create_test_event(&keys, Kind::TextNote, "Hello world", vec![]);
-        let parsed_event = ParsedEvent::new(event.clone());
-
-        assert!(!db.has_event(&event.id));
-
-        db.add_event(parsed_event).await.unwrap();
-
-        assert!(db.has_event(&event.id));
-    }
-
-    #[wasm_bindgen_test::wasm_bindgen_test]
-    async fn test_query_by_kind() {
-        let db = create_test_db().await;
-        let keys = Keys::generate();
-
-        // Add different kinds of events
-        let note = create_test_event(&keys, Kind::TextNote, "Note", vec![]);
-        let reaction = create_test_event(&keys, Kind::Reaction, "+", vec![]);
-
-        db.add_event(ParsedEvent::new(note.clone())).await.unwrap();
-        db.add_event(ParsedEvent::new(reaction.clone()))
-            .await
-            .unwrap();
-
-        // Query for text notes only
-        let filter = Filter::new().kind(Kind::TextNote);
-        let results = db.query_events(filter).await.unwrap();
-
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0].event.kind, Kind::TextNote);
-    }
-
-    #[wasm_bindgen_test::wasm_bindgen_test]
-    async fn test_query_by_author() {
-        let db = create_test_db().await;
-        let keys1 = Keys::generate();
-        let keys2 = Keys::generate();
-
-        let event1 = create_test_event(&keys1, Kind::TextNote, "From user 1", vec![]);
-        let event2 = create_test_event(&keys2, Kind::TextNote, "From user 2", vec![]);
-
-        db.add_event(ParsedEvent::new(event1.clone()))
-            .await
-            .unwrap();
-        db.add_event(ParsedEvent::new(event2.clone()))
-            .await
-            .unwrap();
-
-        // Query for events from keys1 only
-        let filter = Filter::new().author(keys1.public_key());
-        let results = db.query_events(filter).await.unwrap();
-
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0].event.pubkey, keys1.public_key());
-    }
-
-    #[wasm_bindgen_test::wasm_bindgen_test]
-    async fn test_profile_handling() {
-        let db = create_test_db().await;
-        let keys = Keys::generate();
-
-        let profile_content = r#"{"name":"Test User","about":"A test user"}"#;
-        let profile = create_test_event(&keys, Kind::Metadata, profile_content, vec![]);
-
-        db.add_event(ParsedEvent::new(profile.clone()))
-            .await
-            .unwrap();
-
-        let retrieved_profile = db.get_profile(&keys.public_key());
-        assert!(retrieved_profile.is_some());
-        assert_eq!(retrieved_profile.unwrap().event.content, profile_content);
-    }
-
-    #[wasm_bindgen_test::wasm_bindgen_test]
-    async fn test_stats() {
-        let db = create_test_db().await;
-        let keys = Keys::generate();
-
-        // Add multiple events
-        for i in 0..5 {
-            let event = create_test_event(&keys, Kind::TextNote, &format!("Note {}", i), vec![]);
-            db.add_event(ParsedEvent::new(event)).await.unwrap();
-        }
-
-        let stats = db.get_stats();
-        assert_eq!(stats.total_events, 5);
-        assert_eq!(stats.events_by_kind.get(&Kind::TextNote.as_u64()), Some(&5));
     }
 }

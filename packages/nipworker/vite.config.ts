@@ -35,7 +35,6 @@ export default defineConfig({
     external: (id) => {
         // Handle worker imports specifically
         if (id.includes('@candypoets/rust-worker')) {
-          console.log('Marking as external:', id);
           return true;
         }
         return [

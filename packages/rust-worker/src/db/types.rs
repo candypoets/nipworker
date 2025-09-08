@@ -1,98 +1,10 @@
-use crate::types::{network::Request, ParsedEvent};
-use nostr::{Event, EventId, Kind, PublicKey, SingleLetterTag, Timestamp};
+use crate::generated::nostr::fb;
+use crate::parsed_event::ParsedEvent;
+use nostr::{EventId, Kind, PublicKey, SingleLetterTag, Timestamp};
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::rc::Rc;
-
-/// Represents a Nostr event with extracted tags for easier filtering
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProcessedNostrEvent {
-    /// The original Nostr event
-    #[serde(flatten)]
-    pub event: Event,
-    /// Extracted 'e' tags (event references)
-    pub e_tags: Vec<String>,
-    /// Extracted 'a' tags (replaceable event references)
-    pub a_tags: Vec<String>,
-    /// Extracted 'p' tags (pubkey references)
-    pub p_tags: Vec<String>,
-    /// Extracted 'd' tags (identifier tags)
-    pub d_tags: Vec<String>,
-    /// Parsed content (if any)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub parsed: Option<crate::types::ParsedData>,
-    /// Associated requests
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub requests: Option<Vec<Request>>,
-    /// Relay sources
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub relays: Option<Vec<String>>,
-}
-
-impl ProcessedNostrEvent {
-    /// Create a ProcessedNostrEvent from a ParsedEvent
-    pub fn from_parsed_event(event: ParsedEvent) -> Self {
-        let mut e_tags = Vec::new();
-        let mut p_tags = Vec::new();
-        let mut a_tags = Vec::new();
-        let mut d_tags = Vec::new();
-
-        // Extract tags by type
-        for tag in &event.event.tags {
-            if tag.as_vec().len() >= 2 {
-                match tag.as_vec()[0].as_str() {
-                    "e" => e_tags.push(tag.as_vec()[1].clone()),
-                    "p" => p_tags.push(tag.as_vec()[1].clone()),
-                    "a" => a_tags.push(tag.as_vec()[1].clone()),
-                    "d" => d_tags.push(tag.as_vec()[1].clone()),
-                    _ => {}
-                }
-            }
-        }
-
-        Self {
-            event: event.event,
-            e_tags,
-            p_tags,
-            a_tags,
-            d_tags,
-            parsed: event.parsed,
-            requests: event.requests,
-            relays: Some(event.relays),
-        }
-    }
-
-    /// Convert back to ParsedEvent
-    pub fn to_parsed_event(&self) -> ParsedEvent {
-        ParsedEvent {
-            event: self.event.clone(),
-            parsed: self.parsed.clone(),
-            requests: self.requests.clone(),
-            relays: self.relays.clone().unwrap_or_default(),
-        }
-    }
-
-    /// Get the event ID as hex string
-    pub fn id(&self) -> String {
-        self.event.id.to_hex()
-    }
-
-    /// Get the pubkey as hex string
-    pub fn pubkey(&self) -> String {
-        self.event.pubkey.to_hex()
-    }
-
-    /// Get the kind as u64
-    pub fn kind(&self) -> u64 {
-        self.event.kind.as_u64()
-    }
-
-    /// Get the created_at timestamp
-    pub fn created_at(&self) -> Timestamp {
-        self.event.created_at
-    }
-}
 
 /// Database configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -124,10 +36,6 @@ pub struct DatabaseStats {
     pub events_by_kind: FxHashMap<u64, usize>,
     /// Number of events by author
     pub events_by_author: FxHashMap<String, usize>,
-    /// Number of profiles
-    pub profile_count: usize,
-    /// Memory usage estimate in bytes
-    pub estimated_memory_usage: usize,
     /// Whether the database is initialized
     pub is_initialized: bool,
 }
@@ -222,7 +130,7 @@ impl QueryFilter {
 #[derive(Debug, Clone)]
 pub struct QueryResult {
     /// Events that matched the query
-    pub events: Vec<ParsedEvent>,
+    pub events: Vec<Vec<u8>>,
     /// Total number of events found (before limit)
     pub total_found: usize,
     /// Whether more events are available
@@ -254,29 +162,25 @@ pub enum DatabaseError {
 
 /// Event storage backend trait
 pub trait EventStorage {
-    /// Save events to persistent storage
-    async fn save_events(&self, events: Vec<ProcessedNostrEvent>) -> Result<(), DatabaseError>;
+    async fn add_event_data(&self, event_data: &[u8]) -> Result<(), DatabaseError>;
 
     /// Load all events from persistent storage
-    async fn load_events(&self) -> Result<Vec<ProcessedNostrEvent>, DatabaseError>;
+    async fn load_events(&self) -> Result<Vec<Vec<u8>>, DatabaseError>;
 
     /// Clear all events from persistent storage
     async fn clear_storage(&self) -> Result<(), DatabaseError>;
-
-    /// Get storage statistics
-    async fn get_stats(&self) -> Result<FxHashMap<String, serde_json::Value>, DatabaseError>;
 
     /// Downcast to Any for testing purposes
     fn as_any(&self) -> &dyn std::any::Any;
 }
 
 /// Index types for efficient querying (concurrent)
-pub type EventIdIndex = Rc<RefCell<FxHashMap<String, ProcessedNostrEvent>>>;
-pub type KindIndex = Rc<RefCell<FxHashMap<u64, FxHashSet<String>>>>;
+pub type EventIdIndex = Rc<RefCell<FxHashMap<String, Vec<u8>>>>;
+pub type KindIndex = Rc<RefCell<FxHashMap<u16, FxHashSet<String>>>>;
 pub type PubkeyIndex = Rc<RefCell<FxHashMap<String, FxHashSet<String>>>>;
 pub type TagIndex = Rc<RefCell<FxHashMap<String, FxHashSet<String>>>>;
-pub type ProfileIndex = Rc<RefCell<FxHashMap<String, ProcessedNostrEvent>>>;
-pub type RelayIndex = Rc<RefCell<FxHashMap<String, ProcessedNostrEvent>>>;
+// pub type ProfileIndex = Rc<RefCell<FxHashMap<String, ProcessedNostrEvent>>>;
+// pub type RelayIndex = Rc<RefCell<FxHashMap<String, ProcessedNostrEvent>>>;
 
 /// Database indexes for fast querying (concurrent)
 pub struct DatabaseIndexes {
@@ -289,10 +193,8 @@ pub struct DatabaseIndexes {
     pub events_by_p_tag: TagIndex,
     pub events_by_a_tag: TagIndex,
     pub events_by_d_tag: TagIndex,
-    /// Special index for profiles (kind 0 events)
-    pub profiles_by_pubkey: ProfileIndex,
-    /// Special index for relay lists (kind 10002 events)
-    pub relays_by_pubkey: RelayIndex,
+    // pub profiles_by_pubkey: ProfileIndex,
+    // pub relays_by_pubkey: RelayIndex,
 }
 
 impl DatabaseIndexes {
@@ -306,8 +208,8 @@ impl DatabaseIndexes {
             events_by_p_tag: Rc::new(RefCell::new(FxHashMap::default())),
             events_by_a_tag: Rc::new(RefCell::new(FxHashMap::default())),
             events_by_d_tag: Rc::new(RefCell::new(FxHashMap::default())),
-            profiles_by_pubkey: Rc::new(RefCell::new(FxHashMap::default())),
-            relays_by_pubkey: Rc::new(RefCell::new(FxHashMap::default())),
+            // profiles_by_pubkey: Rc::new(RefCell::new(FxHashMap::default())),
+            // relays_by_pubkey: Rc::new(RefCell::new(FxHashMap::default())),
         }
     }
 
@@ -320,80 +222,13 @@ impl DatabaseIndexes {
         self.events_by_p_tag.borrow_mut().clear();
         self.events_by_a_tag.borrow_mut().clear();
         self.events_by_d_tag.borrow_mut().clear();
-        self.profiles_by_pubkey.borrow_mut().clear();
-        self.relays_by_pubkey.borrow_mut().clear();
+        // self.profiles_by_pubkey.borrow_mut().clear();
+        // self.relays_by_pubkey.borrow_mut().clear();
     }
 
     /// Get total number of events
     pub fn event_count(&self) -> usize {
         self.events_by_id.borrow().len()
-    }
-
-    /// Get number of profiles
-    pub fn profile_count(&self) -> usize {
-        self.profiles_by_pubkey.borrow().len()
-    }
-
-    /// Get statistics about the indexes
-    pub fn get_stats(&self) -> DatabaseStats {
-        let mut stats = DatabaseStats {
-            total_events: self.event_count(),
-            profile_count: self.profile_count(),
-            is_initialized: true,
-            ..Default::default()
-        };
-
-        // Count events by kind
-        for (kind, event_ids) in self.events_by_kind.borrow().iter() {
-            stats.events_by_kind.insert(*kind, event_ids.len());
-        }
-
-        // Count events by author
-        for (pubkey, event_ids) in self.events_by_pubkey.borrow().iter() {
-            stats
-                .events_by_author
-                .insert(pubkey.clone(), event_ids.len());
-        }
-
-        // Estimate memory usage (rough approximation)
-        stats.estimated_memory_usage = self.estimate_memory_usage();
-
-        stats
-    }
-
-    /// Estimate memory usage in bytes (rough approximation)
-    pub fn estimate_memory_usage(&self) -> usize {
-        let mut total = 0;
-
-        // Events by ID (main storage)
-        for (id, event) in self.events_by_id.borrow().iter() {
-            total += id.len() * 2; // String storage
-            total += std::mem::size_of::<ProcessedNostrEvent>();
-            total += event.event.content.len() * 2; // Content storage
-            total += event.e_tags.len() * 64; // Tag storage estimate
-            total += event.p_tags.len() * 64;
-            total += event.a_tags.len() * 64;
-            total += event.d_tags.len() * 64;
-        }
-
-        // Index overhead
-        let events_by_kind = self.events_by_kind.borrow();
-        let events_by_pubkey = self.events_by_pubkey.borrow();
-        let events_by_e_tag = self.events_by_e_tag.borrow();
-        let events_by_p_tag = self.events_by_p_tag.borrow();
-        let events_by_a_tag = self.events_by_a_tag.borrow();
-        let events_by_d_tag = self.events_by_d_tag.borrow();
-        let profiles_by_pubkey = self.profiles_by_pubkey.borrow();
-
-        total += events_by_kind.len() * 64;
-        total += events_by_pubkey.len() * 64;
-        total += events_by_e_tag.len() * 64;
-        total += events_by_p_tag.len() * 64;
-        total += events_by_a_tag.len() * 64;
-        total += events_by_d_tag.len() * 64;
-        total += profiles_by_pubkey.len() * 64;
-
-        total
     }
 }
 

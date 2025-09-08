@@ -12,7 +12,6 @@ use crate::{
         utils::{normalize_relay_url, validate_relay_url},
     },
     utils::buffer::SharedBufferManager,
-    WorkerToMainMessage,
 };
 use futures::future::LocalBoxFuture;
 use futures::lock::Mutex;
@@ -90,24 +89,16 @@ impl ConnectionRegistry {
             }
             "EOSE" => {
                 tracing::debug!(subscription_id = %id, relay_url = %relay_url, "Received EOSE");
-                let eose = WorkerToMainMessage::ConnectionStatus {
-                    status: kind.to_string(),
-                    message: message.to_string(),
-                    relay_url: relay_url.to_string(),
-                };
-                SharedBufferManager::send_connection_status(&buffer, eose).await;
+                SharedBufferManager::send_connection_status(&buffer, relay_url, kind, message)
+                    .await;
                 if close_on_eose {
                     let _ = self.close_subscription(&id).await;
                 }
             }
             _ => {
                 tracing::info!(kind = %kind, relay_url = %relay_url, "Received relay message");
-                let connection_status = WorkerToMainMessage::ConnectionStatus {
-                    status: kind.to_string(),
-                    message: message.to_string(),
-                    relay_url: relay_url.to_string(),
-                };
-                SharedBufferManager::send_connection_status(&buffer, connection_status).await;
+                SharedBufferManager::send_connection_status(&buffer, relay_url, kind, message)
+                    .await;
             }
         }
     }
@@ -140,14 +131,11 @@ impl ConnectionRegistry {
                     Ok(conn) => conn,
                     Err(e) => {
                         tracing::warn!(relay = %url, error = %e, "Failed to ensure connection, skipping");
-                        let connection_status = WorkerToMainMessage::ConnectionStatus {
-                            status: "FAILED".to_string(),
-                            message: e.to_string(),
-                            relay_url: url,
-                        };
                         SharedBufferManager::send_connection_status(
                             &buffer_clone,
-                            connection_status,
+                            &url,
+                            "FAILED",
+                            &e.to_string(),
                         )
                         .await;
                         return;
@@ -162,21 +150,21 @@ impl ConnectionRegistry {
                 let req_message = ClientMessage::req(subscription_id.clone(), filters);
                 if let Err(e) = conn.send_message(req_message).await {
                     tracing::error!(relay = %url, error = %e, "Failed to send REQ message");
-                    let connection_status = WorkerToMainMessage::ConnectionStatus {
-                        status: "FAILED".to_string(),
-                        message: e.to_string(),
-                        relay_url: url,
-                    };
-                    SharedBufferManager::send_connection_status(&buffer_clone, connection_status)
-                        .await;
+                    SharedBufferManager::send_connection_status(
+                        &buffer_clone,
+                        &url,
+                        "FAILED",
+                        &e.to_string(),
+                    )
+                    .await;
                 } else {
-                    let connection_status = WorkerToMainMessage::ConnectionStatus {
-                        status: "SUBSCRIBED".to_string(),
-                        message: "".to_string(),
-                        relay_url: url,
-                    };
-                    SharedBufferManager::send_connection_status(&buffer_clone, connection_status)
-                        .await;
+                    SharedBufferManager::send_connection_status(
+                        &buffer_clone,
+                        &url,
+                        "SUBSCRIBED",
+                        "",
+                    )
+                    .await;
                 }
             });
         }
@@ -235,22 +223,16 @@ impl ConnectionRegistry {
                 tracing::error!(relay=%url, error=%e, "Failed to send EVENT message");
                 // Optionally remove from publish tracking if failed
                 conn.remove_publish(&event_id.to_hex()).await;
-                let connection_status = WorkerToMainMessage::ConnectionStatus {
-                    status: "FAILED".to_string(),
-                    message: e.to_string(),
-                    relay_url: url,
-                };
-                SharedBufferManager::send_connection_status(&buffer.clone(), connection_status)
-                    .await;
+                SharedBufferManager::send_connection_status(
+                    &buffer,
+                    &url,
+                    "FAILED",
+                    &e.to_string(),
+                )
+                .await;
                 continue;
             } else {
-                let connection_status = WorkerToMainMessage::ConnectionStatus {
-                    status: "SENT".to_string(),
-                    message: "".to_string(),
-                    relay_url: url,
-                };
-                SharedBufferManager::send_connection_status(&buffer.clone(), connection_status)
-                    .await;
+                SharedBufferManager::send_connection_status(&buffer, &url, "SENT", "").await;
             }
         }
 
