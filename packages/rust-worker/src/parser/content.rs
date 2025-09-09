@@ -47,8 +47,7 @@ pub enum ContentData {
         items: Vec<MediaItem>, // only Image/Video variants
     },
     Nostr {
-        id: String,     // e.g. note id or pubkey
-        entity: String, // nevent, nprofile etc
+        id: String, // e.g. note id or npub or nprofile
         relays: Vec<String>,
         author: Option<String>,
         kind: Option<u64>,
@@ -368,143 +367,165 @@ impl ContentParser {
         max_images: usize,
         max_lines: usize,
     ) -> Vec<ContentBlock> {
-        // Be more aggressive with limits based on content size
-        let adjusted_max_length = if max_length > 2000 {
-            max_length / 3 // Very long content gets cut to 1/3
-        } else if max_length > 1000 {
-            (max_length * 2) / 3 // Medium content gets cut to 2/3
-        } else {
-            max_length // Short content keeps original limit
-        };
-
-        let adjusted_max_lines = if max_lines > 50 {
-            max_lines / 3 // Very long gets cut to 1/3
-        } else if max_lines > 20 {
-            (max_lines * 2) / 3 // Medium gets cut to 2/3
-        } else {
-            max_lines // Short keeps original
-        };
-
-        // Check if original content has images
-        let original_has_images = blocks.iter().any(|b| b.block_type == "image");
-
-        let mut shortened_blocks = Vec::new();
-        let mut current_length = 0;
-        let mut current_lines = 0;
-        let mut current_images = 0;
-        let mut text_blocks_processed = 0;
-        let mut first_image_added = false;
-
-        // Stop processing once we hit our limits
-        for block in blocks {
-            if current_length >= adjusted_max_length || current_lines >= adjusted_max_lines {
-                break;
+        // 1) Classify helpers
+        let is_textish = |b: &ContentBlock| -> bool {
+            if b.block_type == "text" || b.block_type == "hashtag" || b.block_type == "link" {
+                return true;
             }
+            // Consider Nostr mentions as textish
+            matches!(b.data, Some(ContentData::Nostr { .. }))
+        };
 
-            match block.block_type.as_str() {
-                "text" => {
-                    // Limit text blocks based on content length
-                    let max_text_blocks = if adjusted_max_length > 1000 { 2 } else { 4 };
-                    if text_blocks_processed >= max_text_blocks {
-                        break;
-                    }
+        // 2) Collect images everywhere (including from mediaGrid) and collect textish in original order
+        let mut collected_images: Vec<Image> = Vec::new();
+        let mut textish_blocks: Vec<ContentBlock> = Vec::new();
 
-                    let remaining_length = adjusted_max_length.saturating_sub(current_length);
-                    let remaining_lines = adjusted_max_lines.saturating_sub(current_lines);
-
-                    // Skip if we have no meaningful remaining capacity
-                    let min_remaining_length = if adjusted_max_length > 500 { 100 } else { 50 };
-                    if remaining_length < min_remaining_length || remaining_lines < 1 {
-                        break;
-                    }
-
-                    let mut text = block.text.clone();
-                    let mut needs_truncation = false;
-
-                    // First, aggressively truncate by lines
-                    let lines: Vec<&str> = text.lines().collect();
-                    if lines.len() > remaining_lines {
-                        text = lines
-                            .into_iter()
-                            .take(remaining_lines)
-                            .collect::<Vec<_>>()
-                            .join("\n");
-                        needs_truncation = true;
-                    }
-
-                    // Then truncate by character length if still too long
-                    if text.len() > remaining_length {
-                        // Reserve space for "..." suffix
-                        let target_length = remaining_length.saturating_sub(3);
-                        text = safe_truncate(&text, target_length).to_string();
-                        needs_truncation = true;
-                    }
-
-                    // Truncate individual lines that are too long
-                    let max_line_length = if adjusted_max_length > 1000 { 150 } else { 200 };
-                    let truncated_lines: Vec<String> = text
-                        .lines()
-                        .take(remaining_lines) // Ensure we don't exceed line limit
-                        .map(|line| {
-                            if line.len() > max_line_length {
-                                format!(
-                                    "{}...",
-                                    safe_truncate(line, max_line_length.saturating_sub(3))
-                                )
-                            } else {
-                                line.to_string()
-                            }
-                        })
-                        .collect();
-
-                    if truncated_lines.len() < text.lines().count()
-                        || truncated_lines.iter().any(|line| line.ends_with("..."))
-                    {
-                        needs_truncation = true;
-                    }
-
-                    text = truncated_lines.join("\n");
-
-                    // Add ellipsis if we truncated anything
-                    if needs_truncation && !text.ends_with("...") {
-                        text = format!("{}...", text);
-                    }
-
-                    let text_len = text.len();
-                    let text_lines = text.lines().count();
-
-                    shortened_blocks.push(ContentBlock {
-                        block_type: block.block_type,
-                        text,
-                        data: block.data,
+        for b in &blocks {
+            match (&b.block_type[..], &b.data) {
+                ("image", Some(ContentData::Image { url, alt })) => {
+                    collected_images.push(Image {
+                        url: url.clone(),
+                        alt: alt.clone(),
                     });
-
-                    current_length += text_len;
-                    current_lines += text_lines;
-                    text_blocks_processed += 1;
                 }
-                "image" => {
-                    // Always include the first image if original content has images
-                    if !first_image_added && original_has_images {
-                        shortened_blocks.push(block);
-                        current_images += 1;
-                        first_image_added = true;
-                    } else if current_images < max_images {
-                        shortened_blocks.push(block);
-                        current_images += 1;
+                ("mediaGrid", Some(ContentData::MediaGroup { items })) => {
+                    for it in items {
+                        if let Some(img) = &it.image {
+                            collected_images.push(Image {
+                                url: img.url.clone(),
+                                alt: img.alt.clone(),
+                            });
+                        }
                     }
                 }
                 _ => {
-                    // For other block types (links, hashtags, etc.), add them but count their length
-                    if current_length + block.text.len() <= adjusted_max_length {
-                        current_length += block.text.len();
-                        shortened_blocks.push(block);
+                    if is_textish(b) {
+                        textish_blocks.push(b.clone());
                     }
                 }
             }
         }
 
-        shortened_blocks
+        // 3) Aggregated textish size; if it fits, no shortening needed → return empty vec
+        let mut total_chars = 0usize;
+        let mut total_lines = 0usize;
+        for b in &textish_blocks {
+            total_chars += b.text.len();
+            total_lines += b.text.lines().count();
+        }
+        if total_chars <= max_length && total_lines <= max_lines {
+            return Vec::new();
+        }
+
+        // 4) Decide which block is the "last text" block; if none, fallback to last textish
+        let last_text_idx = textish_blocks
+            .iter()
+            .rposition(|b| b.block_type == "text")
+            .unwrap_or_else(|| textish_blocks.len() - 1);
+
+        // 5) Compute pre-last sums
+        let mut pre_last_chars = 0usize;
+        let mut pre_last_lines = 0usize;
+        for (i, b) in textish_blocks.iter().enumerate() {
+            if i == last_text_idx {
+                break;
+            }
+            pre_last_chars += b.text.len();
+            pre_last_lines += b.text.lines().count();
+        }
+
+        // 6) Build preview: everything up to last text block intact; truncate only last text block
+        let mut out: Vec<ContentBlock> = Vec::new();
+
+        for (i, b) in textish_blocks.iter().enumerate() {
+            if i < last_text_idx {
+                out.push(b.clone());
+            } else if i == last_text_idx {
+                // Budget for last text block
+                let mut rem_chars = max_length.saturating_sub(pre_last_chars);
+                let mut rem_lines = max_lines.saturating_sub(pre_last_lines);
+
+                // If this isn't a "text" block but some other textish (hashtag/link), we still ensure we don't overflow.
+                let mut text = b.text.clone();
+                let orig_len = text.len();
+                let orig_lines = text.lines().count();
+                let mut truncated = false;
+
+                if rem_chars == 0 || rem_lines == 0 {
+                    text = "...".to_string();
+                    truncated = true;
+                } else {
+                    // First trim by lines
+                    if orig_lines > rem_lines {
+                        text = text.lines().take(rem_lines).collect::<Vec<_>>().join("\n");
+                        truncated = true;
+                    }
+                    // Then trim by chars (reserve 3 for "...")
+                    if text.len() > rem_chars {
+                        let budget = rem_chars.saturating_sub(3);
+                        let t = safe_truncate(&text, budget).to_string();
+                        text = if t.is_empty() {
+                            "...".to_string()
+                        } else {
+                            format!("{}...", t)
+                        };
+                        truncated = true;
+                    } else if truncated {
+                        // If only lines triggered truncation, ensure ellipsis
+                        if !text.ends_with("...") {
+                            text.push_str("...");
+                        }
+                    }
+                }
+
+                out.push(ContentBlock {
+                    block_type: b.block_type.clone(),
+                    text,
+                    data: b.data.clone(),
+                });
+
+                // We cut the preview here: do not include any further textish blocks
+                break;
+            }
+        }
+
+        // 7) Append exactly one image or one mediaGrid at the end (images do not count toward budget)
+        if !collected_images.is_empty() && max_images > 0 {
+            if collected_images.len() == 1 || max_images == 1 {
+                // Single image
+                let img = &collected_images[0];
+                out.push(
+                    ContentBlock::new("image".to_string(), img.url.clone()).with_data(
+                        ContentData::Image {
+                            url: img.url.clone(),
+                            alt: img.alt.clone(),
+                        },
+                    ),
+                );
+            } else {
+                // Aggregate into mediaGrid (cap by max_images)
+                let items: Vec<MediaItem> = collected_images
+                    .into_iter()
+                    .take(max_images)
+                    .map(|img| MediaItem {
+                        image: Some(img),
+                        video: None,
+                    })
+                    .collect();
+                let grid_text = items
+                    .iter()
+                    .filter_map(|it| it.image.as_ref().map(|img| img.url.clone()))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+
+                out.push(
+                    ContentBlock::new("mediaGrid".to_string(), grid_text)
+                        .with_data(ContentData::MediaGroup { items }),
+                );
+            }
+        }
+
+        out
     }
 }
 
@@ -582,58 +603,40 @@ fn process_nostr(text: &str, _caps: &regex::Captures) -> Result<ContentBlock> {
     // Try to decode the identifier
     match nip19::FromBech32::from_bech32(entity) {
         Ok(decoded) => {
-            let (prefix, relays, author, kind, id) = match decoded {
-                Nip19::Pubkey(pk) => (
-                    "npub",
-                    Vec::<String>::new(),
-                    Some(pk.to_string()),
-                    None,
-                    pk.to_string(),
-                ),
-                Nip19::Secret(sk) => (
-                    "nsec",
-                    Vec::<String>::new(),
-                    Some(sk.to_string()),
-                    None,
-                    sk.to_string(),
-                ),
+            let (prefix, relays, author, kind) = match decoded {
+                Nip19::Pubkey(pk) => ("npub", Vec::<String>::new(), Some(pk.to_string()), None),
+                Nip19::Secret(sk) => ("nsec", Vec::<String>::new(), Some(sk.to_string()), None),
                 // Nip19::EncryptedSecret(enc_sk) => (
                 //     "ncryptsec",
                 //     Vec::new(),
                 //     None,
                 //     None,
                 // ),
-                Nip19::EventId(note) => {
-                    ("note", Vec::<String>::new(), None, None, note.to_string())
-                }
+                Nip19::EventId(note) => ("note", Vec::<String>::new(), None, None),
                 Nip19::Profile(profile) => (
                     "nprofile",
                     profile.relays.into_iter().map(|r| r.to_string()).collect(),
                     Some(profile.public_key.to_string()),
                     None,
-                    profile.public_key.to_string(),
                 ),
                 Nip19::Event(event) => (
                     "nevent",
                     event.relays.into_iter().map(|r| r.to_string()).collect(),
                     event.author.map(|pk| pk.to_string()),
                     None,
-                    event.event_id.to_string(),
                 ),
                 Nip19::Coordinate(coord) => (
                     "naddr",
                     coord.relays.into_iter().map(|r| r.to_string()).collect(),
                     Some(coord.public_key.to_string()),
                     Some(coord.kind.as_u64()),
-                    coord.identifier,
                 ),
             };
 
             Ok(
                 ContentBlock::new(prefix.to_string(), text.to_string()).with_data(
                     ContentData::Nostr {
-                        entity: entity.to_string(),
-                        id: id,
+                        id: entity.to_string(),
                         relays,
                         author,
                         kind,
@@ -812,14 +815,12 @@ pub fn serialize_content_data<'a, A: flatbuffers::Allocator + 'a>(
             )
         }
         ContentData::Nostr {
-            entity,
             id,
             relays,
             author,
             kind,
         } => {
             let id_off = builder.create_string(id);
-            let entity_off = builder.create_string(entity);
             let relays_strs: Vec<_> = relays.iter().map(|r| builder.create_string(r)).collect();
             let relays_off = Some(builder.create_vector(&relays_strs));
             let author_off = author.as_ref().map(|a| builder.create_string(a));
@@ -827,7 +828,6 @@ pub fn serialize_content_data<'a, A: flatbuffers::Allocator + 'a>(
                 builder,
                 &fb::NostrDataArgs {
                     id: Some(id_off),
-                    entity: Some(entity_off),
                     relays: relays_off,
                     author: author_off,
                     kind: kind.unwrap_or(0),

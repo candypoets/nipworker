@@ -34,7 +34,6 @@ table MediaGroupData {
 
 table NostrData {
   id: string (required);
-  entity: string (required);
   relays: [string];
   author: string;
   kind: ulong;

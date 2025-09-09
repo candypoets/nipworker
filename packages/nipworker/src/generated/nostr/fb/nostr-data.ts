@@ -32,51 +32,40 @@ id(optionalEncoding?:any): ByteString|Uint8Array|null {
   return offset ? this.bb!.__stringByteString(this.bb_pos + offset, optionalEncoding) : null;
 }
 
-entity(): ByteString|null
-entity(optionalEncoding:flatbuffers.Encoding): ByteString|Uint8Array|null
-entity(optionalEncoding?:any): ByteString|Uint8Array|null {
-  const offset = this.bb!.__offset(this.bb_pos, 6);
-  return offset ? this.bb!.__stringByteString(this.bb_pos + offset, optionalEncoding) : null;
-}
-
 relays(index: number): ByteString
 relays(index: number,optionalEncoding:flatbuffers.Encoding): ByteString|Uint8Array
 relays(index: number,optionalEncoding?:any): ByteString|Uint8Array|null {
-  const offset = this.bb!.__offset(this.bb_pos, 8);
+  const offset = this.bb!.__offset(this.bb_pos, 6);
   return offset ? this.bb!.__stringByteString(this.bb!.__vector(this.bb_pos + offset) + index * 4, optionalEncoding) : null;
 }
 
 relaysLength():number {
-  const offset = this.bb!.__offset(this.bb_pos, 8);
+  const offset = this.bb!.__offset(this.bb_pos, 6);
   return offset ? this.bb!.__vector_len(this.bb_pos + offset) : 0;
 }
 
 author(): ByteString|null
 author(optionalEncoding:flatbuffers.Encoding): ByteString|Uint8Array|null
 author(optionalEncoding?:any): ByteString|Uint8Array|null {
-  const offset = this.bb!.__offset(this.bb_pos, 10);
+  const offset = this.bb!.__offset(this.bb_pos, 8);
   return offset ? this.bb!.__stringByteString(this.bb_pos + offset, optionalEncoding) : null;
 }
 
 kind():bigint {
-  const offset = this.bb!.__offset(this.bb_pos, 12);
+  const offset = this.bb!.__offset(this.bb_pos, 10);
   return offset ? this.bb!.readUint64(this.bb_pos + offset) : BigInt('0');
 }
 
 static startNostrData(builder:flatbuffers.Builder) {
-  builder.startObject(5);
+  builder.startObject(4);
 }
 
 static addId(builder:flatbuffers.Builder, idOffset:flatbuffers.Offset) {
   builder.addFieldOffset(0, idOffset, 0);
 }
 
-static addEntity(builder:flatbuffers.Builder, entityOffset:flatbuffers.Offset) {
-  builder.addFieldOffset(1, entityOffset, 0);
-}
-
 static addRelays(builder:flatbuffers.Builder, relaysOffset:flatbuffers.Offset) {
-  builder.addFieldOffset(2, relaysOffset, 0);
+  builder.addFieldOffset(1, relaysOffset, 0);
 }
 
 static createRelaysVector(builder:flatbuffers.Builder, data:flatbuffers.Offset[]):flatbuffers.Offset {
@@ -92,24 +81,22 @@ static startRelaysVector(builder:flatbuffers.Builder, numElems:number) {
 }
 
 static addAuthor(builder:flatbuffers.Builder, authorOffset:flatbuffers.Offset) {
-  builder.addFieldOffset(3, authorOffset, 0);
+  builder.addFieldOffset(2, authorOffset, 0);
 }
 
 static addKind(builder:flatbuffers.Builder, kind:bigint) {
-  builder.addFieldInt64(4, kind, BigInt('0'));
+  builder.addFieldInt64(3, kind, BigInt('0'));
 }
 
 static endNostrData(builder:flatbuffers.Builder):flatbuffers.Offset {
   const offset = builder.endObject();
   builder.requiredField(offset, 4) // id
-  builder.requiredField(offset, 6) // entity
   return offset;
 }
 
-static createNostrData(builder:flatbuffers.Builder, idOffset:flatbuffers.Offset, entityOffset:flatbuffers.Offset, relaysOffset:flatbuffers.Offset, authorOffset:flatbuffers.Offset, kind:bigint):flatbuffers.Offset {
+static createNostrData(builder:flatbuffers.Builder, idOffset:flatbuffers.Offset, relaysOffset:flatbuffers.Offset, authorOffset:flatbuffers.Offset, kind:bigint):flatbuffers.Offset {
   NostrData.startNostrData(builder);
   NostrData.addId(builder, idOffset);
-  NostrData.addEntity(builder, entityOffset);
   NostrData.addRelays(builder, relaysOffset);
   NostrData.addAuthor(builder, authorOffset);
   NostrData.addKind(builder, kind);
@@ -119,7 +106,6 @@ static createNostrData(builder:flatbuffers.Builder, idOffset:flatbuffers.Offset,
 unpack(): NostrDataT {
   return new NostrDataT(
     this.id(),
-    this.entity(),
     this.bb!.createScalarList<string>(this.relays.bind(this), this.relaysLength()),
     this.author(),
     this.kind()
@@ -129,7 +115,6 @@ unpack(): NostrDataT {
 
 unpackTo(_o: NostrDataT): void {
   _o.id = this.id();
-  _o.entity = this.entity();
   _o.relays = this.bb!.createScalarList<string>(this.relays.bind(this), this.relaysLength());
   _o.author = this.author();
   _o.kind = this.kind();
@@ -139,7 +124,6 @@ unpackTo(_o: NostrDataT): void {
 export class NostrDataT implements flatbuffers.IGeneratedObject {
 constructor(
   public id: ByteString|Uint8Array|null = null,
-  public entity: ByteString|Uint8Array|null = null,
   public relays: (string)[] = [],
   public author: ByteString|Uint8Array|null = null,
   public kind: bigint = BigInt('0')
@@ -148,13 +132,11 @@ constructor(
 
 pack(builder:flatbuffers.Builder): flatbuffers.Offset {
   const id = (this.id !== null ? builder.createString(this.id!) : 0);
-  const entity = (this.entity !== null ? builder.createString(this.entity!) : 0);
   const relays = NostrData.createRelaysVector(builder, builder.createObjectOffsetList(this.relays));
   const author = (this.author !== null ? builder.createString(this.author!) : 0);
 
   return NostrData.createNostrData(builder,
     id,
-    entity,
     relays,
     author,
     this.kind

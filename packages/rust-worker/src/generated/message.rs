@@ -2670,10 +2670,9 @@ impl<'a> flatbuffers::Follow<'a> for NostrData<'a> {
 
 impl<'a> NostrData<'a> {
   pub const VT_ID: flatbuffers::VOffsetT = 4;
-  pub const VT_ENTITY: flatbuffers::VOffsetT = 6;
-  pub const VT_RELAYS: flatbuffers::VOffsetT = 8;
-  pub const VT_AUTHOR: flatbuffers::VOffsetT = 10;
-  pub const VT_KIND: flatbuffers::VOffsetT = 12;
+  pub const VT_RELAYS: flatbuffers::VOffsetT = 6;
+  pub const VT_AUTHOR: flatbuffers::VOffsetT = 8;
+  pub const VT_KIND: flatbuffers::VOffsetT = 10;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -2688,7 +2687,6 @@ impl<'a> NostrData<'a> {
     builder.add_kind(args.kind);
     if let Some(x) = args.author { builder.add_author(x); }
     if let Some(x) = args.relays { builder.add_relays(x); }
-    if let Some(x) = args.entity { builder.add_entity(x); }
     if let Some(x) = args.id { builder.add_id(x); }
     builder.finish()
   }
@@ -2696,10 +2694,6 @@ impl<'a> NostrData<'a> {
   pub fn unpack(&self) -> NostrDataT {
     let id = {
       let x = self.id();
-      x.to_string()
-    };
-    let entity = {
-      let x = self.entity();
       x.to_string()
     };
     let relays = self.relays().map(|x| {
@@ -2711,7 +2705,6 @@ impl<'a> NostrData<'a> {
     let kind = self.kind();
     NostrDataT {
       id,
-      entity,
       relays,
       author,
       kind,
@@ -2724,13 +2717,6 @@ impl<'a> NostrData<'a> {
     // Created from valid Table for this object
     // which contains a valid value in this slot
     unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(NostrData::VT_ID, None).unwrap()}
-  }
-  #[inline]
-  pub fn entity(&self) -> &'a str {
-    // Safety:
-    // Created from valid Table for this object
-    // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(NostrData::VT_ENTITY, None).unwrap()}
   }
   #[inline]
   pub fn relays(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>> {
@@ -2763,7 +2749,6 @@ impl flatbuffers::Verifiable for NostrData<'_> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("id", Self::VT_ID, true)?
-     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("entity", Self::VT_ENTITY, true)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("relays", Self::VT_RELAYS, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("author", Self::VT_AUTHOR, false)?
      .visit_field::<u64>("kind", Self::VT_KIND, false)?
@@ -2773,7 +2758,6 @@ impl flatbuffers::Verifiable for NostrData<'_> {
 }
 pub struct NostrDataArgs<'a> {
     pub id: Option<flatbuffers::WIPOffset<&'a str>>,
-    pub entity: Option<flatbuffers::WIPOffset<&'a str>>,
     pub relays: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>,
     pub author: Option<flatbuffers::WIPOffset<&'a str>>,
     pub kind: u64,
@@ -2783,7 +2767,6 @@ impl<'a> Default for NostrDataArgs<'a> {
   fn default() -> Self {
     NostrDataArgs {
       id: None, // required field
-      entity: None, // required field
       relays: None,
       author: None,
       kind: 0,
@@ -2799,10 +2782,6 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> NostrDataBuilder<'a, 'b, A> {
   #[inline]
   pub fn add_id(&mut self, id: flatbuffers::WIPOffset<&'b  str>) {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(NostrData::VT_ID, id);
-  }
-  #[inline]
-  pub fn add_entity(&mut self, entity: flatbuffers::WIPOffset<&'b  str>) {
-    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(NostrData::VT_ENTITY, entity);
   }
   #[inline]
   pub fn add_relays(&mut self, relays: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<&'b  str>>>) {
@@ -2828,7 +2807,6 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> NostrDataBuilder<'a, 'b, A> {
   pub fn finish(self) -> flatbuffers::WIPOffset<NostrData<'a>> {
     let o = self.fbb_.end_table(self.start_);
     self.fbb_.required(o, NostrData::VT_ID,"id");
-    self.fbb_.required(o, NostrData::VT_ENTITY,"entity");
     flatbuffers::WIPOffset::new(o.value())
   }
 }
@@ -2837,7 +2815,6 @@ impl core::fmt::Debug for NostrData<'_> {
   fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
     let mut ds = f.debug_struct("NostrData");
       ds.field("id", &self.id());
-      ds.field("entity", &self.entity());
       ds.field("relays", &self.relays());
       ds.field("author", &self.author());
       ds.field("kind", &self.kind());
@@ -2848,7 +2825,6 @@ impl core::fmt::Debug for NostrData<'_> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct NostrDataT {
   pub id: String,
-  pub entity: String,
   pub relays: Option<Vec<String>>,
   pub author: Option<String>,
   pub kind: u64,
@@ -2857,7 +2833,6 @@ impl Default for NostrDataT {
   fn default() -> Self {
     Self {
       id: "".to_string(),
-      entity: "".to_string(),
       relays: None,
       author: None,
       kind: 0,
@@ -2873,10 +2848,6 @@ impl NostrDataT {
       let x = &self.id;
       _fbb.create_string(x)
     });
-    let entity = Some({
-      let x = &self.entity;
-      _fbb.create_string(x)
-    });
     let relays = self.relays.as_ref().map(|x|{
       let w: Vec<_> = x.iter().map(|s| _fbb.create_string(s)).collect();_fbb.create_vector(&w)
     });
@@ -2886,7 +2857,6 @@ impl NostrDataT {
     let kind = self.kind;
     NostrData::create(_fbb, &NostrDataArgs{
       id,
-      entity,
       relays,
       author,
       kind,
