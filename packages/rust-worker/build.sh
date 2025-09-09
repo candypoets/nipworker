@@ -154,7 +154,6 @@ self.onmessage = async (event) => {
     } else {
       if(client) {
         const c = await client;
-        console.log(client, c)
         c.handle_message(event.data);
       }
     }

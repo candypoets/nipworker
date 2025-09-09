@@ -10,6 +10,7 @@ use crate::types::network::Request;
 use crate::types::thread::{PipelineConfig, SubscriptionConfig};
 use crate::types::*;
 use crate::utils::buffer::SharedBufferManager;
+use crate::utils::js_interop::post_worker_message;
 use anyhow::Result;
 use futures::lock::Mutex;
 use js_sys::SharedArrayBuffer;
@@ -17,6 +18,7 @@ use rustc_hash::FxHashMap;
 use std::rc::Rc;
 use std::sync::{Arc, RwLock};
 use tracing::{debug, error, info, warn};
+use wasm_bindgen::JsValue;
 
 pub struct SubscriptionManager {
     database: Arc<NostrDB>,
@@ -150,6 +152,8 @@ impl SubscriptionManager {
 
         info!("Sending eoce event {}", subscription_id);
         SharedBufferManager::send_eoce(&shared_buffer).await;
+
+        post_worker_message(&JsValue::from_str(subscription_id));
 
         // Only process network requests if there are any
         if !network_requests.is_empty() {

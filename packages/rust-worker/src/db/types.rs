@@ -162,10 +162,13 @@ pub enum DatabaseError {
 
 /// Event storage backend trait
 pub trait EventStorage {
-    async fn add_event_data(&self, event_data: &[u8]) -> Result<(), DatabaseError>;
+    async fn initialize_storage(&self) -> Result<(), DatabaseError>;
+    async fn add_event_data(&self, event_data: &[u8]) -> Result<u64, DatabaseError>;
+
+    fn get_event(&self, event_offset: u64) -> Result<Option<Vec<u8>>, DatabaseError>;
 
     /// Load all events from persistent storage
-    async fn load_events(&self) -> Result<Vec<Vec<u8>>, DatabaseError>;
+    fn load_events(&self) -> Result<Vec<u64>, DatabaseError>;
 
     /// Clear all events from persistent storage
     async fn clear_storage(&self) -> Result<(), DatabaseError>;
@@ -175,7 +178,7 @@ pub trait EventStorage {
 }
 
 /// Index types for efficient querying (concurrent)
-pub type EventIdIndex = Rc<RefCell<FxHashMap<String, Vec<u8>>>>;
+pub type EventIdIndex = Rc<RefCell<FxHashMap<String, u64>>>;
 pub type KindIndex = Rc<RefCell<FxHashMap<u16, FxHashSet<String>>>>;
 pub type PubkeyIndex = Rc<RefCell<FxHashMap<String, FxHashSet<String>>>>;
 pub type TagIndex = Rc<RefCell<FxHashMap<String, FxHashSet<String>>>>;

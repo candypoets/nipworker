@@ -55,7 +55,12 @@ export class NostrManager {
   private publishes = new Map<string, {buffer: SharedArrayBuffer}>();
   private signers = new Map<string, string>(); // name -> secret key hex
 
+  private eventTarget = new EventTarget();
+
   public PERPETUAL_SUBSCRIPTIONS = ["notifications", "starterpack"];
+
+
+
 
   constructor(config: NostrManagerConfig = {bufferKey: "general", maxBufferSize: 10_000_000}) {
     this.worker = this.createWorker();
@@ -69,7 +74,20 @@ export class NostrManager {
 
   private setupWorkerListener() {
     this.worker.onmessage = async (event) => {
-      console.log(event)
+      const id = typeof event.data === "string" ? event.data : undefined;
+      if (!id) return;
+
+      // Prefer O(1) routing via your existing maps
+      if (this.subscriptions.has(id)) {
+        // Notify only the listeners for this subscription
+        this.dispatch(`subscription:${id}`, id);
+        return;
+      }
+
+      if (this.publishes.has(id)) {
+        this.dispatch(`publish:${id}`, id);
+        return;
+      }
     };
 
     this.worker.onerror = (error) => {
@@ -77,7 +95,8 @@ export class NostrManager {
     };
   }
 
-  private createShortId(input: string): string {
+  public createShortId(input: string): string {
+    if (input.length < 64) return input;
     let hash = 0;
     for (let i = 0; i < input.length; i++) {
       const char = input.charCodeAt(i);
@@ -88,15 +107,32 @@ export class NostrManager {
     return shortId.substring(0, 63);
   }
 
+  public addEventListener(
+    type: string,
+    listener: EventListenerOrEventListenerObject,
+    options?: AddEventListenerOptions
+  ): void {
+    this.eventTarget.addEventListener(type, listener as EventListener, options);
+  }
+
+  public removeEventListener(
+    type: string,
+    listener: EventListenerOrEventListenerObject,
+    options?: EventListenerOptions
+  ): void {
+    this.eventTarget.removeEventListener(type, listener as EventListener, options);
+  }
+
+  private dispatch(type: string, detail?: unknown): void {
+    this.eventTarget.dispatchEvent(new CustomEvent(type, { detail }));
+  }
+
   subscribe(
     subscriptionId: string,
     requests: RequestObject[],
     options: SubscriptionOptions = {},
   ): SharedArrayBuffer {
-    const subId =
-      subscriptionId.length < 64
-        ? subscriptionId
-        : this.createShortId(subscriptionId);
+    const subId = this.createShortId(subscriptionId);
 
     const existingSubscription = this.subscriptions.get(subId);
 

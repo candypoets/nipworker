@@ -11,7 +11,7 @@ use crate::{
         types::{ClientMessage, ConnectionStatus, RelayConfig, RelayError},
         utils::{normalize_relay_url, validate_relay_url},
     },
-    utils::buffer::SharedBufferManager,
+    utils::{buffer::SharedBufferManager, js_interop::post_worker_message},
 };
 use futures::future::LocalBoxFuture;
 use futures::lock::Mutex;
@@ -22,6 +22,7 @@ use std::sync::Arc;
 use std::sync::RwLock;
 use std::{collections::HashMap, rc::Rc};
 use tracing::info;
+use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::spawn_local;
 
 /// Main connection registry for managing relay operations
@@ -85,6 +86,7 @@ impl ConnectionRegistry {
                 let mut pipeline_guard = pipeline.lock().await;
                 if let Ok(Some(output)) = pipeline_guard.process(message).await {
                     SharedBufferManager::write_to_buffer(&buffer, &output).await;
+                    post_worker_message(&JsValue::from_str(&id));
                 }
             }
             "EOSE" => {

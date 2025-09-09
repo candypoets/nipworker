@@ -1,189 +1,185 @@
-//! Utility functions to reduce js-sys dependencies
-//! This module provides lightweight alternatives to some js-sys APIs
+//! Utility functions for JS interop in a worker context.
+//! Keep bindings minimal and rely on js-sys/web-sys where stable.
 
+use js_sys::Promise;
 use wasm_bindgen::prelude::*;
-use web_sys::{DedicatedWorkerGlobalScope, WorkerGlobalScope};
+use wasm_bindgen::JsCast;
+use wasm_bindgen::JsValue;
 
-/// Lightweight alternative to js_sys::global() for worker context
+use js_sys::{global, Array, Object, Reflect, Uint8Array, JSON};
+use web_sys::IdbFactory;
+use web_sys::IdbOpenDbRequest;
+use web_sys::IdbRequest;
+
+/// postMessage(self.postMessage) binding
 #[wasm_bindgen]
 extern "C" {
-    #[wasm_bindgen(js_namespace = ["self"])]
-    static WORKER_SELF: JsValue;
+    // self.postMessage(message)
+    #[wasm_bindgen(js_namespace = self, js_name = postMessage)]
+    pub fn post_message_raw(data: &JsValue);
 
-    #[wasm_bindgen(js_name = "indexedDB", js_namespace = ["self"])]
+    // self.indexedDB
+    #[wasm_bindgen(js_namespace = self, js_name = indexedDB)]
     static INDEXED_DB: JsValue;
-
-    #[wasm_bindgen(js_name = "postMessage", js_namespace = ["self"])]
-    fn post_message_raw(data: &JsValue);
-
-    #[wasm_bindgen(js_name = "JSON", js_namespace = ["JSON"])]
-    type JsonAPI;
-
-    #[wasm_bindgen(method, js_name = "parse")]
-    fn parse(this: &JsonAPI, text: &str) -> Result<JsValue, JsValue>;
-
-    #[wasm_bindgen(method, js_name = "stringify")]
-    fn stringify(this: &JsonAPI, value: &JsValue) -> Result<JsValue, JsValue>;
 }
 
-/// Get the worker global scope without js_sys::global()
-pub fn get_worker_global() -> Result<JsValue, JsValue> {
-    Ok(WORKER_SELF.clone())
-}
-
-/// Get IndexedDB directly without going through js_sys
+/// Get IndexedDB from the worker global scope.
 pub fn get_indexed_db() -> Result<JsValue, JsValue> {
-    Ok(INDEXED_DB.clone())
+    let g = global();
+    Reflect::get(&g, &JsValue::from_str("indexedDB"))
 }
 
-/// Parse JSON without js_sys::JSON
+/// Parse JSON (safe wrapper over js_sys::JSON)
 pub fn parse_json(json_str: &str) -> Result<JsValue, JsValue> {
-    let json_api = JsValue::from("JSON").into();
-    JsonAPI::parse(&json_api, json_str)
+    JSON::parse(json_str)
 }
 
-/// Stringify object without js_sys::JSON
+/// Stringify JSON (safe wrapper over js_sys::JSON)
 pub fn stringify_json(value: &JsValue) -> Result<String, JsValue> {
-    let json_api = JsValue::from("JSON").into();
-    JsonAPI::stringify(&json_api, value)?
-        .as_string()
-        .ok_or_else(|| JsValue::from_str("Failed to convert to string"))
+    let s = JSON::stringify(value)?;
+    s.as_string()
+        .ok_or_else(|| JsValue::from_str("JSON.stringify did not return a string"))
 }
 
-/// Post message to main thread without js_sys overhead
+/// Post message to main thread
 pub fn post_worker_message(message: &JsValue) {
+    // Call self.postMessage(message)
     post_message_raw(message);
 }
 
-/// Create a simple object without js_sys::Object
-#[wasm_bindgen]
-extern "C" {
-    #[wasm_bindgen(js_name = "Object")]
-    type SimpleObject;
-
-    #[wasm_bindgen(constructor)]
-    fn new() -> SimpleObject;
-}
-
+/// Create a plain JS object: {}
 pub fn create_object() -> JsValue {
-    SimpleObject::new().into()
+    Object::new().into()
 }
 
-/// Set object property without js_sys::Reflect
-#[wasm_bindgen]
-extern "C" {
-    #[wasm_bindgen(js_name = "Object")]
-    type ObjectUtils;
-
-    #[wasm_bindgen(static_method_of = ObjectUtils, js_name = "defineProperty")]
-    fn define_property(obj: &JsValue, prop: &str, descriptor: &JsValue);
+/// Set a property on an object: obj[key] = value
+pub fn set_property(obj: &JsValue, key: &str, value: &JsValue) -> Result<(), JsValue> {
+    Reflect::set(obj, &JsValue::from_str(key), value).map(|_| ())
 }
 
-pub fn set_property(obj: &JsValue, key: &str, value: &JsValue) {
-    let descriptor = create_object();
-    // Simple assignment without full descriptor
-    js_sys::Reflect::set(obj, &JsValue::from(key), value).unwrap();
-}
-
-/// Create Uint8Array without js_sys
-#[wasm_bindgen]
-extern "C" {
-    #[wasm_bindgen(js_name = "Uint8Array")]
-    type FastUint8Array;
-
-    #[wasm_bindgen(constructor)]
-    fn new(length: u32) -> FastUint8Array;
-
-    #[wasm_bindgen(constructor)]
-    fn from_buffer(buffer: &[u8]) -> FastUint8Array;
-
-    #[wasm_bindgen(method)]
-    fn set(this: &FastUint8Array, array: &[u8], offset: Option<u32>);
-}
-
+/// Create a Uint8Array view over a Rust slice (no copy where possible)
 pub fn create_uint8_array_from_slice(data: &[u8]) -> JsValue {
-    FastUint8Array::from_buffer(data).into()
+    Uint8Array::from(data).into()
 }
 
-/// Optimized Array operations
-#[wasm_bindgen]
-extern "C" {
-    #[wasm_bindgen(js_name = "Array")]
-    type FastArray;
-
-    #[wasm_bindgen(constructor)]
-    fn new() -> FastArray;
-
-    #[wasm_bindgen(method)]
-    fn push(this: &FastArray, item: &JsValue);
-}
-
+/// Create an Array: []
 pub fn create_array() -> JsValue {
-    FastArray::new().into()
+    Array::new().into()
 }
 
-pub fn array_push(array: &JsValue, item: &JsValue) {
-    let fast_array: &FastArray = array.unchecked_ref();
-    fast_array.push(item);
+/// Push into an Array
+pub fn array_push(array: &JsValue, item: &JsValue) -> Result<u32, JsValue> {
+    let arr: Array = array.clone().unchecked_into();
+    Ok(arr.push(item))
 }
 
-/// Worker context utilities
-pub struct WorkerContext;
-
-impl WorkerContext {
-    /// Get the worker global scope in a type-safe way
-    pub fn global() -> Result<WorkerGlobalScope, JsValue> {
-        get_worker_global()?
-            .dyn_into::<WorkerGlobalScope>()
-            .map_err(|_| JsValue::from_str("Not in worker context"))
-    }
-
-    /// Get dedicated worker global scope
-    pub fn dedicated_global() -> Result<DedicatedWorkerGlobalScope, JsValue> {
-        get_worker_global()?
-            .dyn_into::<DedicatedWorkerGlobalScope>()
-            .map_err(|_| JsValue::from_str("Not in dedicated worker context"))
-    }
-
-    /// Post a simple message with type and payload
-    pub fn post_typed_message(event_type: &str, payload: Option<&JsValue>) -> Result<(), JsValue> {
-        let message = create_object();
-        set_property(&message, "type", &JsValue::from_str(event_type));
-
-        if let Some(payload) = payload {
-            set_property(&message, "payload", payload);
-        }
-
-        post_worker_message(&message);
-        Ok(())
-    }
-}
-
-/// Macro to reduce boilerplate for JS interop
+/// Macro to reduce boilerplate for JS object construction:
+/// let obj = js_object!{ "a" => 1, "b" => "two" };
 #[macro_export]
 macro_rules! js_object {
     ($($key:expr => $value:expr),* $(,)?) => {{
         let obj = $crate::utils::js_interop::create_object();
         $(
-            $crate::utils::js_interop::set_property(&obj, $key, &$value.into());
+            // .into() is applied to the right-hand side, so literals work
+            let _ = $crate::utils::js_interop::set_property(&obj, $key, &JsValue::from($value));
         )*
         obj
     }};
 }
 
-/// Performance-optimized JSON operations
+/// JSON helpers with string error messages (useful in non-wasm contexts too)
 pub struct JsonOps;
 
 impl JsonOps {
-    /// Parse JSON with error handling
     pub fn parse_safe(json_str: &str) -> Result<JsValue, String> {
         parse_json(json_str).map_err(|e| format!("JSON parse error: {:?}", e))
     }
 
-    /// Stringify with error handling
     pub fn stringify_safe(value: &JsValue) -> Result<String, String> {
         stringify_json(value).map_err(|e| format!("JSON stringify error: {:?}", e))
     }
+}
+
+pub fn get_idb_factory() -> Result<IdbFactory, JsValue> {
+    INDEXED_DB
+        .clone()
+        .dyn_into::<IdbFactory>()
+        .map_err(|_| JsValue::from_str("indexedDB not available or wrong type"))
+}
+
+pub fn idb_open_request_promise(open_request: &IdbOpenDbRequest) -> Promise {
+    let open_request = open_request.clone();
+    Promise::new(&mut |resolve: js_sys::Function, reject: js_sys::Function| {
+        // Clone for each closure that needs them
+        let resolve_for_success = resolve.clone();
+        let reject_for_success = reject.clone();
+        let reject_for_error = reject.clone();
+
+        let req_for_success = open_request.clone();
+        let on_success = Closure::once(move || match req_for_success.result() {
+            Ok(db) => {
+                let _ = resolve_for_success.call1(&JsValue::UNDEFINED, &db);
+            }
+            Err(_) => {
+                let _ = reject_for_success.call1(
+                    &JsValue::UNDEFINED,
+                    &JsValue::from_str("open_request.result() failed"),
+                );
+            }
+        });
+
+        let on_error = Closure::once(move || {
+            let _ = reject_for_error.call1(
+                &JsValue::UNDEFINED,
+                &JsValue::from_str("Failed to open database"),
+            );
+        });
+
+        open_request.set_onsuccess(Some(on_success.as_ref().unchecked_ref()));
+        open_request.set_onerror(Some(on_error.as_ref().unchecked_ref()));
+        on_success.forget();
+        on_error.forget();
+    })
+}
+
+pub fn idb_request_promise(request: &IdbRequest) -> Promise {
+    let request = request.clone();
+    Promise::new(&mut |resolve: js_sys::Function, reject: js_sys::Function| {
+        // Clone for each closure that needs them
+        let resolve_for_success = resolve.clone();
+        let reject_for_success = reject.clone();
+        let reject_for_error = reject.clone();
+
+        let req_for_success = request.clone();
+        let on_success = Closure::once(move || match req_for_success.result() {
+            Ok(result) => {
+                let _ = resolve_for_success.call1(&JsValue::UNDEFINED, &result);
+            }
+            Err(_) => {
+                let _ = reject_for_success.call1(
+                    &JsValue::UNDEFINED,
+                    &JsValue::from_str("request.result() failed"),
+                );
+            }
+        });
+
+        let on_error = Closure::once(move || {
+            let _ = reject_for_error.call1(
+                &JsValue::UNDEFINED,
+                &JsValue::from_str("IndexedDB request failed"),
+            );
+        });
+
+        request.set_onsuccess(Some(on_success.as_ref().unchecked_ref()));
+        request.set_onerror(Some(on_error.as_ref().unchecked_ref()));
+        on_success.forget();
+        on_error.forget();
+    })
+}
+
+/// Convert &[u8] to Uint8Array
+pub fn uint8array_from_slice(data: &[u8]) -> Uint8Array {
+    Uint8Array::from(data)
 }
 
 #[cfg(test)]

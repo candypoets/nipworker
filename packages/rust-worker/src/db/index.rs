@@ -87,8 +87,10 @@ impl<S: EventStorage> NostrDB<S> {
         // Clear existing indexes
         self.indexes.clear();
 
+        self.storage.initialize_storage().await?;
+
         // Load events from storage
-        let events = self.storage.load_events().await?;
+        let events = self.storage.load_events()?;
 
         if !events.is_empty() {
             info!("Loading {} events from persistent storage", events.len());
@@ -114,17 +116,29 @@ impl<S: EventStorage> NostrDB<S> {
     }
 
     /// Build indexes from a collection of events
-    fn build_indexes_from_events(&self, events: Vec<Vec<u8>>) -> Result<(), DatabaseError> {
+    fn build_indexes_from_events(&self, events_offset: Vec<u64>) -> Result<(), DatabaseError> {
         // Pre-allocate maps based on event count for better performance
-        let event_count = events.len();
+        let event_count = events_offset.len();
         let mut pubkey_frequency = FxHashMap::default();
         let mut kind_frequency = FxHashMap::default();
 
         // Convert all events to flatbuffer representation
         let mut fb_events = Vec::with_capacity(event_count);
-        for event in &events {
-            if let Some(parsed_event_fb) = Self::extract_parsed_event(&event) {
-                fb_events.push(parsed_event_fb);
+
+        let offsets = events_offset.clone();
+        let mut raw_events: Vec<Vec<u8>> = Vec::new();
+
+        // Phase 1: fetch all bytes
+        for event_offset in offsets {
+            if let Ok(Some(bytes)) = self.storage.get_event(event_offset) {
+                raw_events.push(bytes);
+            }
+        }
+
+        // Phase 2: parse from stable backing storage
+        for bytes in &raw_events {
+            if let Some(parsed_event_view) = Self::extract_parsed_event(bytes) {
+                fb_events.push(parsed_event_view);
             }
         }
 
@@ -153,7 +167,7 @@ impl<S: EventStorage> NostrDB<S> {
 
         // Second pass: build all indexes
         for (i, event) in fb_events.iter().enumerate() {
-            self.index_event(*event, &events[i]);
+            self.index_event(*event, events_offset[i]);
         }
 
         Ok(())
@@ -172,13 +186,13 @@ impl<S: EventStorage> NostrDB<S> {
     }
 
     /// Add an event to all relevant indexes
-    fn index_event(&self, event: fb::ParsedEvent<'_>, bytes: &[u8]) {
+    fn index_event(&self, event: fb::ParsedEvent<'_>, offset: u64) {
         let event_id = event.id();
         // Primary index
         self.indexes
             .events_by_id
             .borrow_mut()
-            .insert(event_id.to_string(), bytes.to_vec());
+            .insert(event_id.to_string(), offset);
 
         // Kind index
         self.indexes
@@ -376,30 +390,32 @@ impl<S: EventStorage> NostrDB<S> {
 
         for event_id in candidate_ids {
             // Clone the event to avoid holding the borrow
-            if let Some(b) = self.indexes.events_by_id.borrow().get(&event_id).cloned() {
-                if let Some(event) = Self::extract_parsed_event(&b) {
-                    // Time range filters
-                    if let Some(since) = filter.since {
-                        if event.created_at() < since.as_u64() as u32 {
-                            continue;
+            if let Some(offset) = self.indexes.events_by_id.borrow().get(&event_id).cloned() {
+                if let Ok(Some(b)) = self.storage.get_event(offset) {
+                    if let Some(event) = Self::extract_parsed_event(&b) {
+                        // Time range filters
+                        if let Some(since) = filter.since {
+                            if event.created_at() < since.as_u64() as u32 {
+                                continue;
+                            }
                         }
-                    }
 
-                    if let Some(until) = filter.until {
-                        if event.created_at() > until.as_u64() as u32 {
-                            continue;
+                        if let Some(until) = filter.until {
+                            if event.created_at() > until.as_u64() as u32 {
+                                continue;
+                            }
                         }
+
+                        // Search filter
+                        // if let Some(search) = &search_lower {
+                        //     if !event.content().to_lowercase().contains(search) {
+                        //         continue;
+                        //     }
+                        // }
+
+                        // Store the underlying bytes (event borrowing b prevents moving b)
+                        results.push(b);
                     }
-
-                    // Search filter
-                    // if let Some(search) = &search_lower {
-                    //     if !event.content().to_lowercase().contains(search) {
-                    //         continue;
-                    //     }
-                    // }
-
-                    // Store the underlying bytes (event borrowing b prevents moving b)
-                    results.push(b);
                 }
             }
         }
@@ -445,11 +461,14 @@ impl<S: EventStorage> NostrDB<S> {
 
     /// Get a single event by ID
     pub fn get_event(&self, id: &EventId) -> Option<Vec<u8>> {
-        self.indexes
+        let offset = self
+            .indexes
             .events_by_id
             .borrow()
             .get(&id.to_hex())
-            .cloned()
+            .cloned()?;
+
+        self.storage.get_event(offset).ok().flatten()
     }
 
     /// Check if an event exists
@@ -680,8 +699,8 @@ impl<S: EventStorage> NostrDB<S> {
         if let Ok(worker_message) = flatbuffers::root::<fb::WorkerMessage>(&finished_data) {
             // Add to indexes
             if let Some(parsed_event) = worker_message.content_as_parsed_event() {
-                self.index_event(parsed_event, &finished_data);
-                self.storage.add_event_data(&finished_data).await?;
+                let offset = self.storage.add_event_data(&finished_data).await?;
+                self.index_event(parsed_event, offset);
             } else {
                 warn!("Failed to get parsed event from worker message");
                 return Err(anyhow::anyhow!(
@@ -777,7 +796,6 @@ impl<S: EventStorage> EventDatabase for NostrDB<S> {
             return Err(anyhow::anyhow!("Event ID cannot be empty"));
         }
 
-        // Try to process some events immediately (with throttling)
         self.process_single_event(event).await.ok();
 
         Ok(())

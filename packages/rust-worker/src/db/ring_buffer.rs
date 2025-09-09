@@ -1,7 +1,8 @@
 use crate::{
     db::types::{DatabaseConfig, DatabaseError, EventStorage},
-    generated::nostr::fb,
-    parsed_event::ParsedEvent,
+    utils::js_interop::{
+        get_idb_factory, idb_open_request_promise, idb_request_promise, uint8array_from_slice,
+    },
 };
 use std::{
     cell::RefCell,
@@ -24,6 +25,9 @@ pub struct RingBufferStorage {
     buffer: Arc<RwLock<Vec<u8>>>,
     /// Whether we've loaded from storage
     initialized: Arc<RwLock<bool>>,
+    /// Total number of bytes logically removed from the front of the buffer over time.
+    /// This lets us expose stable "global" offsets for events and detect outdated offsets.
+    head_offset: Arc<RwLock<u64>>,
 }
 
 impl RingBufferStorage {
@@ -46,6 +50,7 @@ impl RingBufferStorage {
             config,
             buffer: Arc::new(RwLock::new(Vec::with_capacity(max_buffer_size))),
             initialized: Arc::new(RwLock::new(false)),
+            head_offset: Arc::new(RwLock::new(0)),
         }
     }
 
@@ -81,22 +86,7 @@ impl RingBufferStorage {
     }
 
     /// Add a new event to the ring buffer
-    pub async fn add_event(&self, event_data: &[u8]) -> Result<(), DatabaseError> {
-        info!(
-            "Try Adding event to ring buffer '{}': {} bytes",
-            self.buffer_key,
-            event_data.len()
-        );
-
-        // Ensure initialized
-        if !*self
-            .initialized
-            .read()
-            .map_err(|_| DatabaseError::LockError)?
-        {
-            self.initialize().await?;
-        }
-
+    pub async fn add_event(&self, event_data: &[u8]) -> Result<u64, DatabaseError> {
         let event_size = event_data.len();
         let total_size = 4 + event_size; // 4 bytes for size prefix
 
@@ -117,30 +107,82 @@ impl RingBufferStorage {
             }
         }
 
+        // Compute the global offset for the new event (before we append).
+        let new_event_offset = {
+            let head = self
+                .head_offset
+                .read()
+                .map_err(|_| DatabaseError::LockError)?;
+            *head + buffer.len() as u64
+        };
+
         // Add size prefix
         buffer.extend_from_slice(&(event_size as u32).to_le_bytes());
         // Add event data
         buffer.extend_from_slice(event_data);
 
-        info!(
-            "Added event to ring buffer '{}': size={}, total_buffer_size={}",
-            self.buffer_key,
-            event_size,
-            buffer.len()
-        );
-
-        // Persist to IndexedDB
         drop(buffer);
 
         // Increment and check counter
         self.pending_events_counter.replace_with(|&mut old| old + 1);
 
-        if *self.pending_events_counter.borrow() > 50 {
+        if *self.pending_events_counter.borrow() > 10 {
             self.persist_to_indexeddb().await?;
             self.pending_events_counter.replace(0);
         }
 
-        Ok(())
+        Ok(new_event_offset)
+    }
+
+    pub fn get_event_at_offset(&self, offset: u64) -> Result<Option<Vec<u8>>, DatabaseError> {
+        // Ensure initialized
+        if !*self
+            .initialized
+            .read()
+            .map_err(|_| DatabaseError::LockError)?
+        {
+            return Err(DatabaseError::NotInitialized);
+        }
+
+        let head = *self
+            .head_offset
+            .read()
+            .map_err(|_| DatabaseError::LockError)?;
+
+        // If the requested offset is before the current head, it's been evicted
+        if offset < head {
+            return Ok(None);
+        }
+
+        let rel = (offset - head) as usize;
+        let buffer = self.buffer.read().map_err(|_| DatabaseError::LockError)?;
+
+        // Not available (beyond the tail or not enough bytes for size prefix)
+        if rel + 4 > buffer.len() {
+            return Ok(None);
+        }
+
+        // Read size prefix
+        let size = u32::from_le_bytes([
+            buffer[rel],
+            buffer[rel + 1],
+            buffer[rel + 2],
+            buffer[rel + 3],
+        ]) as usize;
+
+        if size == 0 {
+            return Ok(None);
+        }
+
+        let data_start = rel + 4;
+        let data_end = data_start + size;
+
+        // Validate bounds
+        if data_end > buffer.len() {
+            return Ok(None);
+        }
+
+        Ok(Some(buffer[data_start..data_end].to_vec()))
     }
 
     /// Remove the first event from the buffer
@@ -164,6 +206,11 @@ impl RingBufferStorage {
         // Remove the first event (size prefix + data)
         buffer.drain(0..total_size);
 
+        // Advance the global head offset by the number of bytes removed
+        if let Ok(mut head) = self.head_offset.write() {
+            *head += total_size as u64;
+        }
+
         debug!(
             "Removed first event from ring buffer '{}': freed {} bytes, remaining {} bytes",
             self.buffer_key,
@@ -174,58 +221,46 @@ impl RingBufferStorage {
         true
     }
 
-    /// Extract all events from the buffer
-    fn extract_events_from_buffer(buffer: &[u8]) -> Vec<Vec<u8>> {
-        let mut events = Vec::new();
-        let mut offset = 0;
+    /// Extract all event OFFSETS (global offsets) from the buffer
+    fn extract_events_from_buffer(&self) -> Vec<u64> {
+        let buffer = match self.buffer.read() {
+            Ok(b) => b,
+            Err(_) => return Vec::new(),
+        };
 
-        while offset + 4 <= buffer.len() {
+        let head = self.head_offset.read().map(|h| *h).unwrap_or(0);
+        let mut offsets = Vec::new();
+        let mut p = 0usize;
+
+        info!(
+            "Buffer '{}' length: {} bytes",
+            self.buffer_key,
+            buffer.len()
+        );
+        while p + 4 <= buffer.len() {
             // Read size prefix
-            let size = u32::from_le_bytes([
-                buffer[offset],
-                buffer[offset + 1],
-                buffer[offset + 2],
-                buffer[offset + 3],
-            ]) as usize;
+            let size = u32::from_le_bytes([buffer[p], buffer[p + 1], buffer[p + 2], buffer[p + 3]])
+                as usize;
 
             // Validate size
-            if size == 0 || offset + 4 + size > buffer.len() {
+            if size == 0 || p + 4 + size > buffer.len() {
                 break;
             }
 
-            // Extract event data (without size prefix)
-            let event_start = offset + 4;
-            let event_end = event_start + size;
-            events.push(buffer[event_start..event_end].to_vec());
+            // Global offset = head + local position
+            offsets.push(head + p as u64);
 
-            offset = event_end;
+            // Advance to next event
+            p += 4 + size;
         }
 
-        events
+        offsets
     }
 
     /// Open or create the IndexedDB database using web-sys
     async fn open_db(&self) -> Result<IdbDatabase, DatabaseError> {
-        // Get the global context (window or worker)
-        let global = js_sys::global();
-
-        // Get IndexedDB factory
-        let idb_factory = if let Some(window) = web_sys::window() {
-            window
-                .indexed_db()
-                .map_err(|_| DatabaseError::StorageError("IndexedDB not available".into()))?
-                .ok_or_else(|| DatabaseError::StorageError("IndexedDB not supported".into()))?
-        } else {
-            // In worker context, use Reflect to get indexedDB
-            use js_sys::Reflect;
-            let idb_value =
-                Reflect::get(&global, &JsValue::from_str("indexedDB")).map_err(|_| {
-                    DatabaseError::StorageError("IndexedDB not available in worker".into())
-                })?;
-            idb_value
-                .dyn_into::<web_sys::IdbFactory>()
-                .map_err(|_| DatabaseError::StorageError("Failed to cast to IdbFactory".into()))?
-        };
+        let idb_factory = get_idb_factory()
+            .map_err(|_| DatabaseError::StorageError("IndexedDB not available".into()))?;
 
         let open_request = idb_factory
             .open_with_u32(&self.db_name, 1)
@@ -239,46 +274,24 @@ impl RingBufferStorage {
             let result = request.result().unwrap();
             let db: IdbDatabase = result.dyn_into().unwrap();
 
-            // Create object store if it doesn't exist
             if !db.object_store_names().contains(&store_name) {
                 db.create_object_store(&store_name)
                     .expect("Failed to create object store");
-                // No indexes needed for our simple key-value use case
             }
         });
 
         open_request.set_onupgradeneeded(Some(onupgradeneeded.as_ref().unchecked_ref()));
         onupgradeneeded.forget();
 
-        // Convert IdbOpenDbRequest to Promise for JsFuture
-        let promise = js_sys::Promise::new(&mut |resolve, reject| {
-            let open_request_clone = open_request.clone();
-            let resolve_clone = resolve.clone();
-            let success = Closure::once(move || {
-                let db = open_request_clone.result().unwrap();
-                resolve_clone.call1(&JsValue::NULL, &db).unwrap();
-            });
-            let reject_clone = reject.clone();
-            let error = Closure::once(move || {
-                reject_clone
-                    .call1(
-                        &JsValue::NULL,
-                        &JsValue::from_str("Failed to open database"),
-                    )
-                    .unwrap();
-            });
-            open_request.set_onsuccess(Some(success.as_ref().unchecked_ref()));
-            open_request.set_onerror(Some(error.as_ref().unchecked_ref()));
-            success.forget();
-            error.forget();
-        });
+        // Await open
+        let db_js = JsFuture::from(idb_open_request_promise(&open_request))
+            .await
+            .map_err(|e| {
+                DatabaseError::StorageError(format!("Failed to open database: {:?}", e))
+            })?;
 
-        // Convert to future and await
-        let db = JsFuture::from(promise).await.map_err(|e| {
-            DatabaseError::StorageError(format!("Failed to open database: {:?}", e))
-        })?;
-
-        db.dyn_into::<IdbDatabase>()
+        db_js
+            .dyn_into::<IdbDatabase>()
             .map_err(|_| DatabaseError::StorageError("Failed to cast to IdbDatabase".into()))
     }
 
@@ -296,7 +309,6 @@ impl RingBufferStorage {
 
         let db = self.open_db().await?;
 
-        // Create transaction
         let transaction = db
             .transaction_with_str_and_mode("ring_buffers", IdbTransactionMode::Readwrite)
             .map_err(|_| DatabaseError::StorageError("Failed to create transaction".into()))?;
@@ -305,8 +317,7 @@ impl RingBufferStorage {
             .object_store("ring_buffers")
             .map_err(|_| DatabaseError::StorageError("Failed to get object store".into()))?;
 
-        // Store the buffer with the key
-        let js_array = js_sys::Uint8Array::from(&buffer_data[..]);
+        let js_array = uint8array_from_slice(&buffer_data);
 
         store
             .put_with_key(&js_array, &JsValue::from_str(&self.buffer_key))
@@ -319,7 +330,6 @@ impl RingBufferStorage {
     async fn load_buffer_from_indexeddb(&self) -> Result<Vec<u8>, DatabaseError> {
         let db = self.open_db().await?;
 
-        // Create transaction
         let transaction = db
             .transaction_with_str("ring_buffers")
             .map_err(|_| DatabaseError::StorageError("Failed to create transaction".into()))?;
@@ -332,34 +342,14 @@ impl RingBufferStorage {
             .get(&JsValue::from_str(&self.buffer_key))
             .map_err(|_| DatabaseError::StorageError("Failed to get data".into()))?;
 
-        // Convert IdbRequest to Promise for JsFuture
-        let promise = js_sys::Promise::new(&mut |resolve, reject| {
-            let get_request_clone = get_request.clone();
-            let success = Closure::once(move || {
-                let result = get_request_clone.result().unwrap();
-                resolve.call1(&JsValue::NULL, &result).unwrap();
-            });
-            let error = Closure::once(move || {
-                reject
-                    .call1(&JsValue::NULL, &JsValue::from_str("Failed to get data"))
-                    .unwrap();
-            });
-            get_request.set_onsuccess(Some(success.as_ref().unchecked_ref()));
-            get_request.set_onerror(Some(error.as_ref().unchecked_ref()));
-            success.forget();
-            error.forget();
-        });
-
-        let result = JsFuture::from(promise)
+        let result = JsFuture::from(idb_request_promise(&get_request))
             .await
             .map_err(|e| DatabaseError::StorageError(format!("Get operation failed: {:?}", e)))?;
 
-        // Check if we got data
         if result.is_null() || result.is_undefined() {
             return Ok(Vec::new());
         }
 
-        // Convert to Vec<u8>
         if let Ok(uint8_array) = result.dyn_into::<js_sys::Uint8Array>() {
             let mut buffer = vec![0u8; uint8_array.length() as usize];
             uint8_array.copy_to(&mut buffer);
@@ -371,12 +361,12 @@ impl RingBufferStorage {
 }
 
 impl EventStorage for RingBufferStorage {
-    async fn add_event_data(&self, event_data: &[u8]) -> Result<(), DatabaseError> {
-        info!(
-            "Adding event to ring buffer '{}': {} bytes",
-            self.buffer_key,
-            event_data.len()
-        );
+    async fn initialize_storage(&self) -> Result<(), DatabaseError> {
+        // Implementation for initializing storage
+        self.initialize().await
+    }
+
+    async fn add_event_data(&self, event_data: &[u8]) -> Result<u64, DatabaseError> {
         self.add_event(event_data).await.map_err(|e| {
             tracing::error!(
                 "Failed to add event to ring buffer '{}': {}",
@@ -387,25 +377,25 @@ impl EventStorage for RingBufferStorage {
         })
     }
 
-    async fn load_events(&self) -> Result<Vec<Vec<u8>>, DatabaseError> {
+    fn get_event(&self, event_offset: u64) -> Result<Option<Vec<u8>>, DatabaseError> {
         // Ensure initialized
-        if !*self
-            .initialized
-            .read()
-            .map_err(|_| DatabaseError::LockError)?
-        {
-            self.initialize().await?;
-        }
+        self.get_event_at_offset(event_offset).map_err(|e| {
+            tracing::error!(
+                "Failed to get event from ring buffer '{}': {}",
+                self.buffer_key,
+                e
+            );
+            e
+        })
+    }
 
-        // Extract all events from the buffer
-        let buffer = self.buffer.read().map_err(|_| DatabaseError::LockError)?;
-        let events = Self::extract_events_from_buffer(&buffer);
+    fn load_events(&self) -> Result<Vec<u64>, DatabaseError> {
+        let events = self.extract_events_from_buffer();
 
         info!(
-            "Loaded {} events from ring buffer '{}' ({} bytes total)",
+            "Loaded {} events from ring buffer '{}'",
             events.len(),
             self.buffer_key,
-            buffer.len()
         );
 
         Ok(events)
@@ -416,6 +406,11 @@ impl EventStorage for RingBufferStorage {
         {
             let mut buffer = self.buffer.write().map_err(|_| DatabaseError::LockError)?;
             buffer.clear();
+        }
+
+        // Reset head offset
+        if let Ok(mut head) = self.head_offset.write() {
+            *head = 0;
         }
 
         // Clear from IndexedDB
@@ -439,17 +434,5 @@ impl EventStorage for RingBufferStorage {
 
     fn as_any(&self) -> &dyn std::any::Any {
         self
-    }
-}
-
-/// Default factory
-impl Default for RingBufferStorage {
-    fn default() -> Self {
-        Self::new(
-            "nostr-ring-buffer-db".to_string(),
-            "default".to_string(),
-            10_000_000, // 10MB default
-            DatabaseConfig::default(),
-        )
     }
 }
