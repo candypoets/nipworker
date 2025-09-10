@@ -56,7 +56,7 @@ export function useSubscription(
 export function usePublish(
   pubId: string,
   event: NostrEvent,
-  callback: any = () => {},
+  callback: (message: WorkerMessage) => void = () => {},
   options: { trackStatus?: boolean } = { trackStatus: true }
 ): () => void {
   if (!pubId) {
@@ -82,6 +82,7 @@ export function usePublish(
     const result = SharedBufferReader.readMessages(buffer, lastReadPos);
     if (result.hasNewData) {
       result.messages.forEach((message: WorkerMessage) => {
+          console.log(message);
           callback(message);
       });
       lastReadPos = result.newReadPosition;

@@ -177,6 +177,7 @@ impl ConnectionRegistry {
     /// Publish an event to one or more relays
     pub async fn publish(
         &self,
+        publish_id: &str,
         event: Event,
         relay_urls: Vec<String>,
         buffer: Rc<SharedArrayBuffer>,
@@ -218,7 +219,7 @@ impl ConnectionRegistry {
 
             // Store publish tracking in the connection
             conn.add_publish(event_id.to_hex(), "".into()).await;
-
+            SharedBufferManager::send_connection_status(&buffer, &url, "SENT", "").await;
             // Send EVENT message
             let event_message = ClientMessage::event(event.clone());
             if let Err(e) = conn.send_message(event_message).await {
@@ -232,9 +233,11 @@ impl ConnectionRegistry {
                     &e.to_string(),
                 )
                 .await;
+                post_worker_message(&JsValue::from_str(publish_id));
                 continue;
             } else {
-                SharedBufferManager::send_connection_status(&buffer, &url, "SENT", "").await;
+                SharedBufferManager::send_connection_status(&buffer, &url, "OK", "").await;
+                post_worker_message(&JsValue::from_str(publish_id));
             }
         }
 

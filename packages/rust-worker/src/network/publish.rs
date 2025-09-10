@@ -72,7 +72,12 @@ impl PublishManager {
 
         let _ = self
             .connection_registry
-            .publish(event.clone(), relays.clone(), shared_buffer.into())
+            .publish(
+                &publish_id,
+                event.clone(),
+                relays.clone(),
+                shared_buffer.into(),
+            )
             .await;
 
         Ok(())
