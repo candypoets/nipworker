@@ -47,7 +47,8 @@ pub enum ContentData {
         items: Vec<MediaItem>, // only Image/Video variants
     },
     Nostr {
-        id: String, // e.g. note id or npub or nprofile
+        id: String,     // e.g. note id or pubkey
+        entity: String, // nevent, nprofile etc
         relays: Vec<String>,
         author: Option<String>,
         kind: Option<u64>,
@@ -603,40 +604,58 @@ fn process_nostr(text: &str, _caps: &regex::Captures) -> Result<ContentBlock> {
     // Try to decode the identifier
     match nip19::FromBech32::from_bech32(entity) {
         Ok(decoded) => {
-            let (prefix, relays, author, kind) = match decoded {
-                Nip19::Pubkey(pk) => ("npub", Vec::<String>::new(), Some(pk.to_string()), None),
-                Nip19::Secret(sk) => ("nsec", Vec::<String>::new(), Some(sk.to_string()), None),
+            let (prefix, relays, author, kind, id) = match decoded {
+                Nip19::Pubkey(pk) => (
+                    "npub",
+                    Vec::<String>::new(),
+                    Some(pk.to_string()),
+                    None,
+                    pk.to_string(),
+                ),
+                Nip19::Secret(sk) => (
+                    "nsec",
+                    Vec::<String>::new(),
+                    Some(sk.to_string()),
+                    None,
+                    sk.to_string(),
+                ),
                 // Nip19::EncryptedSecret(enc_sk) => (
                 //     "ncryptsec",
                 //     Vec::new(),
                 //     None,
                 //     None,
                 // ),
-                Nip19::EventId(note) => ("note", Vec::<String>::new(), None, None),
+                Nip19::EventId(note) => {
+                    ("note", Vec::<String>::new(), None, None, note.to_string())
+                }
                 Nip19::Profile(profile) => (
                     "nprofile",
                     profile.relays.into_iter().map(|r| r.to_string()).collect(),
                     Some(profile.public_key.to_string()),
                     None,
+                    profile.public_key.to_string(),
                 ),
                 Nip19::Event(event) => (
                     "nevent",
                     event.relays.into_iter().map(|r| r.to_string()).collect(),
                     event.author.map(|pk| pk.to_string()),
                     None,
+                    event.event_id.to_string(),
                 ),
                 Nip19::Coordinate(coord) => (
                     "naddr",
                     coord.relays.into_iter().map(|r| r.to_string()).collect(),
                     Some(coord.public_key.to_string()),
                     Some(coord.kind.as_u64()),
+                    coord.identifier,
                 ),
             };
 
             Ok(
                 ContentBlock::new(prefix.to_string(), text.to_string()).with_data(
                     ContentData::Nostr {
-                        id: entity.to_string(),
+                        entity: entity.to_string(),
+                        id: id,
                         relays,
                         author,
                         kind,
@@ -815,12 +834,14 @@ pub fn serialize_content_data<'a, A: flatbuffers::Allocator + 'a>(
             )
         }
         ContentData::Nostr {
+            entity,
             id,
             relays,
             author,
             kind,
         } => {
             let id_off = builder.create_string(id);
+            let entity_off = builder.create_string(entity);
             let relays_strs: Vec<_> = relays.iter().map(|r| builder.create_string(r)).collect();
             let relays_off = Some(builder.create_vector(&relays_strs));
             let author_off = author.as_ref().map(|a| builder.create_string(a));
@@ -828,6 +849,7 @@ pub fn serialize_content_data<'a, A: flatbuffers::Allocator + 'a>(
                 builder,
                 &fb::NostrDataArgs {
                     id: Some(id_off),
+                    entity: Some(entity_off),
                     relays: relays_off,
                     author: author_off,
                     kind: kind.unwrap_or(0),

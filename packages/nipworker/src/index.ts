@@ -62,7 +62,7 @@ export class NostrManager {
 
 
 
-  constructor(config: NostrManagerConfig = {bufferKey: "general", maxBufferSize: 10_000_000}) {
+  constructor(config: NostrManagerConfig = {bufferKey: "general", maxBufferSize: 5_000_000}) {
     this.worker = this.createWorker();
     this.worker.postMessage({ type: "init", payload: config });
     this.setupWorkerListener();
@@ -207,7 +207,6 @@ export class NostrManager {
     };
 
     try {
-      console.log("encoding message", message)
       const pack = encode(message);
       this.worker.postMessage({
         serializedMessage: pack,
