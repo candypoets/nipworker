@@ -1,4 +1,5 @@
 use crate::db::NostrDB;
+use crate::generated::nostr::fb::{self, WorkerMessage};
 use crate::parsed_event::ParsedEvent;
 use crate::parser::Parser;
 use crate::types::*;
@@ -9,6 +10,7 @@ use hex::decode_to_slice;
 use nostr::Event as NostrEvent;
 use rustc_hash::FxHashSet;
 use serde_wasm_bindgen::from_value;
+use std::cell::RefCell;
 use std::sync::Arc;
 use tracing::debug;
 use wasm_bindgen::prelude::*;
@@ -151,7 +153,7 @@ impl PipeType {
 pub struct Pipeline {
     pipes: Vec<PipeType>,
     subscription_id: String,
-    seen_ids: FxHashSet<[u8; 32]>,
+    seen_ids: RefCell<FxHashSet<[u8; 32]>>,
     dedup_max_size: usize,
 }
 
@@ -171,7 +173,10 @@ impl Pipeline {
         Ok(Self {
             pipes,
             subscription_id,
-            seen_ids: FxHashSet::with_capacity_and_hasher(10_000, Default::default()),
+            seen_ids: RefCell::new(FxHashSet::with_capacity_and_hasher(
+                10_000,
+                Default::default(),
+            )),
             dedup_max_size: 10_000,
         })
     }
@@ -227,11 +232,14 @@ impl Pipeline {
         }
 
         // 3️⃣ Deduplicate
-        if self.seen_ids.contains(&id_bytes) {
-            return Ok(None); // already processed
-        }
-        if self.seen_ids.len() < self.dedup_max_size {
-            self.seen_ids.insert(id_bytes);
+        {
+            let mut seen = self.seen_ids.borrow_mut();
+            if seen.contains(&id_bytes) {
+                return Ok(None); // already processed
+            }
+            if seen.len() < self.dedup_max_size {
+                seen.insert(id_bytes);
+            }
         }
 
         // 4️⃣ Parse full nostr::Event
@@ -267,40 +275,35 @@ impl Pipeline {
         Ok(None)
     }
 
-    pub async fn process_cached_event(
-        &mut self,
-        mut event: PipelineEvent,
-    ) -> Result<Option<Vec<u8>>> {
-        if self.seen_ids.contains(&event.id) {
-            return Ok(None); // already processed
+    fn extract_parsed_event(worker_message: &Vec<u8>) -> Option<fb::ParsedEvent<'_>> {
+        if let Ok(message) = flatbuffers::root::<fb::WorkerMessage>(&worker_message) {
+            match message.content_type() {
+                fb::Message::ParsedEvent => message.content_as_parsed_event(),
+                _ => None,
+            }
+        } else {
+            None
         }
-        if self.seen_ids.len() < self.dedup_max_size {
-            self.seen_ids.insert(event.id);
-        }
+    }
 
-        let pipes_len = self.pipes.len();
-        for (i, pipe) in self.pipes.iter_mut().enumerate() {
-            if !pipe.run_for_cached_events() {
-                continue;
+    pub fn mark_as_seen(&self, message_bytes: &Vec<u8>) {
+        if let Some(event) = Self::extract_parsed_event(message_bytes) {
+            let id_hex = event.id();
+
+            let mut id_bytes = [0u8; 32];
+            if decode_to_slice(id_hex, &mut id_bytes).is_err() {
+                tracing::warn!("Invalid hex in event id (mark_as_seen): {}", id_hex);
+                return;
             }
 
-            let is_last = i == pipes_len - 1;
-
-            match pipe.process(event).await? {
-                PipeOutput::Event(e) => event = e,
-                PipeOutput::Drop => return Ok(None),
-                PipeOutput::DirectOutput(data) => {
-                    if !is_last {
-                        return Err(anyhow::anyhow!(
-                            "Non-terminal pipe '{}' produced DirectOutput",
-                            pipe.name()
-                        ));
-                    }
-                    return Ok(Some(data));
-                }
+            let mut seen = self.seen_ids.borrow_mut();
+            if seen.contains(&id_bytes) {
+                return; // already processed
+            }
+            if seen.len() < self.dedup_max_size {
+                seen.insert(id_bytes);
             }
         }
-        Ok(None)
     }
 
     pub fn subscription_id(&self) -> &str {

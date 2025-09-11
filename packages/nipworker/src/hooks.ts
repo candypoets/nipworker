@@ -36,12 +36,13 @@ export function useSubscription(
 
   const processEvents = (): void => {
     if (!running || !buffer) return;
-    const result = SharedBufferReader.readMessages(buffer, lastReadPos);
-    if (result.hasNewData) {
+    let result = SharedBufferReader.readMessages(buffer, lastReadPos);
+    while (result.hasNewData) {
       for (const message of result.messages) {
         callback(message)
       }
       lastReadPos = result.newReadPosition;
+      result = SharedBufferReader.readMessages(buffer, lastReadPos);
     }
   };
 

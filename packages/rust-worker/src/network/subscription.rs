@@ -145,6 +145,7 @@ impl SubscriptionManager {
                         "Processing cached event for subscription {}",
                         subscription_id
                     );
+                    pipeline.mark_as_seen(&bytes);
                     SharedBufferManager::write_to_buffer(&shared_buffer, &bytes).await;
                 }
             }

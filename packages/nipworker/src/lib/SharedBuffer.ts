@@ -111,7 +111,7 @@ export class SharedBufferReader {
           return { messages: [], newReadPosition: currentPos, hasNewData: false };
       }
 
-      const maxMessages = 256;
+      const maxMessages = 128;
       const messages: WorkerMessage[] = new Array(maxMessages);
       let msgCount = 0;
 
