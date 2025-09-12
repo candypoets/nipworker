@@ -8,18 +8,14 @@ use tracing::warn;
 // NEW: Imports for FlatBuffers
 use crate::generated::nostr::*;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Kind7375Parsed {
-    #[serde(rename = "mintUrl")]
     pub mint_url: String,
     pub proofs: Vec<Proof>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    #[serde(rename = "deletedIds")]
     pub deleted_ids: Vec<String>,
     pub decrypted: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Deserialize)]
 struct TokenContent {
     pub mint: String,
     pub proofs: Vec<Proof>,

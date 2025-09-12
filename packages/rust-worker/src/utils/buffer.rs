@@ -1,8 +1,12 @@
+use std::sync::OnceLock;
+
 use flatbuffers::FlatBufferBuilder;
 use js_sys::{SharedArrayBuffer, Uint8Array};
 use tracing::{debug, error, info, warn};
 
 use crate::generated::nostr::fb;
+
+static BUFFER_FULL_MARKER: OnceLock<Vec<u8>> = OnceLock::new();
 
 pub struct SharedBufferManager;
 
@@ -67,39 +71,72 @@ impl SharedBufferManager {
         current_write_pos: usize,
         buffer_length: usize,
     ) -> bool {
-        if current_write_pos < 4 {
+        // Only check the immediately previous message by jumping back using the known BufferFull size.
+        if current_write_pos <= 4 || current_write_pos > buffer_length {
             return false;
         }
 
-        // Position of length prefix
-        let prev_length_pos = current_write_pos - 4;
-        let prev_length_subarray =
-            buffer_uint8.subarray(prev_length_pos as u32, (prev_length_pos + 4) as u32);
-        let mut prev_length_bytes = [0u8; 4];
-        prev_length_subarray.copy_to(&mut prev_length_bytes[..]);
-        let prev_length = u32::from_le_bytes(prev_length_bytes) as usize;
+        // Initialize and reuse the exact serialized BufferFull marker bytes
+        let marker = BUFFER_FULL_MARKER.get_or_init(|| {
+            let mut fbb = FlatBufferBuilder::new();
+            let buffer_full = {
+                let args = fb::BufferFullArgs { dropped_events: 0 };
+                fb::BufferFull::create(&mut fbb, &args)
+            };
+            let worker_msg = {
+                let args = fb::WorkerMessageArgs {
+                    type_: fb::MessageType::BufferFull,
+                    content_type: fb::Message::BufferFull,
+                    content: Some(buffer_full.as_union_value()),
+                };
+                fb::WorkerMessage::create(&mut fbb, &args)
+            };
+            fbb.finish(worker_msg, None);
+            fbb.finished_data().to_vec()
+        });
+        let marker_len = marker.len();
 
-        if prev_length == 0 || prev_length > buffer_length || prev_length_pos < prev_length {
+        // We need at least [len prefix (4)] + [marker payload] behind current_write_pos
+        if current_write_pos < 4 + marker_len {
             return false;
         }
 
-        let prev_data_pos = prev_length_pos - prev_length;
-        if prev_data_pos + prev_length > buffer_length {
+        let len_pos = current_write_pos - 4 - marker_len;
+        let payload_pos = len_pos + 4;
+
+        if payload_pos + marker_len > buffer_length {
             return false;
         }
 
-        // Copy payload
-        let prev_data_subarray =
-            buffer_uint8.subarray(prev_data_pos as u32, (prev_data_pos + prev_length) as u32);
-        let mut prev_data_bytes = vec![0u8; prev_length];
-        prev_data_subarray.copy_to(&mut prev_data_bytes[..]);
+        // Verify the length prefix matches the marker size
+        let len_sub = buffer_uint8.subarray(len_pos as u32, (len_pos + 4) as u32);
+        let mut len_bytes = [0u8; 4];
+        len_sub.copy_to(&mut len_bytes[..]);
+        let rec_len = u32::from_le_bytes(len_bytes) as usize;
 
-        // Try parsing as WorkerMessage
-        if let Ok(msg) = flatbuffers::root::<fb::WorkerMessage>(&prev_data_bytes[..]) {
-            return msg.type_() == fb::MessageType::BufferFull;
+        if rec_len != marker_len {
+            return false;
         }
 
-        false
+        // Decode the payload and confirm it’s BufferFull
+        let last_sub = buffer_uint8.subarray(payload_pos as u32, (payload_pos + marker_len) as u32);
+        let mut last_bytes = vec![0u8; marker_len];
+        last_sub.copy_to(&mut last_bytes[..]);
+
+        match fb::root_as_worker_message(&last_bytes[..]) {
+            Ok(msg) => {
+                let is_full = msg.type_() == fb::MessageType::BufferFull
+                    || msg.content_type() == fb::Message::BufferFull;
+                is_full
+            }
+            Err(e) => {
+                error!(
+                    "has_buffer_full_marker: failed to decode last message (start={}, len={}): {}",
+                    payload_pos, marker_len, e
+                );
+                false
+            }
+        }
     }
 
     pub async fn write_to_buffer(shared_buffer: &SharedArrayBuffer, data: &[u8]) {
@@ -165,20 +202,27 @@ impl SharedBufferManager {
                 return;
             }
 
-            let mut fbb = FlatBufferBuilder::new();
-
-            // Build a WorkerMessage with no content payload
-            let worker_msg = {
-                let args = fb::WorkerMessageArgs {
-                    type_: fb::MessageType::BufferFull,
-                    content_type: fb::Message::BufferFull,
-                    content: None, // <-- no inner BufferFull table
-                };
-                fb::WorkerMessage::create(&mut fbb, &args)
+            // Build bytes once using the same cached marker as the detector
+            let data = {
+                let marker = BUFFER_FULL_MARKER.get_or_init(|| {
+                    let mut fbb = FlatBufferBuilder::new();
+                    let buffer_full = {
+                        let args = fb::BufferFullArgs { dropped_events: 0 };
+                        fb::BufferFull::create(&mut fbb, &args)
+                    };
+                    let worker_msg = {
+                        let args = fb::WorkerMessageArgs {
+                            type_: fb::MessageType::BufferFull,
+                            content_type: fb::Message::BufferFull,
+                            content: Some(buffer_full.as_union_value()),
+                        };
+                        fb::WorkerMessage::create(&mut fbb, &args)
+                    };
+                    fbb.finish(worker_msg, None);
+                    fbb.finished_data().to_vec()
+                });
+                marker.as_slice()
             };
-
-            fbb.finish(worker_msg, None);
-            let data = fbb.finished_data();
 
             let total_len = data.len() as u32;
             let length_prefix = total_len.to_le_bytes();
@@ -197,10 +241,11 @@ impl SharedBufferManager {
                 let new_header_uint8 = Uint8Array::from(&new_header[..]);
                 buffer_uint8.set(&new_header_uint8, 0);
 
-                warn!("Buffer full, wrote minimal WorkerMessage<BufferFull> marker");
+                warn!("Buffer full, wrote WorkerMessage<BufferFull> marker");
             } else {
                 warn!("Buffer completely full, cannot write BufferFull message");
             }
+
             return;
         }
 

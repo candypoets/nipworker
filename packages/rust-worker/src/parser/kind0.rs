@@ -3,65 +3,40 @@ use anyhow::{anyhow, Result};
 use flatbuffers::FlatBufferBuilder;
 use nostr::Event;
 use rustc_hash::FxHashMap;
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Kind0Parsed {
     pub pubkey: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub display_name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub picture: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub banner: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub about: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub website: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub nip05: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub lud06: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub lud16: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub github: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub twitter: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub mastodon: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub nostr: Option<String>,
 
     // Alternative formats
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub display_name_alt: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub username: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub bio: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub image: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub avatar: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub background: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProfilePointer {
     pub pubkey: String,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub relays: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Nip05Response {
     pub names: FxHashMap<String, String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub relays: Option<FxHashMap<String, Vec<String>>>,
 }
 

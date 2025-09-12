@@ -69,6 +69,55 @@ impl Pipe for CounterPipe {
         }
     }
 
+    async fn process_cached_batch(&mut self, messages: &[Vec<u8>]) -> Result<Vec<Vec<u8>>> {
+        let mut outputs = Vec::new();
+        let mut you_by_kind: FxHashMap<u64, bool> = FxHashMap::default();
+
+        for bytes in messages {
+            if let Ok(msg) = flatbuffers::root::<fb::WorkerMessage>(&bytes) {
+                if let fb::Message::ParsedEvent = msg.content_type() {
+                    if let Some(parsed) = msg.content_as_parsed_event() {
+                        let kind = parsed.kind() as u64;
+                        let pubkey = parsed.pubkey().to_string();
+
+                        if self.kinds.contains(&kind) {
+                            *self.counts.entry(kind).or_insert(0) += 1;
+
+                            // Track if any event for this kind is from "you"
+                            if self.pubkey == pubkey {
+                                you_by_kind.insert(kind, true);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        for &kind in &self.kinds {
+            let mut fbb = FlatBufferBuilder::new();
+            let counter_args = fb::CountResponseArgs {
+                count: *self.counts.get(&kind).unwrap_or(&0) as u32,
+                kind: kind as u16,
+                you: *you_by_kind.get(&kind).unwrap_or(&false),
+            };
+            let counter_offset = fb::CountResponse::create(&mut fbb, &counter_args);
+
+            let worker_msg = {
+                let args = fb::WorkerMessageArgs {
+                    type_: fb::MessageType::CountResponse,
+                    content_type: fb::Message::CountResponse,
+                    content: Some(counter_offset.as_union_value()),
+                };
+                fb::WorkerMessage::create(&mut fbb, &args)
+            };
+
+            fbb.finish(worker_msg, None);
+            outputs.push(fbb.finished_data().to_vec());
+        }
+
+        Ok(outputs)
+    }
+
     fn can_direct_output(&self) -> bool {
         true // Counter can be terminal and send counts directly
     }

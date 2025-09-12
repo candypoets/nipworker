@@ -14,7 +14,7 @@ pub trait EventDatabase {
     ) -> Result<(Vec<Request>, Vec<Vec<u8>>)>;
 
     async fn query_events(&self, filter: nostr::Filter) -> Result<Vec<Vec<u8>>>;
-    async fn add_event(&self, event: ParsedEvent) -> Result<()>;
+    async fn add_event(&self, event: &ParsedEvent) -> Result<()>;
 }
 
 pub trait EventParser {

@@ -41,6 +41,21 @@ impl Proof {
         }
     }
 
+    pub fn from_flatbuffer(proof: &fb::Proof<'_>) -> Self {
+        Self {
+            amount: proof.amount(),
+            secret: proof.secret().to_string(),
+            c: proof.c().to_string(),
+            id: Some(proof.id().to_string()),
+            version: if proof.version() != 0 {
+                Some(proof.version() as i32)
+            } else {
+                None
+            },
+            dleq: None,
+        }
+    }
+
     pub fn with_version(mut self, version: i32) -> Self {
         self.version = Some(version);
         self

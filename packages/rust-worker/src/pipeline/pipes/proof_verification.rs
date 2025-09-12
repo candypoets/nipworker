@@ -459,6 +459,74 @@ impl Pipe for ProofVerificationPipe {
         Ok(PipeOutput::Drop)
     }
 
+    async fn process_cached_batch(&mut self, messages: &[Vec<u8>]) -> Result<Vec<Vec<u8>>> {
+        // Collect proofs from cached parsed events
+        for bytes in messages {
+            if let Ok(msg) = flatbuffers::root::<fb::WorkerMessage>(&bytes) {
+                if let fb::Message::ParsedEvent = msg.content_type() {
+                    if let Some(parsed) = msg.content_as_parsed_event() {
+                        let kind = parsed.kind() as u64;
+
+                        match kind {
+                            9321 => {
+                                if let Some(k) = parsed.parsed_as_kind_9321_parsed() {
+                                    let mint_url = k.mint_url().to_string();
+                                    let fb_proofs = k.proofs();
+                                    let mut proofs = Vec::new();
+                                    for i in 0..fb_proofs.len() {
+                                        let p = fb_proofs.get(i);
+                                        proofs.push(Proof::from_flatbuffer(&p));
+                                    }
+                                    if !proofs.is_empty() && !mint_url.is_empty() {
+                                        self.add_proofs(proofs, mint_url);
+                                    }
+                                }
+                            }
+                            7375 => {
+                                if let Some(k) = parsed.parsed_as_kind_7375_parsed() {
+                                    if k.decrypted() {
+                                        let mint_url = k.mint_url().to_string();
+                                        let fb_proofs = k.proofs();
+                                        let mut proofs = Vec::new();
+                                        for i in 0..fb_proofs.len() {
+                                            let p = fb_proofs.get(i);
+                                            proofs.push(Proof::from_flatbuffer(&p));
+                                        }
+                                        if !proofs.is_empty() && !mint_url.is_empty() {
+                                            self.add_proofs(proofs, mint_url);
+                                        }
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
+
+        // Verify all collected proofs
+        if !self.pending_verifications.is_empty() && !self.verification_running {
+            match self.verify_pending_proofs().await {
+                Ok(bytes) => {
+                    if !bytes.is_empty() {
+                        debug!(
+                            "{}: Returning valid proofs from batch: {} bytes",
+                            self.name,
+                            bytes.len()
+                        );
+                        return Ok(vec![bytes]);
+                    }
+                }
+                Err(e) => {
+                    error!("Error during batch proof verification: {}", e);
+                }
+            }
+        }
+
+        Ok(Vec::new())
+    }
+
     fn can_direct_output(&self) -> bool {
         true // This is a terminal pipe that outputs serialized proof data
     }

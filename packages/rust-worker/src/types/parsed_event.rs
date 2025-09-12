@@ -1,5 +1,4 @@
 use nostr::Event;
-use serde::{Deserialize, Serialize};
 
 use crate::{
     generated::nostr::fb,
@@ -12,40 +11,22 @@ use crate::{
 };
 
 /// Strongly typed parsed data for different event kinds
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "kind", content = "data")]
 pub enum ParsedData {
-    #[serde(rename = "0")]
     Kind0(Kind0Parsed),
-    #[serde(rename = "1")]
     Kind1(Kind1Parsed),
-    #[serde(rename = "3")]
     Kind3(Kind3Parsed),
-    #[serde(rename = "4")]
     Kind4(Kind4Parsed),
-    #[serde(rename = "6")]
     Kind6(Kind6Parsed),
-    #[serde(rename = "7")]
     Kind7(Kind7Parsed),
-    #[serde(rename = "17")]
     Kind17(Kind17Parsed),
-    #[serde(rename = "7374")]
     Kind7374(Kind7374Parsed),
-    #[serde(rename = "7375")]
     Kind7375(Kind7375Parsed),
-    #[serde(rename = "7376")]
     Kind7376(Kind7376Parsed),
-    #[serde(rename = "9321")]
     Kind9321(Kind9321Parsed),
-    #[serde(rename = "9735")]
     Kind9735(Kind9735Parsed),
-    #[serde(rename = "10002")]
     Kind10002(Kind10002Parsed),
-    #[serde(rename = "10019")]
     Kind10019(Kind10019Parsed),
-    #[serde(rename = "17375")]
     Kind17375(Kind17375Parsed),
-    #[serde(rename = "39089")]
     Kind39089(crate::parser::Kind39089Parsed),
 }
 
@@ -130,18 +111,13 @@ impl ParsedData {
 }
 
 /// ParsedEvent represents a Nostr event with additional parsed data
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ParsedEvent {
-    #[serde(flatten)]
     pub event: Event,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub parsed: Option<ParsedData>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub requests: Option<Vec<Request>>,
 
-    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub relays: Vec<String>,
 }
 

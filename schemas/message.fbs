@@ -97,7 +97,6 @@ table Eoce {
 }
 
 table BufferFull {
-  subscription_id: string (required);
   dropped_events: ushort;
 }
 

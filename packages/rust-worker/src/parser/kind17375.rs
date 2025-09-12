@@ -2,21 +2,14 @@ use crate::parser::Parser;
 use crate::types::network::Request;
 use anyhow::{anyhow, Result};
 use nostr::{Event, EventBuilder, UnsignedEvent};
-use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
 // NEW: Imports for FlatBuffers
 use crate::generated::nostr::*;
-use flatbuffers::FlatBufferBuilder;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Kind17375Parsed {
     pub mints: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "p2pkPrivKey")]
     pub p2pk_priv_key: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "p2pkPubKey")]
     pub p2pk_pub_key: Option<String>,
     pub decrypted: bool,
 }

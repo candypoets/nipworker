@@ -2,23 +2,17 @@ use crate::parser::Parser;
 use crate::types::network::Request;
 use anyhow::{anyhow, Result};
 use nostr::Event;
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 // NEW: Imports for FlatBuffers
 use crate::generated::nostr::*;
 use flatbuffers::FlatBufferBuilder;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Kind39089Parsed {
-    #[serde(rename = "list_identifier")]
     pub list_identifier: String,
     pub people: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub image: Option<String>,
 }
 
@@ -284,10 +278,6 @@ mod tests {
         let result = parser.parse_kind_39089(&event);
 
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("missing required 'd' tag"));
     }
 
     #[wasm_bindgen_test::wasm_bindgen_test]

@@ -2,36 +2,24 @@ use crate::parser::Parser;
 use crate::types::network::Request;
 use anyhow::{anyhow, Result};
 use nostr::{Event, UnsignedEvent};
-use serde::{Deserialize, Serialize};
 
 // NEW: Imports for FlatBuffers
 use crate::generated::nostr::*;
 use flatbuffers::FlatBufferBuilder;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HistoryTag {
     pub name: String,
     pub value: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub relay: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub marker: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Kind7376Parsed {
     pub direction: String, // "in" or "out"
     pub amount: i32,       // Amount in sats
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    #[serde(rename = "createdEvents")]
     pub created_events: Vec<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    #[serde(rename = "destroyedEvents")]
     pub destroyed_events: Vec<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    #[serde(rename = "redeemedEvents")]
     pub redeemed_events: Vec<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<HistoryTag>,
     pub decrypted: bool,
 }

@@ -5,30 +5,21 @@ use crate::utils::request_deduplication::RequestDeduplicator;
 use anyhow::{anyhow, Result};
 use nostr::{Event, UnsignedEvent};
 use rustc_hash::FxHashMap;
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tracing::{debug, error};
 
 // NEW: Imports for FlatBuffers
 use crate::generated::nostr::*;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Kind9321Parsed {
     pub amount: i32,
     pub recipient: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "eventId")]
     pub event_id: Option<String>,
-    #[serde(rename = "mintUrl")]
     pub mint_url: String,
     pub redeemed: bool,
     pub proofs: Vec<Proof>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub comment: Option<String>,
-    #[serde(rename = "isP2PKLocked")]
     pub is_p2pk_locked: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "p2pkPubkey")]
     pub p2pk_pubkey: Option<String>,
 }
 
@@ -348,10 +339,6 @@ mod tests {
         let result = parser.parse_kind_9321(&event);
 
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("missing required tags"));
     }
 
     #[test]

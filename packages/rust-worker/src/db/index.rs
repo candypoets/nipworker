@@ -668,7 +668,7 @@ impl<S: EventStorage> NostrDB<S> {
     }
 
     /// Process a single event (the actual indexing logic)
-    async fn process_single_event(&self, event: ParsedEvent) -> Result<()> {
+    async fn process_single_event(&self, event: &ParsedEvent) -> Result<()> {
         if event.event.id.to_hex().is_empty() {
             return Err(anyhow::anyhow!("Event ID cannot be empty"));
         }
@@ -790,7 +790,7 @@ impl<S: EventStorage> EventDatabase for NostrDB<S> {
         Ok(result.events)
     }
 
-    async fn add_event(&self, event: ParsedEvent) -> Result<()> {
+    async fn add_event(&self, event: &ParsedEvent) -> Result<()> {
         // Validate event ID early
         if event.event.id.to_hex().is_empty() {
             return Err(anyhow::anyhow!("Event ID cannot be empty"));

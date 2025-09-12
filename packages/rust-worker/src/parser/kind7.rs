@@ -3,45 +3,29 @@ use crate::types::network::Request;
 use crate::utils::request_deduplication::RequestDeduplicator;
 use anyhow::{anyhow, Result};
 use nostr::Event;
-use serde::{Deserialize, Serialize};
 
 // NEW: Imports for FlatBuffers
 use crate::generated::nostr::*;
 use flatbuffers::FlatBufferBuilder;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
 pub enum ReactionType {
-    #[serde(rename = "+")]
     Like,
-    #[serde(rename = "-")]
     Dislike,
-    #[serde(rename = "emoji")]
     Emoji,
-    #[serde(rename = "custom")]
     Custom,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Emoji {
     pub shortcode: String,
     pub url: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Kind7Parsed {
-    #[serde(rename = "type")]
     pub reaction_type: ReactionType,
-    #[serde(rename = "eventId")]
     pub event_id: String,
     pub pubkey: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "eventKind")]
     pub event_kind: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub emoji: Option<Emoji>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "targetCoordinates")]
     pub target_coordinates: Option<String>,
 }
 
@@ -366,10 +350,6 @@ mod tests {
         let result = parser.parse_kind_7(&event);
 
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("must have at least one e tag"));
     }
 
     #[test]

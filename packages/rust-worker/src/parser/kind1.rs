@@ -1,23 +1,20 @@
 use crate::parser::{
-    content::{parse_content, serialize_content_data, ContentBlock, ContentData, ContentParser},
+    content::{parse_content, serialize_content_data, ContentBlock, ContentParser},
     Parser,
 };
 use crate::types::network::Request;
 use crate::utils::request_deduplication::RequestDeduplicator;
 use anyhow::{anyhow, Result};
 use nostr::{Event, Tag};
-use serde::{Deserialize, Serialize};
 
 // NEW: Imports for FlatBuffers
 use crate::generated::nostr::*;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProfilePointer {
     pub public_key: String,
     pub relays: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EventPointer {
     pub id: String,
     pub relays: Vec<String>,
@@ -25,7 +22,6 @@ pub struct EventPointer {
     pub kind: Option<u64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Kind1Parsed {
     pub parsed_content: Vec<ContentBlock>,
     pub shortened_content: Vec<ContentBlock>,
@@ -177,11 +173,10 @@ impl Parser {
                             public_key: pubkey.to_string(),
                             relays: Vec::new(),
                         };
-                        quotes.push(pointer.clone());
 
                         // Add request for this profile
                         requests.push(Request {
-                            authors: vec![pointer.public_key],
+                            authors: vec![pointer.public_key.clone()],
                             kinds: vec![0],
                             limit: Some(1),
                             relays: self.database.find_relay_candidates(
@@ -193,6 +188,8 @@ impl Parser {
                             cache_first: true,
                             ..Default::default()
                         });
+
+                        quotes.push(pointer);
                     }
                 }
             }
@@ -214,11 +211,10 @@ impl Parser {
                                 .map(|url| url.to_string())
                                 .collect(),
                         };
-                        quotes.push(pointer.clone());
 
                         // Add request for this profile
                         requests.push(Request {
-                            authors: vec![pointer.public_key],
+                            authors: vec![pointer.public_key.clone()],
                             kinds: vec![0],
                             limit: Some(1),
                             relays: self.database.find_relay_candidates(
@@ -230,6 +226,8 @@ impl Parser {
                             cache_first: true,
                             ..Default::default()
                         });
+
+                        quotes.push(pointer);
                     }
                 }
             }
@@ -253,23 +251,25 @@ impl Parser {
             if let Some(note) = caps.get(1) {
                 if let Ok(decoded) = nostr::nips::nip19::FromBech32::from_bech32(note.as_str()) {
                     if let nostr::nips::nip19::Nip19::EventId(event_id) = decoded {
-                        let pointer = EventPointer {
-                            id: event_id.to_string(),
-                            relays: Vec::new(),
-                            author: None,
-                            kind: None,
-                        };
-                        mentions.push(pointer.clone());
+                        let id = event_id.to_string();
 
                         // Add request for this event
                         requests.push(Request {
-                            ids: vec![pointer.id],
+                            ids: vec![id.clone()],
                             limit: Some(3), // increase the limit to provide with a bigger buffer
                             relays: self.database.find_relay_candidates(1, "", &false),
                             close_on_eose: true,
                             cache_first: true,
                             ..Default::default()
                         });
+
+                        let pointer = EventPointer {
+                            id,
+                            relays: Vec::new(),
+                            author: None,
+                            kind: None,
+                        };
+                        mentions.push(pointer);
                     }
                 }
             }
@@ -282,31 +282,34 @@ impl Parser {
             if let Some(nevent) = caps.get(1) {
                 if let Ok(decoded) = nostr::nips::nip19::FromBech32::from_bech32(nevent.as_str()) {
                     if let nostr::nips::nip19::Nip19::Event(event) = decoded {
-                        let pointer = EventPointer {
-                            id: event.event_id.to_string(),
-                            relays: event
-                                .relays
-                                .into_iter()
-                                .map(|url| url.to_string())
-                                .collect(),
-                            author: event.author.map(|pk| pk.to_string()),
-                            kind: None,
-                        };
-                        mentions.push(pointer.clone());
+                        let id = event.event_id.to_string();
+                        let author = event.author.map(|pk| pk.to_string());
 
                         // Add request for this event
                         requests.push(Request {
-                            ids: vec![pointer.id],
+                            ids: vec![id.clone()],
                             limit: Some(3), // increase the limit to provide with a bigger buffer
                             relays: self.database.find_relay_candidates(
                                 1,
-                                &pointer.author.as_deref().unwrap_or(""),
+                                &author.as_deref().unwrap_or(""),
                                 &false,
                             ),
                             close_on_eose: true,
                             cache_first: true,
                             ..Default::default()
                         });
+
+                        let pointer = EventPointer {
+                            id,
+                            relays: event
+                                .relays
+                                .into_iter()
+                                .map(|url| url.to_string())
+                                .collect(),
+                            author,
+                            kind: None,
+                        };
+                        mentions.push(pointer);
                     }
                 }
             }

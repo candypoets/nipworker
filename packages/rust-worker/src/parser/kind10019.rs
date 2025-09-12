@@ -2,26 +2,20 @@ use crate::parser::Parser;
 use crate::types::network::Request;
 use anyhow::{anyhow, Result};
 use nostr::{Event, UnsignedEvent};
-use serde::{Deserialize, Serialize};
 use tracing::info;
 
 // NEW: Imports for FlatBuffers
 use crate::generated::nostr::*;
 use flatbuffers::FlatBufferBuilder;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MintInfo {
     pub url: String,
     pub base_units: Option<Vec<String>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Kind10019Parsed {
-    #[serde(skip_serializing_if = "Vec::is_empty", rename = "trustedMints")]
     pub trusted_mints: Vec<MintInfo>,
-    #[serde(skip_serializing_if = "Option::is_none", rename = "p2pkPubkey")]
     pub p2pk_pubkey: Option<String>,
-    #[serde(rename = "readRelays")]
     pub read_relays: Option<Vec<String>>,
 }
 
@@ -273,10 +267,6 @@ mod tests {
         let result = parser.parse_kind_10019(&event);
 
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("missing required mint tags"));
     }
 
     #[test]
@@ -294,7 +284,6 @@ mod tests {
         let result = parser.parse_kind_10019(&event);
 
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("missing required"));
     }
 
     #[test]

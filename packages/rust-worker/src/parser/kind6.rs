@@ -4,16 +4,14 @@ use crate::utils::request_deduplication::RequestDeduplicator;
 use crate::{parsed_event::ParsedEvent, parser::Parser};
 use anyhow::{anyhow, Result};
 use nostr::{Event, Kind};
-use serde::{Deserialize, Serialize};
+
 use tracing::debug;
 
 // NEW: Imports for FlatBuffers
 use crate::generated::nostr::*;
 use flatbuffers::FlatBufferBuilder;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Kind6Parsed {
-    #[serde(rename = "repostedEvent", skip_serializing_if = "Option::is_none")]
     pub reposted_event: Option<serde_json::Value>,
 }
 
@@ -79,7 +77,7 @@ impl Parser {
                                 relays: vec![],
                                 requests: Some(vec![]),
                             };
-                            reposted_event = serde_json::to_value(parsed_event_struct).ok();
+                            // reposted_event = serde_json::to_value(parsed_event_struct).ok();
 
                             // Add all requests from kind1 parsing
                             if let Some(reqs) = parsed_requests {

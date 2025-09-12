@@ -120,7 +120,7 @@ impl SubscriptionManager {
         debug!("Processing subscription: {}", subscription_id);
 
         // Create pipeline based on config
-        let pipeline = self.build_pipeline(config.pipeline.clone(), subscription_id.clone())?;
+        let mut pipeline = self.build_pipeline(config.pipeline.clone(), subscription_id.clone())?;
 
         let (network_requests, events) = match self
             .cache_processor
@@ -137,16 +137,12 @@ impl SubscriptionManager {
             }
         };
 
-        // Process cached events through pipeline
+        // Process cached events through cache-capable pipes first, then write originals
         if !events.is_empty() {
             for event_batch in events {
-                for bytes in event_batch {
-                    info!(
-                        "Processing cached event for subscription {}",
-                        subscription_id
-                    );
-                    pipeline.mark_as_seen(&bytes);
-                    SharedBufferManager::write_to_buffer(&shared_buffer, &bytes).await;
+                let cache_outputs = pipeline.process_cached_batch(&event_batch).await?;
+                for out in cache_outputs {
+                    SharedBufferManager::write_to_buffer(&shared_buffer, &out).await;
                 }
             }
         }

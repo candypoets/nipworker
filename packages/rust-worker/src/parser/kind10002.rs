@@ -2,13 +2,11 @@ use crate::parser::Parser;
 use crate::types::network::Request;
 use anyhow::{anyhow, Result};
 use nostr::Event;
-use serde::{Deserialize, Serialize};
 
 // NEW: Imports for FlatBuffers
 use crate::generated::nostr::*;
 use flatbuffers::FlatBufferBuilder;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RelayInfo {
     pub url: String,
     pub read: bool,

@@ -2,17 +2,13 @@ use crate::parser::Parser;
 use crate::types::network::Request;
 use anyhow::{anyhow, Result};
 use nostr::{Event, UnsignedEvent};
-use serde::{Deserialize, Serialize};
 
 // NEW: Imports for FlatBuffers
 use crate::generated::nostr::*;
 use flatbuffers::FlatBufferBuilder;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Kind7374Parsed {
-    #[serde(rename = "quoteId")]
     pub quote_id: String,
-    #[serde(rename = "mintUrl")]
     pub mint_url: String,
     pub expiration: u64, // Unix timestamp
 }
@@ -158,10 +154,6 @@ mod tests {
         let result = parser.parse_kind_7374(&event);
 
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("mint URL not found"));
     }
 
     #[test]

@@ -25,8 +25,6 @@ extern "C" {
     fn parse(s: &str) -> JsValue;
 }
 
-/// Universal event container that flows through the pipeline
-#[derive(Debug, Clone)]
 pub struct PipelineEvent {
     /// Raw nostr event (if available)
     pub raw: Option<NostrEvent>,
@@ -62,8 +60,6 @@ impl PipelineEvent {
     }
 }
 
-/// Output from a pipe - single event processing only
-#[derive(Debug)]
 pub enum PipeOutput {
     /// Continue with this event
     Event(PipelineEvent),
@@ -76,6 +72,9 @@ pub enum PipeOutput {
 /// A pipe in the processing pipeline
 pub trait Pipe {
     async fn process(&mut self, event: PipelineEvent) -> Result<PipeOutput>;
+    async fn process_cached_batch(&mut self, messages: &[Vec<u8>]) -> Result<Vec<Vec<u8>>> {
+        Ok(messages.to_vec())
+    }
     fn name(&self) -> &str;
 
     /// Whether this pipe can produce DirectOutput (only last pipe should)
@@ -109,6 +108,32 @@ impl PipeType {
             PipeType::Counter(pipe) => pipe.process(event).await,
             PipeType::KindFilter(pipe) => pipe.process(event).await,
             PipeType::NpubLimiter(pipe) => pipe.process(event).await,
+        }
+    }
+
+    pub async fn process_cached_batch(&mut self, messages: &[Vec<u8>]) -> Result<Vec<Vec<u8>>> {
+        match self {
+            PipeType::Parse(pipe) => {
+                <ParsePipe as Pipe>::process_cached_batch(pipe, messages).await
+            }
+            PipeType::SaveToDb(pipe) => {
+                <SaveToDbPipe as Pipe>::process_cached_batch(pipe, messages).await
+            }
+            PipeType::SerializeEvents(pipe) => {
+                <SerializeEventsPipe as Pipe>::process_cached_batch(pipe, messages).await
+            }
+            PipeType::ProofVerification(pipe) => {
+                <ProofVerificationPipe as Pipe>::process_cached_batch(pipe, messages).await
+            }
+            PipeType::Counter(pipe) => {
+                <CounterPipe as Pipe>::process_cached_batch(pipe, messages).await
+            }
+            PipeType::KindFilter(pipe) => {
+                <KindFilterPipe as Pipe>::process_cached_batch(pipe, messages).await
+            }
+            PipeType::NpubLimiter(pipe) => {
+                <NpubLimiterPipe as Pipe>::process_cached_batch(pipe, messages).await
+            }
         }
     }
 
@@ -273,6 +298,21 @@ impl Pipeline {
         }
 
         Ok(None)
+    }
+
+    /// Process a batch of cached WorkerMessage bytes through cache-capable pipes.
+    pub async fn process_cached_batch(&mut self, messages: &[Vec<u8>]) -> Result<Vec<Vec<u8>>> {
+        for message in messages {
+            self.mark_as_seen(message);
+        }
+        let mut outputs = Vec::new();
+        for pipe in self.pipes.iter_mut() {
+            if pipe.run_for_cached_events() {
+                let mut out = pipe.process_cached_batch(messages).await?;
+                outputs.append(&mut out);
+            }
+        }
+        Ok(outputs)
     }
 
     fn extract_parsed_event(worker_message: &Vec<u8>) -> Option<fb::ParsedEvent<'_>> {

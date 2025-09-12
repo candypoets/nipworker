@@ -25,69 +25,50 @@ static getSizePrefixedRootAsBufferFull(bb:flatbuffers.ByteBuffer, obj?:BufferFul
   return (obj || new BufferFull()).__init(bb.readInt32(bb.position()) + bb.position(), bb);
 }
 
-subscriptionId(): ByteString|null
-subscriptionId(optionalEncoding:flatbuffers.Encoding): ByteString|Uint8Array|null
-subscriptionId(optionalEncoding?:any): ByteString|Uint8Array|null {
-  const offset = this.bb!.__offset(this.bb_pos, 4);
-  return offset ? this.bb!.__stringByteString(this.bb_pos + offset, optionalEncoding) : null;
-}
-
 droppedEvents():number {
-  const offset = this.bb!.__offset(this.bb_pos, 6);
+  const offset = this.bb!.__offset(this.bb_pos, 4);
   return offset ? this.bb!.readUint16(this.bb_pos + offset) : 0;
 }
 
 static startBufferFull(builder:flatbuffers.Builder) {
-  builder.startObject(2);
-}
-
-static addSubscriptionId(builder:flatbuffers.Builder, subscriptionIdOffset:flatbuffers.Offset) {
-  builder.addFieldOffset(0, subscriptionIdOffset, 0);
+  builder.startObject(1);
 }
 
 static addDroppedEvents(builder:flatbuffers.Builder, droppedEvents:number) {
-  builder.addFieldInt16(1, droppedEvents, 0);
+  builder.addFieldInt16(0, droppedEvents, 0);
 }
 
 static endBufferFull(builder:flatbuffers.Builder):flatbuffers.Offset {
   const offset = builder.endObject();
-  builder.requiredField(offset, 4) // subscription_id
   return offset;
 }
 
-static createBufferFull(builder:flatbuffers.Builder, subscriptionIdOffset:flatbuffers.Offset, droppedEvents:number):flatbuffers.Offset {
+static createBufferFull(builder:flatbuffers.Builder, droppedEvents:number):flatbuffers.Offset {
   BufferFull.startBufferFull(builder);
-  BufferFull.addSubscriptionId(builder, subscriptionIdOffset);
   BufferFull.addDroppedEvents(builder, droppedEvents);
   return BufferFull.endBufferFull(builder);
 }
 
 unpack(): BufferFullT {
   return new BufferFullT(
-    this.subscriptionId(),
     this.droppedEvents()
   );
 }
 
 
 unpackTo(_o: BufferFullT): void {
-  _o.subscriptionId = this.subscriptionId();
   _o.droppedEvents = this.droppedEvents();
 }
 }
 
 export class BufferFullT implements flatbuffers.IGeneratedObject {
 constructor(
-  public subscriptionId: ByteString|Uint8Array|null = null,
   public droppedEvents: number = 0
 ){}
 
 
 pack(builder:flatbuffers.Builder): flatbuffers.Offset {
-  const subscriptionId = (this.subscriptionId !== null ? builder.createString(this.subscriptionId!) : 0);
-
   return BufferFull.createBufferFull(builder,
-    subscriptionId,
     this.droppedEvents
   );
 }

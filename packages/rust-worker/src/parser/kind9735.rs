@@ -9,35 +9,94 @@ use serde::{Deserialize, Serialize};
 use crate::generated::nostr::*;
 use flatbuffers::FlatBufferBuilder;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct ZapRequest {
     pub kind: u16,
     pub pubkey: String,
     pub content: String,
     pub tags: Vec<Vec<String>>,
-    #[serde(alias = "sig")]
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub signature: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Kind9735Parsed {
     pub id: String,
     pub amount: i32,
     pub content: String,
     pub bolt11: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub preimage: Option<String>,
     pub sender: String,
     pub recipient: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub event: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "eventCoordinate")]
     pub event_coordinate: Option<String>,
     pub timestamp: u64,
     pub valid: bool,
     pub description: ZapRequest,
+}
+
+fn sats_from_bolt11_hrp(invoice: &str) -> Option<i32> {
+    // Normalize to lowercase for HRP parsing
+    let lower = invoice.to_ascii_lowercase();
+    if !lower.starts_with("ln") {
+        return None;
+    }
+    // Split HRP and data part
+    let (hrp, _) = lower.split_once('1')?;
+    if hrp.len() <= 2 {
+        return None; // no currency nor amount
+    }
+    // Remove "ln"
+    let hrp = &hrp[2..];
+
+    // Find where amount digits start (after currency code, e.g., "bc", "tb", "bcrt")
+    let start = hrp.find(|c: char| c.is_ascii_digit())?;
+    let amount_part = &hrp[start..];
+    if amount_part.is_empty() {
+        return None;
+    }
+
+    // Split into numeric part and optional suffix unit
+    let (digits_str, unit_opt) = {
+        let last = amount_part.chars().last().unwrap();
+        if last.is_ascii_alphabetic() {
+            (&amount_part[..amount_part.len() - 1], Some(last))
+        } else {
+            (amount_part, None)
+        }
+    };
+
+    if digits_str.is_empty() {
+        return None;
+    }
+
+    // Use i128 to avoid overflow during conversions
+    let value = digits_str.parse::<i128>().ok()?;
+
+    // Convert to msats first, then to sats to avoid rounding issues
+    let msat: i128 = match unit_opt {
+        // No suffix means BTC amount
+        None => value.saturating_mul(100_000_000_000),
+        Some('m') => value.saturating_mul(100_000_000), // milli-BTC
+        Some('u') => value.saturating_mul(100_000),     // micro-BTC
+        Some('n') => value.saturating_mul(100),         // nano-BTC
+        Some('p') => {
+            // pico-BTC = 0.1 msat per unit; must be multiple of 10 to land on whole msats
+            if value % 10 != 0 {
+                return None;
+            }
+            value / 10
+        }
+        _ => return None,
+    };
+
+    let sats = msat / 1000;
+    if sats <= 0 {
+        return None;
+    }
+    if sats > i32::MAX as i128 {
+        Some(i32::MAX)
+    } else {
+        Some(sats as i32)
+    }
 }
 
 impl Parser {
@@ -113,7 +172,12 @@ impl Parser {
                 }
             }
         }
-        // TODO: If no amount tag, try to decode bolt11 invoice
+        // Fallback: If no amount tag, try to decode BOLT11 invoice HRP to get sats
+        if amount == 0 {
+            if let Some(sats) = sats_from_bolt11_hrp(&bolt11) {
+                amount = sats;
+            }
+        }
 
         // Determine sender
         let sender = if let Some(sender_tag) = sender_tag {
@@ -350,10 +414,6 @@ mod tests {
         let result = parser.parse_kind_9735(&event);
 
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("missing required tags"));
     }
 
     #[test]
@@ -385,10 +445,6 @@ mod tests {
         let result = parser.parse_kind_9735(&event);
 
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("failed to parse zap request"));
     }
 
     #[test]

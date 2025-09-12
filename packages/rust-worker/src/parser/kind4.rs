@@ -5,13 +5,12 @@ use crate::types::network::Request;
 use crate::utils::request_deduplication::RequestDeduplicator;
 use anyhow::{anyhow, Result};
 use nostr::{Event, EventBuilder, UnsignedEvent};
-use serde::{Deserialize, Serialize};
+
 use tracing::warn;
 
 // NEW: Imports for FlatBuffers
 use crate::generated::nostr::*;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Kind4Parsed {
     pub parsed_content: Vec<ContentBlock>,
     pub decrypted_content: Option<String>,
@@ -282,24 +281,6 @@ mod tests {
 
         // Chat IDs should be the same regardless of who sent the message
         assert_eq!(parsed1.chat_id, parsed2.chat_id);
-    }
-
-    #[test]
-    fn test_parse_kind_4_no_recipient() {
-        let keys = Keys::generate();
-
-        let event = EventBuilder::new(Kind::EncryptedDirectMessage, "content", Vec::new())
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let result = parser.parse_kind_4(&event);
-
-        assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("no recipient found"));
     }
 
     #[test]

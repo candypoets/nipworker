@@ -1,29 +1,28 @@
 use anyhow::Result;
 use nostr::nips::nip19::{self, Nip19};
 use regex::Regex;
-use serde::{Deserialize, Serialize};
 
 use crate::generated::nostr::fb;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct MediaItem {
     pub image: Option<Image>,
     pub video: Option<Video>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Image {
     pub url: String,
     pub alt: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Video {
     pub url: String,
     pub thumbnail: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub enum ContentData {
     Code {
         language: Option<String>, // optional, might be extracted or None
@@ -61,7 +60,7 @@ pub enum ContentData {
     },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct ContentBlock {
     pub block_type: String,
     pub text: String,

@@ -11765,8 +11765,7 @@ impl<'a> flatbuffers::Follow<'a> for BufferFull<'a> {
 }
 
 impl<'a> BufferFull<'a> {
-  pub const VT_SUBSCRIPTION_ID: flatbuffers::VOffsetT = 4;
-  pub const VT_DROPPED_EVENTS: flatbuffers::VOffsetT = 6;
+  pub const VT_DROPPED_EVENTS: flatbuffers::VOffsetT = 4;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -11775,33 +11774,20 @@ impl<'a> BufferFull<'a> {
   #[allow(unused_mut)]
   pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
     _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
-    args: &'args BufferFullArgs<'args>
+    args: &'args BufferFullArgs
   ) -> flatbuffers::WIPOffset<BufferFull<'bldr>> {
     let mut builder = BufferFullBuilder::new(_fbb);
-    if let Some(x) = args.subscription_id { builder.add_subscription_id(x); }
     builder.add_dropped_events(args.dropped_events);
     builder.finish()
   }
 
   pub fn unpack(&self) -> BufferFullT {
-    let subscription_id = {
-      let x = self.subscription_id();
-      x.to_string()
-    };
     let dropped_events = self.dropped_events();
     BufferFullT {
-      subscription_id,
       dropped_events,
     }
   }
 
-  #[inline]
-  pub fn subscription_id(&self) -> &'a str {
-    // Safety:
-    // Created from valid Table for this object
-    // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(BufferFull::VT_SUBSCRIPTION_ID, None).unwrap()}
-  }
   #[inline]
   pub fn dropped_events(&self) -> u16 {
     // Safety:
@@ -11818,21 +11804,18 @@ impl flatbuffers::Verifiable for BufferFull<'_> {
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
-     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("subscription_id", Self::VT_SUBSCRIPTION_ID, true)?
      .visit_field::<u16>("dropped_events", Self::VT_DROPPED_EVENTS, false)?
      .finish();
     Ok(())
   }
 }
-pub struct BufferFullArgs<'a> {
-    pub subscription_id: Option<flatbuffers::WIPOffset<&'a str>>,
+pub struct BufferFullArgs {
     pub dropped_events: u16,
 }
-impl<'a> Default for BufferFullArgs<'a> {
+impl<'a> Default for BufferFullArgs {
   #[inline]
   fn default() -> Self {
     BufferFullArgs {
-      subscription_id: None, // required field
       dropped_events: 0,
     }
   }
@@ -11843,10 +11826,6 @@ pub struct BufferFullBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
   start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
 }
 impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> BufferFullBuilder<'a, 'b, A> {
-  #[inline]
-  pub fn add_subscription_id(&mut self, subscription_id: flatbuffers::WIPOffset<&'b  str>) {
-    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(BufferFull::VT_SUBSCRIPTION_ID, subscription_id);
-  }
   #[inline]
   pub fn add_dropped_events(&mut self, dropped_events: u16) {
     self.fbb_.push_slot::<u16>(BufferFull::VT_DROPPED_EVENTS, dropped_events, 0);
@@ -11862,7 +11841,6 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> BufferFullBuilder<'a, 'b, A> {
   #[inline]
   pub fn finish(self) -> flatbuffers::WIPOffset<BufferFull<'a>> {
     let o = self.fbb_.end_table(self.start_);
-    self.fbb_.required(o, BufferFull::VT_SUBSCRIPTION_ID,"subscription_id");
     flatbuffers::WIPOffset::new(o.value())
   }
 }
@@ -11870,7 +11848,6 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> BufferFullBuilder<'a, 'b, A> {
 impl core::fmt::Debug for BufferFull<'_> {
   fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
     let mut ds = f.debug_struct("BufferFull");
-      ds.field("subscription_id", &self.subscription_id());
       ds.field("dropped_events", &self.dropped_events());
       ds.finish()
   }
@@ -11878,13 +11855,11 @@ impl core::fmt::Debug for BufferFull<'_> {
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq)]
 pub struct BufferFullT {
-  pub subscription_id: String,
   pub dropped_events: u16,
 }
 impl Default for BufferFullT {
   fn default() -> Self {
     Self {
-      subscription_id: "".to_string(),
       dropped_events: 0,
     }
   }
@@ -11894,13 +11869,8 @@ impl BufferFullT {
     &self,
     _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
   ) -> flatbuffers::WIPOffset<BufferFull<'b>> {
-    let subscription_id = Some({
-      let x = &self.subscription_id;
-      _fbb.create_string(x)
-    });
     let dropped_events = self.dropped_events;
     BufferFull::create(_fbb, &BufferFullArgs{
-      subscription_id,
       dropped_events,
     })
   }
