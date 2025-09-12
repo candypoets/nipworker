@@ -33,7 +33,7 @@ pub struct Kind9735Parsed {
     pub description: ZapRequest,
 }
 
-fn sats_from_bolt11_hrp(invoice: &str) -> Option<i32> {
+fn sats_from_bolt11_hrp(invoice: &str) -> Option<i64> {
     // Normalize to lowercase for HRP parsing
     let lower = invoice.to_ascii_lowercase();
     if !lower.starts_with("ln") {
@@ -68,13 +68,12 @@ fn sats_from_bolt11_hrp(invoice: &str) -> Option<i32> {
         return None;
     }
 
-    // Use i128 to avoid overflow during conversions
-    let value = digits_str.parse::<i128>().ok()?;
+    // Use wide integers to avoid overflow during conversions
+    let value = digits_str.parse::<u128>().ok()?;
 
     // Convert to msats first, then to sats to avoid rounding issues
-    let msat: i128 = match unit_opt {
-        // No suffix means BTC amount
-        None => value.saturating_mul(100_000_000_000),
+    let msat: u128 = match unit_opt {
+        None => value.saturating_mul(100_000_000_000),  // BTC
         Some('m') => value.saturating_mul(100_000_000), // milli-BTC
         Some('u') => value.saturating_mul(100_000),     // micro-BTC
         Some('n') => value.saturating_mul(100),         // nano-BTC
@@ -88,15 +87,12 @@ fn sats_from_bolt11_hrp(invoice: &str) -> Option<i32> {
         _ => return None,
     };
 
-    let sats = msat / 1000;
-    if sats <= 0 {
+    // Always return sats (integer). Sub-sat totals become 0 and are treated as None.
+    let sats_u128 = msat / 1000;
+    if sats_u128 == 0 {
         return None;
     }
-    if sats > i32::MAX as i128 {
-        Some(i32::MAX)
-    } else {
-        Some(sats as i32)
-    }
+    i64::try_from(sats_u128).ok()
 }
 
 impl Parser {
@@ -172,12 +168,14 @@ impl Parser {
                 }
             }
         }
-        // Fallback: If no amount tag, try to decode BOLT11 invoice HRP to get sats
-        if amount == 0 {
-            if let Some(sats) = sats_from_bolt11_hrp(&bolt11) {
-                amount = sats;
-            }
-        }
+        // Fallback: If no amount tag or 0 sats, decode BOLT11 HRP to get sats
+        // if amount == 0 {
+        //     if let Some(sats) = sats_from_bolt11_hrp(&bolt11) {
+        //         if let Ok(sats_i32) = i32::try_from(sats) {
+        //             amount = sats_i32; // always sats
+        //         }
+        //     }
+        // }
 
         // Determine sender
         let sender = if let Some(sender_tag) = sender_tag {
