@@ -169,13 +169,13 @@ impl Parser {
             }
         }
         // Fallback: If no amount tag or 0 sats, decode BOLT11 HRP to get sats
-        // if amount == 0 {
-        //     if let Some(sats) = sats_from_bolt11_hrp(&bolt11) {
-        //         if let Ok(sats_i32) = i32::try_from(sats) {
-        //             amount = sats_i32; // always sats
-        //         }
-        //     }
-        // }
+        if amount == 0 {
+            if let Some(sats) = sats_from_bolt11_hrp(&bolt11) {
+                if let Ok(sats_i32) = i32::try_from(sats) {
+                    amount = sats_i32; // always sats
+                }
+            }
+        }
 
         // Determine sender
         let sender = if let Some(sender_tag) = sender_tag {
