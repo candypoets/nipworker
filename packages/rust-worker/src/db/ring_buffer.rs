@@ -4,6 +4,7 @@ use crate::{
         get_idb_factory, idb_open_request_promise, idb_request_promise, uint8array_from_slice,
     },
 };
+use js_sys::Date;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use tracing::{debug, info};
@@ -11,7 +12,8 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{IdbDatabase, IdbOpenDbRequest, IdbTransactionMode};
 
-const PERSIST_EVERY_N_EVENTS: u32 = 25; // set to 15 if you want more frequent flushes
+// Persist at most every 20 seconds (throttled by activity)
+const PERSIST_MIN_INTERVAL_MS: f64 = 30_000.0;
 
 /// Simple ring buffer storage implementation using IndexedDB
 #[derive(Debug, Clone)]
@@ -19,8 +21,6 @@ pub struct RingBufferStorage {
     db_name: String,
     buffer_key: String,
     max_buffer_size: usize,
-    // count of pending events before we flush to IndexedDB
-    pending_events_counter: Cell<u32>,
     config: DatabaseConfig,
     /// The actual ring buffer - just raw bytes
     buffer: Rc<RefCell<Vec<u8>>>,
@@ -29,6 +29,8 @@ pub struct RingBufferStorage {
     /// Total number of bytes logically removed from the front of the buffer over time.
     /// This lets us expose stable "global" offsets for events and detect outdated offsets.
     head_offset: Cell<u64>,
+    /// Timestamp (ms) of the first event since last persist; None means no active window.
+    first_event_since_last_persist_ms: Cell<Option<f64>>,
 }
 
 impl RingBufferStorage {
@@ -47,11 +49,11 @@ impl RingBufferStorage {
             db_name,
             buffer_key,
             max_buffer_size,
-            pending_events_counter: Cell::new(0),
             config,
             buffer: Rc::new(RefCell::new(Vec::with_capacity(max_buffer_size))),
             initialized: Cell::new(false),
             head_offset: Cell::new(0),
+            first_event_since_last_persist_ms: Cell::new(None),
         }
     }
 
@@ -109,13 +111,25 @@ impl RingBufferStorage {
 
         drop(buffer); // release borrow before await
 
-        // Increment and check counter
-        let next_count = self.pending_events_counter.get() + 1;
-        self.pending_events_counter.set(next_count);
+        // Throttle persistence: at most once every 20s, only when new events arrive.
+        let now_ms = web_sys::window()
+            .and_then(|w| w.performance())
+            .map(|p| p.now())
+            .unwrap_or_else(|| Date::now());
 
-        if next_count >= PERSIST_EVERY_N_EVENTS {
-            self.persist_to_indexeddb().await?;
-            self.pending_events_counter.set(0);
+        match self.first_event_since_last_persist_ms.get() {
+            None => {
+                // Start a new 20s window; don't persist yet. If no more events arrive,
+                // nothing is persisted (as requested).
+                self.first_event_since_last_persist_ms.set(Some(now_ms));
+            }
+            Some(t0) => {
+                if now_ms - t0 >= PERSIST_MIN_INTERVAL_MS {
+                    self.persist_to_indexeddb().await?;
+                    // Reset the window; next event starts a new window.
+                    self.first_event_since_last_persist_ms.set(None);
+                }
+            }
         }
 
         Ok(new_event_offset)
@@ -426,6 +440,7 @@ impl EventStorage for RingBufferStorage {
 
         // Reset head offset
         self.head_offset.set(0);
+        self.first_event_since_last_persist_ms.set(None);
 
         // Clear from IndexedDB
         let db = self.open_db().await?;
