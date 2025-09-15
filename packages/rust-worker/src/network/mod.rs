@@ -5,13 +5,13 @@ pub mod publish;
 pub mod subscription;
 
 use crate::db::NostrDB;
+use crate::nostr::Template;
 use crate::parser::Parser;
 use crate::relays::ConnectionRegistry;
 use crate::types::network::Request;
 use crate::types::*;
 use anyhow::Result;
 use js_sys::SharedArrayBuffer;
-use nostr::UnsignedEvent;
 use std::sync::Arc;
 
 pub struct NetworkManager {
@@ -61,11 +61,11 @@ impl NetworkManager {
     pub async fn publish_event(
         &self,
         publish_id: String,
-        event: &mut UnsignedEvent,
+        template: &Template,
         shared_buffer: SharedArrayBuffer,
     ) -> Result<()> {
         self.publish_manager
-            .publish_event(publish_id, event, shared_buffer)
+            .publish_event(publish_id, template, shared_buffer)
             .await
     }
 

@@ -1,6 +1,6 @@
 use super::super::*;
 use crate::network::interfaces::EventDatabase;
-use nostr::util::hex;
+use hex;
 
 pub struct SaveToDbPipe {
     database: Arc<NostrDB>,

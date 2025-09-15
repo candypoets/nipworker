@@ -1,5 +1,5 @@
+use crate::types::nostr::nips::nip19::{self, Nip19};
 use anyhow::Result;
-use nostr::nips::nip19::{self, Nip19};
 use regex::Regex;
 
 use crate::generated::nostr::fb;
@@ -611,13 +611,13 @@ fn process_nostr(text: &str, _caps: &regex::Captures) -> Result<ContentBlock> {
                     None,
                     pk.to_string(),
                 ),
-                Nip19::Secret(sk) => (
-                    "nsec",
-                    Vec::<String>::new(),
-                    Some(sk.to_string()),
-                    None,
-                    sk.to_string(),
-                ),
+                // Nip19::Secret(sk) => (
+                //     "nsec",
+                //     Vec::<String>::new(),
+                //     Some(sk.to_string()),
+                //     None,
+                //     sk.to_string(),
+                // ),
                 // Nip19::EncryptedSecret(enc_sk) => (
                 //     "ncryptsec",
                 //     Vec::new(),
@@ -641,13 +641,13 @@ fn process_nostr(text: &str, _caps: &regex::Captures) -> Result<ContentBlock> {
                     None,
                     event.event_id.to_string(),
                 ),
-                Nip19::Coordinate(coord) => (
-                    "naddr",
-                    coord.relays.into_iter().map(|r| r.to_string()).collect(),
-                    Some(coord.public_key.to_string()),
-                    Some(coord.kind.as_u64()),
-                    coord.identifier,
-                ),
+                // Nip19::Coordinate(coord) => (
+                //     "naddr",
+                //     coord.relays.into_iter().map(|r| r.to_string()).collect(),
+                //     Some(coord.public_key.to_string()),
+                //     Some(coord.kind.as_u64()),
+                //     coord.identifier,
+                // ),
             };
 
             Ok(

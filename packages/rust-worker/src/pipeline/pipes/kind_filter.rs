@@ -2,7 +2,7 @@ use super::super::*;
 use std::collections::HashSet;
 
 pub struct KindFilterPipe {
-    kinds: HashSet<u64>,
+    kinds: HashSet<u16>,
     name: String,
 }
 
@@ -10,7 +10,7 @@ impl KindFilterPipe {
     pub fn new(kinds: Vec<u64>) -> Self {
         Self {
             name: format!("KindFilter({:?})", kinds),
-            kinds: kinds.into_iter().collect(),
+            kinds: kinds.into_iter().map(|k| k as u16).collect(),
         }
     }
 }
@@ -19,9 +19,9 @@ impl Pipe for KindFilterPipe {
     async fn process(&mut self, event: PipelineEvent) -> Result<PipeOutput> {
         // Get kind from either raw or parsed event
         let kind = if let Some(ref raw) = event.raw {
-            raw.kind.as_u64()
+            raw.kind
         } else if let Some(ref parsed) = event.parsed {
-            parsed.event.kind.as_u64()
+            parsed.event.kind
         } else {
             return Ok(PipeOutput::Drop);
         };

@@ -4,6 +4,7 @@
 //! to Nostr relays. It manages one WebSocket connection per relay URL and tracks multiple
 //! subscriptions and publishes per connection.
 
+use crate::types::nostr::{Event, Filter};
 use crate::{
     pipeline::Pipeline,
     relays::{
@@ -16,7 +17,6 @@ use crate::{
 use futures::future::LocalBoxFuture;
 use futures::lock::Mutex;
 use js_sys::SharedArrayBuffer;
-use nostr::{Event, Filter};
 use rustc_hash::FxHashMap;
 use std::sync::Arc;
 use std::sync::RwLock;
@@ -199,7 +199,7 @@ impl ConnectionRegistry {
         }
 
         self.active_subscriptions.lock().await.insert(
-            event.id.to_hex(),
+            event_id.to_hex(),
             SubscriptionMeta {
                 relay_urls: normalized_urls.clone(),
                 pipeline: Rc::new(Mutex::new(Pipeline::new(vec![], "".to_string()).unwrap())),
@@ -256,11 +256,11 @@ impl ConnectionRegistry {
 
         if let Some(urls) = relay_urls {
             // Send CLOSE messages to all relays
-            let close_message = ClientMessage::close(subscription_id.to_string());
             for url in &urls {
                 if let Some(connection) = self.get_connection(url).await {
                     info!(relay = %url, subscription_id = %subscription_id, "Sending CLOSE message to relay");
-                    if let Err(e) = connection.send_message(close_message.clone()).await {
+                    let close_message = ClientMessage::close(subscription_id.to_string());
+                    if let Err(e) = connection.send_message(close_message).await {
                         tracing::error!(relay = %url, error = %e, "Failed to send CLOSE message");
                     }
                     connection.remove_subscription(subscription_id).await;

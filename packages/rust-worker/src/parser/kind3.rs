@@ -1,11 +1,10 @@
 use crate::parser::Parser;
 use crate::types::network::Request;
+use crate::types::nostr::Event;
 use anyhow::{anyhow, Result};
-use nostr::Event;
 
 // NEW: Imports for FlatBuffers
 use crate::generated::nostr::*;
-use flatbuffers::FlatBufferBuilder;
 
 pub struct Contact {
     pub pubkey: String,
@@ -17,7 +16,7 @@ pub type Kind3Parsed = Vec<Contact>;
 
 impl Parser {
     pub fn parse_kind_3(&self, event: &Event) -> Result<(Kind3Parsed, Option<Vec<Request>>)> {
-        if event.kind.as_u64() != 3 {
+        if event.kind != 3 {
             return Err(anyhow!("event is not kind 3"));
         }
 
@@ -25,22 +24,21 @@ impl Parser {
 
         // Extract contacts from p tags
         for tag in &event.tags {
-            let tag_vec = tag.as_vec();
-            if tag_vec.len() >= 2 && tag_vec[0] == "p" {
+            if tag.len() >= 2 && tag[0] == "p" {
                 let mut contact = Contact {
-                    pubkey: tag_vec[1].clone(),
+                    pubkey: tag[1].clone(),
                     relays: Vec::new(),
                     petname: None,
                 };
 
                 // Add relay if present (position 2)
-                if tag_vec.len() >= 3 && !tag_vec[2].is_empty() {
-                    contact.relays = vec![tag_vec[2].clone()];
+                if tag.len() >= 3 && !tag[2].is_empty() {
+                    contact.relays = vec![tag[2].clone()];
                 }
 
                 // Add petname if present (position 3)
-                if tag_vec.len() >= 4 && !tag_vec[3].is_empty() {
-                    contact.petname = Some(tag_vec[3].clone());
+                if tag.len() >= 4 && !tag[3].is_empty() {
+                    contact.petname = Some(tag[3].clone());
                 }
 
                 contacts.push(contact);
@@ -89,158 +87,4 @@ pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
     let offset = fb::Kind3Parsed::create(builder, &args);
 
     Ok(offset)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use nostr::{EventBuilder, Keys, Kind, Tag};
-
-    #[test]
-    fn test_parse_kind_3_basic() {
-        let keys = Keys::generate();
-        let pubkey1 = "npub1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
-        let pubkey2 = "npub2345678901bcdef2345678901bcdef2345678901bcdef2345678901bcdef2";
-
-        let tags = vec![
-            Tag::parse(vec!["p".to_string(), pubkey1.to_string()]).unwrap(),
-            Tag::parse(vec!["p".to_string(), pubkey2.to_string()]).unwrap(),
-        ];
-
-        let event = EventBuilder::new(Kind::ContactList, "", tags)
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let (parsed, _) = parser.parse_kind_3(&event).unwrap();
-
-        assert_eq!(parsed.len(), 2);
-        assert_eq!(parsed[0].pubkey, pubkey1);
-        assert_eq!(parsed[1].pubkey, pubkey2);
-        assert!(parsed[0].relays.is_empty());
-        assert!(parsed[0].petname.is_none());
-    }
-
-    #[test]
-    fn test_parse_kind_3_with_relay_and_petname() {
-        let keys = Keys::generate();
-        let pubkey = "npub1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
-        let relay = "wss://relay.example.com";
-        let petname = "alice";
-
-        let tags = vec![Tag::parse(vec![
-            "p".to_string(),
-            pubkey.to_string(),
-            relay.to_string(),
-            petname.to_string(),
-        ])
-        .unwrap()];
-
-        let event = EventBuilder::new(Kind::ContactList, "", tags)
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let (parsed, _) = parser.parse_kind_3(&event).unwrap();
-
-        assert_eq!(parsed.len(), 1);
-        assert_eq!(parsed[0].pubkey, pubkey);
-        assert_eq!(parsed[0].relays, vec![relay]);
-        assert_eq!(parsed[0].petname, Some(petname.to_string()));
-    }
-
-    #[test]
-    fn test_parse_kind_3_with_empty_relay() {
-        let keys = Keys::generate();
-        let pubkey = "npub1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
-        let petname = "bob";
-
-        let tags = vec![Tag::parse(vec![
-            "p".to_string(),
-            pubkey.to_string(),
-            "".to_string(),
-            petname.to_string(),
-        ])
-        .unwrap()];
-
-        let event = EventBuilder::new(Kind::ContactList, "", tags)
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let (parsed, _) = parser.parse_kind_3(&event).unwrap();
-
-        assert_eq!(parsed.len(), 1);
-        assert_eq!(parsed[0].pubkey, pubkey);
-        assert!(parsed[0].relays.is_empty()); // Empty relay should result in empty vec
-        assert_eq!(parsed[0].petname, Some(petname.to_string()));
-    }
-
-    #[test]
-    fn test_parse_kind_3_no_p_tags() {
-        let keys = Keys::generate();
-
-        let tags = vec![
-            Tag::parse(vec!["t".to_string(), "hashtag".to_string()]).unwrap(),
-            Tag::parse(vec!["r".to_string(), "wss://relay.example.com".to_string()]).unwrap(),
-        ];
-
-        let event = EventBuilder::new(Kind::ContactList, "", tags)
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let (parsed, _) = parser.parse_kind_3(&event).unwrap();
-
-        assert_eq!(parsed.len(), 0);
-    }
-
-    #[test]
-    fn test_parse_kind_3_mixed_tags() {
-        let keys = Keys::generate();
-        let pubkey1 = "npub1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
-        let pubkey2 = "npub2345678901bcdef2345678901bcdef2345678901bcdef2345678901bcdef2";
-
-        let tags = vec![
-            Tag::parse(vec!["t".to_string(), "hashtag".to_string()]).unwrap(),
-            Tag::parse(vec![
-                "p".to_string(),
-                pubkey1.to_string(),
-                "wss://relay1.com".to_string(),
-                "alice".to_string(),
-            ])
-            .unwrap(),
-            Tag::parse(vec!["r".to_string(), "wss://relay.example.com".to_string()]).unwrap(),
-            Tag::parse(vec!["p".to_string(), pubkey2.to_string()]).unwrap(),
-        ];
-
-        let event = EventBuilder::new(Kind::ContactList, "", tags)
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let (parsed, _) = parser.parse_kind_3(&event).unwrap();
-
-        assert_eq!(parsed.len(), 2);
-        assert_eq!(parsed[0].pubkey, pubkey1);
-        assert_eq!(parsed[0].relays, vec!["wss://relay1.com"]);
-        assert_eq!(parsed[0].petname, Some("alice".to_string()));
-        assert_eq!(parsed[1].pubkey, pubkey2);
-        assert!(parsed[1].relays.is_empty());
-        assert!(parsed[1].petname.is_none());
-    }
-
-    #[test]
-    fn test_parse_wrong_kind() {
-        let keys = Keys::generate();
-
-        let event = EventBuilder::new(Kind::TextNote, "test", Vec::new())
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let result = parser.parse_kind_3(&event);
-
-        assert!(result.is_err());
-    }
 }

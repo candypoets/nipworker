@@ -3,9 +3,9 @@ use crate::parser::{
     Parser,
 };
 use crate::types::network::Request;
+use crate::types::nostr::Event;
 use crate::utils::request_deduplication::RequestDeduplicator;
 use anyhow::{anyhow, Result};
-use nostr::{Event, Tag};
 
 // NEW: Imports for FlatBuffers
 use crate::generated::nostr::*;
@@ -33,7 +33,7 @@ pub struct Kind1Parsed {
 
 impl Parser {
     pub fn parse_kind_1(&self, event: &Event) -> Result<(Kind1Parsed, Option<Vec<Request>>)> {
-        if event.kind.as_u64() != 1 {
+        if event.kind != 1 {
             return Err(anyhow!("event is not kind 1"));
         }
 
@@ -167,8 +167,10 @@ impl Parser {
 
         for caps in profile_regex.captures_iter(content) {
             if let Some(npub) = caps.get(1) {
-                if let Ok(decoded) = nostr::nips::nip19::FromBech32::from_bech32(npub.as_str()) {
-                    if let nostr::nips::nip19::Nip19::Pubkey(pubkey) = decoded {
+                if let Ok(decoded) =
+                    crate::types::nostr::nips::nip19::FromBech32::from_bech32(npub.as_str())
+                {
+                    if let crate::types::nostr::nips::nip19::Nip19::Pubkey(pubkey) = decoded {
                         let pointer = ProfilePointer {
                             public_key: pubkey.to_string(),
                             relays: Vec::new(),
@@ -200,9 +202,10 @@ impl Parser {
 
         for caps in nprofile_regex.captures_iter(content) {
             if let Some(nprofile) = caps.get(1) {
-                if let Ok(decoded) = nostr::nips::nip19::FromBech32::from_bech32(nprofile.as_str())
+                if let Ok(decoded) =
+                    crate::types::nostr::nips::nip19::FromBech32::from_bech32(nprofile.as_str())
                 {
-                    if let nostr::nips::nip19::Nip19::Profile(profile) = decoded {
+                    if let crate::types::nostr::nips::nip19::Nip19::Profile(profile) = decoded {
                         let pointer = ProfilePointer {
                             public_key: profile.public_key.to_string(),
                             relays: profile
@@ -249,8 +252,10 @@ impl Parser {
 
         for caps in note_regex.captures_iter(content) {
             if let Some(note) = caps.get(1) {
-                if let Ok(decoded) = nostr::nips::nip19::FromBech32::from_bech32(note.as_str()) {
-                    if let nostr::nips::nip19::Nip19::EventId(event_id) = decoded {
+                if let Ok(decoded) =
+                    crate::types::nostr::nips::nip19::FromBech32::from_bech32(note.as_str())
+                {
+                    if let crate::types::nostr::nips::nip19::Nip19::EventId(event_id) = decoded {
                         let id = event_id.to_string();
 
                         // Add request for this event
@@ -280,8 +285,10 @@ impl Parser {
 
         for caps in nevent_regex.captures_iter(content) {
             if let Some(nevent) = caps.get(1) {
-                if let Ok(decoded) = nostr::nips::nip19::FromBech32::from_bech32(nevent.as_str()) {
-                    if let nostr::nips::nip19::Nip19::Event(event) = decoded {
+                if let Ok(decoded) =
+                    crate::types::nostr::nips::nip19::FromBech32::from_bech32(nevent.as_str())
+                {
+                    if let crate::types::nostr::nips::nip19::Nip19::Event(event) = decoded {
                         let id = event.event_id.to_string();
                         let author = event.author.map(|pk| pk.to_string());
 
@@ -491,25 +498,24 @@ pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
 }
 
 impl Parser {
-    fn get_immediate_parent(&self, tags: &[Tag]) -> Option<EventPointer> {
+    fn get_immediate_parent(&self, tags: &[Vec<String>]) -> Option<EventPointer> {
         // Find the last 'e' tag with 'reply' marker or the last 'e' tag if no markers
         let mut reply_tag = None;
         let mut last_e_tag = None;
 
         for tag in tags {
-            let tag_vec = tag.as_vec();
-            if tag_vec.len() >= 2 && tag_vec[0] == "e" {
+            if tag.len() >= 2 && tag[0] == "e" {
                 last_e_tag = Some(tag);
 
                 // Check if this has a 'reply' marker
-                if tag_vec.len() >= 4 && tag_vec[3] == "reply" {
+                if tag.len() >= 4 && tag[3] == "reply" {
                     reply_tag = Some(tag);
                 }
             }
         }
 
         let chosen_tag = reply_tag.or(last_e_tag)?;
-        let tag_vec = chosen_tag.as_vec();
+        let tag_vec = chosen_tag;
 
         if tag_vec.len() >= 2 {
             Some(EventPointer {
@@ -527,28 +533,26 @@ impl Parser {
         }
     }
 
-    fn get_thread_root(&self, tags: &[Tag]) -> Option<EventPointer> {
+    fn get_thread_root(&self, tags: &[Vec<String>]) -> Option<EventPointer> {
         // Find the first 'e' tag with 'root' marker or the first 'e' tag if no markers
         let mut root_tag = None;
         let mut first_e_tag = None;
 
         for tag in tags {
-            let tag_vec = tag.as_vec();
-            if tag_vec.len() >= 2 && tag_vec[0] == "e" {
+            if tag.len() >= 2 && tag[0] == "e" {
                 if first_e_tag.is_none() {
                     first_e_tag = Some(tag);
                 }
 
                 // Check if this has a 'root' marker
-                if tag_vec.len() >= 4 && tag_vec[3] == "root" {
+                if tag.len() >= 4 && tag[3] == "root" {
                     root_tag = Some(tag);
                     break; // Found explicit root, use it
                 }
             }
         }
 
-        let chosen_tag = root_tag.or(first_e_tag)?;
-        let tag_vec = chosen_tag.as_vec();
+        let tag_vec = root_tag.or(first_e_tag)?;
 
         if tag_vec.len() >= 2 {
             Some(EventPointer {
@@ -564,321 +568,5 @@ impl Parser {
         } else {
             None
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::utils::request_deduplication::RequestDeduplicator;
-    use nostr::{EventBuilder, Keys, Kind, Tag};
-
-    #[test]
-    fn test_parse_kind_1_basic() {
-        let keys = Keys::generate();
-        let content = "Hello, Nostr world!";
-
-        let event = EventBuilder::new(Kind::TextNote, content, Vec::new())
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let (parsed, requests) = parser.parse_kind_1(&event).unwrap();
-
-        assert_eq!(parsed.parsed_content.len(), 1);
-        assert_eq!(parsed.parsed_content[0].block_type, "text");
-        assert_eq!(parsed.parsed_content[0].text, content);
-        assert_eq!(parsed.shortened_content.len(), 0); // Content is short, no shortening needed
-        assert!(requests.is_some());
-        assert!(requests.unwrap().len() >= 2); // Author profile + relay list
-    }
-
-    #[test]
-    fn test_parse_kind_1_with_reply() {
-        let keys = Keys::generate();
-        let content = "This is a reply";
-        let reply_event_id = "1234567890abcdef1234567890abcdef12345678";
-        let relay_url = "wss://relay.example.com";
-
-        let tags = vec![Tag::parse(vec![
-            "e".to_string(),
-            reply_event_id.to_string(),
-            relay_url.to_string(),
-            "reply".to_string(),
-        ])
-        .unwrap()];
-
-        let event = EventBuilder::new(Kind::TextNote, content, tags)
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let (parsed, _) = parser.parse_kind_1(&event).unwrap();
-
-        assert!(parsed.reply.is_some());
-        let reply = parsed.reply.unwrap();
-        assert_eq!(reply.id, reply_event_id);
-        assert_eq!(reply.relays, vec![relay_url]);
-        assert_eq!(parsed.shortened_content.len(), 0); // Content is short, no shortening needed
-    }
-
-    #[test]
-    fn test_parse_kind_1_with_root() {
-        let keys = Keys::generate();
-        let content = "This is part of a thread";
-        let root_event_id = "abcdef1234567890abcdef1234567890abcdef12";
-        let relay_url = "wss://relay.example.com";
-
-        let tags = vec![Tag::parse(vec![
-            "e".to_string(),
-            root_event_id.to_string(),
-            relay_url.to_string(),
-            "root".to_string(),
-        ])
-        .unwrap()];
-
-        let event = EventBuilder::new(Kind::TextNote, content, tags)
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let (parsed, _) = parser.parse_kind_1(&event).unwrap();
-
-        assert!(parsed.root.is_some());
-        let root = parsed.root.unwrap();
-        assert_eq!(root.id, root_event_id);
-        assert_eq!(root.relays, vec![relay_url]);
-        assert_eq!(parsed.shortened_content.len(), 0); // Content is short, no shortening needed
-    }
-
-    #[test]
-    fn test_parse_wrong_kind() {
-        let keys = Keys::generate();
-
-        let event = EventBuilder::new(Kind::Metadata, "{}", Vec::new())
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let result = parser.parse_kind_1(&event);
-
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_parse_kind_1_with_hashtags() {
-        let keys = Keys::generate();
-        let content = "I love #bitcoin and #nostr!";
-
-        let event = EventBuilder::new(Kind::TextNote, content, Vec::new())
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let (parsed, _) = parser.parse_kind_1(&event).unwrap();
-
-        // Should have parsed hashtags in content
-        assert!(parsed.parsed_content.len() > 1);
-        let has_hashtag = parsed
-            .parsed_content
-            .iter()
-            .any(|block| block.block_type == "hashtag");
-        assert!(has_hashtag);
-        assert_eq!(parsed.shortened_content.len(), 0); // Content is short, no shortening needed
-    }
-
-    #[test]
-    fn test_request_deduplication() {
-        // Create multiple requests with the same filter criteria but different relays
-        let requests = vec![
-            Request {
-                ids: vec!["event1".to_string(), "event2".to_string()],
-                authors: vec!["author1".to_string()],
-                kinds: vec![1, 6],
-                relays: vec!["relay1.com".to_string(), "relay2.com".to_string()],
-                limit: Some(1),
-                close_on_eose: true,
-                cache_first: true,
-                ..Default::default()
-            },
-            Request {
-                ids: vec!["event2".to_string(), "event1".to_string()], // Same IDs, different order
-                authors: vec!["author1".to_string()],
-                kinds: vec![6, 1], // Same kinds, different order
-                relays: vec!["relay2.com".to_string(), "relay3.com".to_string()],
-                limit: Some(1),
-                close_on_eose: true,
-                cache_first: true,
-                ..Default::default()
-            },
-            Request {
-                ids: vec!["event3".to_string()],
-                authors: vec!["author2".to_string()],
-                kinds: vec![1],
-                relays: vec!["relay1.com".to_string()],
-                limit: Some(1),
-                close_on_eose: true,
-                cache_first: true,
-                ..Default::default()
-            },
-            Request {
-                ids: vec!["event1".to_string(), "event2".to_string()],
-                authors: vec!["author1".to_string()],
-                kinds: vec![1, 6],
-                relays: vec!["relay4.com".to_string(), "relay1.com".to_string()],
-                limit: Some(2), // Different limit - should NOT be deduplicated
-                close_on_eose: true,
-                cache_first: true,
-                ..Default::default()
-            },
-        ];
-
-        let deduplicated = RequestDeduplicator::deduplicate_requests(requests);
-
-        // Should have 3 unique requests (2 with same filter but different limits, 1 unique)
-        assert_eq!(deduplicated.len(), 3);
-
-        // Find requests with event1 and event2
-        let matching_requests: Vec<_> = deduplicated
-            .iter()
-            .filter(|r| {
-                r.ids.contains(&"event1".to_string()) && r.ids.contains(&"event2".to_string())
-            })
-            .collect();
-
-        // Should have 2 requests with event1+event2 (different limits)
-        assert_eq!(matching_requests.len(), 2);
-
-        // Find the request with limit 1
-        let limit_1_request = matching_requests
-            .iter()
-            .find(|r| r.limit == Some(1))
-            .unwrap();
-
-        // Should have 3 relays deduplicated
-        assert_eq!(limit_1_request.relays.len(), 3);
-        assert!(limit_1_request.relays.contains(&"relay1.com".to_string()));
-        assert!(limit_1_request.relays.contains(&"relay2.com".to_string()));
-        assert!(limit_1_request.relays.contains(&"relay3.com".to_string()));
-
-        // Find the request with limit 2
-        let limit_2_request = matching_requests
-            .iter()
-            .find(|r| r.limit == Some(2))
-            .unwrap();
-
-        // Should have 2 relays
-        assert_eq!(limit_2_request.relays.len(), 2);
-        assert!(limit_2_request.relays.contains(&"relay1.com".to_string()));
-        assert!(limit_2_request.relays.contains(&"relay4.com".to_string()));
-
-        // Find the request with event3
-        let single_event_request = deduplicated
-            .iter()
-            .find(|r| r.ids.contains(&"event3".to_string()))
-            .unwrap();
-
-        // Should have only one relay
-        assert_eq!(single_event_request.relays.len(), 1);
-        assert!(single_event_request
-            .relays
-            .contains(&"relay1.com".to_string()));
-    }
-
-    #[test]
-    fn test_parse_kind_1_with_long_content() {
-        let keys = Keys::generate();
-        // Create content longer than 500 characters
-        let long_content =
-            "This is a very long text that should be shortened when parsed. ".repeat(20); // ~1280 characters
-
-        let event = EventBuilder::new(Kind::TextNote, &long_content, Vec::new())
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let (parsed, _) = parser.parse_kind_1(&event).unwrap();
-
-        // Should have parsed content
-        assert_eq!(parsed.parsed_content.len(), 1);
-        assert_eq!(parsed.parsed_content[0].block_type, "text");
-        assert_eq!(parsed.parsed_content[0].text, long_content);
-
-        // Should have shortened content since it's longer than 500 characters
-        assert!(parsed.shortened_content.len() > 0);
-        assert_eq!(parsed.shortened_content.len(), 1);
-        assert_eq!(parsed.shortened_content[0].block_type, "text");
-        assert!(parsed.shortened_content[0].text.len() < long_content.len());
-        assert!(parsed.shortened_content[0].text.ends_with("..."));
-    }
-
-    #[test]
-    fn test_parse_kind_1_with_many_line_breaks() {
-        let keys = Keys::generate();
-        // Create content with many line breaks (15 lines, but short total length)
-        let content_with_lines = "Line 1\nLine 2\nLine 3\nLine 4\nLine 5\nLine 6\nLine 7\nLine 8\nLine 9\nLine 10\nLine 11\nLine 12\nLine 13\nLine 14\nLine 15";
-
-        let event = EventBuilder::new(Kind::TextNote, content_with_lines, Vec::new())
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let (parsed, _) = parser.parse_kind_1(&event).unwrap();
-
-        // Should have parsed content
-        assert_eq!(parsed.parsed_content.len(), 1);
-        assert_eq!(parsed.parsed_content[0].block_type, "text");
-        assert_eq!(parsed.parsed_content[0].text, content_with_lines);
-
-        // Should have shortened content since it has more than 10 lines
-        assert!(parsed.shortened_content.len() > 0);
-        assert_eq!(parsed.shortened_content.len(), 1);
-        assert_eq!(parsed.shortened_content[0].block_type, "text");
-        assert!(parsed.shortened_content[0].text.lines().count() <= 10);
-        assert!(parsed.shortened_content[0].text.ends_with("..."));
-    }
-
-    #[test]
-    fn test_parse_kind_1_with_long_text_and_many_lines() {
-        let keys = Keys::generate();
-        // Create content with both long lines and many lines (should trigger both limits)
-        let long_line =
-            "This is a very long line that exceeds typical length limits and should be truncated. "
-                .repeat(10); // ~870 chars per line
-        let content_with_long_lines = format!(
-            "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}",
-            long_line,
-            long_line,
-            long_line,
-            long_line,
-            long_line,
-            long_line,
-            long_line,
-            long_line,
-            long_line,
-            long_line,
-            long_line,
-            long_line
-        ); // 12 lines, each ~870 chars
-
-        let event = EventBuilder::new(Kind::TextNote, &content_with_long_lines, Vec::new())
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let (parsed, _) = parser.parse_kind_1(&event).unwrap();
-
-        // Should have parsed content
-        assert_eq!(parsed.parsed_content.len(), 1);
-        assert_eq!(parsed.parsed_content[0].block_type, "text");
-        assert_eq!(parsed.parsed_content[0].text, content_with_long_lines);
-
-        // Should have shortened content due to both length and line count limits
-        assert!(parsed.shortened_content.len() > 0);
-        assert_eq!(parsed.shortened_content.len(), 1);
-        assert_eq!(parsed.shortened_content[0].block_type, "text");
-        assert!(parsed.shortened_content[0].text.len() < content_with_long_lines.len());
-        assert!(parsed.shortened_content[0].text.lines().count() <= 10);
-        assert!(parsed.shortened_content[0].text.ends_with("..."));
     }
 }

@@ -1,6 +1,5 @@
-use crate::generated::nostr::fb;
-use crate::parsed_event::ParsedEvent;
-use nostr::{EventId, Kind, PublicKey, SingleLetterTag, Timestamp};
+use crate::types::nostr::{EventId, Kind, PublicKey, Timestamp};
+use crate::Filter;
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
@@ -41,7 +40,6 @@ pub struct DatabaseStats {
 }
 
 /// Query filter for internal use
-#[derive(Debug, Clone)]
 pub struct QueryFilter {
     pub ids: Option<Vec<EventId>>,
     pub authors: Option<Vec<PublicKey>>,
@@ -74,10 +72,10 @@ impl QueryFilter {
         }
     }
 
-    /// Convert from nostr::Filter
-    pub fn from_nostr_filter(filter: &nostr::Filter) -> Self {
+    /// Convert from crate::types::nostr::Filter
+    pub fn from_nostr_filter(filter: &Filter) -> Self {
         // Convert HashSets to Vecs
-        let ids = filter.ids.as_ref().map(|set| set.iter().cloned().collect());
+        let ids = filter.ids.clone();
         let authors = filter
             .authors
             .as_ref()
@@ -87,28 +85,10 @@ impl QueryFilter {
             .as_ref()
             .map(|set| set.iter().cloned().collect());
 
-        // Handle generic tags properly
-        let e_tag_key = SingleLetterTag::lowercase(nostr::Alphabet::E);
-        let p_tag_key = SingleLetterTag::lowercase(nostr::Alphabet::P);
-        let a_tag_key = SingleLetterTag::lowercase(nostr::Alphabet::A);
-        let d_tag_key = SingleLetterTag::lowercase(nostr::Alphabet::D);
-
-        let e_tags = filter
-            .generic_tags
-            .get(&e_tag_key)
-            .map(|set| set.iter().map(|v| v.to_string()).collect());
-        let p_tags = filter
-            .generic_tags
-            .get(&p_tag_key)
-            .map(|set| set.iter().map(|v| v.to_string()).collect());
-        let a_tags = filter
-            .generic_tags
-            .get(&a_tag_key)
-            .map(|set| set.iter().map(|v| v.to_string()).collect());
-        let d_tags = filter
-            .generic_tags
-            .get(&d_tag_key)
-            .map(|set| set.iter().map(|v| v.to_string()).collect());
+        let e_tags = filter.e_tags.clone();
+        let p_tags = filter.p_tags.clone();
+        let a_tags = filter.a_tags.clone();
+        let d_tags = filter.d_tags.clone();
 
         Self {
             ids,

@@ -1,20 +1,20 @@
 //! Signer module for Nutscash Nostr
-//! 
+//!
 //! This module provides cryptographic signing functionality for Nostr events,
 //! including support for different signer types, NIP-04 and NIP-44 encryption/decryption,
 //! and WebAssembly integration for browser environments.
 
 pub mod interface;
-pub mod pk;
 pub mod manager;
+pub mod pk;
 
 // Re-export main types and traits
-pub use interface::{Signer, SignerManager, SignerFactory};
-pub use pk::PrivateKeySigner;
+pub use interface::{Signer, SignerFactory, SignerManager};
 pub use manager::{SignerManagerImpl, WasmSignerManager};
+pub use pk::PrivateKeySigner;
 
 // Re-export types from the types module
-pub use crate::types::{SignerType, SignerMessage};
+pub use crate::types::{SignerMessage, SignerType};
 
 use anyhow::Result;
 use std::sync::Arc;
@@ -69,37 +69,27 @@ pub fn create_shared_signer_manager() -> SharedSignerManager {
 pub enum SignerError {
     #[error("No signer available")]
     NoSigner,
-    
+
     #[error("Invalid signer type: {0}")]
     InvalidSignerType(String),
-    
+
     #[error("Invalid private key format: {0}")]
     InvalidPrivateKey(String),
-    
+
     #[error("Cryptographic operation failed: {0}")]
     CryptoError(String),
-    
+
     #[error("Serialization error: {0}")]
     SerializationError(#[from] serde_json::Error),
-    
+
     #[error("MessagePack error: {0}")]
     MessagePackError(#[from] rmp_serde::encode::Error),
-    
+
     #[error("Nostr error: {0}")]
     NostrError(String),
 }
 
-impl From<nostr::key::Error> for SignerError {
-    fn from(err: nostr::key::Error) -> Self {
-        SignerError::NostrError(err.to_string())
-    }
-}
-
-impl From<nostr::event::builder::Error> for SignerError {
-    fn from(err: nostr::event::builder::Error) -> Self {
-        SignerError::NostrError(err.to_string())
-    }
-}
+// Error conversions removed - using our minimal nostr types now
 
 impl From<anyhow::Error> for SignerError {
     fn from(err: anyhow::Error) -> Self {

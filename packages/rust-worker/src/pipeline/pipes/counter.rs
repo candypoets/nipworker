@@ -6,18 +6,18 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use tracing::error;
 
 pub struct CounterPipe {
-    kinds: FxHashSet<u64>,
-    counts: FxHashMap<u64, u64>,
+    kinds: FxHashSet<u16>,
+    counts: FxHashMap<u16, u64>,
     pubkey: String, // Pubkey in hex string
     name: String,
 }
 
 impl CounterPipe {
-    pub fn new(kinds: Vec<u64>, pubkey: String) -> Self {
+    pub fn new(kinds: Vec<u16>, pubkey: String) -> Self {
         let counts = kinds.iter().map(|&k| (k, 0)).collect();
         Self {
             name: format!("Counter({:?})", kinds),
-            kinds: kinds.into_iter().collect(),
+            kinds: kinds.into_iter().map(|k| k as u16).collect(),
             pubkey,
             counts,
         }
@@ -29,9 +29,9 @@ impl Pipe for CounterPipe {
         tracing::debug!("Processing event in CounterPipe");
         // Get kind from either raw or parsed event
         let (kind, pubkey) = if let Some(ref raw) = event.raw {
-            (raw.kind.as_u64(), raw.pubkey.to_string())
+            (raw.kind, raw.pubkey.to_string())
         } else if let Some(ref parsed) = event.parsed {
-            (parsed.event.kind.as_u64(), parsed.event.pubkey.to_string())
+            (parsed.event.kind, parsed.event.pubkey.to_string())
         } else {
             return Ok(PipeOutput::Drop);
         };
@@ -71,13 +71,13 @@ impl Pipe for CounterPipe {
 
     async fn process_cached_batch(&mut self, messages: &[Vec<u8>]) -> Result<Vec<Vec<u8>>> {
         let mut outputs = Vec::new();
-        let mut you_by_kind: FxHashMap<u64, bool> = FxHashMap::default();
+        let mut you_by_kind: FxHashMap<u16, bool> = FxHashMap::default();
 
         for bytes in messages {
             if let Ok(msg) = flatbuffers::root::<fb::WorkerMessage>(&bytes) {
                 if let fb::Message::ParsedEvent = msg.content_type() {
                     if let Some(parsed) = msg.content_as_parsed_event() {
-                        let kind = parsed.kind() as u64;
+                        let kind = parsed.kind();
                         let pubkey = parsed.pubkey().to_string();
 
                         if self.kinds.contains(&kind) {

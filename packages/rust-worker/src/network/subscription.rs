@@ -4,7 +4,7 @@ use crate::network::cache_processor::CacheProcessor;
 use crate::network::interfaces::CacheProcessor as CacheProcessorTrait;
 use crate::parser::Parser;
 use crate::pipeline::pipes::*;
-use crate::pipeline::{PipeType, Pipeline, PipelineEvent};
+use crate::pipeline::{PipeType, Pipeline};
 use crate::relays::utils::{normalize_relay_url, validate_relay_url};
 use crate::types::network::Request;
 use crate::types::thread::{PipelineConfig, SubscriptionConfig};
@@ -222,7 +222,7 @@ impl SubscriptionManager {
             let kind = match filter.kinds.as_ref() {
                 Some(kinds) => {
                     if !kinds.is_empty() {
-                        kinds.iter().next().unwrap().as_u64()
+                        *kinds.iter().next().unwrap()
                     } else {
                         0
                     }
@@ -286,7 +286,12 @@ impl SubscriptionManager {
                             let kinds = params
                                 .and_then(|p| p.get("kinds"))
                                 .and_then(|v| v.as_array())
-                                .map(|arr| arr.iter().filter_map(|v| v.as_u64()).collect())
+                                .map(|arr| {
+                                    arr.iter()
+                                        .filter_map(|v| v.as_u64())
+                                        .map(|v| v as u16)
+                                        .collect()
+                                })
                                 .unwrap_or_else(|| vec![1]); // Default to kind 1 (text notes)
 
                             let pubkey = params
@@ -312,6 +317,7 @@ impl SubscriptionManager {
                             let kind = params
                                 .and_then(|p| p.get("kind"))
                                 .and_then(|v| v.as_u64())
+                                .map(|v| v as u16)
                                 .unwrap_or(1); // Default to kind 1 (text notes)
                             let limit_per_npub = params
                                 .and_then(|p| p.get("limitPerNpub"))

@@ -8,11 +8,12 @@ use crate::network::interfaces::EventDatabase;
 use crate::parsed_event::ParsedEvent;
 use crate::types::network::Request;
 use crate::utils::relay::RelayUtils;
+use crate::{METADATA, RELAY_LIST};
 use anyhow::Result;
 use rustc_hash::{FxHashMap, FxHashSet};
 
+use crate::types::nostr::{Event, EventId, Filter, PublicKey};
 use instant::Instant;
-use nostr::{Event, EventId, Filter, PublicKey};
 use std::sync::{Arc, RwLock};
 use tracing::{debug, error, info, warn};
 use tracing_subscriber::registry::Data;
@@ -300,10 +301,7 @@ impl<S: EventStorage> NostrDB<S> {
         if let Some(kinds) = &filter.kinds {
             let mut kind_events = FxHashSet::default();
             for kind in kinds {
-                let kind_u64 = kind.as_u64();
-                if let Some(event_ids) =
-                    self.indexes.events_by_kind.borrow().get(&(kind_u64 as u16))
-                {
+                if let Some(event_ids) = self.indexes.events_by_kind.borrow().get(kind) {
                     kind_events.extend(event_ids.iter().cloned());
                 }
             }
@@ -395,13 +393,13 @@ impl<S: EventStorage> NostrDB<S> {
                     if let Some(event) = Self::extract_parsed_event(&b) {
                         // Time range filters
                         if let Some(since) = filter.since {
-                            if event.created_at() < since.as_u64() as u32 {
+                            if event.created_at() < since as u32 {
                                 continue;
                             }
                         }
 
                         if let Some(until) = filter.until {
-                            if event.created_at() > until.as_u64() as u32 {
+                            if event.created_at() > until as u32 {
                                 continue;
                             }
                         }
@@ -482,8 +480,8 @@ impl<S: EventStorage> NostrDB<S> {
     /// Get a profile for a given pubkey
     pub fn get_profile(&self, pubkey: &PublicKey) -> Option<Vec<u8>> {
         let mut filter = QueryFilter::new();
-        filter.kinds = Some(vec![nostr::Kind::Metadata]);
-        filter.authors = Some(vec![*pubkey]);
+        filter.kinds = Some(vec![METADATA]);
+        filter.authors = Some(vec![pubkey.clone()]);
         filter.limit = Some(1);
         let events = self.query_events_internal(filter);
         match events {
@@ -500,7 +498,7 @@ impl<S: EventStorage> NostrDB<S> {
 
     pub fn get_read_relays(&self, pubkey: &str) -> Option<Vec<String>> {
         let mut filter = QueryFilter::new();
-        filter.kinds = Some(vec![nostr::Kind::RelayList]);
+        filter.kinds = Some(vec![RELAY_LIST]);
         filter.authors = Some(vec![PublicKey::from_hex(pubkey).ok()?]);
         filter.limit = Some(1);
         let events = self.query_events_internal(filter);
@@ -534,7 +532,7 @@ impl<S: EventStorage> NostrDB<S> {
 
     pub fn get_write_relays(&self, pubkey: &str) -> Option<Vec<String>> {
         let mut filter = QueryFilter::new();
-        filter.kinds = Some(vec![nostr::Kind::RelayList]);
+        filter.kinds = Some(vec![RELAY_LIST]);
         filter.authors = Some(vec![PublicKey::from_hex(pubkey).ok()?]);
         filter.limit = Some(1);
         let events = self.query_events_internal(filter);
@@ -570,9 +568,8 @@ impl<S: EventStorage> NostrDB<S> {
         let mut relay_hints = Vec::new();
 
         for tag in &event.tags {
-            let tag_vec = tag.as_vec();
-            if tag_vec.len() >= 2 && tag_vec[0] == "r" {
-                relay_hints.push(tag_vec[1].clone());
+            if tag.len() >= 2 && tag[0] == "r" {
+                relay_hints.push(tag[1].clone());
             }
         }
 
@@ -607,7 +604,7 @@ impl<S: EventStorage> NostrDB<S> {
         clean_relays
     }
 
-    pub fn find_relay_candidates(&self, kind: u64, pubkey: &str, write: &bool) -> Vec<String> {
+    pub fn find_relay_candidates(&self, kind: u16, pubkey: &str, write: &bool) -> Vec<String> {
         let mut relays_found = Vec::new();
 
         // Check if there are any relay hints for this pubkey
@@ -713,7 +710,7 @@ impl<S: EventStorage> NostrDB<S> {
         }
 
         if self.config.debug_logging {
-            debug!("Processed event {} from queue", event.event.id);
+            debug!("Processed event {} from queue", event.event.id.to_hex());
         }
 
         Ok(())

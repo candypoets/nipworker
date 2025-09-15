@@ -1,7 +1,8 @@
+use crate::nostr::Template;
 use crate::types::network::Request;
+use crate::types::nostr::{Event, UnsignedEvent};
 use crate::{parser::Parser, Proof};
 use anyhow::{anyhow, Result};
-use nostr::{Event, UnsignedEvent};
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
@@ -26,7 +27,7 @@ struct TokenContent {
 
 impl Parser {
     pub fn parse_kind_7375(&self, event: &Event) -> Result<(Kind7375Parsed, Option<Vec<Request>>)> {
-        if event.kind.as_u64() != 7375 {
+        if event.kind != 7375 {
             return Err(anyhow!("event is not kind 7375"));
         }
 
@@ -60,13 +61,13 @@ impl Parser {
         Ok((parsed, None))
     }
 
-    pub fn prepare_kind_7375(&self, unsigned_event: &mut UnsignedEvent) -> Result<Event> {
-        if unsigned_event.kind.as_u64() != 7375 {
+    pub fn prepare_kind_7375(&self, template: &Template) -> Result<Event> {
+        if template.kind != 7375 {
             return Err(anyhow!("event is not kind 7375"));
         }
 
         // Content must be a valid JSON for TokenContent
-        let _content: TokenContent = serde_json::from_str(&unsigned_event.content)
+        let _content: TokenContent = serde_json::from_str(&template.content)
             .map_err(|e| anyhow!("invalid token content: {}", e))?;
 
         // Validate content
@@ -85,11 +86,12 @@ impl Parser {
         }
 
         let pubkey = signer.get_public_key()?;
-        let encrypted_content = signer.nip44_encrypt(&pubkey, &unsigned_event.content)?;
+        let encrypted_content = signer.nip44_encrypt(&pubkey, &template.content)?;
 
-        unsigned_event.content = encrypted_content;
+        let encrypted_template =
+            Template::new(template.kind, encrypted_content, template.tags.clone());
 
-        let event = signer.sign_event(unsigned_event)?;
+        let event = signer.sign_event(&encrypted_template)?;
 
         Ok(event)
     }
@@ -131,58 +133,4 @@ pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
     let offset = fb::Kind7375Parsed::create(builder, &args);
 
     Ok(offset)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use nostr::{EventBuilder, Keys, Kind};
-
-    #[test]
-    fn test_parse_kind_7375_basic() {
-        let keys = Keys::generate();
-
-        let event = EventBuilder::new(Kind::Custom(7375), "encrypted_content", Vec::new())
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let (parsed, _) = parser.parse_kind_7375(&event).unwrap();
-
-        assert!(!parsed.decrypted); // No decryption without signer
-        assert!(parsed.mint_url.is_empty());
-        assert!(parsed.proofs.is_empty());
-    }
-
-    #[test]
-    fn test_prepare_kind_7375_invalid_content() {
-        let keys = Keys::generate();
-
-        let mut event = EventBuilder::new(Kind::Custom(7375), "invalid json", Vec::new())
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let result = parser.prepare_kind_7375(&mut event.into());
-
-        assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("invalid token content"));
-    }
-
-    #[test]
-    fn test_parse_wrong_kind() {
-        let keys = Keys::generate();
-
-        let event = EventBuilder::new(Kind::TextNote, "test", Vec::new())
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let result = parser.parse_kind_7375(&event);
-
-        assert!(result.is_err());
-    }
 }

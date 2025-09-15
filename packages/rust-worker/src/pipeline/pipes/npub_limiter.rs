@@ -8,7 +8,7 @@ struct NpubTracker {
 }
 
 pub struct NpubLimiterPipe {
-    kind: u64,
+    kind: u16,
     limit_per_npub: usize,
     max_total_npubs: usize,
     npub_trackers: FxHashMap<String, NpubTracker>,
@@ -16,7 +16,7 @@ pub struct NpubLimiterPipe {
 }
 
 impl NpubLimiterPipe {
-    pub fn new(kind: u64, limit_per_npub: usize, max_total_npubs: usize) -> Self {
+    pub fn new(kind: u16, limit_per_npub: usize, max_total_npubs: usize) -> Self {
         Self {
             name: format!("NpubLimiter(kind:{}, limit:{})", kind, limit_per_npub),
             kind,
@@ -39,9 +39,9 @@ impl Pipe for NpubLimiterPipe {
         };
 
         // Get kind, pubkey, and timestamp from the nostr event
-        let kind = nostr_event.kind.as_u64();
+        let kind = nostr_event.kind;
         let mut pubkey = nostr_event.pubkey.to_string();
-        let created_at = nostr_event.created_at.as_u64();
+        let created_at = nostr_event.created_at;
 
         // Only process events of the specified kind
         if kind != self.kind {
@@ -53,9 +53,8 @@ impl Pipe for NpubLimiterPipe {
                 .tags
                 .iter()
                 .find_map(|tag| {
-                    let tag_vec = tag.as_vec();
-                    if tag_vec.len() >= 2 && tag_vec[0] == "p" {
-                        Some(tag_vec[1].clone())
+                    if tag.len() >= 2 && tag[0] == "p" {
+                        Some(tag[1].clone())
                     } else {
                         None
                     }

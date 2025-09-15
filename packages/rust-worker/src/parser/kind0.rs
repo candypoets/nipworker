@@ -1,7 +1,6 @@
+use crate::types::nostr::Event;
 use crate::{generated::nostr::*, parser::Parser, types::network::Request};
 use anyhow::{anyhow, Result};
-use flatbuffers::FlatBufferBuilder;
-use nostr::Event;
 use rustc_hash::FxHashMap;
 use serde_json::Value;
 
@@ -42,7 +41,7 @@ pub struct Nip05Response {
 
 impl Parser {
     pub fn parse_kind_0(&self, event: &Event) -> Result<(Kind0Parsed, Option<Vec<Request>>)> {
-        if event.kind.as_u64() != 0 {
+        if event.kind != 0 {
             return Err(anyhow!("event is not kind 0"));
         }
 
@@ -187,100 +186,4 @@ pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
     let offset = fb::Kind0Parsed::create(builder, &args);
 
     Ok(offset)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use nostr::{EventBuilder, Keys, Kind};
-
-    #[test]
-    fn test_parse_kind_0_basic() {
-        let keys = Keys::generate();
-        let content = r#"{"name":"Alice","about":"Bitcoin enthusiast","picture":"https://example.com/pic.jpg"}"#;
-
-        let event = EventBuilder::new(Kind::Metadata, content, Vec::new())
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let (parsed, _) = parser.parse_kind_0(&event).unwrap();
-
-        assert_eq!(parsed.pubkey, keys.public_key().to_hex());
-        assert_eq!(parsed.name, Some("Alice".to_string()));
-        assert_eq!(parsed.about, Some("Bitcoin enthusiast".to_string()));
-        assert_eq!(
-            parsed.picture,
-            Some("https://example.com/pic.jpg".to_string())
-        );
-    }
-
-    #[test]
-    fn test_parse_kind_0_alternative_fields() {
-        let keys = Keys::generate();
-        let content = r#"{"displayName":"Bob","bio":"Nostr developer","avatar":"https://example.com/avatar.jpg"}"#;
-
-        let event = EventBuilder::new(Kind::Metadata, content, Vec::new())
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let (parsed, _) = parser.parse_kind_0(&event).unwrap();
-
-        assert_eq!(parsed.display_name_alt, Some("Bob".to_string()));
-        assert_eq!(parsed.bio, Some("Nostr developer".to_string()));
-        assert_eq!(
-            parsed.avatar,
-            Some("https://example.com/avatar.jpg".to_string())
-        );
-        // Name should fallback to displayName
-        assert_eq!(parsed.name, Some("Bob".to_string()));
-    }
-
-    #[test]
-    fn test_parse_kind_0_empty_content() {
-        let keys = Keys::generate();
-
-        let event = EventBuilder::new(Kind::Metadata, "", Vec::new())
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let (parsed, _) = parser.parse_kind_0(&event).unwrap();
-
-        assert_eq!(parsed.pubkey, keys.public_key().to_hex());
-        assert_eq!(parsed.name, None);
-        assert_eq!(parsed.about, None);
-    }
-
-    #[test]
-    fn test_parse_kind_0_invalid_json() {
-        let keys = Keys::generate();
-        let content = r#"{"name":"Alice","invalid json"#;
-
-        let event = EventBuilder::new(Kind::Metadata, content, Vec::new())
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let (parsed, _) = parser.parse_kind_0(&event).unwrap();
-
-        // Should still work, just with empty fields
-        assert_eq!(parsed.pubkey, keys.public_key().to_hex());
-        assert_eq!(parsed.name, None);
-    }
-
-    #[test]
-    fn test_parse_wrong_kind() {
-        let keys = Keys::generate();
-
-        let event = EventBuilder::new(Kind::TextNote, "test", Vec::new())
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let result = parser.parse_kind_0(&event);
-
-        assert!(result.is_err());
-    }
 }

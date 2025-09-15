@@ -4,6 +4,7 @@
 //! including event types, request types, proof types, and communication types.
 
 pub mod network;
+pub mod nostr;
 pub mod parsed_event;
 pub mod proof;
 pub mod thread;
@@ -14,42 +15,23 @@ pub use proof::Proof;
 pub use thread::*;
 
 // Re-export nostr types for convenience
-pub use nostr::{
-    Alphabet, Event, EventId, Filter, Kind, PublicKey, SingleLetterTag, Tag, Timestamp,
+pub use crate::types::nostr::{
+    Event, EventId, Filter, Keys, PublicKey, SecretKey, Timestamp, UnsignedEvent, SECP256K1,
 };
 
-use nostr::{EventBuilder, UnsignedEvent};
+// Re-export Kind helpers
+pub use crate::types::nostr::{
+    CONTACT_LIST, DELETION, ENCRYPTED_DIRECT_MESSAGE, METADATA, REACTION, RELAY_LIST, REPOST,
+    TEXT_NOTE,
+};
+
+// Type alias for Kind
+pub type Kind = u64;
 use serde::{Deserialize, Serialize};
 
 use wasm_bindgen::prelude::*;
 
 use crate::types::network::Request;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EventTemplate {
-    pub kind: u64,
-    pub content: String,
-    pub tags: Vec<Vec<String>>,
-}
-
-impl EventTemplate {
-    pub fn to_unsigned_event(&self, pubkey: PublicKey) -> Result<UnsignedEvent, String> {
-        let kind = Kind::from(self.kind);
-
-        let mut tags = Vec::new();
-        for tag_vec in &self.tags {
-            if !tag_vec.is_empty() {
-                let tag = Tag::parse(tag_vec.clone()).map_err(|e| format!("Invalid tag: {}", e))?;
-                tags.push(tag);
-            }
-        }
-
-        let event_builder =
-            EventBuilder::new(kind, &self.content, tags).custom_created_at(nostr::Timestamp::now());
-
-        Ok(event_builder.to_unsigned_event(pubkey))
-    }
-}
 
 /// Signer types
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -101,22 +83,6 @@ pub enum SignerMessage {
 
     #[serde(rename = "ERROR")]
     Error { message: String },
-}
-
-/// Network event types
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum NetworkEventType {
-    Event,
-    EOSE,
-    Error,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NetworkEvent {
-    pub event_type: NetworkEventType,
-    pub event: Option<Event>,
-    pub error: Option<String>,
-    pub relay: Option<String>,
 }
 
 /// Publish status types

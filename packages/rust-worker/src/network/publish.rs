@@ -1,10 +1,12 @@
 use crate::db::NostrDB;
+use crate::nostr::Template;
 use crate::parser::Parser;
 use crate::relays::ConnectionRegistry;
+use crate::types::nostr::Event;
+use crate::CONTACT_LIST;
 use anyhow::Result;
 use futures::future::join_all;
 use js_sys::SharedArrayBuffer;
-use nostr::{Event, Kind, UnsignedEvent};
 use rustc_hash::FxHashSet;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
@@ -34,16 +36,13 @@ impl PublishManager {
     pub async fn publish_event(
         &self,
         publish_id: String,
-        unsigned_event: &mut UnsignedEvent,
+        template: &Template,
         shared_buffer: SharedArrayBuffer,
     ) -> Result<()> {
-        info!(
-            "Publishing event {} with ID {}",
-            unsigned_event.id, publish_id
-        );
+        info!("Publishing event with ID {}", publish_id);
 
         // Prepare the event using parser
-        let event = match self.parser.prepare(unsigned_event) {
+        let event = match self.parser.prepare(template) {
             Ok(parsed) => parsed,
             Err(e) => return Err(anyhow::anyhow!("failed to prepare event: {}", e)),
         };
@@ -72,12 +71,7 @@ impl PublishManager {
 
         let _ = self
             .connection_registry
-            .publish(
-                &publish_id,
-                event.clone(),
-                relays.clone(),
-                shared_buffer.into(),
-            )
+            .publish(&publish_id, event, relays.clone(), shared_buffer.into())
             .await;
 
         Ok(())
@@ -92,11 +86,10 @@ impl PublishManager {
         write_pubkeys.push(event.pubkey.to_hex());
 
         // Skip extracting mentioned pubkeys for kind 3 (contact list) events
-        if event.kind != Kind::ContactList && event.kind.as_u64() < 10000 {
+        if event.kind != CONTACT_LIST && event.kind < 10000 {
             for tag in &event.tags {
-                let tag_vec = tag.as_vec();
-                if tag_vec.len() >= 2 && tag_vec[0] == "p" {
-                    read_pubkeys.push(tag_vec[1].clone());
+                if tag.len() >= 2 && tag[0] == "p" {
+                    read_pubkeys.push(tag[1].clone());
                 }
             }
         }

@@ -1,9 +1,10 @@
 use crate::db::index::NostrDB;
+use crate::nostr::Template;
 use crate::parsed_event::{ParsedData, ParsedEvent};
 use crate::signer::{create_shared_signer_manager, SharedSignerManager};
+use crate::types::nostr::Event;
 use crate::types::*;
 use anyhow::{anyhow, Result};
-use nostr::{Event, Tag, UnsignedEvent};
 use std::sync::Arc;
 use tracing::info;
 
@@ -67,7 +68,7 @@ impl Parser {
     }
 
     pub fn parse(&self, event: Event) -> Result<ParsedEvent> {
-        let kind = event.kind.as_u64();
+        let kind = event.kind;
 
         let (parsed, requests) = match kind {
             0 => {
@@ -147,80 +148,22 @@ impl Parser {
         })
     }
 
-    pub fn prepare(&self, event: &mut UnsignedEvent) -> Result<Event> {
-        let kind = event.kind.as_u64();
+    pub fn prepare(&self, template: &Template) -> Result<Event> {
+        let kind = template.kind;
 
         match kind {
-            4 => self.prepare_kind_4(event),
-            7374 => self.prepare_kind_7374(event),
-            7375 => self.prepare_kind_7375(event),
-            7376 => self.prepare_kind_7376(event),
-            9321 => self.prepare_kind_9321(event),
-            10019 => self.prepare_kind_10019(event),
-            17375 => self.prepare_kind_17375(event),
+            4 => self.prepare_kind_4(template),
+            7374 => self.prepare_kind_7374(template),
+            7375 => self.prepare_kind_7375(template),
+            7376 => self.prepare_kind_7376(template),
+            9321 => self.prepare_kind_9321(template),
+            10019 => self.prepare_kind_10019(template),
+            17375 => self.prepare_kind_17375(template),
             _ => {
                 // Event is already signed - no additional preparation needed
-                let new_event = self.signer_manager.sign_event(event)?;
+                let new_event = self.signer_manager.sign_event(template)?;
                 Ok(new_event)
             }
         }
-    }
-}
-
-// Removed build_parsed_flatbuffer - now building directly in serialize_events with shared builder
-
-// Helper function to find tag values
-pub fn find_tag_value(tags: &[Tag], tag_name: &str) -> Option<String> {
-    tags.iter().find_map(|tag| {
-        let tag_vec = tag.as_vec();
-        if tag_vec.len() >= 2 && tag_vec[0] == tag_name {
-            Some(tag_vec[1].clone())
-        } else {
-            None
-        }
-    })
-}
-
-// Helper function to find all tag values
-pub fn find_tag_values(tags: &[Tag], tag_name: &str) -> Vec<String> {
-    tags.iter()
-        .filter_map(|tag| {
-            let tag_vec = tag.as_vec();
-            if tag_vec.len() >= 2 && tag_vec[0] == tag_name {
-                Some(tag_vec[1].clone())
-            } else {
-                None
-            }
-        })
-        .collect()
-}
-
-// Helper function to find the last tag with a specific name
-pub fn find_last_tag<'a>(tags: &'a [Tag], tag_name: &str) -> Option<&'a Tag> {
-    tags.iter().rev().find(|tag| {
-        let tag_vec = tag.as_vec();
-        !tag_vec.is_empty() && tag_vec[0] == tag_name
-    })
-}
-
-impl Clone for Parser {
-    fn clone(&self) -> Self {
-        Self {
-            signer_manager: self.signer_manager.clone(),
-            database: self.database.clone(),
-        }
-    }
-}
-
-impl Default for Parser {
-    fn default() -> Self {
-        let database = Arc::new(NostrDB::new_with_ringbuffer(
-            "nostr".to_string(),
-            "test".to_string(),
-            10_000_000,
-            Vec::new(),
-            Vec::new(),
-        ));
-        Self::new(database)
     }
 }

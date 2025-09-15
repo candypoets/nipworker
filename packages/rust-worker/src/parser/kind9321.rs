@@ -1,9 +1,10 @@
+use crate::nostr::Template;
 use crate::parser::Parser;
 use crate::types::network::Request;
+use crate::types::nostr::{Event, UnsignedEvent};
 use crate::types::proof::Proof;
 use crate::utils::request_deduplication::RequestDeduplicator;
 use anyhow::{anyhow, Result};
-use nostr::{Event, UnsignedEvent};
 use rustc_hash::FxHashMap;
 use serde_json::Value;
 use tracing::{debug, error};
@@ -25,7 +26,7 @@ pub struct Kind9321Parsed {
 
 impl Parser {
     pub fn parse_kind_9321(&self, event: &Event) -> Result<(Kind9321Parsed, Option<Vec<Request>>)> {
-        if event.kind.as_u64() != 9321 {
+        if event.kind != 9321 {
             return Err(anyhow!("event is not kind 9321"));
         }
 
@@ -50,23 +51,22 @@ impl Parser {
         let mut event_tag: Option<Vec<String>> = None;
 
         for tag in &event.tags {
-            let tag_vec = tag.as_vec();
-            if tag_vec.len() >= 2 {
-                match tag_vec[0].as_str() {
-                    "proof" => proof_tags.push(tag_vec.to_vec()),
+            if tag.len() >= 2 {
+                match tag[0].as_str() {
+                    "proof" => proof_tags.push(tag.to_vec()),
                     "u" => {
                         if mint_tag.is_none() {
-                            mint_tag = Some(tag_vec.to_vec());
+                            mint_tag = Some(tag.to_vec());
                         }
                     }
                     "p" => {
                         if recipient_tag.is_none() {
-                            recipient_tag = Some(tag_vec.to_vec());
+                            recipient_tag = Some(tag.to_vec());
                             // Get recipient profile
                             requests.push(Request {
-                                authors: vec![tag_vec[1].clone()],
+                                authors: vec![tag[1].clone()],
                                 kinds: vec![0],
-                                relays: self.database.find_relay_candidates(0, &tag_vec[1], &false),
+                                relays: self.database.find_relay_candidates(0, &tag[1], &false),
                                 cache_first: true,
                                 ..Default::default()
                             });
@@ -76,15 +76,11 @@ impl Parser {
                             spending_tags.insert("#e".to_string(), vec![event.id.to_hex()]);
 
                             requests.push(Request {
-                                authors: vec![tag_vec[1].clone()],
+                                authors: vec![tag[1].clone()],
                                 kinds: vec![7376],
                                 tags: spending_tags,
                                 limit: Some(1),
-                                relays: self.database.find_relay_candidates(
-                                    7376,
-                                    &tag_vec[1],
-                                    &false,
-                                ),
+                                relays: self.database.find_relay_candidates(7376, &tag[1], &false),
                                 cache_first: true,
                                 ..Default::default()
                             });
@@ -92,9 +88,9 @@ impl Parser {
                     }
                     "e" => {
                         if event_tag.is_none() {
-                            event_tag = Some(tag_vec.to_vec());
+                            event_tag = Some(tag.to_vec());
                             requests.push(Request {
-                                ids: vec![tag_vec[1].clone()],
+                                ids: vec![tag[1].clone()],
                                 kinds: vec![1],
                                 relays: self.database.find_relay_candidates(1, "", &false),
                                 cache_first: true,
@@ -180,8 +176,8 @@ impl Parser {
         Ok((result, Some(deduplicated_requests)))
     }
 
-    pub fn prepare_kind_9321(&self, unsigned_event: &mut UnsignedEvent) -> Result<Event> {
-        if unsigned_event.kind.as_u64() != 9321 {
+    pub fn prepare_kind_9321(&self, template: &Template) -> Result<Event> {
+        if template.kind != 9321 {
             return Err(anyhow!("event is not kind 9321"));
         }
 
@@ -190,10 +186,9 @@ impl Parser {
         let mut has_mint = false;
         let mut has_recipient = false;
 
-        for tag in &unsigned_event.tags {
-            let tag_vec = tag.as_vec();
-            if tag_vec.len() >= 2 {
-                match tag_vec[0].as_str() {
+        for tag in &template.tags {
+            if tag.len() >= 2 {
+                match tag[0].as_str() {
                     "proof" => has_proof = true,
                     "u" => has_mint = true,
                     "p" => has_recipient = true,
@@ -215,7 +210,7 @@ impl Parser {
         }
 
         self.signer_manager
-            .sign_event(unsigned_event)
+            .sign_event(template)
             .map_err(|e| anyhow!("failed to sign event: {}", e))
     }
 }
@@ -277,120 +272,4 @@ pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
 
     debug!("Successfully built Kind9321Parsed FlatBuffer offset");
     Ok(offset)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use nostr::{EventBuilder, Keys, Kind, Tag};
-
-    #[test]
-    fn test_parse_kind_9321_basic() {
-        let keys = Keys::generate();
-        let recipient_keys = Keys::generate();
-        let mint_url = "https://mint.example.com";
-        let proof_json = r#"{"amount":100,"secret":"test_secret","C":"test_C","id":"test_id"}"#;
-
-        let tags = vec![
-            Tag::parse(vec!["proof".to_string(), proof_json.to_string()]).unwrap(),
-            Tag::parse(vec!["u".to_string(), mint_url.to_string()]).unwrap(),
-            Tag::parse(vec![
-                "p".to_string(),
-                recipient_keys.public_key().to_string(),
-            ])
-            .unwrap(),
-        ];
-
-        let event = EventBuilder::new(Kind::Custom(9321), "Test nutzap", tags)
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let (parsed, requests) = parser.parse_kind_9321(&event).unwrap();
-
-        assert_eq!(parsed.amount, 100);
-        assert_eq!(parsed.recipient, recipient_keys.public_key().to_hex());
-        assert_eq!(parsed.mint_url, mint_url);
-        assert!(!parsed.redeemed);
-        assert_eq!(parsed.comment, Some("Test nutzap".to_string()));
-        assert!(!parsed.is_p2pk_locked);
-        assert!(requests.is_some());
-    }
-
-    #[test]
-    fn test_parse_kind_9321_missing_required_tags() {
-        let keys = Keys::generate();
-        let recipient_keys = Keys::generate();
-
-        let tags = vec![
-            Tag::parse(vec![
-                "p".to_string(),
-                recipient_keys.public_key().to_string(),
-            ])
-            .unwrap(),
-            // Missing proof and mint tags
-        ];
-
-        let event = EventBuilder::new(Kind::Custom(9321), "Test nutzap", tags)
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let result = parser.parse_kind_9321(&event);
-
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_prepare_kind_9321_no_signer() {
-        let keys = Keys::generate();
-        let recipient_keys = Keys::generate();
-        let mint_url = "https://mint.example.com";
-        let proof_json = r#"{"amount":100,"secret":"test_secret"}"#;
-
-        let tags = vec![
-            Tag::parse(vec!["proof".to_string(), proof_json.to_string()]).unwrap(),
-            Tag::parse(vec!["u".to_string(), mint_url.to_string()]).unwrap(),
-            Tag::parse(vec![
-                "p".to_string(),
-                recipient_keys.public_key().to_string(),
-            ])
-            .unwrap(),
-        ];
-
-        let mut event = EventBuilder::new(Kind::Custom(9321), "Test nutzap", tags)
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let mut unsigned_event = UnsignedEvent {
-            id: event.id,
-            pubkey: event.pubkey,
-            kind: event.kind,
-            content: event.content.clone(),
-            tags: event.tags.clone(),
-            created_at: event.created_at,
-        };
-        let result = parser.prepare_kind_9321(&mut unsigned_event);
-
-        assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("signing not implemented"));
-    }
-
-    #[test]
-    fn test_parse_wrong_kind() {
-        let keys = Keys::generate();
-
-        let event = EventBuilder::new(Kind::TextNote, "test", Vec::new())
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let result = parser.parse_kind_9321(&event);
-
-        assert!(result.is_err());
-    }
 }

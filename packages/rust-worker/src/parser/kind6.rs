@@ -1,15 +1,15 @@
 use crate::parsed_event::ParsedData;
 use crate::types::network::Request;
+use crate::types::nostr::{Event, Kind, REPOST};
 use crate::utils::request_deduplication::RequestDeduplicator;
+use crate::TEXT_NOTE;
 use crate::{parsed_event::ParsedEvent, parser::Parser};
 use anyhow::{anyhow, Result};
-use nostr::{Event, Kind};
 
 use tracing::debug;
 
 // NEW: Imports for FlatBuffers
 use crate::generated::nostr::*;
-use flatbuffers::FlatBufferBuilder;
 
 pub struct Kind6Parsed {
     pub reposted_event: Option<serde_json::Value>,
@@ -18,7 +18,7 @@ pub struct Kind6Parsed {
 impl Parser {
     pub fn parse_kind_6(&self, event: &Event) -> Result<(Kind6Parsed, Option<Vec<Request>>)> {
         let mut requests = Vec::<Request>::new();
-        if event.kind() != Kind::Repost {
+        if event.kind() != REPOST {
             return Err(anyhow!("event is not kind 6"));
         }
 
@@ -39,18 +39,18 @@ impl Parser {
             .tags
             .iter()
             .rev()
-            .find(|tag| tag.as_vec().first().map(|s| s.as_str()) == Some("e"))
+            .find(|tag| tag.first().map(|s| s.as_str()) == Some("e"))
         {
-            Some(tag) if tag.as_vec().len() >= 2 => tag,
+            Some(tag) if tag.len() >= 2 => tag,
             _ => return Err(anyhow!("repost must have at least one e tag")),
         };
 
-        let event_id = e_tag.as_vec()[1].clone();
+        let event_id = e_tag[1].clone();
 
         // Extract relay hint if available
         let mut relay_hint = String::new();
-        if e_tag.as_vec().len() >= 3 {
-            relay_hint = e_tag.as_vec()[2].clone();
+        if e_tag.len() >= 3 {
+            relay_hint = e_tag[2].clone();
         }
 
         // Try to parse the reposted event from content
@@ -64,9 +64,8 @@ impl Parser {
             match serde_json::from_str::<Event>(&event.content) {
                 Ok(parsed_event)
                     if !parsed_event.id.to_string().is_empty()
-                        && parsed_event.kind() == Kind::TextNote =>
+                        && parsed_event.kind() == TEXT_NOTE =>
                 {
-                    debug!("Parsed event: {:?}", parsed_event);
                     // Parse the event using kind1 parser
                     match self.parse_kind_1(&parsed_event) {
                         Ok((parsed_content, parsed_requests)) => {

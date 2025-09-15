@@ -13,13 +13,13 @@ pub trait EventDatabase {
         skip_filtered: bool,
     ) -> Result<(Vec<Request>, Vec<Vec<u8>>)>;
 
-    async fn query_events(&self, filter: nostr::Filter) -> Result<Vec<Vec<u8>>>;
+    async fn query_events(&self, filter: crate::types::nostr::Filter) -> Result<Vec<Vec<u8>>>;
     async fn add_event(&self, event: &ParsedEvent) -> Result<()>;
 }
 
 pub trait EventParser {
-    async fn parse(&self, event: nostr::Event) -> Result<ParsedEvent>;
-    fn get_relay_hint(&self, event: &nostr::Event) -> Vec<String>;
+    async fn parse(&self, event: crate::types::nostr::Event) -> Result<ParsedEvent>;
+    fn get_relay_hint(&self, event: &crate::types::nostr::Event) -> Vec<String>;
     fn get_relays(&self, kind: u64, pubkey: &str, write: bool) -> Vec<String>;
 }
 
@@ -39,13 +39,6 @@ pub trait CacheProcessor {
     ) -> Result<(Vec<Request>, Vec<Vec<Vec<u8>>>)>;
 
     async fn find_event_context(&self, event: &ParsedEvent, max_depth: usize) -> Vec<Vec<u8>>;
-}
-
-pub trait NetworkProcessor {
-    async fn process_network_requests(
-        &self,
-        requests: Vec<Request>,
-    ) -> mpsc::Receiver<NetworkEvent>;
 }
 
 pub trait EventStagingManager {

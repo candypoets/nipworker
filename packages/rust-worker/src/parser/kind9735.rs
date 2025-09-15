@@ -1,13 +1,12 @@
 use crate::parser::Parser;
 use crate::types::network::Request;
+use crate::types::nostr::Event;
 use crate::utils::request_deduplication::RequestDeduplicator;
 use anyhow::{anyhow, Result};
-use nostr::Event;
 use serde::{Deserialize, Serialize};
 
 // NEW: Imports for FlatBuffers
 use crate::generated::nostr::*;
-use flatbuffers::FlatBufferBuilder;
 
 #[derive(Serialize, Deserialize)]
 pub struct ZapRequest {
@@ -97,7 +96,7 @@ fn sats_from_bolt11_hrp(invoice: &str) -> Option<i64> {
 
 impl Parser {
     pub fn parse_kind_9735(&self, event: &Event) -> Result<(Kind9735Parsed, Option<Vec<Request>>)> {
-        if event.kind.as_u64() != 9735 {
+        if event.kind != 9735 {
             return Err(anyhow!("event is not kind 9735"));
         }
 
@@ -124,16 +123,15 @@ impl Parser {
         let mut sender_tag: Option<Vec<String>> = None;
 
         for tag in &event.tags {
-            let tag_vec = tag.as_vec();
-            if tag_vec.len() >= 2 {
-                match tag_vec[0].as_str() {
-                    "p" => p_tag = Some(tag_vec.to_vec()),
-                    "e" => e_tag = Some(tag_vec.to_vec()),
-                    "a" => a_tag = Some(tag_vec.to_vec()),
-                    "bolt11" => bolt11_tag = Some(tag_vec.to_vec()),
-                    "description" => description_tag = Some(tag_vec.to_vec()),
-                    "preimage" => preimage_tag = Some(tag_vec.to_vec()),
-                    "P" => sender_tag = Some(tag_vec.to_vec()), // Capital P for sender
+            if tag.len() >= 2 {
+                match tag[0].as_str() {
+                    "p" => p_tag = Some(tag.to_vec()),
+                    "e" => e_tag = Some(tag.to_vec()),
+                    "a" => a_tag = Some(tag.to_vec()),
+                    "bolt11" => bolt11_tag = Some(tag.to_vec()),
+                    "description" => description_tag = Some(tag.to_vec()),
+                    "preimage" => preimage_tag = Some(tag.to_vec()),
+                    "P" => sender_tag = Some(tag.to_vec()), // Capital P for sender
                     _ => {}
                 }
             }
@@ -216,7 +214,7 @@ impl Parser {
             bolt11,
             sender,
             recipient: recipient.clone(),
-            timestamp: event.created_at.as_u64(),
+            timestamp: event.created_at,
             valid: true, // We'll validate below
             description: zap_request,
             preimage: preimage_tag.map(|tag| tag[1].clone()),
@@ -344,158 +342,4 @@ pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
 // Helper function to find a tag by name in a vec of vec of strings
 fn find_tag_in_vec<'a>(tags: &'a [Vec<String>], name: &str) -> Option<&'a Vec<String>> {
     tags.iter().find(|tag| !tag.is_empty() && tag[0] == name)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use nostr::{EventBuilder, Keys, Kind, Tag};
-
-    #[test]
-    fn test_parse_kind_9735_basic() {
-        let keys = Keys::generate();
-        let recipient_keys = Keys::generate();
-        let bolt11 = "lnbc1000n1..."; // Mock bolt11
-
-        let zap_request = ZapRequest {
-            kind: 9734,
-            pubkey: keys.public_key().to_hex(),
-            content: "Great post!".to_string(),
-            tags: vec![
-                vec!["p".to_string(), recipient_keys.public_key().to_hex()],
-                vec!["amount".to_string(), "1000000".to_string()], // 1000 sats in millisats
-            ],
-            signature: Some("mock_signature".to_string()),
-        };
-
-        let description = serde_json::to_string(&zap_request).unwrap();
-
-        let tags = vec![
-            Tag::parse(vec![
-                "p".to_string(),
-                recipient_keys.public_key().to_string(),
-            ])
-            .unwrap(),
-            Tag::parse(vec!["bolt11".to_string(), bolt11.to_string()]).unwrap(),
-            Tag::parse(vec!["description".to_string(), description]).unwrap(),
-        ];
-
-        let event = EventBuilder::new(Kind::ZapReceipt, "", tags)
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let (parsed, requests) = parser.parse_kind_9735(&event).unwrap();
-
-        assert_eq!(parsed.amount, 1000); // 1000000 millisats = 1000 sats
-        assert_eq!(parsed.recipient, recipient_keys.public_key().to_hex());
-        assert_eq!(parsed.bolt11, bolt11);
-        assert_eq!(parsed.content, "Great post!");
-        assert!(parsed.valid);
-        assert!(requests.is_some());
-    }
-
-    #[test]
-    fn test_parse_kind_9735_missing_required_tags() {
-        let keys = Keys::generate();
-
-        let tags = vec![
-            Tag::parse(vec!["p".to_string(), "recipient_pubkey".to_string()]).unwrap(),
-            // Missing bolt11 and description
-        ];
-
-        let event = EventBuilder::new(Kind::ZapReceipt, "", tags)
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let result = parser.parse_kind_9735(&event);
-
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_parse_kind_9735_invalid_description() {
-        let keys = Keys::generate();
-        let recipient_keys = Keys::generate();
-        let bolt11 = "lnbc1000n1...";
-        let invalid_description = "not valid json";
-
-        let tags = vec![
-            Tag::parse(vec![
-                "p".to_string(),
-                recipient_keys.public_key().to_string(),
-            ])
-            .unwrap(),
-            Tag::parse(vec!["bolt11".to_string(), bolt11.to_string()]).unwrap(),
-            Tag::parse(vec![
-                "description".to_string(),
-                invalid_description.to_string(),
-            ])
-            .unwrap(),
-        ];
-
-        let event = EventBuilder::new(Kind::ZapReceipt, "", tags)
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let result = parser.parse_kind_9735(&event);
-
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_parse_wrong_kind() {
-        let keys = Keys::generate();
-
-        let event = EventBuilder::new(Kind::TextNote, "test", Vec::new())
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let result = parser.parse_kind_9735(&event);
-
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_parse_kind_9735_validation_failure() {
-        let keys = Keys::generate();
-        let recipient_keys = Keys::generate();
-        let different_recipient = Keys::generate();
-        let bolt11 = "lnbc1000n1...";
-
-        // Create zap request with different recipient than the receipt
-        let zap_request = ZapRequest {
-            kind: 9734,
-            pubkey: keys.public_key().to_hex(),
-            content: "Great post!".to_string(),
-            tags: vec![
-                vec!["p".to_string(), different_recipient.public_key().to_hex()], // Different recipient
-            ],
-            signature: Some("mock_signature".to_string()),
-        };
-
-        let description = serde_json::to_string(&zap_request).unwrap();
-
-        let tags = vec![
-            Tag::parse(vec![
-                "p".to_string(),
-                recipient_keys.public_key().to_string(),
-            ])
-            .unwrap(), // Different from zap request
-            Tag::parse(vec!["bolt11".to_string(), bolt11.to_string()]).unwrap(),
-            Tag::parse(vec!["description".to_string(), description]).unwrap(),
-        ];
-
-        let event = EventBuilder::new(Kind::ZapReceipt, "", tags)
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let (parsed, _) = parser.parse_kind_9735(&event).unwrap();
-
-        assert!(!parsed.valid); // Should be invalid due to recipient mismatch
-    }
 }

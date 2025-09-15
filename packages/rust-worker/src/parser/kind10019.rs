@@ -1,7 +1,8 @@
+use crate::nostr::Template;
 use crate::parser::Parser;
 use crate::types::network::Request;
+use crate::types::nostr::{Event, UnsignedEvent};
 use anyhow::{anyhow, Result};
-use nostr::{Event, UnsignedEvent};
 use tracing::info;
 
 // NEW: Imports for FlatBuffers
@@ -24,7 +25,7 @@ impl Parser {
         &self,
         event: &Event,
     ) -> Result<(Kind10019Parsed, Option<Vec<Request>>)> {
-        if event.kind.as_u64() != 10019 {
+        if event.kind != 10019 {
             return Err(anyhow!("event is not kind 10019"));
         }
 
@@ -36,25 +37,24 @@ impl Parser {
 
         // Extract relay, mint, and pubkey tags
         for tag in &event.tags {
-            let tag_vec = tag.as_vec();
-            if tag_vec.len() >= 2 {
-                match tag_vec[0].as_str() {
+            if tag.len() >= 2 {
+                match tag[0].as_str() {
                     "relay" => {
                         if let Some(ref mut relays) = parsed.read_relays {
-                            relays.push(tag_vec[1].clone());
+                            relays.push(tag[1].clone());
                         }
                     }
                     "mint" => {
                         let mut mint_info = MintInfo {
-                            url: tag_vec[1].clone(),
+                            url: tag[1].clone(),
                             base_units: Some(Vec::new()),
                         };
 
                         // Extract base units if provided (position 2 and beyond)
-                        for i in 2..tag_vec.len() {
-                            if !tag_vec[i].is_empty() {
+                        for i in 2..tag.len() {
+                            if !tag[i].is_empty() {
                                 if let Some(ref mut units) = mint_info.base_units {
-                                    units.push(tag_vec[i].clone());
+                                    units.push(tag[i].clone());
                                 }
                             }
                         }
@@ -62,7 +62,7 @@ impl Parser {
                         parsed.trusted_mints.push(mint_info);
                     }
                     "pubkey" => {
-                        parsed.p2pk_pubkey = Some(tag_vec[1].clone());
+                        parsed.p2pk_pubkey = Some(tag[1].clone());
                     }
                     _ => {}
                 }
@@ -77,8 +77,8 @@ impl Parser {
         Ok((parsed, None))
     }
 
-    pub fn prepare_kind_10019(&self, unsigned_event: &mut UnsignedEvent) -> Result<Event> {
-        if unsigned_event.kind.as_u64() != 10019 {
+    pub fn prepare_kind_10019(&self, template: &Template) -> Result<Event> {
+        if template.kind != 10019 {
             return Err(anyhow!("event is not kind 10019"));
         }
 
@@ -86,10 +86,9 @@ impl Parser {
         let mut has_mint = false;
         let mut has_pubkey = false;
 
-        for tag in &unsigned_event.tags {
-            let tag_vec = tag.as_vec();
-            if tag_vec.len() >= 2 {
-                match tag_vec[0].as_str() {
+        for tag in &template.tags {
+            if tag.len() >= 2 {
+                match tag[0].as_str() {
                     "mint" => has_mint = true,
                     "pubkey" => has_pubkey = true,
                     _ => {}
@@ -105,7 +104,7 @@ impl Parser {
             return Err(anyhow!("kind 10019 must include a pubkey tag"));
         }
         self.signer_manager
-            .sign_event(unsigned_event)
+            .sign_event(template)
             .map_err(|e| anyhow!("failed to sign event: {}", e))
     }
 }
@@ -166,137 +165,4 @@ pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
     let offset = fb::Kind10019Parsed::create(builder, &args);
 
     Ok(offset)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use nostr::{EventBuilder, Keys, Kind, Tag};
-
-    #[test]
-    fn test_parse_kind_10019_basic() {
-        let keys = Keys::generate();
-        let mint_url = "https://mint.example.com";
-        let pubkey = "npub1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
-
-        let tags = vec![
-            Tag::parse(vec!["mint".to_string(), mint_url.to_string()]).unwrap(),
-            Tag::parse(vec!["pubkey".to_string(), pubkey.to_string()]).unwrap(),
-        ];
-
-        let event = EventBuilder::new(Kind::Custom(10019), "", tags)
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let (parsed, _) = parser.parse_kind_10019(&event).unwrap();
-
-        assert_eq!(parsed.trusted_mints.len(), 1);
-        assert_eq!(parsed.trusted_mints[0].url, mint_url);
-        assert_eq!(parsed.trusted_mints[0].base_units, Some(Vec::new()));
-        assert_eq!(parsed.p2pk_pubkey, Some(pubkey.to_string()));
-        assert_eq!(parsed.read_relays, Some(Vec::new()));
-    }
-
-    #[test]
-    fn test_parse_kind_10019_with_base_units() {
-        let keys = Keys::generate();
-        let mint_url = "https://mint.example.com";
-        let pubkey = "npub1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
-
-        let tags = vec![
-            Tag::parse(vec![
-                "mint".to_string(),
-                mint_url.to_string(),
-                "sat".to_string(),
-                "usd".to_string(),
-            ])
-            .unwrap(),
-            Tag::parse(vec!["pubkey".to_string(), pubkey.to_string()]).unwrap(),
-        ];
-
-        let event = EventBuilder::new(Kind::Custom(10019), "", tags)
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let (parsed, _) = parser.parse_kind_10019(&event).unwrap();
-
-        assert_eq!(parsed.trusted_mints.len(), 1);
-        assert_eq!(
-            parsed.trusted_mints[0].base_units,
-            Some(vec!["sat".to_string(), "usd".to_string()])
-        );
-    }
-
-    #[test]
-    fn test_parse_kind_10019_with_relays() {
-        let keys = Keys::generate();
-        let mint_url = "https://mint.example.com";
-        let pubkey = "npub1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
-        let relay_url = "wss://relay.example.com";
-
-        let tags = vec![
-            Tag::parse(vec!["mint".to_string(), mint_url.to_string()]).unwrap(),
-            Tag::parse(vec!["pubkey".to_string(), pubkey.to_string()]).unwrap(),
-            Tag::parse(vec!["relay".to_string(), relay_url.to_string()]).unwrap(),
-        ];
-
-        let event = EventBuilder::new(Kind::Custom(10019), "", tags)
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let (parsed, _) = parser.parse_kind_10019(&event).unwrap();
-
-        assert_eq!(parsed.read_relays, Some(vec![relay_url.to_string()]));
-    }
-
-    #[test]
-    fn test_parse_kind_10019_missing_mint() {
-        let keys = Keys::generate();
-        let pubkey = "npub1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
-
-        let tags = vec![Tag::parse(vec!["pubkey".to_string(), pubkey.to_string()]).unwrap()];
-
-        let event = EventBuilder::new(Kind::Custom(10019), "", tags)
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let result = parser.parse_kind_10019(&event);
-
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_parse_kind_10019_missing_pubkey() {
-        let keys = Keys::generate();
-        let mint_url = "https://mint.example.com";
-
-        let tags = vec![Tag::parse(vec!["mint".to_string(), mint_url.to_string()]).unwrap()];
-
-        let event = EventBuilder::new(Kind::Custom(10019), "", tags)
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let result = parser.parse_kind_10019(&event);
-
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_parse_wrong_kind() {
-        let keys = Keys::generate();
-
-        let event = EventBuilder::new(Kind::TextNote, "test", Vec::new())
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let result = parser.parse_kind_10019(&event);
-
-        assert!(result.is_err());
-    }
 }

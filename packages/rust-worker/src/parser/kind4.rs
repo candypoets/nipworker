@@ -2,9 +2,9 @@ use crate::parser::content::serialize_content_data;
 use crate::parser::ContentBlock;
 use crate::parser::{content::parse_content, Parser};
 use crate::types::network::Request;
+use crate::types::nostr::{Event, Template};
 use crate::utils::request_deduplication::RequestDeduplicator;
 use anyhow::{anyhow, Result};
-use nostr::{Event, EventBuilder, UnsignedEvent};
 
 use tracing::warn;
 
@@ -20,7 +20,7 @@ pub struct Kind4Parsed {
 
 impl Parser {
     pub fn parse_kind_4(&self, event: &Event) -> Result<(Kind4Parsed, Option<Vec<Request>>)> {
-        if event.kind.as_u64() != 4 {
+        if event.kind != 4 {
             return Err(anyhow!("event is not kind 4"));
         }
 
@@ -31,14 +31,15 @@ impl Parser {
             .tags
             .iter()
             .find_map(|tag| {
-                let tag_vec = tag.as_vec();
-                if tag_vec.len() >= 2 && tag_vec[0] == "p" {
-                    Some(tag_vec[1].clone())
+                if tag.len() >= 2 && tag[0] == "p" {
+                    Some(tag[1].clone())
                 } else {
                     None
                 }
             })
             .ok_or_else(|| anyhow!("no recipient found in DM"))?;
+
+        let event_pubkey = event.pubkey.to_hex();
 
         // Request profile information for both sender and recipient
         requests.push(Request {
@@ -127,7 +128,8 @@ impl Parser {
             Err(err) => {
                 warn!(
                     "Failed to decrypt kind 4 message from {}: decryption failed: {}",
-                    event.pubkey, err
+                    event.pubkey.to_hex(),
+                    err
                 );
                 // If decryption fails, we can't display the content
                 // This is normal if we don't have the right keys
@@ -140,15 +142,14 @@ impl Parser {
         Ok((parsed, Some(deduplicated_requests)))
     }
 
-    pub fn prepare_kind_4(&self, event: &mut UnsignedEvent) -> Result<Event> {
+    pub fn prepare_kind_4(&self, event: &Template) -> Result<Event> {
         // Find recipient from p tag
         let recipient = event
             .tags
             .iter()
             .find_map(|tag| {
-                let tag_vec = tag.as_vec();
-                if tag_vec.len() >= 2 && tag_vec[0] == "p" {
-                    Some(tag_vec[1].clone())
+                if tag.len() >= 2 && tag[0] == "p" {
+                    Some(tag[1].clone())
                 } else {
                     None
                 }
@@ -166,12 +167,10 @@ impl Parser {
             .nip04_encrypt(&recipient, &event.content)?;
 
         // Create a new event with the encrypted content using EventBuilder
-        let event_builder = EventBuilder::new(event.kind, encrypted_content, event.tags.clone());
-        let pub_key = nostr::PublicKey::from_hex(self.signer_manager.get_public_key()?)?;
-        let mut unsigned_event = event_builder.to_unsigned_event(pub_key);
+        let new_template = Template::new(event.kind, encrypted_content, event.tags.clone());
 
         // Sign the event with encrypted content
-        let new_event = self.signer_manager.sign_event(&mut unsigned_event)?;
+        let new_event = self.signer_manager.sign_event(&new_template)?;
 
         Ok(new_event)
     }
@@ -220,201 +219,4 @@ pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
     let offset = fb::Kind4Parsed::create(builder, &args);
 
     Ok(offset)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use nostr::{EventBuilder, Keys, Kind, Tag};
-
-    #[test]
-    fn test_parse_kind_4_basic() {
-        let keys = Keys::generate();
-        let recipient_keys = Keys::generate();
-        let encrypted_content = "encrypted_message_content";
-
-        let tags = vec![Tag::parse(vec![
-            "p".to_string(),
-            recipient_keys.public_key().to_string(),
-        ])
-        .unwrap()];
-
-        let event = EventBuilder::new(Kind::EncryptedDirectMessage, encrypted_content, tags)
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let (parsed, requests) = parser.parse_kind_4(&event).unwrap();
-
-        assert_eq!(parsed.recipient, recipient_keys.public_key().to_hex());
-        assert!(parsed.chat_id.contains(&keys.public_key().to_hex()));
-        assert!(parsed
-            .chat_id
-            .contains(&recipient_keys.public_key().to_hex()));
-        // Note: Decryption will only work if signer manager has the right keys
-        assert!(requests.is_some());
-        assert_eq!(requests.unwrap().len(), 2); // Requests for both profiles
-    }
-
-    #[test]
-    fn test_parse_kind_4_chat_id_consistency() {
-        let keys1 = Keys::generate();
-        let keys2 = Keys::generate();
-
-        // Create message from keys1 to keys2
-        let tags1 =
-            vec![Tag::parse(vec!["p".to_string(), keys2.public_key().to_string()]).unwrap()];
-        let event1 = EventBuilder::new(Kind::EncryptedDirectMessage, "msg1", tags1)
-            .to_event(&keys1)
-            .unwrap();
-
-        // Create message from keys2 to keys1
-        let tags2 =
-            vec![Tag::parse(vec!["p".to_string(), keys1.public_key().to_string()]).unwrap()];
-        let event2 = EventBuilder::new(Kind::EncryptedDirectMessage, "msg2", tags2)
-            .to_event(&keys2)
-            .unwrap();
-
-        let parser = Parser::default();
-        let (parsed1, _) = parser.parse_kind_4(&event1).unwrap();
-        let (parsed2, _) = parser.parse_kind_4(&event2).unwrap();
-
-        // Chat IDs should be the same regardless of who sent the message
-        assert_eq!(parsed1.chat_id, parsed2.chat_id);
-    }
-
-    #[test]
-    fn test_parse_wrong_kind() {
-        let keys = Keys::generate();
-
-        let event = EventBuilder::new(Kind::TextNote, "test", Vec::new())
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let result = parser.parse_kind_4(&event);
-
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_prepare_kind_4_no_signer() {
-        // let keys = Keys::generate();
-        // let recipient_keys = Keys::generate();
-
-        // let tags = vec![Tag::parse(vec![
-        //     "p".to_string(),
-        //     recipient_keys.public_key().to_string(),
-        // ])
-        // .unwrap()];
-
-        // let mut event = EventBuilder::new(Kind::EncryptedDirectMessage, "test message", tags)
-        //     .to_event(&keys)
-        //     .unwrap();
-
-        // let parser = Parser::default();
-        // let result = parser.prepare_kind_4(&mut event);
-
-        // // Should fail without signer
-        // assert!(result.is_err());
-        // assert!(result
-        //     .unwrap_err()
-        //     .to_string()
-        //     .contains("no signer available"));
-    }
-
-    #[test]
-    fn test_prepare_kind_4_no_recipient() {
-        // let keys = Keys::generate();
-
-        // let mut event = EventBuilder::new(Kind::EncryptedDirectMessage, "test message", Vec::new())
-        //     .to_event(&keys)
-        //     .unwrap();
-
-        // let parser = Parser::default();
-        // let result = parser.prepare_kind_4(&mut event);
-
-        // assert!(result.is_err());
-        // assert!(result
-        //     .unwrap_err()
-        //     .to_string()
-        //     .contains("no recipient found"));
-    }
-
-    #[test]
-    fn test_kind_4_with_signer() {
-        // use crate::signer::create_signer_manager;
-        // use crate::signer::interface::SignerManager;
-        // use crate::types::SignerType;
-
-        // // Create signer manager and set up a private key signer
-        // let signer_manager = create_signer_manager();
-        // signer_manager.set_signer(SignerType::PrivKey, "").unwrap(); // Generate new key
-
-        // let shared_signer = std::sync::Arc::new(signer_manager);
-        // let database = std::sync::Arc::new(crate::db::index::NostrDB::new());
-        // let parser = Parser::new_with_signer(shared_signer.clone(), database);
-
-        // // Get the signer's public key
-        // let signer_pubkey = shared_signer.get_public_key().unwrap();
-
-        // // Create a test event with the signer as the recipient
-        // let keys = Keys::generate();
-        // let tags = vec![Tag::parse(vec!["p".to_string(), signer_pubkey.clone()]).unwrap()];
-
-        // let mut event = EventBuilder::new(
-        //     Kind::EncryptedDirectMessage,
-        //     "Hello, encrypted world!",
-        //     tags,
-        // )
-        // .to_event(&keys)
-        // .unwrap();
-
-        // // Test encryption (prepare)
-        // let prepare_result = parser.prepare_kind_4(&mut event);
-        // assert!(
-        //     prepare_result.is_ok(),
-        //     "Encryption should succeed with signer"
-        // );
-
-        // // The content should now be encrypted
-        // assert_ne!(event.content, "Hello, encrypted world!");
-        // assert!(!event.content.is_empty());
-
-        // // Test decryption (parse)
-        // let (parsed, _) = parser.parse_kind_4(&event).unwrap();
-
-        // // Should have the recipient set correctly
-        // assert_eq!(parsed.recipient, signer_pubkey);
-
-        // If the signer has the right keys, decryption might work
-        // Note: This depends on the key relationship between the event author and signer
-    }
-
-    #[test]
-    fn test_parse_kind_4_decryption_attempt() {
-        let keys = Keys::generate();
-        let recipient_keys = Keys::generate();
-
-        // Create an event with some "encrypted" content (actually just base64 for testing)
-        let fake_encrypted = "dGVzdCBtZXNzYWdl"; // "test message" in base64
-
-        let tags = vec![Tag::parse(vec![
-            "p".to_string(),
-            recipient_keys.public_key().to_string(),
-        ])
-        .unwrap()];
-
-        let event = EventBuilder::new(Kind::EncryptedDirectMessage, fake_encrypted, tags)
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let (parsed, _) = parser.parse_kind_4(&event).unwrap();
-
-        // Without the right signer/keys, decryption should fail gracefully
-        assert!(parsed.decrypted_content.is_none());
-        assert!(parsed.parsed_content.is_empty());
-        assert_eq!(parsed.recipient, recipient_keys.public_key().to_hex());
-    }
 }

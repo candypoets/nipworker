@@ -365,7 +365,7 @@ impl Pipe for ProofVerificationPipe {
     async fn process(&mut self, event: PipelineEvent) -> Result<PipeOutput> {
         // Only process parsed events
         if let Some(ref parsed_event) = event.parsed {
-            let kind = parsed_event.event.kind.as_u64();
+            let kind = parsed_event.event.kind;
 
             // Extract proofs from Kind 9321 or 7375
             let (proofs, mint_url) = match kind {

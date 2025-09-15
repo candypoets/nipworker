@@ -7,7 +7,7 @@ use crate::utils::json::extract_event_id;
 use anyhow::Result;
 
 use hex::decode_to_slice;
-use nostr::Event as NostrEvent;
+use crate::types::nostr::Event as NostrEvent;
 use rustc_hash::FxHashSet;
 use serde_wasm_bindgen::from_value;
 use std::cell::RefCell;
@@ -267,11 +267,11 @@ impl Pipeline {
             }
         }
 
-        // 4️⃣ Parse full nostr::Event
-        let nostr_event: nostr::Event = match from_value(parse(raw_event_json)) {
+        // 4️⃣ Parse full crate::types::nostr::Event
+        let nostr_event: crate::types::nostr::Event = match from_value(parse(raw_event_json)) {
             Ok(ev) => ev,
             Err(e) => {
-                tracing::debug!("Failed to parse nostr::Event: {}", e);
+                tracing::debug!("Failed to parse crate::types::nostr::Event: {}", e);
                 return Ok(None);
             }
         };

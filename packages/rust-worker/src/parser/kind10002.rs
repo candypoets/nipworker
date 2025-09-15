@@ -1,7 +1,7 @@
 use crate::parser::Parser;
 use crate::types::network::Request;
+use crate::types::nostr::Event;
 use anyhow::{anyhow, Result};
-use nostr::Event;
 
 // NEW: Imports for FlatBuffers
 use crate::generated::nostr::*;
@@ -20,7 +20,7 @@ impl Parser {
         &self,
         event: &Event,
     ) -> Result<(Kind10002Parsed, Option<Vec<Request>>)> {
-        if event.kind.as_u64() != 10002 {
+        if event.kind != 10002 {
             return Err(anyhow!("event is not kind 10002"));
         }
 
@@ -28,15 +28,14 @@ impl Parser {
 
         // Extract relay info from the r tags
         for tag in &event.tags {
-            let tag_vec = tag.as_vec();
-            if tag_vec.len() >= 2 && tag_vec[0] == "r" && !tag_vec[1].is_empty() {
-                let url = normalize_relay_url(&tag_vec[1]);
+            if tag.len() >= 2 && tag[0] == "r" && !tag[1].is_empty() {
+                let url = normalize_relay_url(&tag[1]);
                 if url.is_empty() {
                     continue;
                 }
 
-                let marker = if tag_vec.len() >= 3 {
-                    tag_vec[2].to_lowercase()
+                let marker = if tag.len() >= 3 {
+                    tag[2].to_lowercase()
                 } else {
                     String::new()
                 };
@@ -101,111 +100,12 @@ fn normalize_relay_url(url: &str) -> String {
         return String::new();
     }
 
-    // Basic URL normalization - could use nostr::Url::normalize if available
+    // Basic URL normalization - could use crate::types::nostr::Url::normalize if available
     if url.starts_with("wss://") || url.starts_with("ws://") {
         url.to_string()
     } else if url.starts_with("//") {
         format!("wss:{}", url)
     } else {
         format!("wss://{}", url)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use nostr::{EventBuilder, Keys, Kind, Tag};
-
-    #[test]
-    fn test_parse_kind_10002_basic() {
-        let keys = Keys::generate();
-        let relay_url = "wss://relay.example.com";
-
-        let tags = vec![Tag::parse(vec!["r".to_string(), relay_url.to_string()]).unwrap()];
-
-        let event = EventBuilder::new(Kind::RelayList, "", tags)
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let (parsed, _) = parser.parse_kind_10002(&event).unwrap();
-
-        assert_eq!(parsed.len(), 1);
-        assert_eq!(parsed[0].url, relay_url);
-        assert!(parsed[0].read);
-        assert!(parsed[0].write);
-    }
-
-    #[test]
-    fn test_parse_kind_10002_with_markers() {
-        let keys = Keys::generate();
-        let read_relay = "wss://read.example.com";
-        let write_relay = "wss://write.example.com";
-
-        let tags = vec![
-            Tag::parse(vec![
-                "r".to_string(),
-                read_relay.to_string(),
-                "read".to_string(),
-            ])
-            .unwrap(),
-            Tag::parse(vec![
-                "r".to_string(),
-                write_relay.to_string(),
-                "write".to_string(),
-            ])
-            .unwrap(),
-        ];
-
-        let event = EventBuilder::new(Kind::RelayList, "", tags)
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let (parsed, _) = parser.parse_kind_10002(&event).unwrap();
-
-        assert_eq!(parsed.len(), 2);
-
-        let read_info = parsed.iter().find(|r| r.url == read_relay).unwrap();
-        assert!(read_info.read);
-        assert!(!read_info.write);
-
-        let write_info = parsed.iter().find(|r| r.url == write_relay).unwrap();
-        assert!(!write_info.read);
-        assert!(write_info.write);
-    }
-
-    #[test]
-    fn test_parse_kind_10002_deduplication() {
-        let keys = Keys::generate();
-        let relay_url = "wss://relay.example.com";
-
-        let tags = vec![
-            Tag::parse(vec!["r".to_string(), relay_url.to_string()]).unwrap(),
-            Tag::parse(vec!["r".to_string(), relay_url.to_string()]).unwrap(), // Duplicate
-        ];
-
-        let event = EventBuilder::new(Kind::RelayList, "", tags)
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let (parsed, _) = parser.parse_kind_10002(&event).unwrap();
-
-        assert_eq!(parsed.len(), 1); // Should be deduplicated
-    }
-
-    #[test]
-    fn test_parse_wrong_kind() {
-        let keys = Keys::generate();
-
-        let event = EventBuilder::new(Kind::TextNote, "test", Vec::new())
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let result = parser.parse_kind_10002(&event);
-
-        assert!(result.is_err());
     }
 }

@@ -1,5 +1,5 @@
 use super::super::*;
-use nostr::util::hex;
+use hex;
 use tracing::warn;
 
 pub struct ParsePipe {

@@ -1,4 +1,4 @@
-use nostr::Event;
+use crate::types::nostr::Event;
 
 use crate::{
     generated::nostr::fb,
@@ -193,7 +193,7 @@ impl ParsedEvent {
 
         let mut string_vec_offsets = Vec::new();
         for tag in &self.event.tags {
-            let tag_strings: Vec<_> = tag.as_vec().iter().map(|t| fbb.create_string(t)).collect();
+            let tag_strings: Vec<_> = tag.iter().map(|t| fbb.create_string(t)).collect();
             let tag_vector = fbb.create_vector(&tag_strings);
             let string_vec = fb::StringVec::create(
                 fbb,
@@ -210,8 +210,8 @@ impl ParsedEvent {
         let parsed_event_args = fb::ParsedEventArgs {
             id: Some(id_offset),
             pubkey: Some(pubkey_offset),
-            created_at: self.event.created_at.as_u64() as u32,
-            kind: self.event.kind.as_u32() as u16,
+            created_at: self.event.created_at as u32,
+            kind: self.event.kind as u16,
             parsed_type,
             parsed: Some(parsed_union_offset),
             requests: requests_offset,

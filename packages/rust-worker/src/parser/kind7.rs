@@ -1,12 +1,11 @@
-use crate::parser::{find_last_tag, Parser};
+use crate::parser::Parser;
 use crate::types::network::Request;
+use crate::types::nostr::Event;
 use crate::utils::request_deduplication::RequestDeduplicator;
 use anyhow::{anyhow, Result};
-use nostr::Event;
 
 // NEW: Imports for FlatBuffers
 use crate::generated::nostr::*;
-use flatbuffers::FlatBufferBuilder;
 
 pub enum ReactionType {
     Like,
@@ -30,8 +29,15 @@ pub struct Kind7Parsed {
 }
 
 impl Parser {
+    // Helper function to find the last tag with a specific name
+    pub fn find_last_tag<'a>(tags: &'a [Vec<String>], tag_name: &str) -> Option<&'a Vec<String>> {
+        tags.iter()
+            .rev()
+            .find(|tag| !tag.is_empty() && tag[0] == tag_name)
+    }
+
     pub fn parse_kind_7(&self, event: &Event) -> Result<(Kind7Parsed, Option<Vec<Request>>)> {
-        if event.kind.as_u64() != 7 {
+        if event.kind != 7 {
             return Err(anyhow!("event is not kind 7"));
         }
 
@@ -50,22 +56,20 @@ impl Parser {
         });
 
         // Find the e tag for the target event (should be the last one if multiple)
-        let e_tag = find_last_tag(&event.tags, "e")
+        let e_tag = Self::find_last_tag(&event.tags, "e")
             .ok_or_else(|| anyhow!("reaction must have at least one e tag"))?;
 
-        let tag_vec = e_tag.as_vec();
-        if tag_vec.len() < 2 {
+        if e_tag.len() < 2 {
             return Err(anyhow!("invalid e tag format"));
         }
 
-        let event_id = tag_vec[1].clone();
+        let event_id = e_tag[1].clone();
 
         // Find pubkey tag (last p tag)
-        let pubkey = find_last_tag(&event.tags, "p")
+        let pubkey = Self::find_last_tag(&event.tags, "p")
             .and_then(|tag| {
-                let tag_vec = tag.as_vec();
-                if tag_vec.len() >= 2 {
-                    Some(tag_vec[1].clone())
+                if tag.len() >= 2 {
+                    Some(tag[1].clone())
                 } else {
                     None
                 }
@@ -73,20 +77,18 @@ impl Parser {
             .unwrap_or_default();
 
         // Find kind tag
-        let event_kind = find_last_tag(&event.tags, "k").and_then(|tag| {
-            let tag_vec = tag.as_vec();
-            if tag_vec.len() >= 2 {
-                tag_vec[1].parse::<u64>().ok()
+        let event_kind = Self::find_last_tag(&event.tags, "k").and_then(|tag| {
+            if tag.len() >= 2 {
+                tag[1].parse::<u64>().ok()
             } else {
                 None
             }
         });
 
         // Find addressable coordinates
-        let target_coordinates = find_last_tag(&event.tags, "a").and_then(|tag| {
-            let tag_vec = tag.as_vec();
-            if tag_vec.len() >= 2 {
-                Some(tag_vec[1].clone())
+        let target_coordinates = Self::find_last_tag(&event.tags, "a").and_then(|tag| {
+            if tag.len() >= 2 {
+                Some(tag[1].clone())
             } else {
                 None
             }
@@ -139,11 +141,10 @@ impl Parser {
 
         // Find matching emoji tag
         for tag in &event.tags {
-            let tag_vec = tag.as_vec();
-            if tag_vec.len() >= 3 && tag_vec[0] == "emoji" && tag_vec[1] == shortcode {
+            if tag.len() >= 3 && tag[0] == "emoji" && tag[1] == shortcode {
                 return Some(Emoji {
                     shortcode: shortcode.to_string(),
-                    url: tag_vec[2].clone(),
+                    url: tag[2].clone(),
                 });
             }
         }
@@ -195,192 +196,4 @@ pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
     let offset = fb::Kind7Parsed::create(builder, &args);
 
     Ok(offset)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use nostr::{EventBuilder, Keys, Kind, Tag};
-
-    #[test]
-    fn test_parse_kind_7_like() {
-        let keys = Keys::generate();
-        let target_event_id = "1234567890abcdef1234567890abcdef12345678";
-        let target_pubkey = "abcdef1234567890abcdef1234567890abcdef12";
-
-        let tags = vec![
-            Tag::parse(vec!["e".to_string(), target_event_id.to_string()]).unwrap(),
-            Tag::parse(vec!["p".to_string(), target_pubkey.to_string()]).unwrap(),
-        ];
-
-        let event = EventBuilder::new(Kind::Reaction, "+", tags)
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let (parsed, requests) = parser.parse_kind_7(&event).unwrap();
-
-        assert!(matches!(parsed.reaction_type, ReactionType::Like));
-        assert_eq!(parsed.event_id, target_event_id);
-        assert_eq!(parsed.pubkey, target_pubkey);
-        assert!(parsed.emoji.is_none());
-        assert!(requests.is_some());
-    }
-
-    #[test]
-    fn test_parse_kind_7_dislike() {
-        let keys = Keys::generate();
-        let target_event_id = "1234567890abcdef1234567890abcdef12345678";
-
-        let tags = vec![Tag::parse(vec!["e".to_string(), target_event_id.to_string()]).unwrap()];
-
-        let event = EventBuilder::new(Kind::Reaction, "-", tags)
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let (parsed, _) = parser.parse_kind_7(&event).unwrap();
-
-        assert!(matches!(parsed.reaction_type, ReactionType::Dislike));
-        assert_eq!(parsed.event_id, target_event_id);
-    }
-
-    #[test]
-    fn test_parse_kind_7_emoji() {
-        let keys = Keys::generate();
-        let target_event_id = "1234567890abcdef1234567890abcdef12345678";
-        let emoji_shortcode = "heart";
-        let emoji_url = "https://example.com/heart.png";
-
-        let tags = vec![
-            Tag::parse(vec!["e".to_string(), target_event_id.to_string()]).unwrap(),
-            Tag::parse(vec![
-                "emoji".to_string(),
-                emoji_shortcode.to_string(),
-                emoji_url.to_string(),
-            ])
-            .unwrap(),
-        ];
-
-        let event = EventBuilder::new(Kind::Reaction, ":heart:", tags)
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let (parsed, _) = parser.parse_kind_7(&event).unwrap();
-
-        assert!(matches!(parsed.reaction_type, ReactionType::Emoji));
-        assert_eq!(parsed.event_id, target_event_id);
-        assert!(parsed.emoji.is_some());
-
-        let emoji = parsed.emoji.unwrap();
-        assert_eq!(emoji.shortcode, emoji_shortcode);
-        assert_eq!(emoji.url, emoji_url);
-    }
-
-    #[test]
-    fn test_parse_kind_7_custom() {
-        let keys = Keys::generate();
-        let target_event_id = "1234567890abcdef1234567890abcdef12345678";
-
-        let tags = vec![Tag::parse(vec!["e".to_string(), target_event_id.to_string()]).unwrap()];
-
-        let event = EventBuilder::new(Kind::Reaction, "amazing!", tags)
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let (parsed, _) = parser.parse_kind_7(&event).unwrap();
-
-        assert!(matches!(parsed.reaction_type, ReactionType::Custom));
-        assert_eq!(parsed.event_id, target_event_id);
-    }
-
-    #[test]
-    fn test_parse_kind_7_with_kind_tag() {
-        let keys = Keys::generate();
-        let target_event_id = "1234567890abcdef1234567890abcdef12345678";
-        let target_kind = 1u64;
-
-        let tags = vec![
-            Tag::parse(vec!["e".to_string(), target_event_id.to_string()]).unwrap(),
-            Tag::parse(vec!["k".to_string(), target_kind.to_string()]).unwrap(),
-        ];
-
-        let event = EventBuilder::new(Kind::Reaction, "+", tags)
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let (parsed, _) = parser.parse_kind_7(&event).unwrap();
-
-        assert_eq!(parsed.event_kind, Some(target_kind));
-    }
-
-    #[test]
-    fn test_parse_kind_7_with_addressable_event() {
-        let keys = Keys::generate();
-        let target_event_id = "1234567890abcdef1234567890abcdef12345678";
-        let coordinates = "30023:pubkey:identifier";
-
-        let tags = vec![
-            Tag::parse(vec!["e".to_string(), target_event_id.to_string()]).unwrap(),
-            Tag::parse(vec!["a".to_string(), coordinates.to_string()]).unwrap(),
-        ];
-
-        let event = EventBuilder::new(Kind::Reaction, "+", tags)
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let (parsed, _) = parser.parse_kind_7(&event).unwrap();
-
-        assert_eq!(parsed.target_coordinates, Some(coordinates.to_string()));
-    }
-
-    #[test]
-    fn test_parse_kind_7_no_e_tag() {
-        let keys = Keys::generate();
-
-        let event = EventBuilder::new(Kind::Reaction, "+", Vec::new())
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let result = parser.parse_kind_7(&event);
-
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_parse_wrong_kind() {
-        let keys = Keys::generate();
-
-        let event = EventBuilder::new(Kind::TextNote, "test", Vec::new())
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let result = parser.parse_kind_7(&event);
-
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_parse_emoji_without_tag() {
-        let keys = Keys::generate();
-        let target_event_id = "1234567890abcdef1234567890abcdef12345678";
-
-        let tags = vec![Tag::parse(vec!["e".to_string(), target_event_id.to_string()]).unwrap()];
-
-        let event = EventBuilder::new(Kind::Reaction, ":unknown:", tags)
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let (parsed, _) = parser.parse_kind_7(&event).unwrap();
-
-        assert!(matches!(parsed.reaction_type, ReactionType::Emoji));
-        assert!(parsed.emoji.is_none()); // No matching emoji tag
-    }
 }

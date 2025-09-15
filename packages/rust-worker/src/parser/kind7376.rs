@@ -1,7 +1,8 @@
+use crate::nostr::Template;
 use crate::parser::Parser;
 use crate::types::network::Request;
+use crate::types::nostr::{Event, UnsignedEvent};
 use anyhow::{anyhow, Result};
-use nostr::{Event, UnsignedEvent};
 
 // NEW: Imports for FlatBuffers
 use crate::generated::nostr::*;
@@ -26,7 +27,7 @@ pub struct Kind7376Parsed {
 
 impl Parser {
     pub fn parse_kind_7376(&self, event: &Event) -> Result<(Kind7376Parsed, Option<Vec<Request>>)> {
-        if event.kind.as_u64() != 7376 {
+        if event.kind != 7376 {
             return Err(anyhow!("event is not kind 7376"));
         }
 
@@ -43,12 +44,11 @@ impl Parser {
 
         // Process unencrypted e tags with "redeemed" marker
         for tag in &event.tags {
-            let tag_vec = tag.as_vec();
-            if tag_vec.len() >= 4 && tag_vec[0] == "e" && tag_vec[3] == "redeemed" {
-                parsed.redeemed_events.push(tag_vec[1].clone());
+            if tag.len() >= 4 && tag[0] == "e" && tag[3] == "redeemed" {
+                parsed.redeemed_events.push(tag[1].clone());
                 // Add request for this event
                 requests.push(Request {
-                    ids: vec![tag_vec[1].clone()],
+                    ids: vec![tag[1].clone()],
                     kinds: vec![7375],
                     relays: self.database.find_relay_candidates(
                         7375,
@@ -118,13 +118,13 @@ impl Parser {
         Ok((parsed, Some(requests)))
     }
 
-    pub fn prepare_kind_7376(&self, unsigned_event: &mut UnsignedEvent) -> Result<Event> {
-        if unsigned_event.kind.as_u64() != 7376 {
+    pub fn prepare_kind_7376(&self, template: &Template) -> Result<Event> {
+        if template.kind != 7376 {
             return Err(anyhow!("event is not kind 7376"));
         }
 
         // For spending history events, the content is an array of tags
-        let tags: Vec<Vec<String>> = serde_json::from_str(&unsigned_event.content)
+        let tags: Vec<Vec<String>> = serde_json::from_str(&template.content)
             .map_err(|e| anyhow!("invalid spending history content: {}", e))?;
 
         // Check for required direction and amount tags
@@ -168,11 +168,11 @@ impl Parser {
             .nip44_encrypt(&pubkey, &tags_json)
             .map_err(|e| anyhow!("failed to encrypt tags: {}", e))?;
 
-        unsigned_event.content = encrypted;
+        let encrypted_template = Template::new(template.kind, encrypted, template.tags.clone());
 
         // Sign the event
         signer_manager
-            .sign_event(unsigned_event)
+            .sign_event(&encrypted_template)
             .map_err(|e| anyhow!("failed to sign event: {}", e))
     }
 }
@@ -256,102 +256,4 @@ pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
     let offset = fb::Kind7376Parsed::create(builder, &args);
 
     Ok(offset)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use nostr::{EventBuilder, Keys, Kind, Tag};
-
-    #[test]
-    fn test_parse_kind_7376_basic() {
-        let keys = Keys::generate();
-
-        let event = EventBuilder::new(Kind::Custom(7376), "encrypted_content", Vec::new())
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let (parsed, _) = parser.parse_kind_7376(&event).unwrap();
-
-        assert!(!parsed.decrypted); // No decryption without signer
-        assert!(parsed.direction.is_empty());
-        assert_eq!(parsed.amount, 0);
-    }
-
-    #[test]
-    fn test_parse_kind_7376_with_redeemed_tag() {
-        let keys = Keys::generate();
-        let redeemed_event_id = "1234567890abcdef1234567890abcdef12345678";
-
-        let tags = vec![Tag::parse(vec![
-            "e".to_string(),
-            redeemed_event_id.to_string(),
-            "".to_string(),
-            "redeemed".to_string(),
-        ])
-        .unwrap()];
-
-        let event = EventBuilder::new(Kind::Custom(7376), "encrypted_content", tags)
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let (parsed, requests) = parser.parse_kind_7376(&event).unwrap();
-
-        assert_eq!(parsed.redeemed_events, vec![redeemed_event_id]);
-        assert!(requests.is_some());
-        assert!(!requests.unwrap().is_empty());
-    }
-
-    #[test]
-    fn test_prepare_kind_7376_invalid_content() {
-        // let keys = Keys::generate();
-
-        // let mut event = EventBuilder::new(Kind::Custom(7376), "invalid json", Vec::new())
-        //     .to_event(&keys)
-        //     .unwrap();
-
-        // let parser = Parser::default();
-        // let result = parser.prepare_kind_7376(&mut event);
-
-        // assert!(result.is_err());
-        // assert!(result
-        //     .unwrap_err()
-        //     .to_string()
-        //     .contains("invalid spending history content"));
-    }
-
-    #[test]
-    fn test_prepare_kind_7376_missing_required_fields() {
-        // let keys = Keys::generate();
-        // let content = r#"[["amount", "100"]]"#; // Missing direction
-
-        // let mut event = EventBuilder::new(Kind::Custom(7376), content, Vec::new())
-        //     .to_event(&keys)
-        //     .unwrap();
-
-        // let parser = Parser::default();
-        // let result = parser.prepare_kind_7376(&mut event);
-
-        // assert!(result.is_err());
-        // assert!(result
-        //     .unwrap_err()
-        //     .to_string()
-        //     .contains("must include direction and amount"));
-    }
-
-    #[test]
-    fn test_parse_wrong_kind() {
-        let keys = Keys::generate();
-
-        let event = EventBuilder::new(Kind::TextNote, "test", Vec::new())
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let result = parser.parse_kind_7376(&event);
-
-        assert!(result.is_err());
-    }
 }

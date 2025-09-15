@@ -2,11 +2,6 @@
 
 use wasm_bindgen::prelude::*;
 
-// Use `wee_alloc` as the global allocator for smaller WASM size
-#[cfg(feature = "wee_alloc")]
-#[global_allocator]
-static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
-
 // Re-export common types and modules
 pub mod config;
 pub mod db;
@@ -24,7 +19,7 @@ pub use db::NostrDB;
 pub use network::NetworkManager;
 pub use parser::Parser;
 pub use signer::{PrivateKeySigner, SharedSignerManager, Signer, SignerManager, SignerManagerImpl};
-use types::EventTemplate;
+
 pub use types::*;
 
 // Re-export communication types for external use
@@ -81,7 +76,7 @@ use js_sys::{SharedArrayBuffer, Uint8Array};
 use std::sync::{Arc, Once};
 use tracing::info;
 
-use crate::types::network::Request;
+use crate::types::{network::Request, nostr::Template};
 
 #[wasm_bindgen]
 extern "C" {
@@ -117,7 +112,7 @@ fn setup_panic_hook() {
         console_error!("{}", message);
 
         // Also use the console_error_panic_hook for browser integration
-        console_error_panic_hook::hook(panic_info);
+        // console_error_panic_hook::hook(panic_info);
     }));
 }
 
@@ -247,17 +242,12 @@ impl NostrClient {
     async fn publish_event(
         &self,
         publish_id: String,
-        template: EventTemplate,
+        template: Template,
         shared_buffer: SharedArrayBuffer,
     ) -> Result<String, JsValue> {
-        let mut event = self
-            .signer_manager
-            .unsign_event(template)
-            .map_err(|e| JsValue::from_str(&format!("Failed to create unsigned event: {}", e)))?;
-
         let summary = self
             .network_manager
-            .publish_event(publish_id, &mut event, shared_buffer)
+            .publish_event(publish_id, &template, shared_buffer)
             .await
             .map_err(|e| JsValue::from_str(&format!("Failed to publish event: {}", e)))?;
 
@@ -265,21 +255,15 @@ impl NostrClient {
             .map_err(|e| JsValue::from_str(&format!("Failed to serialize summary: {}", e)))
     }
 
-    fn sign_event(&self, template: EventTemplate) -> Result<(), JsValue> {
-        let mut event = self
-            .signer_manager
-            .unsign_event(template)
-            .map_err(|e| JsValue::from_str(&format!("Failed to create unsigned event: {}", e)))?;
-
+    fn sign_event(&self, template: Template) -> Result<(), JsValue> {
         // Sign the event using the signer manager
         let signed_event = self
             .signer_manager
-            .sign_event(&mut event)
+            .sign_event(&template)
             .map_err(|e| JsValue::from_str(&format!("Failed to sign event: {}", e)))?;
 
-        // Convert signed event back to JSON
-        let signed_event_pack = rmp_serde::to_vec_named(&signed_event)
-            .map_err(|e| JsValue::from_str(&format!("Failed to serialize signed event: {}", e)))?;
+        let json_string = signed_event.as_json();
+        let signed_event_pack: Vec<u8> = json_string.into_bytes();
 
         // Send signed event back to main thread
         let signed_event_message = SignerMessage::Signed {

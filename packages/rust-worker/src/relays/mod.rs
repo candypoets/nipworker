@@ -22,15 +22,15 @@ pub use types::{
 };
 
 // Re-export nostr types for convenience
-pub use nostr::{Event, EventId, Filter, PublicKey};
+pub use crate::types::nostr::{Event, EventId, Filter, PublicKey};
 
 /// Main entry point for relay operations
 ///
 /// # Example
 ///
 /// ```rust
-/// use nutscash_nostr::relays::{ConnectionRegistry, SubscriptionHandle};
-/// use nostr::{Filter, Kind};
+/// use nutscash_crate::types::nostr::relays::{ConnectionRegistry, SubscriptionHandle};
+/// use crate::types::nostr::{Filter, Kind};
 /// use futures::StreamExt;
 ///
 /// async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -67,14 +67,14 @@ pub mod utils {
     use super::types::{ClientMessage, RelayError, RelayMessage};
 
     /// Parse a relay message from JSON string
-    pub fn parse_relay_message(json: &str) -> Result<RelayMessage, RelayError> {
-        serde_json::from_str(json).map_err(RelayError::ParseError)
-    }
+    // pub fn parse_relay_message(json: &str) -> Result<RelayMessage, RelayError> {
+    //     serde_json::from_str(json).map_err(RelayError::ParseError)
+    // }
 
     /// Serialize a client message to JSON string
-    pub fn serialize_client_message(msg: &ClientMessage) -> Result<String, RelayError> {
-        serde_json::to_string(msg).map_err(RelayError::SerializeError)
-    }
+    // pub fn serialize_client_message(msg: &ClientMessage) -> Result<String, RelayError> {
+    //     serde_json::to_string(msg).map_err(RelayError::SerializeError)
+    // }
 
     /// Validate relay URL format
     pub fn validate_relay_url(url: &str) -> Result<(), RelayError> {

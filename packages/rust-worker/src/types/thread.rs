@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{types::Request, EventTemplate};
+use crate::{nostr::Template, types::Request};
 
 /// Configuration for individual pipes in the pipeline
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -85,7 +85,7 @@ impl Default for SubscriptionConfig {
 }
 
 /// Messages sent from main thread to worker
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub enum MainToWorkerMessage {
     Subscribe {
         subscription_id: String,
@@ -98,10 +98,10 @@ pub enum MainToWorkerMessage {
     },
     Publish {
         publish_id: String,
-        template: EventTemplate,
+        template: Template,
     },
     SignEvent {
-        template: EventTemplate,
+        template: Template,
     },
     SetSigner {
         signer_type: String,

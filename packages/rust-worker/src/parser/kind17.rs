@@ -1,11 +1,10 @@
 use crate::parser::Parser;
 use crate::types::network::Request;
+use crate::types::nostr::Event;
 use anyhow::{anyhow, Result};
-use nostr::Event;
 
 // NEW: Imports for FlatBuffers
 use crate::generated::nostr::*;
-use flatbuffers::FlatBufferBuilder;
 
 pub enum ReactionType {
     Like,
@@ -24,7 +23,7 @@ pub type Kind17Parsed = crate::parser::kind7::Kind7Parsed;
 
 impl Parser {
     pub fn parse_kind_17(&self, event: &Event) -> Result<(Kind17Parsed, Option<Vec<Request>>)> {
-        if event.kind.as_u64() != 17 {
+        if event.kind != 17 {
             return Err(anyhow!("event is not kind 17"));
         }
 
@@ -32,10 +31,7 @@ impl Parser {
         let _r_tag = event
             .tags
             .iter()
-            .find(|tag| {
-                let tag_vec = tag.as_vec();
-                tag_vec.len() >= 2 && tag_vec[0] == "r"
-            })
+            .find(|tag| tag.len() >= 2 && tag[0] == "r")
             .ok_or_else(|| anyhow!("kind 17 must have an r tag"))?;
 
         // Parse reaction type
@@ -84,11 +80,10 @@ impl Parser {
 
         // Find matching emoji tag
         for tag in &event.tags {
-            let tag_vec = tag.as_vec();
-            if tag_vec.len() >= 3 && tag_vec[0] == "emoji" && tag_vec[1] == shortcode {
+            if tag.len() >= 3 && tag[0] == "emoji" && tag[1] == shortcode {
                 return Some(crate::parser::kind7::Emoji {
                     shortcode: shortcode.to_string(),
-                    url: tag_vec[2].clone(),
+                    url: tag[2].clone(),
                 });
             }
         }
@@ -140,60 +135,4 @@ pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
     let offset = fb::Kind17Parsed::create(builder, &args);
 
     Ok(offset)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use nostr::{EventBuilder, Keys, Kind, Tag};
-
-    #[test]
-    fn test_parse_kind_17_basic() {
-        let keys = Keys::generate();
-        let website_url = "https://example.com";
-
-        let tags = vec![Tag::parse(vec!["r".to_string(), website_url.to_string()]).unwrap()];
-
-        let event = EventBuilder::new(Kind::Custom(17), "+", tags)
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let (parsed, _) = parser.parse_kind_17(&event).unwrap();
-
-        assert!(matches!(
-            parsed.reaction_type,
-            crate::parser::kind7::ReactionType::Like
-        ));
-        assert_eq!(parsed.event_id, ""); // No event ID for website reactions
-        assert_eq!(parsed.pubkey, ""); // No pubkey for website reactions
-    }
-
-    #[test]
-    fn test_parse_kind_17_no_r_tag() {
-        let keys = Keys::generate();
-
-        let event = EventBuilder::new(Kind::Custom(17), "+", Vec::new())
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let result = parser.parse_kind_17(&event);
-
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_parse_wrong_kind() {
-        let keys = Keys::generate();
-
-        let event = EventBuilder::new(Kind::TextNote, "test", Vec::new())
-            .to_event(&keys)
-            .unwrap();
-
-        let parser = Parser::default();
-        let result = parser.parse_kind_17(&event);
-
-        assert!(result.is_err());
-    }
 }

@@ -1,6 +1,6 @@
 use rustc_hash::FxHashMap;
 
-use nostr::{Alphabet, EventId, Filter, Kind, PublicKey, SingleLetterTag, Timestamp};
+use crate::types::nostr::{EventId, Filter, Kind, PublicKey, Timestamp};
 use serde::{Deserialize, Serialize};
 use tracing::debug;
 use wasm_bindgen::prelude::*;
@@ -139,11 +139,11 @@ impl Request {
                 .unwrap_or_default(),
             kinds: filter
                 .kinds
-                .map(|kinds| kinds.into_iter().map(|k| k.as_u64() as i32).collect())
+                .map(|kinds| kinds.into_iter().map(|k| k as i32).collect())
                 .unwrap_or_default(),
             tags: FxHashMap::default(), // TODO: Convert filter tags properly
-            since: filter.since.map(|ts| ts.as_u64() as i32),
-            until: filter.until.map(|ts| ts.as_u64() as i32),
+            since: filter.since.map(|ts| ts as i32),
+            until: filter.until.map(|ts| ts as i32),
             limit: filter.limit.map(|l| l as i32),
             search: filter.search.unwrap_or_default(),
             relays,
@@ -158,102 +158,100 @@ impl Request {
     pub fn to_filter(&self) -> Result<Filter, anyhow::Error> {
         let mut filter = Filter::new();
 
-        if !self.ids.is_empty() {
-            let ids: Result<Vec<EventId>, _> =
-                self.ids.iter().map(|id| EventId::from_hex(id)).collect();
-            filter = filter.ids(ids?);
-        }
+        // if !self.ids.is_empty() {
+        //     filter.ids = self.ids;
+        // }
 
-        if !self.authors.is_empty() {
-            let authors: Result<Vec<PublicKey>, _> = self
-                .authors
-                .iter()
-                .map(|pk| PublicKey::from_hex(pk))
-                .collect();
-            filter = filter.authors(authors?);
-        }
+        // if !self.authors.is_empty() {
+        //     let authors: Result<Vec<PublicKey>, _> = self
+        //         .authors
+        //         .iter()
+        //         .map(|pk| PublicKey::from_hex(pk))
+        //         .collect();
+        //     filter = filter.authors(authors?);
+        // }
 
-        if !self.kinds.is_empty() {
-            let kinds: Vec<Kind> = self.kinds.iter().map(|k| Kind::from(*k as u64)).collect();
-            filter = filter.kinds(kinds);
-        }
+        // if !self.kinds.is_empty() {
+        //     let kinds: Vec<Kind> = self.kinds.iter().map(|k| Kind::from(*k as u64)).collect();
+        //     filter = filter.kinds(kinds);
+        // }
 
-        if let Some(since) = self.since {
-            filter = filter.since(Timestamp::from(since as u64));
-        }
+        // if let Some(since) = self.since {
+        //     filter = filter.since(Timestamp::from(since as u64));
+        // }
 
-        if let Some(until) = self.until {
-            filter = filter.until(Timestamp::from(until as u64));
-        }
+        // if let Some(until) = self.until {
+        //     filter = filter.until(Timestamp::from(until as u64));
+        // }
 
-        if let Some(limit) = self.limit {
-            filter = filter.limit(limit as usize);
-        }
+        // if let Some(limit) = self.limit {
+        //     filter = filter.limit(limit as usize);
+        // }
 
-        if !self.search.is_empty() {
-            filter = filter.search(&self.search);
-        }
+        // if !self.search.is_empty() {
+        //     filter = filter.search(&self.search);
+        // }
 
-        // Handle generic tags
-        for (tag_name, tag_values) in &self.tags {
-            // Tags in Nostr filters are prefixed with '#', so we check for length 2 and extract the second character
-            if tag_name.len() == 2 && tag_name.starts_with('#') && !tag_values.is_empty() {
-                // Get the second character (the actual tag identifier)
-                if let Some(tag_char) = tag_name.chars().nth(1) {
-                    match tag_char {
-                        'a'..='z' | 'A'..='Z' => {
-                            let alphabet = match tag_char.to_ascii_lowercase() {
-                                'a' => Some(Alphabet::A),
-                                'b' => Some(Alphabet::B),
-                                'c' => Some(Alphabet::C),
-                                'd' => Some(Alphabet::D),
-                                'e' => Some(Alphabet::E),
-                                'f' => Some(Alphabet::F),
-                                'g' => Some(Alphabet::G),
-                                'h' => Some(Alphabet::H),
-                                'i' => Some(Alphabet::I),
-                                'j' => Some(Alphabet::J),
-                                'k' => Some(Alphabet::K),
-                                'l' => Some(Alphabet::L),
-                                'm' => Some(Alphabet::M),
-                                'n' => Some(Alphabet::N),
-                                'o' => Some(Alphabet::O),
-                                'p' => Some(Alphabet::P),
-                                'q' => Some(Alphabet::Q),
-                                'r' => Some(Alphabet::R),
-                                's' => Some(Alphabet::S),
-                                't' => Some(Alphabet::T),
-                                'u' => Some(Alphabet::U),
-                                'v' => Some(Alphabet::V),
-                                'w' => Some(Alphabet::W),
-                                'x' => Some(Alphabet::X),
-                                'y' => Some(Alphabet::Y),
-                                'z' => Some(Alphabet::Z),
-                                _ => {
-                                    debug!(
-                                        "Unexpected character after to_ascii_lowercase: '{}' (original: '{}')",
-                                        tag_char.to_ascii_lowercase(),
-                                        tag_char
-                                    );
-                                    None
-                                }
-                            };
+        // // Handle generic tags
+        // for (tag_name, tag_values) in &self.tags {
+        //     // Tags in Nostr filters are prefixed with '#', so we check for length 2 and extract the second character
+        //     if tag_name.len() == 2 && tag_name.starts_with('#') && !tag_values.is_empty() {
+        //         // Get the second character (the actual tag identifier)
+        //         if let Some(tag_char) = tag_name.chars().nth(1) {
+        //             match tag_char {
+        //                 'a'..='z' | 'A'..='Z' => {
+        //                     let alphabet = match tag_char.to_ascii_lowercase() {
+        //                         'a' => Some(Alphabet::A),
+        //                         'b' => Some(Alphabet::B),
+        //                         'c' => Some(Alphabet::C),
+        //                         'd' => Some(Alphabet::D),
+        //                         'e' => Some(Alphabet::E),
+        //                         'f' => Some(Alphabet::F),
+        //                         'g' => Some(Alphabet::G),
+        //                         'h' => Some(Alphabet::H),
+        //                         'i' => Some(Alphabet::I),
+        //                         'j' => Some(Alphabet::J),
+        //                         'k' => Some(Alphabet::K),
+        //                         'l' => Some(Alphabet::L),
+        //                         'm' => Some(Alphabet::M),
+        //                         'n' => Some(Alphabet::N),
+        //                         'o' => Some(Alphabet::O),
+        //                         'p' => Some(Alphabet::P),
+        //                         'q' => Some(Alphabet::Q),
+        //                         'r' => Some(Alphabet::R),
+        //                         's' => Some(Alphabet::S),
+        //                         't' => Some(Alphabet::T),
+        //                         'u' => Some(Alphabet::U),
+        //                         'v' => Some(Alphabet::V),
+        //                         'w' => Some(Alphabet::W),
+        //                         'x' => Some(Alphabet::X),
+        //                         'y' => Some(Alphabet::Y),
+        //                         'z' => Some(Alphabet::Z),
+        //                         _ => {
+        //                             debug!(
+        //                                 "Unexpected character after to_ascii_lowercase: '{}' (original: '{}')",
+        //                                 tag_char.to_ascii_lowercase(),
+        //                                 tag_char
+        //                             );
+        //                             None
+        //                         }
+        //                     };
 
-                            if let Some(alphabet) = alphabet {
-                                let single_letter_tag = SingleLetterTag::lowercase(alphabet);
-                                filter = filter.custom_tag(single_letter_tag, tag_values.clone());
-                            }
-                        }
-                        _ => {
-                            // This case handles non-alphabetic characters in tag names
-                            // For debugging purposes, let's log the unexpected character
-                            debug!("Ignoring non-alphabetic tag name character: '{}'", tag_char);
-                            // We could implement special handling for numeric or symbolic tags here if needed
-                        }
-                    }
-                }
-            }
-        }
+        //                     if let Some(alphabet) = alphabet {
+        //                         let single_letter_tag = SingleLetterTag::lowercase(alphabet);
+        //                         filter = filter.custom_tag(single_letter_tag, tag_values.clone());
+        //                     }
+        //                 }
+        //                 _ => {
+        //                     // This case handles non-alphabetic characters in tag names
+        //                     // For debugging purposes, let's log the unexpected character
+        //                     debug!("Ignoring non-alphabetic tag name character: '{}'", tag_char);
+        //                     // We could implement special handling for numeric or symbolic tags here if needed
+        //                 }
+        //             }
+        //         }
+        //     }
+        // }
 
         Ok(filter)
     }
