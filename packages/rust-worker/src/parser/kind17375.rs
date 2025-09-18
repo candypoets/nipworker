@@ -1,11 +1,11 @@
-use crate::nostr::Template;
+use crate::nostr::{NostrTags, Template};
 use crate::parser::Parser;
+use crate::parser::{ParserError, Result};
+use crate::signer::interface::SignerManagerInterface;
 use crate::types::network::Request;
 use crate::types::nostr::Event;
-use anyhow::{anyhow, Result};
 use tracing::{info, warn};
 
-// NEW: Imports for FlatBuffers
 use crate::generated::nostr::*;
 
 pub struct Kind17375Parsed {
@@ -20,8 +20,9 @@ impl Parser {
         &self,
         event: &Event,
     ) -> Result<(Kind17375Parsed, Option<Vec<Request>>)> {
+        info!("Parsing kind 17375 event");
         if event.kind != 17375 {
-            return Err(anyhow!("event is not kind 17375"));
+            return Err(ParserError::Other("event is not kind 17375".to_string()));
         }
 
         let mut parsed = Kind17375Parsed {
@@ -36,34 +37,50 @@ impl Parser {
         if signer.has_signer() {
             info!("Signer available, attempting to decrypt event content");
             let pubkey = signer.get_public_key()?;
-            if let Ok(decrypted) = signer.nip44_decrypt(&pubkey, &event.content) {
-                if !decrypted.is_empty() {
-                    if let Ok(tags) = serde_json::from_str::<Vec<Vec<String>>>(&decrypted) {
-                        parsed.decrypted = true;
+            match signer.nip44_decrypt(&pubkey, &event.content) {
+                Ok(decrypted) => {
+                    if !decrypted.is_empty() {
+                        match NostrTags::from_json(&decrypted) {
+                            Ok(tags) => {
+                                parsed.decrypted = true;
 
-                        // Process decrypted tags
-                        for tag in tags {
-                            if tag.len() >= 2 {
-                                match tag[0].as_str() {
-                                    "mint" => {
-                                        parsed.mints.push(tag[1].clone());
-                                    }
-                                    "privkey" => {
-                                        parsed.p2pk_priv_key = Some(tag[1].clone());
-                                        // Derive public key from private key
-                                        if let Ok(secret_key) =
-                                            crate::types::nostr::SecretKey::from_hex(&tag[1])
-                                        {
-                                            let pub_key = secret_key
-                                                .public_key(&crate::types::nostr::SECP256K1);
-                                            parsed.p2pk_pub_key = Some(pub_key.to_string());
+                                // Process decrypted tags
+                                for tag in tags.0 {
+                                    if tag.len() >= 2 {
+                                        match tag[0].as_str() {
+                                            "mint" => {
+                                                parsed.mints.push(tag[1].clone());
+                                            }
+                                            "privkey" => {
+                                                parsed.p2pk_priv_key = Some(tag[1].clone());
+                                                // Derive public key from private key
+                                                if let Ok(secret_key) =
+                                                    crate::types::nostr::SecretKey::from_hex(
+                                                        &tag[1],
+                                                    )
+                                                {
+                                                    let pub_key = secret_key.public_key(
+                                                        &crate::types::nostr::SECP256K1,
+                                                    );
+                                                    parsed.p2pk_pub_key = Some(pub_key.to_string());
+                                                }
+                                            }
+                                            _ => {}
                                         }
                                     }
-                                    _ => {}
                                 }
+                            }
+                            Err(e) => {
+                                warn!(
+                                    "Failed to parse decrypted tags for content {}, {}: {}",
+                                    decrypted, event.content, e
+                                );
                             }
                         }
                     }
+                }
+                Err(e) => {
+                    warn!("Failed to decrypt event content: {}", e);
                 }
             }
         } else {
@@ -85,12 +102,13 @@ impl Parser {
 
     pub fn prepare_kind_17375(&self, template: &Template) -> Result<Event> {
         if template.kind != 17375 {
-            return Err(anyhow!("event is not kind 17375"));
+            return Err(ParserError::Other("event is not kind 17375".to_string()));
         }
 
         // For wallet events, the content should be an array of tags
-        let tags: Vec<Vec<String>> = serde_json::from_str(&template.content)
-            .map_err(|e| anyhow!("invalid wallet content: {}", e))?;
+        let tags: Vec<Vec<String>> = NostrTags::from_json(&template.content)
+            .map_err(|e| ParserError::Other(format!("invalid wallet content: {}", e)))?
+            .0;
 
         // Check for required mint tags and validate privkey if present
         let mut has_mint = false;
@@ -104,7 +122,9 @@ impl Parser {
                         has_privkey = true;
                         // Optionally validate the private key format
                         if tag[1].len() < 32 {
-                            return Err(anyhow!("private key appears invalid"));
+                            return Err(ParserError::Other(
+                                "private key appears invalid".to_string(),
+                            ));
                         }
                     }
                     _ => {}
@@ -114,17 +134,23 @@ impl Parser {
 
         // Mint tag is required in the content
         if !has_mint {
-            return Err(anyhow!("wallet must include at least one mint"));
+            return Err(ParserError::Other(
+                "wallet must include at least one mint".to_string(),
+            ));
         }
 
         // If no private key was provided, we would generate one in a full implementation
         if !has_privkey {
-            return Err(anyhow!("wallet must include a private key"));
+            return Err(ParserError::Other(
+                "wallet must include a private key".to_string(),
+            ));
         }
 
         // Check if signer manager has a signer available
         if !self.signer_manager.has_signer() {
-            return Err(anyhow!("no signer available to encrypt message"));
+            return Err(ParserError::Other(
+                "no signer available to encrypt message".to_string(),
+            ));
         }
 
         // Encrypt the message content using NIP-04

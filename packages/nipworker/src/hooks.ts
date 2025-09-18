@@ -1,14 +1,13 @@
 import {  NostrEvent } from "nostr-tools";
-import { nostrManager, SubscriptionOptions, type NostrManager } from ".";
+import { nostrManager, RequestObject, type SubscriptionConfig, type NostrManager } from ".";
 import { SharedBufferReader } from "src/lib/SharedBuffer";
-import type { RequestObject } from "src/types";
 import { WorkerMessage } from "./generated/nostr/fb";
 
 export function useSubscription(
   subId: string,
   requests: RequestObject[],
   callback: (message: WorkerMessage) => void = () => {},
-  options: SubscriptionOptions = { closeOnEose: false },
+  options: SubscriptionConfig = { closeOnEose: false },
   manager: NostrManager = nostrManager
 ): () => void {
   if (!subId) {

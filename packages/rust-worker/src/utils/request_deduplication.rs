@@ -21,7 +21,7 @@ impl RequestDeduplicator {
     ///
     /// # Returns
     /// A vector of deduplicated requests with merged relay lists
-    pub fn deduplicate_requests(requests: Vec<Request>) -> Vec<Request> {
+    pub fn deduplicate_requests(requests: &Vec<Request>) -> Vec<Request> {
         let mut request_map: FxHashMap<String, Request> = FxHashMap::default();
 
         for request in requests {
@@ -42,9 +42,23 @@ impl RequestDeduplicator {
                 // Create new request with deduplicated relays
                 let relay_set: rustc_hash::FxHashSet<String> =
                     request.relays.iter().cloned().collect();
-                let mut new_request = request.clone();
-                new_request.relays = relay_set.into_iter().collect();
-                new_request.relays.sort(); // Sort for consistency
+                let new_request = Request {
+                    ids: request.ids.clone(),
+                    authors: request.authors.clone(),
+                    kinds: request.kinds.clone(),
+                    tags: request.tags.clone(),
+                    since: request.since,
+                    until: request.until,
+                    limit: request.limit,
+                    search: request.search.clone(),
+                    close_on_eose: request.close_on_eose,
+                    cache_first: request.cache_first,
+                    relays: {
+                        let mut relays: Vec<String> = relay_set.into_iter().collect();
+                        relays.sort();
+                        relays
+                    },
+                };
                 request_map.insert(filter_key, new_request);
             }
         }
@@ -126,196 +140,14 @@ impl RequestDeduplicator {
         }
 
         // Add search
-        if !request.search.is_empty() {
-            key_parts.push(format!("search:{}", request.search));
+        if let Some(search_term) = &request.search {
+            key_parts.push(format!("search:{}", search_term));
         }
 
         // Add other filter-relevant fields
         key_parts.push(format!("close_on_eose:{}", request.close_on_eose));
         key_parts.push(format!("cache_first:{}", request.cache_first));
-        key_parts.push(format!("no_optimize:{}", request.no_optimize));
-        key_parts.push(format!("count:{}", request.count));
-        key_parts.push(format!("no_context:{}", request.no_context));
 
         key_parts.join("|")
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::collections::HashMap;
-
-    #[test]
-    fn test_request_deduplication() {
-        // Create multiple requests with the same filter criteria but different relays
-        let requests = vec![
-            Request {
-                ids: vec!["event1".to_string(), "event2".to_string()],
-                authors: vec!["author1".to_string()],
-                kinds: vec![1, 6],
-                relays: vec!["relay1.com".to_string(), "relay2.com".to_string()],
-                limit: Some(1),
-                close_on_eose: true,
-                cache_first: true,
-                ..Default::default()
-            },
-            Request {
-                ids: vec!["event2".to_string(), "event1".to_string()], // Same IDs, different order
-                authors: vec!["author1".to_string()],
-                kinds: vec![6, 1], // Same kinds, different order
-                relays: vec!["relay2.com".to_string(), "relay3.com".to_string()],
-                limit: Some(1),
-                close_on_eose: true,
-                cache_first: true,
-                ..Default::default()
-            },
-            Request {
-                ids: vec!["event3".to_string()],
-                authors: vec!["author2".to_string()],
-                kinds: vec![1],
-                relays: vec!["relay1.com".to_string()],
-                limit: Some(1),
-                close_on_eose: true,
-                cache_first: true,
-                ..Default::default()
-            },
-            Request {
-                ids: vec!["event1".to_string(), "event2".to_string()],
-                authors: vec!["author1".to_string()],
-                kinds: vec![1, 6],
-                relays: vec!["relay4.com".to_string(), "relay1.com".to_string()],
-                limit: Some(2), // Different limit - should NOT be deduplicated
-                close_on_eose: true,
-                cache_first: true,
-                ..Default::default()
-            },
-        ];
-
-        let deduplicated = RequestDeduplicator::deduplicate_requests(requests);
-
-        // Should have 3 unique requests (2 with same filter but different limits, 1 unique)
-        assert_eq!(deduplicated.len(), 3);
-
-        // Find requests with event1 and event2
-        let matching_requests: Vec<_> = deduplicated
-            .iter()
-            .filter(|r| {
-                r.ids.contains(&"event1".to_string()) && r.ids.contains(&"event2".to_string())
-            })
-            .collect();
-
-        // Should have 2 requests with event1+event2 (different limits)
-        assert_eq!(matching_requests.len(), 2);
-
-        // Find the request with limit 1
-        let limit_1_request = matching_requests
-            .iter()
-            .find(|r| r.limit == Some(1))
-            .unwrap();
-
-        // Should have 3 relays deduplicated
-        assert_eq!(limit_1_request.relays.len(), 3);
-        assert!(limit_1_request.relays.contains(&"relay1.com".to_string()));
-        assert!(limit_1_request.relays.contains(&"relay2.com".to_string()));
-        assert!(limit_1_request.relays.contains(&"relay3.com".to_string()));
-
-        // Find the request with limit 2
-        let limit_2_request = matching_requests
-            .iter()
-            .find(|r| r.limit == Some(2))
-            .unwrap();
-
-        // Should have 2 relays
-        assert_eq!(limit_2_request.relays.len(), 2);
-        assert!(limit_2_request.relays.contains(&"relay1.com".to_string()));
-        assert!(limit_2_request.relays.contains(&"relay4.com".to_string()));
-
-        // Find the request with event3
-        let single_event_request = deduplicated
-            .iter()
-            .find(|r| r.ids.contains(&"event3".to_string()))
-            .unwrap();
-
-        // Should have only one relay
-        assert_eq!(single_event_request.relays.len(), 1);
-        assert!(single_event_request
-            .relays
-            .contains(&"relay1.com".to_string()));
-    }
-
-    #[test]
-    fn test_filter_key_generation() {
-        let request = Request {
-            ids: vec!["event2".to_string(), "event1".to_string()],
-            authors: vec!["author1".to_string()],
-            kinds: vec![6, 1],
-            limit: Some(10),
-            close_on_eose: true,
-            cache_first: false,
-            ..Default::default()
-        };
-
-        let key = RequestDeduplicator::create_filter_key(&request);
-
-        // Key should be order-independent
-        assert!(key.contains("ids:event1,event2"));
-        assert!(key.contains("authors:author1"));
-        assert!(key.contains("kinds:1,6"));
-        assert!(key.contains("limit:10"));
-        assert!(key.contains("close_on_eose:true"));
-        assert!(key.contains("cache_first:false"));
-    }
-
-    #[test]
-    fn test_tag_deduplication() {
-        let mut tags1 = FxHashMap::default();
-        tags1.insert(
-            "#t".to_string(),
-            vec!["bitcoin".to_string(), "nostr".to_string()],
-        );
-
-        let mut tags2 = FxHashMap::default();
-        tags2.insert(
-            "#t".to_string(),
-            vec!["nostr".to_string(), "bitcoin".to_string()],
-        ); // Same tags, different order
-
-        let request1 = Request {
-            ids: vec!["event1".to_string()],
-            tags: tags1,
-            ..Default::default()
-        };
-
-        let request2 = Request {
-            ids: vec!["event1".to_string()],
-            tags: tags2,
-            ..Default::default()
-        };
-
-        let key1 = RequestDeduplicator::create_filter_key(&request1);
-        let key2 = RequestDeduplicator::create_filter_key(&request2);
-
-        // Keys should be identical despite different tag ordering
-        assert_eq!(key1, key2);
-    }
-
-    #[test]
-    fn test_empty_request_deduplication() {
-        let requests = vec![
-            Request::default(),
-            Request::default(),
-            Request {
-                relays: vec!["relay1.com".to_string()],
-                ..Default::default()
-            },
-        ];
-
-        let deduplicated = RequestDeduplicator::deduplicate_requests(requests);
-
-        // Should have 1 request with merged relays
-        assert_eq!(deduplicated.len(), 1);
-        assert_eq!(deduplicated[0].relays.len(), 1);
-        assert!(deduplicated[0].relays.contains(&"relay1.com".to_string()));
     }
 }

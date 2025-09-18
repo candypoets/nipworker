@@ -4,24 +4,22 @@ use std::collections::VecDeque;
 
 struct NpubTracker {
     last_forwarded_timestamp: Option<u64>,
-    forwarded_count: usize,
+    forwarded_count: u32,
 }
 
 pub struct NpubLimiterPipe {
     kind: u16,
-    limit_per_npub: usize,
-    max_total_npubs: usize,
+    limit_per_npub: u32,
     npub_trackers: FxHashMap<String, NpubTracker>,
     name: String,
 }
 
 impl NpubLimiterPipe {
-    pub fn new(kind: u16, limit_per_npub: usize, max_total_npubs: usize) -> Self {
+    pub fn new(kind: u16, limit_per_npub: u32) -> Self {
         Self {
             name: format!("NpubLimiter(kind:{}, limit:{})", kind, limit_per_npub),
             kind,
             limit_per_npub,
-            max_total_npubs,
             npub_trackers: FxHashMap::default(),
         }
     }

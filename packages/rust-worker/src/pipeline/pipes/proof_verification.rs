@@ -1,33 +1,166 @@
 use super::super::*;
-use crate::{generated::nostr::fb, parsed_event::ParsedData, types::proof::Proof};
-use anyhow::Result;
+use crate::{generated::nostr::fb, parsed_event::ParsedData, types::proof::Proof, NostrError};
+
+type Result<T> = std::result::Result<T, NostrError>;
+use crate::utils::json::BaseJsonParser;
 use flatbuffers::FlatBufferBuilder;
 use gloo_net;
 use hex;
 use k256::{elliptic_curve::sec1::ToEncodedPoint, PublicKey};
 use rustc_hash::{FxHashMap, FxHashSet};
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use sha2::{Digest, Sha256};
+use std::fmt::Write;
 use tracing::{debug, error, warn};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 struct CheckStateRequest {
-    #[serde(rename = "Ys")]
     ys: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+impl CheckStateRequest {
+    pub fn new(ys: Vec<String>) -> Self {
+        Self { ys }
+    }
+
+    pub fn to_json(&self) -> String {
+        let mut result = String::with_capacity(self.calculate_json_size());
+
+        result.push('{');
+        result.push_str("\"Ys\":[");
+
+        for (i, y) in self.ys.iter().enumerate() {
+            if i > 0 {
+                result.push(',');
+            }
+            result.push('"');
+            Self::escape_string_to(&mut result, y);
+            result.push('"');
+        }
+
+        result.push_str("]}");
+        result
+    }
+
+    #[inline(always)]
+    fn calculate_json_size(&self) -> usize {
+        10 + // {"Ys":[]}
+        self.ys.iter().map(|y| y.len() * 2 + 4).sum::<usize>() // Escaped strings + quotes + commas
+    }
+
+    #[inline(always)]
+    fn escape_string_to(result: &mut String, s: &str) {
+        for ch in s.chars() {
+            match ch {
+                '\\' => result.push_str("\\\\"),
+                '"' => result.push_str("\\\""),
+                '\n' => result.push_str("\\n"),
+                '\r' => result.push_str("\\r"),
+                '\t' => result.push_str("\\t"),
+                other => result.push(other),
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 struct ProofState {
-    #[serde(rename = "Y")]
     y: String,
-    state: String, // "UNSPENT", "PENDING", "SPENT"
+    state: String,
     witness: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+impl ProofState {
+    pub fn from_json(json: &str) -> Result<Self> {
+        let parser = ProofStateParser::new(json.as_bytes());
+        parser.parse()
+    }
+
+    pub fn to_json(&self) -> String {
+        let mut result = String::with_capacity(self.calculate_json_size());
+
+        result.push('{');
+        write!(
+            result,
+            "\"Y\":\"{}\",\"state\":\"{}\"",
+            Self::escape_string(&self.y),
+            Self::escape_string(&self.state)
+        )
+        .unwrap();
+
+        if let Some(ref witness) = self.witness {
+            write!(result, ",\"witness\":\"{}\"", Self::escape_string(witness)).unwrap();
+        }
+
+        result.push('}');
+        result
+    }
+
+    #[inline(always)]
+    fn calculate_json_size(&self) -> usize {
+        20 + // Base structure
+        self.y.len() * 2 + self.state.len() * 2 + // Escaping
+        self.witness.as_ref().map(|w| w.len() * 2 + 13).unwrap_or(0) // ,"witness":""
+    }
+
+    #[inline(always)]
+    fn escape_string(s: &str) -> String {
+        if !s.contains('\\') && !s.contains('"') {
+            s.to_string()
+        } else {
+            let mut result = String::with_capacity(s.len() + 4);
+            Self::escape_string_to(&mut result, s);
+            result
+        }
+    }
+
+    #[inline(always)]
+    fn escape_string_to(result: &mut String, s: &str) {
+        for ch in s.chars() {
+            match ch {
+                '\\' => result.push_str("\\\\"),
+                '"' => result.push_str("\\\""),
+                '\n' => result.push_str("\\n"),
+                '\r' => result.push_str("\\r"),
+                '\t' => result.push_str("\\t"),
+                other => result.push(other),
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 struct CheckStateResponse {
     states: Vec<ProofState>,
+}
+
+impl CheckStateResponse {
+    pub fn from_json(json: &str) -> Result<Self> {
+        let mut parser = CheckStateResponseParser::new(json.as_bytes());
+        parser.parse()
+    }
+
+    pub fn to_json(&self) -> String {
+        let mut result = String::with_capacity(self.calculate_json_size());
+
+        result.push('{');
+        result.push_str("\"states\":[");
+
+        for (i, state) in self.states.iter().enumerate() {
+            if i > 0 {
+                result.push(',');
+            }
+            result.push_str(&state.to_json());
+        }
+
+        result.push_str("]}");
+        result
+    }
+
+    #[inline(always)]
+    fn calculate_json_size(&self) -> usize {
+        15 + // {"states":[]}
+        self.states.iter().map(|s| s.calculate_json_size() + 1).sum::<usize>() // States + commas
+    }
 }
 
 /// Pipe that extracts proofs from Kind 9321 and 7375 events and verifies their state with mints
@@ -331,32 +464,32 @@ impl ProofVerificationPipe {
         );
         let url = format!("{}/v1/checkstate", mint_url.trim_end_matches('/'));
 
-        let request = CheckStateRequest {
-            ys: y_points.to_vec(),
-        };
+        let request = CheckStateRequest::new(y_points.to_vec());
 
-        let request_body = serde_json::to_string(&request)?;
+        // ✅ UPDATED: Use custom JSON serialization instead of serde_json
+        let request_body = request.to_json();
 
         let response = gloo_net::http::Request::post(&url)
             .header("Content-Type", "application/json")
             .body(request_body)?
             .send()
             .await
-            .map_err(|e| anyhow::anyhow!("HTTP request failed: {:?}", e))?;
+            .map_err(|e| NostrError::Other(format!("HTTP request failed: {:?}", e)))?;
 
         if !response.ok() {
-            return Err(anyhow::anyhow!(
+            return Err(NostrError::Other(format!(
                 "Mint returned status: {}",
                 response.status()
-            ));
+            )));
         }
 
         let response_text = response
             .text()
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to read response: {:?}", e))?;
+            .map_err(|e| NostrError::Other(format!("Failed to read response: {:?}", e)))?;
 
-        let check_response: CheckStateResponse = serde_json::from_str(&response_text)?;
+        // ✅ UPDATED: Use custom JSON parsing instead of serde_json
+        let check_response: CheckStateResponse = CheckStateResponse::from_json(&response_text)?;
         Ok(check_response.states)
     }
 }
@@ -533,5 +666,107 @@ impl Pipe for ProofVerificationPipe {
 
     fn name(&self) -> &str {
         &self.name
+    }
+}
+
+// Custom JSON parsers for the structs
+struct ProofStateParser<'a>(BaseJsonParser<'a>);
+
+impl<'a> ProofStateParser<'a> {
+    #[inline(always)]
+    fn new(bytes: &'a [u8]) -> Self {
+        Self(BaseJsonParser::new(bytes))
+    }
+
+    #[inline(always)]
+    fn parse(mut self) -> Result<ProofState> {
+        self.0.skip_whitespace();
+        self.0.expect_byte(b'{')?;
+
+        let mut y = String::new();
+        let mut state = String::new();
+        let mut witness = None;
+
+        while self.0.pos < self.0.bytes.len() {
+            self.0.skip_whitespace();
+            if self.0.peek() == b'}' {
+                self.0.pos += 1;
+                break;
+            }
+
+            let key = self.0.parse_string()?;
+            self.0.skip_whitespace();
+            self.0.expect_byte(b':')?;
+            self.0.skip_whitespace();
+
+            match key {
+                "Y" => y = self.0.parse_string()?.to_string(),
+                "state" => state = self.0.parse_string()?.to_string(),
+                "witness" => witness = Some(self.0.parse_string()?.to_string()),
+                _ => self.0.skip_value()?,
+            }
+
+            self.0.skip_comma_or_end()?;
+        }
+
+        if y.is_empty() || state.is_empty() {
+            return Err(NostrError::Other(
+                "Missing required fields in ProofState".to_string(),
+            ));
+        }
+
+        Ok(ProofState { y, state, witness })
+    }
+}
+
+struct CheckStateResponseParser<'a>(BaseJsonParser<'a>);
+
+impl<'a> CheckStateResponseParser<'a> {
+    #[inline(always)]
+    fn new(bytes: &'a [u8]) -> Self {
+        Self(BaseJsonParser::new(bytes))
+    }
+
+    #[inline(always)]
+    fn parse(mut self) -> Result<CheckStateResponse> {
+        self.0.skip_whitespace();
+        self.0.expect_byte(b'{')?;
+
+        let mut states = Vec::new();
+
+        while self.0.pos < self.0.bytes.len() {
+            self.0.skip_whitespace();
+            if self.0.peek() == b'}' {
+                self.0.pos += 1;
+                break;
+            }
+
+            let key = self.0.parse_string()?;
+            self.0.skip_whitespace();
+            self.0.expect_byte(b':')?;
+            self.0.skip_whitespace();
+
+            match key {
+                "states" => {
+                    self.0.expect_byte(b'[')?;
+                    while self.0.pos < self.0.bytes.len() {
+                        self.0.skip_whitespace();
+                        if self.0.peek() == b']' {
+                            self.0.pos += 1;
+                            break;
+                        }
+
+                        let state_json = self.0.parse_raw_json_value()?;
+                        states.push(ProofState::from_json(state_json)?);
+                        self.0.skip_comma_or_end()?;
+                    }
+                }
+                _ => self.0.skip_value()?,
+            }
+
+            self.0.skip_comma_or_end()?;
+        }
+
+        Ok(CheckStateResponse { states })
     }
 }

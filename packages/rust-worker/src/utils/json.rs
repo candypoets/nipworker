@@ -1,3 +1,5 @@
+use crate::parser::{ParserError, Result};
+
 // nipworker/packages/rust-worker/src/utils/json.rs
 /// Naively extracts the first up to three top-level array elements from a JSON array string.
 /// Returns borrowed slices from the original input (zero-copy, fast).
@@ -123,4 +125,237 @@ pub fn extract_event_id<'a>(json: &'a str) -> Option<&'a str> {
         i += 1;
     }
     None
+}
+
+pub struct BaseJsonParser<'a> {
+    pub bytes: &'a [u8],
+    pub pos: usize,
+}
+
+impl<'a> BaseJsonParser<'a> {
+    #[inline(always)]
+    pub fn new(bytes: &'a [u8]) -> Self {
+        Self { bytes, pos: 0 }
+    }
+
+    #[inline(always)]
+    pub fn peek(&self) -> u8 {
+        self.bytes[self.pos]
+    }
+
+    #[inline(always)]
+    pub fn skip_whitespace(&mut self) {
+        while self.pos < self.bytes.len() && self.bytes[self.pos].is_ascii_whitespace() {
+            self.pos += 1;
+        }
+    }
+
+    #[inline(always)]
+    pub fn expect_byte(&mut self, expected: u8) -> Result<()> {
+        if self.pos >= self.bytes.len() || self.bytes[self.pos] != expected {
+            return Err(ParserError::InvalidFormat(format!(
+                "Unexpected byte at position {}",
+                self.pos
+            )));
+        }
+        self.pos += 1;
+        Ok(())
+    }
+
+    #[inline(always)]
+    pub fn parse_string(&mut self) -> Result<&'a str> {
+        self.expect_byte(b'"')?;
+        let start = self.pos;
+
+        while self.pos < self.bytes.len() {
+            match self.bytes[self.pos] {
+                b'"' => {
+                    let result =
+                        unsafe { std::str::from_utf8_unchecked(&self.bytes[start..self.pos]) };
+                    self.pos += 1;
+                    return Ok(result);
+                }
+                b'\\' => {
+                    // Skip escaped character
+                    if self.pos + 1 < self.bytes.len() {
+                        self.pos += 2;
+                    } else {
+                        self.pos += 1;
+                    }
+                }
+                _ => self.pos += 1,
+            }
+        }
+
+        Err(ParserError::InvalidFormat(
+            "Unterminated string".to_string(),
+        ))
+    }
+
+    #[inline(always)]
+    pub fn parse_u64(&mut self) -> Result<u64> {
+        let start = self.pos;
+        while self.pos < self.bytes.len() && self.bytes[self.pos].is_ascii_digit() {
+            self.pos += 1;
+        }
+
+        if start == self.pos {
+            return Err(ParserError::InvalidFormat("Expected number".to_string()));
+        }
+
+        let num_str = unsafe { std::str::from_utf8_unchecked(&self.bytes[start..self.pos]) };
+        num_str
+            .parse()
+            .map_err(|_| ParserError::InvalidFormat("Invalid number".to_string()))
+    }
+
+    #[inline(always)]
+    pub fn parse_i32(&mut self) -> Result<i32> {
+        self.parse_u64().map(|n| n as i32)
+    }
+
+    #[inline(always)]
+    pub fn skip_value(&mut self) -> Result<()> {
+        match self.peek() {
+            b'"' => {
+                self.parse_string()?;
+            }
+            b'[' => self.skip_array()?,
+            b'{' => self.skip_object()?,
+            b't' | b'f' => self.skip_bool()?,
+            b'n' => self.skip_null()?,
+            _ => self.skip_number()?,
+        }
+        Ok(())
+    }
+
+    #[inline(always)]
+    pub fn skip_array(&mut self) -> Result<()> {
+        self.expect_byte(b'[')?;
+        let mut depth = 1;
+
+        while self.pos < self.bytes.len() && depth > 0 {
+            match self.bytes[self.pos] {
+                b'[' => depth += 1,
+                b']' => depth -= 1,
+                _ => {}
+            }
+            self.pos += 1;
+        }
+        Ok(())
+    }
+
+    #[inline(always)]
+    pub fn skip_object(&mut self) -> Result<()> {
+        self.expect_byte(b'{')?;
+        let mut depth = 1;
+
+        while self.pos < self.bytes.len() && depth > 0 {
+            match self.bytes[self.pos] {
+                b'{' => depth += 1,
+                b'}' => depth -= 1,
+                _ => {}
+            }
+            self.pos += 1;
+        }
+        Ok(())
+    }
+
+    #[inline(always)]
+    pub fn skip_bool(&mut self) -> Result<()> {
+        if self.bytes[self.pos..].starts_with(b"true") {
+            self.pos += 4;
+        } else if self.bytes[self.pos..].starts_with(b"false") {
+            self.pos += 5;
+        } else {
+            return Err(ParserError::InvalidFormat("Invalid boolean".to_string()));
+        }
+        Ok(())
+    }
+
+    #[inline(always)]
+    pub fn skip_null(&mut self) -> Result<()> {
+        if self.bytes[self.pos..].starts_with(b"null") {
+            self.pos += 4;
+        } else {
+            return Err(ParserError::InvalidFormat("Invalid null".to_string()));
+        }
+        Ok(())
+    }
+
+    #[inline(always)]
+    pub fn skip_number(&mut self) -> Result<()> {
+        while self.pos < self.bytes.len()
+            && (self.bytes[self.pos].is_ascii_digit()
+                || self.bytes[self.pos] == b'.'
+                || self.bytes[self.pos] == b'-'
+                || self.bytes[self.pos] == b'+')
+        {
+            self.pos += 1;
+        }
+        Ok(())
+    }
+
+    #[inline(always)]
+    pub fn skip_comma_or_end(&mut self) -> Result<()> {
+        self.skip_whitespace();
+        if self.pos < self.bytes.len() && self.bytes[self.pos] == b',' {
+            self.pos += 1;
+        }
+        Ok(())
+    }
+
+    #[inline(always)]
+    pub fn parse_raw_json_value(&mut self) -> Result<&'a str> {
+        let start = self.pos;
+        let mut depth = 0;
+        let mut in_string = false;
+        let mut escaped = false;
+
+        while self.pos < self.bytes.len() {
+            let ch = self.bytes[self.pos];
+
+            match ch {
+                b'"' => {
+                    if !escaped {
+                        in_string = !in_string;
+                    }
+                }
+                b'\\' => {
+                    escaped = !escaped;
+                    self.pos += 1;
+                    continue;
+                }
+                b'{' | b'[' => {
+                    if !in_string {
+                        depth += 1;
+                    }
+                }
+                b'}' | b']' => {
+                    if !in_string {
+                        depth -= 1;
+                        if depth == 0 {
+                            self.pos += 1;
+                            return Ok(unsafe {
+                                std::str::from_utf8_unchecked(&self.bytes[start..self.pos])
+                            });
+                        }
+                    }
+                }
+                b',' => {
+                    if !in_string && depth == 0 {
+                        return Ok(unsafe {
+                            std::str::from_utf8_unchecked(&self.bytes[start..self.pos])
+                        });
+                    }
+                }
+                _ => {}
+            }
+
+            escaped = false;
+            self.pos += 1;
+        }
+
+        Err(ParserError::InvalidFormat("Invalid JSON value".to_string()))
+    }
 }

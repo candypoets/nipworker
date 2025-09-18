@@ -1,7 +1,9 @@
-use anyhow::{anyhow, Result};
+use crate::{generated::nostr::fb, types::TypesError, utils::json::BaseJsonParser};
 use k256::schnorr::{Signature, SigningKey, VerifyingKey};
-use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::fmt::Write;
+
+type Result<T> = std::result::Result<T, TypesError>;
 
 // Import the signature traits we need
 use k256::schnorr::signature::{Signer, Verifier};
@@ -12,14 +14,15 @@ pub const SECP256K1: k256::Secp256k1 = k256::Secp256k1;
 // ============================================================================
 // Basic Types - Just byte arrays
 // ============================================================================
-#[derive(Deserialize, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct EventId(pub [u8; 32]);
 
 impl EventId {
     pub fn from_hex(s: &str) -> Result<Self> {
-        let bytes = hex::decode(s)?;
+        let bytes =
+            hex::decode(s).map_err(|_| TypesError::InvalidFormat("Invalid hex".to_string()))?;
         if bytes.len() != 32 {
-            return Err(anyhow!("Invalid event ID"));
+            return Err(TypesError::InvalidFormat("Invalid event ID".to_string()));
         }
         let mut arr = [0u8; 32];
         arr.copy_from_slice(&bytes);
@@ -39,14 +42,15 @@ impl EventId {
     }
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Clone)]
 pub struct PublicKey(pub [u8; 32]);
 
 impl PublicKey {
     pub fn from_hex(s: &str) -> Result<Self> {
-        let bytes = hex::decode(s)?;
+        let bytes =
+            hex::decode(s).map_err(|_| TypesError::InvalidFormat("Invalid hex".to_string()))?;
         if bytes.len() != 32 {
-            return Err(anyhow!("Invalid pubkey"));
+            return Err(TypesError::InvalidFormat("Invalid pubkey".to_string()));
         }
         let mut arr = [0u8; 32];
         arr.copy_from_slice(&bytes);
@@ -66,9 +70,10 @@ pub struct SecretKey(pub [u8; 32]);
 
 impl SecretKey {
     pub fn from_hex(s: &str) -> Result<Self> {
-        let bytes = hex::decode(s)?;
+        let bytes =
+            hex::decode(s).map_err(|_| TypesError::InvalidFormat("Invalid hex".to_string()))?;
         if bytes.len() != 32 {
-            return Err(anyhow!("Invalid secret key"));
+            return Err(TypesError::InvalidFormat("Invalid secret key".to_string()));
         }
         let mut arr = [0u8; 32];
         arr.copy_from_slice(&bytes);
@@ -108,7 +113,9 @@ impl Keys {
         // Check if it starts with "nsec1" for bech32 format
         if nsec.starts_with("nsec1") {
             // For now, return error since bech32 is not implemented
-            return Err(anyhow!("Bech32 nsec parsing not implemented"));
+            return Err(TypesError::InvalidFormat(
+                "Bech32 nsec parsing not implemented".to_string(),
+            ));
         }
 
         // Otherwise treat it as hex
@@ -138,7 +145,6 @@ impl Keys {
 // Just use u64 directly for timestamp
 pub type Timestamp = u64;
 
-#[derive(Serialize, Deserialize)]
 pub struct Template {
     pub kind: Kind,
     pub content: String,
@@ -154,29 +160,22 @@ impl Template {
         }
     }
 
-    pub fn to_event(&self, keys: &Keys) -> Result<Event> {
-        let created_at = timestamp_now();
-        let pubkey = keys.public_key();
+    pub fn from_flatbuffer(fb_template: &fb::Template) -> Self {
+        let mut tags = Vec::new();
+        let fb_tags = fb_template.tags();
+        for i in 0..fb_tags.len() {
+            let tag_vec = fb_tags.get(i);
+            if let Some(items) = tag_vec.items() {
+                let tag: Vec<String> = items.iter().map(|s| s.to_string()).collect();
+                tags.push(tag);
+            }
+        }
 
-        let mut event = Event {
-            id: EventId([0u8; 32]), // Will be computed
-            pubkey,
-            created_at,
-            kind: self.kind,
-            tags: self.tags.clone(),
-            content: self.content.clone(),
-            sig: String::new(), // Will be computed
-        };
-
-        // Compute the event ID
-        event.compute_id()?;
-
-        // Sign the event
-        let signing_key = SigningKey::from_bytes(&keys.secret_key.0)?;
-        let signature = signing_key.sign(&event.id.0);
-        event.sig = hex::encode(signature.to_bytes());
-
-        Ok(event)
+        Template {
+            kind: fb_template.kind(),
+            content: fb_template.content().to_string(),
+            tags,
+        }
     }
 }
 
@@ -201,7 +200,7 @@ impl UnsignedEvent {
 
 // Single struct for both signed and unsigned events
 
-#[derive(Deserialize, Clone)]
+#[derive(Clone)]
 pub struct Event {
     pub id: EventId,
     pub pubkey: PublicKey,
@@ -230,7 +229,7 @@ impl Event {
 
     /// Compute the event ID
     pub fn compute_id(&mut self) -> Result<()> {
-        let tags_json = serde_json::to_string(&self.tags)?;
+        let tags_json = NostrTags(self.tags.clone()).to_json();
         let serialized = format!(
             "[0,\"{}\",{},{},{},\"{}\"]",
             self.pubkey.to_hex(),
@@ -253,13 +252,13 @@ impl Event {
     pub fn verify(&self) -> Result<()> {
         // Check that all required fields are present
         if self.id.0 == [0u8; 32] {
-            return Err(anyhow!("No ID"));
+            return Err(TypesError::InvalidFormat("No ID".to_string()));
         }
         if self.pubkey.0 == [0u8; 32] {
-            return Err(anyhow!("No pubkey"));
+            return Err(TypesError::InvalidFormat("No pubkey".to_string()));
         }
         if self.sig.is_empty() {
-            return Err(anyhow!("No signature"));
+            return Err(TypesError::InvalidFormat("No signature".to_string()));
         }
 
         // Verify ID matches
@@ -275,56 +274,423 @@ impl Event {
         temp.compute_id()?;
 
         if temp.id.0 != self.id.0 {
-            return Err(anyhow!("ID mismatch"));
+            return Err(TypesError::InvalidFormat("ID mismatch".to_string()));
         }
 
         // Verify signature
-        let verifying_key = VerifyingKey::from_bytes(&self.pubkey.0)?;
-        let signature = Signature::try_from(hex::decode(&self.sig)?.as_slice())?;
-        verifying_key.verify(&self.id.0, &signature)?;
+        let verifying_key = VerifyingKey::from_bytes(&self.pubkey.0)
+            .map_err(|_| TypesError::InvalidFormat("Invalid public key".to_string()))?;
+        let signature_bytes = hex::decode(&self.sig)
+            .map_err(|_| TypesError::InvalidFormat("Invalid signature hex".to_string()))?;
+        let signature = Signature::try_from(signature_bytes.as_slice())
+            .map_err(|_| TypesError::InvalidFormat("Invalid signature format".to_string()))?;
+        verifying_key
+            .verify(&self.id.0, &signature)
+            .map_err(|_| TypesError::InvalidFormat("Signature verification failed".to_string()))?;
 
         Ok(())
     }
 
     pub fn as_json(&self) -> String {
-        // Manual JSON serialization to avoid serde overhead
-        let tags_json = serde_json::to_string(&self.tags).unwrap_or_default();
-        format!(
-            r#"{{"id":"{}","pubkey":"{}","created_at":{},"kind":{},"tags":{},"content":"{}","sig":"{}"}}"#,
-            self.id.to_hex(),
-            self.pubkey.to_hex(),
-            self.created_at,
-            self.kind,
-            tags_json,
-            self.content.replace('\\', "\\\\").replace('"', "\\\""),
-            self.sig
-        )
+        let mut result = String::with_capacity(self.calculate_json_size());
+
+        write!(result,
+                r#"{{"id":"{}","pubkey":"{}","created_at":{},"kind":{},"tags":{},"content":"{}","sig":"{}"}}"#,
+                self.id.to_hex(),
+                self.pubkey.to_hex(),
+                self.created_at,
+                self.kind,
+                self.serialize_tags(),
+                Self::escape_string(&self.content),
+                self.sig
+            ).unwrap();
+
+        result
+    }
+
+    #[inline(always)]
+    fn calculate_json_size(&self) -> usize {
+        // Conservative estimate to avoid reallocations
+        200 +
+            self.content.len() * 2 +  // Escaping
+            self.sig.len() +
+            self.calculate_tags_size()
+    }
+
+    #[inline(always)]
+    fn calculate_tags_size(&self) -> usize {
+        self.tags
+            .iter()
+            .map(|tag| tag.iter().map(|s| s.len() * 2 + 2).sum::<usize>() + tag.len() * 2)
+            .sum::<usize>()
+            + 20
+    }
+
+    #[inline(always)]
+    fn serialize_tags(&self) -> String {
+        let mut tags_json = String::with_capacity(self.calculate_tags_size());
+
+        tags_json.push('[');
+        for (i, tag) in self.tags.iter().enumerate() {
+            if i > 0 {
+                tags_json.push(',');
+            }
+            tags_json.push('[');
+
+            for (j, part) in tag.iter().enumerate() {
+                if j > 0 {
+                    tags_json.push(',');
+                }
+                tags_json.push('"');
+                Self::escape_string_to(&mut tags_json, part);
+                tags_json.push('"');
+            }
+
+            tags_json.push(']');
+        }
+        tags_json.push(']');
+
+        tags_json
+    }
+
+    #[inline(always)]
+    fn escape_string(s: &str) -> String {
+        if !s.contains('\\') && !s.contains('"') {
+            s.to_string()
+        } else {
+            let mut result = String::with_capacity(s.len() + 4);
+            Self::escape_string_to(&mut result, s);
+            result
+        }
+    }
+
+    #[inline(always)]
+    fn escape_string_to(result: &mut String, s: &str) {
+        for ch in s.chars() {
+            match ch {
+                '\\' => result.push_str("\\\\"),
+                '"' => result.push_str("\\\""),
+                '\n' => result.push_str("\\n"),
+                '\r' => result.push_str("\\r"),
+                '\t' => result.push_str("\\t"),
+                other => result.push(other),
+            }
+        }
     }
 
     pub fn from_json(json: &str) -> Result<Self> {
-        let v: serde_json::Value = serde_json::from_str(json)?;
+        Self::from_json_bytes(json.as_bytes())
+    }
 
-        let id = v["id"]
-            .as_str()
-            .and_then(|s| EventId::from_hex(s).ok())
-            .unwrap_or(EventId([0u8; 32]));
+    #[inline(always)]
+    pub fn from_json_bytes(json_bytes: &[u8]) -> Result<Self> {
+        let parser = NostrEventParser::new(json_bytes);
+        parser.parse()
+    }
+}
 
-        let pubkey = v["pubkey"]
-            .as_str()
-            .and_then(|s| PublicKey::from_hex(s).ok())
-            .unwrap_or(PublicKey([0u8; 32]));
+// Custom high-performance Nostr event parser
+struct NostrEventParser<'a> {
+    bytes: &'a [u8],
+    pos: usize,
+}
 
-        let sig = v["sig"].as_str().map(|s| s.to_string()).unwrap_or_default();
+impl<'a> NostrEventParser<'a> {
+    #[inline(always)]
+    fn new(bytes: &'a [u8]) -> Self {
+        Self { bytes, pos: 0 }
+    }
+
+    #[inline(always)]
+    fn parse(mut self) -> Result<Event> {
+        self.skip_whitespace();
+        self.expect_byte(b'{')?;
+
+        let mut id = EventId([0u8; 32]);
+        let mut pubkey = PublicKey([0u8; 32]);
+        let mut created_at = 0u64;
+        let mut kind = 0u32;
+        let mut tags = Vec::new();
+        let mut content = String::new();
+        let mut sig = String::new();
+
+        // Parse fields in expected order for better performance
+        while self.pos < self.bytes.len() {
+            self.skip_whitespace();
+            if self.peek() == b'}' {
+                self.pos += 1;
+                break;
+            }
+
+            let field_name = self.parse_string()?;
+            self.skip_whitespace();
+            self.expect_byte(b':')?;
+            self.skip_whitespace();
+
+            match field_name {
+                "id" => {
+                    let hex_str = self.parse_string()?;
+                    id = Self::parse_hex_64(hex_str)?;
+                }
+                "pubkey" => {
+                    let hex_str = self.parse_string()?;
+                    pubkey = PublicKey::from_hex(hex_str)?;
+                }
+                "created_at" => {
+                    created_at = self.parse_u64()?;
+                }
+                "kind" => {
+                    kind = self.parse_u32()?;
+                }
+                "tags" => {
+                    tags = self.parse_tags()?;
+                }
+                "content" => {
+                    content = self.parse_string()?.to_string();
+                }
+                "sig" => {
+                    sig = self.parse_string()?.to_string();
+                }
+                _ => {
+                    // Skip unknown fields
+                    self.skip_value()?;
+                }
+            }
+
+            self.skip_comma_or_end()?;
+        }
 
         Ok(Event {
             id,
             pubkey,
-            created_at: v["created_at"].as_u64().unwrap_or(0),
-            kind: v["kind"].as_u64().unwrap_or(0) as Kind,
-            tags: serde_json::from_value(v["tags"].clone()).unwrap_or_default(),
-            content: v["content"].as_str().unwrap_or("").to_string(),
+            created_at,
+            kind: kind as u16,
+            tags,
+            content,
             sig,
         })
+    }
+
+    #[inline(always)]
+    fn peek(&self) -> u8 {
+        self.bytes[self.pos]
+    }
+
+    #[inline(always)]
+    fn skip_whitespace(&mut self) {
+        while self.pos < self.bytes.len() && self.bytes[self.pos].is_ascii_whitespace() {
+            self.pos += 1;
+        }
+    }
+
+    #[inline(always)]
+    fn expect_byte(&mut self, expected: u8) -> Result<()> {
+        if self.pos >= self.bytes.len() || self.bytes[self.pos] != expected {
+            return Err(TypesError::InvalidFormat("Unexpected byte".to_string()));
+        }
+        self.pos += 1;
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn parse_string(&mut self) -> Result<&'a str> {
+        self.expect_byte(b'"')?;
+        let start = self.pos;
+
+        // Find the end quote, handling escaped quotes
+        while self.pos < self.bytes.len() {
+            match self.bytes[self.pos] {
+                b'"' => {
+                    let result =
+                        unsafe { std::str::from_utf8_unchecked(&self.bytes[start..self.pos]) };
+                    self.pos += 1;
+                    return Ok(result);
+                }
+                b'\\' => {
+                    // Skip escaped character
+                    self.pos += 2;
+                }
+                _ => self.pos += 1,
+            }
+        }
+
+        Err(TypesError::InvalidFormat("Unterminated string".to_string()))
+    }
+
+    #[inline(always)]
+    fn parse_u64(&mut self) -> Result<u64> {
+        let start = self.pos;
+        while self.pos < self.bytes.len() && self.bytes[self.pos].is_ascii_digit() {
+            self.pos += 1;
+        }
+
+        if start == self.pos {
+            return Err(TypesError::InvalidFormat("Expected number".to_string()));
+        }
+
+        let num_str = unsafe { std::str::from_utf8_unchecked(&self.bytes[start..self.pos]) };
+        num_str
+            .parse()
+            .map_err(|_| TypesError::InvalidFormat("Invalid number".to_string()))
+    }
+
+    #[inline(always)]
+    fn parse_u32(&mut self) -> Result<u32> {
+        self.parse_u64().map(|n| n as u32)
+    }
+
+    #[inline(always)]
+    fn parse_hex_64(hex_str: &str) -> Result<EventId> {
+        if hex_str.len() != 64 {
+            return Err(TypesError::InvalidFormat(
+                "Hex string must be 64 characters".to_string(),
+            ));
+        }
+
+        let mut bytes = [0u8; 32];
+        hex::decode_to_slice(hex_str, &mut bytes)
+            .map_err(|_| TypesError::InvalidFormat("Invalid hex".to_string()))?;
+        Ok(EventId(bytes))
+    }
+
+    #[inline(always)]
+    fn parse_tags(&mut self) -> Result<Vec<Vec<String>>> {
+        self.expect_byte(b'[')?;
+        let mut tags = Vec::new();
+
+        while self.pos < self.bytes.len() {
+            self.skip_whitespace();
+            if self.peek() == b']' {
+                self.pos += 1;
+                break;
+            }
+
+            tags.push(self.parse_tag_array()?);
+            self.skip_comma_or_end()?;
+        }
+
+        Ok(tags)
+    }
+
+    #[inline(always)]
+    fn parse_tag_array(&mut self) -> Result<Vec<String>> {
+        self.expect_byte(b'[')?;
+        let mut tag = Vec::new();
+
+        while self.pos < self.bytes.len() {
+            self.skip_whitespace();
+            if self.peek() == b']' {
+                self.pos += 1;
+                break;
+            }
+
+            let value = self.parse_string()?.to_string();
+            tag.push(value);
+            self.skip_comma_or_end()?;
+        }
+
+        Ok(tag)
+    }
+
+    #[inline(always)]
+    fn skip_value(&mut self) -> Result<()> {
+        match self.peek() {
+            b'"' => {
+                self.parse_string()?;
+            }
+            b'[' => {
+                self.skip_array()?;
+            }
+            b'{' => {
+                self.skip_object()?;
+            }
+            b't' | b'f' => {
+                self.skip_bool()?;
+            }
+            b'n' => {
+                self.skip_null()?;
+            }
+            _ => {
+                self.skip_number()?;
+            }
+        }
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn skip_array(&mut self) -> Result<()> {
+        self.expect_byte(b'[')?;
+        let mut depth = 1;
+
+        while self.pos < self.bytes.len() && depth > 0 {
+            match self.bytes[self.pos] {
+                b'[' => depth += 1,
+                b']' => depth -= 1,
+                _ => {}
+            }
+            self.pos += 1;
+        }
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn skip_object(&mut self) -> Result<()> {
+        self.expect_byte(b'{')?;
+        let mut depth = 1;
+
+        while self.pos < self.bytes.len() && depth > 0 {
+            match self.bytes[self.pos] {
+                b'{' => depth += 1,
+                b'}' => depth -= 1,
+                _ => {}
+            }
+            self.pos += 1;
+        }
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn skip_bool(&mut self) -> Result<()> {
+        if self.bytes[self.pos..].starts_with(b"true") {
+            self.pos += 4;
+        } else if self.bytes[self.pos..].starts_with(b"false") {
+            self.pos += 5;
+        } else {
+            return Err(TypesError::InvalidFormat("Invalid boolean".to_string()));
+        }
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn skip_null(&mut self) -> Result<()> {
+        if self.bytes[self.pos..].starts_with(b"null") {
+            self.pos += 4;
+        } else {
+            return Err(TypesError::InvalidFormat("Invalid null".to_string()));
+        }
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn skip_number(&mut self) -> Result<()> {
+        while self.pos < self.bytes.len()
+            && (self.bytes[self.pos].is_ascii_digit()
+                || self.bytes[self.pos] == b'.'
+                || self.bytes[self.pos] == b'-'
+                || self.bytes[self.pos] == b'+')
+        {
+            self.pos += 1;
+        }
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn skip_comma_or_end(&mut self) -> Result<()> {
+        self.skip_whitespace();
+        if self.pos < self.bytes.len() && self.bytes[self.pos] == b',' {
+            self.pos += 1;
+        }
+        Ok(())
     }
 }
 
@@ -388,93 +754,170 @@ impl Filter {
     }
 
     pub fn as_json(&self) -> String {
-        let mut json = "{".to_string();
+        // Pre-calculate approximate size to avoid reallocations
+        let capacity = self.calculate_json_size();
+        let mut json = String::with_capacity(capacity);
 
-        if let Some(ref ids) = self.ids {
-            json.push_str(r#""ids":["#);
-            json.push_str(
-                &ids.iter()
-                    .map(|id| format!(r#""{}""#, id.to_hex()))
-                    .collect::<Vec<_>>()
-                    .join(","),
-            );
-            json.push_str("],");
+        json.push('{');
+        let mut first_field = true;
+
+        macro_rules! add_optional_field {
+            ($field:expr, $name:expr, $formatter:expr) => {
+                if let Some(ref value) = $field {
+                    if !first_field {
+                        json.push(',');
+                    }
+                    first_field = false;
+                    json.push('"');
+                    json.push_str($name);
+                    json.push_str("\":[");
+                    json.push_str(&$formatter(value));
+                    json.push(']');
+                }
+            };
         }
 
-        if let Some(ref authors) = self.authors {
-            json.push_str(r#""authors":["#);
-            json.push_str(
-                &authors
-                    .iter()
-                    .map(|author| format!(r#""{}""#, author.to_hex()))
-                    .collect::<Vec<_>>()
-                    .join(","),
-            );
-            json.push_str("],");
-        }
+        // Handle array fields
+        add_optional_field!(self.ids, "ids", |ids: &Vec<EventId>| {
+            ids.iter()
+                .map(|id| format!(r#""{}""#, id.to_hex()))
+                .collect::<Vec<_>>()
+                .join(",")
+        });
 
-        if let Some(ref kinds) = self.kinds {
-            json.push_str(r#""kinds":["#);
-            json.push_str(
-                &kinds
-                    .iter()
-                    .map(|k| k.to_string())
-                    .collect::<Vec<_>>()
-                    .join(","),
-            );
-            json.push_str("],");
-        }
+        add_optional_field!(self.authors, "authors", |authors: &Vec<PublicKey>| {
+            authors
+                .iter()
+                .map(|author| format!(r#""{}""#, author.to_hex()))
+                .collect::<Vec<_>>()
+                .join(",")
+        });
 
-        // if let Some(ref e_tags) = self.e_tags {
-        //     json.push_str(r#""#e":["#);
-        //     json.push_str(&e_tags.iter().map(|s| format!(r#""{}""#, s.replace('\\', "\\\\").replace('"', "\\\""))).collect::<Vec<_>>().join(","));
-        //     json.push_str("],");
-        // }
+        add_optional_field!(self.kinds, "kinds", |kinds: &Vec<Kind>| {
+            kinds
+                .iter()
+                .map(|k| k.to_string())
+                .collect::<Vec<_>>()
+                .join(",")
+        });
 
-        // if let Some(ref p_tags) = self.p_tags {
-        //     json.push_str(r#""#p":["#);
-        //     json.push_str(&p_tags.iter().map(|s| format!(r#""{}""#, s.replace('\\', "\\\\").replace('"', "\\\""))).collect::<Vec<_>>().join(","));
-        //     json.push_str("],");
-        // }
+        // Handle tag fields with proper escaping
+        add_optional_field!(self.e_tags, "#e", |tags: &Vec<String>| {
+            Self::format_tags(tags)
+        });
 
-        // if let Some(ref d_tags) = self.d_tags {
-        //     json.push_str(r#""#d":["#);
-        //     json.push_str(&d_tags.iter().map(|s| format!(r#""{}""#, s.replace('\\', "\\\\").replace('"', "\\\""))).collect::<Vec<_>>().join(","));
-        //     json.push_str("],");
-        // }
+        add_optional_field!(self.p_tags, "#p", |tags: &Vec<String>| {
+            Self::format_tags(tags)
+        });
 
-        // if let Some(ref a_tags) = self.a_tags {
-        //     json.push_str(r#""#a":["#);
-        //     json.push_str(&a_tags.iter().map(|s| format!(r#""{}""#, s.replace('\\', "\\\\").replace('"', "\\\""))).collect::<Vec<_>>().join(","));
-        //     json.push_str("],");
-        // }
+        add_optional_field!(self.d_tags, "#d", |tags: &Vec<String>| {
+            Self::format_tags(tags)
+        });
 
+        add_optional_field!(self.a_tags, "#a", |tags: &Vec<String>| {
+            Self::format_tags(tags)
+        });
+
+        // Handle scalar fields
         if let Some(since) = self.since {
-            json.push_str(&format!(r#""since":{},"#, since));
+            if !first_field {
+                json.push(',');
+            }
+            first_field = false;
+            json.push_str(&format!(r#""since":{}"#, since));
         }
 
         if let Some(until) = self.until {
-            json.push_str(&format!(r#""until":{},"#, until));
+            if !first_field {
+                json.push(',');
+            }
+            first_field = false;
+            json.push_str(&format!(r#""until":{}"#, until));
         }
 
         if let Some(limit) = self.limit {
-            json.push_str(&format!(r#""limit":{},"#, limit));
+            if !first_field {
+                json.push(',');
+            }
+            first_field = false;
+            json.push_str(&format!(r#""limit":{}"#, limit));
         }
 
         if let Some(ref search) = self.search {
-            json.push_str(&format!(
-                r#""search":"{}""#,
-                search.replace('\\', "\\\\").replace('"', "\\\"")
-            ));
-        }
-
-        // Remove trailing comma if present
-        if json.ends_with(',') {
-            json.pop();
+            if !search.is_empty() {
+                if !first_field {
+                    json.push(',');
+                }
+                first_field = false;
+                json.push_str(&format!(r#""search":"{}""#, Self::escape_string(search)));
+            }
         }
 
         json.push('}');
         json
+    }
+
+    #[inline(always)]
+    fn calculate_json_size(&self) -> usize {
+        let mut size = 2; // {}
+
+        if let Some(ref ids) = self.ids {
+            size += 10 + ids.len() * 70; // "ids":[] + hex strings
+        }
+        if let Some(ref authors) = self.authors {
+            size += 15 + authors.len() * 70; // "authors":[] + hex strings
+        }
+        if let Some(ref kinds) = self.kinds {
+            size += 10 + kinds.len() * 10; // "kinds":[] + numbers
+        }
+        if let Some(ref e_tags) = self.e_tags {
+            size += 8 + Self::calculate_tags_size(e_tags); // "#e":[]
+        }
+        if let Some(ref p_tags) = self.p_tags {
+            size += 8 + Self::calculate_tags_size(p_tags); // "#p":[]
+        }
+        if let Some(ref d_tags) = self.d_tags {
+            size += 8 + Self::calculate_tags_size(d_tags); // "#d":[]
+        }
+        if let Some(ref a_tags) = self.a_tags {
+            size += 8 + Self::calculate_tags_size(a_tags); // "#a":[]
+        }
+        if self.since.is_some() {
+            size += 15;
+        } // "since":number
+        if self.until.is_some() {
+            size += 15;
+        } // "until":number
+        if self.limit.is_some() {
+            size += 15;
+        } // "limit":number
+        if let Some(ref search) = self.search {
+            size += 12 + search.len() * 2; // "search":"" + escaping
+        }
+
+        size
+    }
+
+    #[inline(always)]
+    fn calculate_tags_size(tags: &Vec<String>) -> usize {
+        tags.iter().map(|tag| tag.len() * 2 + 4).sum::<usize>() + tags.len() * 3
+    }
+
+    #[inline(always)]
+    fn format_tags(tags: &Vec<String>) -> String {
+        tags.iter()
+            .map(|tag| format!(r#""{}""#, Self::escape_string(tag)))
+            .collect::<Vec<_>>()
+            .join(",")
+    }
+
+    #[inline(always)]
+    fn escape_string(s: &str) -> String {
+        if !s.contains('\\') && !s.contains('"') {
+            s.to_string()
+        } else {
+            s.replace('\\', "\\\\").replace('"', "\\\"")
+        }
     }
 }
 
@@ -529,7 +972,9 @@ pub mod nips {
         impl FromBech32 for Nip19 {
             fn from_bech32(_s: &str) -> Result<Self> {
                 // Stub implementation - add bech32 crate if needed
-                Err(anyhow!("Bech32 decoding not implemented"))
+                Err(TypesError::InvalidFormat(
+                    "Bech32 decoding not implemented".to_string(),
+                ))
             }
         }
     }
@@ -577,6 +1022,128 @@ pub mod nips {
         ) -> Result<String> {
             // Implement only if you actually use it
             Ok(String::new())
+        }
+    }
+}
+
+struct NostrTagsParser<'a>(BaseJsonParser<'a>);
+
+impl<'a> NostrTagsParser<'a> {
+    #[inline(always)]
+    fn new(bytes: &'a [u8]) -> Self {
+        Self(BaseJsonParser::new(bytes))
+    }
+
+    #[inline(always)]
+    fn parse(mut self) -> Result<NostrTags> {
+        self.0.skip_whitespace();
+        self.0.expect_byte(b'[')?;
+
+        let mut tags = Vec::new();
+
+        while self.0.pos < self.0.bytes.len() {
+            self.0.skip_whitespace();
+            if self.0.peek() == b']' {
+                self.0.pos += 1;
+                break;
+            }
+
+            let tag = self.parse_tag()?;
+            tags.push(tag);
+            self.0.skip_comma_or_end()?;
+        }
+
+        Ok(NostrTags(tags))
+    }
+
+    #[inline(always)]
+    fn parse_tag(&mut self) -> Result<Vec<String>> {
+        self.0.expect_byte(b'[')?;
+        let mut tag = Vec::new();
+
+        while self.0.pos < self.0.bytes.len() {
+            self.0.skip_whitespace();
+            if self.0.peek() == b']' {
+                self.0.pos += 1;
+                break;
+            }
+
+            let value = self.0.parse_string()?.to_string();
+            tag.push(value);
+            self.0.skip_comma_or_end()?;
+        }
+
+        Ok(tag)
+    }
+}
+
+/// NostrTags represents a list of Nostr tags: Vec<Vec<String>>
+/// Using newtype pattern to allow inherent implementations
+#[derive(Debug, Clone, PartialEq)]
+pub struct NostrTags(pub Vec<Vec<String>>);
+
+impl NostrTags {
+    /// Parse NostrTags from JSON string
+    pub fn from_json(json: &str) -> Result<Self> {
+        let parser = NostrTagsParser::new(json.as_bytes());
+        parser.parse()
+    }
+
+    /// Serialize NostrTags to JSON string
+    pub fn to_json(&self) -> String {
+        let mut result = String::with_capacity(self.calculate_json_size());
+
+        result.push('[');
+        for (i, tag) in self.0.iter().enumerate() {
+            if i > 0 {
+                result.push(',');
+            }
+            result.push('[');
+
+            for (j, part) in tag.iter().enumerate() {
+                if j > 0 {
+                    result.push(',');
+                }
+                result.push('"');
+                Self::escape_string_to(&mut result, part);
+                result.push('"');
+            }
+
+            result.push(']');
+        }
+        result.push(']');
+
+        result
+    }
+
+    #[inline(always)]
+    pub fn calculate_json_size(&self) -> usize {
+        let mut size = 2; // []
+
+        for tag in &self.0 {
+            size += 2; // []
+            for part in tag {
+                size += part.len() * 2 + 4; // Escaped string + quotes + comma
+            }
+            if !tag.is_empty() {
+                size -= 1; // Remove last comma
+            }
+        }
+
+        size
+    }
+
+    #[inline(always)]
+    fn escape_string_to(result: &mut String, s: &str) {
+        for ch in s.chars() {
+            match ch {
+                '\\' => result.push_str("\\\\"),
+                '"' => result.push_str("\\\""),
+                '\n' => result.push_str("\\n"),
+                '\r' => result.push_str("\\r"),
+                '\t' => result.push_str("\\t"),
+                other => result.push(other),
+            }
         }
     }
 }

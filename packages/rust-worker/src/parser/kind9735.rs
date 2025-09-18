@@ -1,20 +1,160 @@
+use crate::nostr::{NostrTags, Template};
 use crate::parser::Parser;
+use crate::parser::{ParserError, Result};
+use crate::signer::interface::SignerManagerInterface;
 use crate::types::network::Request;
 use crate::types::nostr::Event;
+use crate::utils::json::BaseJsonParser;
 use crate::utils::request_deduplication::RequestDeduplicator;
-use anyhow::{anyhow, Result};
-use serde::{Deserialize, Serialize};
+use std::fmt::Write;
 
 // NEW: Imports for FlatBuffers
 use crate::generated::nostr::*;
 
-#[derive(Serialize, Deserialize)]
+/// ZapRequest for Nostr kind 9735 zap receipts
+#[derive(Debug, Clone)]
 pub struct ZapRequest {
     pub kind: u16,
     pub pubkey: String,
     pub content: String,
-    pub tags: Vec<Vec<String>>,
+    pub tags: NostrTags,
     pub signature: Option<String>,
+}
+
+impl ZapRequest {
+    /// Parse ZapRequest from JSON string
+    pub fn from_json(json: &str) -> Result<Self> {
+        let parser = ZapRequestParser::new(json.as_bytes());
+        parser.parse()
+    }
+
+    /// Serialize ZapRequest to JSON string
+    pub fn to_json(&self) -> String {
+        let mut result = String::with_capacity(self.calculate_json_size());
+
+        result.push('{');
+
+        // Required fields
+        write!(
+            result,
+            r#""kind":{},"pubkey":"{}","content":"{}","tags":{}"#,
+            self.kind,
+            Self::escape_string(&self.pubkey),
+            Self::escape_string(&self.content),
+            self.tags.to_json()
+        )
+        .unwrap();
+
+        // Optional signature field
+        if let Some(ref signature) = self.signature {
+            result.push_str(r#","signature":""#);
+            Self::escape_string_to(&mut result, signature);
+            result.push('"');
+        }
+
+        result.push('}');
+        result
+    }
+
+    #[inline(always)]
+    fn calculate_json_size(&self) -> usize {
+        let mut size = 50; // Base structure
+
+        // Required fields
+        size += self.pubkey.len() * 2 + self.content.len() * 2; // Escaping
+        size += self.tags.calculate_json_size(); // Tags size
+
+        // Optional signature
+        if let Some(ref signature) = self.signature {
+            size += 15 + signature.len() * 2; // "signature":"" + escaping
+        }
+
+        size
+    }
+
+    #[inline(always)]
+    fn escape_string(s: &str) -> String {
+        if !s.contains('\\') && !s.contains('"') {
+            s.to_string()
+        } else {
+            let mut result = String::with_capacity(s.len() + 4);
+            Self::escape_string_to(&mut result, s);
+            result
+        }
+    }
+
+    #[inline(always)]
+    fn escape_string_to(result: &mut String, s: &str) {
+        for ch in s.chars() {
+            match ch {
+                '\\' => result.push_str("\\\\"),
+                '"' => result.push_str("\\\""),
+                '\n' => result.push_str("\\n"),
+                '\r' => result.push_str("\\r"),
+                '\t' => result.push_str("\\t"),
+                other => result.push(other),
+            }
+        }
+    }
+}
+
+struct ZapRequestParser<'a>(BaseJsonParser<'a>);
+
+impl<'a> ZapRequestParser<'a> {
+    #[inline(always)]
+    fn new(bytes: &'a [u8]) -> Self {
+        Self(BaseJsonParser::new(bytes))
+    }
+
+    #[inline(always)]
+    fn parse(mut self) -> Result<ZapRequest> {
+        self.0.skip_whitespace();
+        self.0.expect_byte(b'{')?;
+
+        let mut kind = 0u16;
+        let mut pubkey = String::new();
+        let mut content = String::new();
+        let mut tags = NostrTags(Vec::new());
+        let mut signature = None;
+
+        while self.0.pos < self.0.bytes.len() {
+            self.0.skip_whitespace();
+            if self.0.peek() == b'}' {
+                self.0.pos += 1;
+                break;
+            }
+
+            let key = self.0.parse_string()?;
+            self.0.skip_whitespace();
+            self.0.expect_byte(b':')?;
+            self.0.skip_whitespace();
+
+            match key {
+                "kind" => kind = self.0.parse_u64()? as u16,
+                "pubkey" => pubkey = self.0.parse_string()?.to_string(),
+                "content" => content = self.0.parse_string()?.to_string(),
+                "tags" => tags = NostrTags::from_json(self.0.parse_raw_json_value()?)?,
+                "signature" => signature = Some(self.0.parse_string()?.to_string()),
+                _ => self.0.skip_value()?,
+            }
+
+            self.0.skip_comma_or_end()?;
+        }
+
+        if pubkey.is_empty() || content.is_empty() {
+            return Err(ParserError::InvalidFormat(
+                "Missing required fields in ZapRequest".to_string(),
+            ));
+        }
+
+        Ok(ZapRequest {
+            kind,
+            pubkey,
+            content,
+            tags,
+            signature,
+        })
+    }
 }
 
 pub struct Kind9735Parsed {
@@ -97,7 +237,7 @@ fn sats_from_bolt11_hrp(invoice: &str) -> Option<i64> {
 impl Parser {
     pub fn parse_kind_9735(&self, event: &Event) -> Result<(Kind9735Parsed, Option<Vec<Request>>)> {
         if event.kind != 9735 {
-            return Err(anyhow!("event is not kind 9735"));
+            return Err(ParserError::Other("event is not kind 9735".to_string()));
         }
 
         let mut requests = Vec::new();
@@ -139,27 +279,28 @@ impl Parser {
 
         // Require mandatory tags
         if p_tag.is_none() || bolt11_tag.is_none() || description_tag.is_none() {
-            return Err(anyhow!("missing required tags"));
+            return Err(ParserError::Other("missing required tags".to_string()));
         }
 
         let recipient = p_tag.as_ref().unwrap()[1].clone();
         let bolt11 = bolt11_tag.as_ref().unwrap()[1].clone();
         let description_str = description_tag.as_ref().unwrap()[1].clone();
 
-        // Parse the zap request from the description tag
-        let zap_request: ZapRequest = serde_json::from_str(&description_str)
-            .map_err(|e| anyhow!("failed to parse zap request description: {}", e))?;
+        // ✅ UPDATED: Parse the zap request using our custom parser
+        let zap_request: ZapRequest = ZapRequest::from_json(&description_str).map_err(|e| {
+            ParserError::Other(format!("failed to parse zap request description: {}", e))
+        })?;
 
         // Validate that the zap request is properly formed
-        if zap_request.kind != 9734 || zap_request.tags.is_empty() {
-            return Err(anyhow!("invalid zap request"));
+        if zap_request.kind != 9734 || zap_request.tags.0.is_empty() {
+            return Err(ParserError::Other("invalid zap request".to_string()));
         }
 
         // Extract amount from bolt11 invoice or zap request
         let mut amount = 0i32;
 
         // First check if there's an amount tag in the zap request
-        if let Some(amount_tag) = find_tag_in_vec(&zap_request.tags, "amount") {
+        if let Some(amount_tag) = find_tag_in_vec(&zap_request.tags.0, "amount") {
             if amount_tag.len() >= 2 {
                 if let Ok(amt_int) = amount_tag[1].parse::<i64>() {
                     amount = (amt_int / 1000) as i32; // Convert from millisats to sats
@@ -184,7 +325,7 @@ impl Parser {
 
         // Extract relay hints from the zap request
         let mut zapper_relay_hints = Vec::new();
-        if let Some(relays_tag) = find_tag_in_vec(&zap_request.tags, "relays") {
+        if let Some(relays_tag) = find_tag_in_vec(&zap_request.tags.0, "relays") {
             if relays_tag.len() > 1 {
                 zapper_relay_hints = relays_tag[1..].to_vec();
             }
@@ -224,7 +365,7 @@ impl Parser {
 
         // Perform basic validation
         // 1. The zap request should have the same recipient as the receipt
-        if let Some(request_p_tag) = find_tag_in_vec(&receipt.description.tags, "p") {
+        if let Some(request_p_tag) = find_tag_in_vec(&receipt.description.tags.0, "p") {
             if request_p_tag.len() >= 2 && request_p_tag[1] != receipt.recipient {
                 receipt.valid = false;
             }
@@ -234,7 +375,7 @@ impl Parser {
 
         // 2. If the receipt has an event ID, the request should also have it
         if let Some(ref event_id) = receipt.event {
-            if let Some(request_e_tag) = find_tag_in_vec(&receipt.description.tags, "e") {
+            if let Some(request_e_tag) = find_tag_in_vec(&receipt.description.tags.0, "e") {
                 if request_e_tag.len() < 2 || request_e_tag[1] != *event_id {
                     receipt.valid = false;
                 }
@@ -245,7 +386,7 @@ impl Parser {
 
         // 3. If the receipt has an event coordinate, the request should also have it
         if let Some(ref event_coordinate) = receipt.event_coordinate {
-            if let Some(request_a_tag) = find_tag_in_vec(&receipt.description.tags, "a") {
+            if let Some(request_a_tag) = find_tag_in_vec(&receipt.description.tags.0, "a") {
                 if request_a_tag.len() < 2 || request_a_tag[1] != *event_coordinate {
                     receipt.valid = false;
                 }
@@ -255,9 +396,69 @@ impl Parser {
         }
 
         // Deduplicate requests using the utility
-        let deduplicated_requests = RequestDeduplicator::deduplicate_requests(requests);
+        let deduplicated_requests = RequestDeduplicator::deduplicate_requests(&requests);
 
         Ok((receipt, Some(deduplicated_requests)))
+    }
+
+    pub fn prepare_kind_9735(&self, template: &Template) -> Result<Event> {
+        if template.kind != 9735 {
+            return Err(ParserError::Other("event is not kind 9735".to_string()));
+        }
+
+        // ✅ UPDATED: Validate zap request using our custom parser
+        let zap_request: ZapRequest = ZapRequest::from_json(&template.content)
+            .map_err(|e| ParserError::Other(format!("invalid zap request content: {}", e)))?;
+
+        // Validate that the zap request is properly formed
+        if zap_request.kind != 9734 || zap_request.tags.0.is_empty() {
+            return Err(ParserError::Other("invalid zap request".to_string()));
+        }
+
+        // Check for required tags in the zap request
+        let mut has_recipient = false;
+        let mut has_amount = false;
+
+        for tag in &zap_request.tags.0 {
+            if tag.len() >= 2 {
+                match tag[0].as_str() {
+                    "p" => has_recipient = true,
+                    "amount" => has_amount = true,
+                    _ => {}
+                }
+            }
+        }
+
+        if !has_recipient {
+            return Err(ParserError::Other(
+                "zap request must include a recipient (p tag)".to_string(),
+            ));
+        }
+
+        if !has_amount {
+            return Err(ParserError::Other(
+                "zap request must include an amount".to_string(),
+            ));
+        }
+
+        // For zap receipts, the content should be empty (description goes in tags)
+        // But we'll keep the existing logic for now
+        let content = String::new();
+
+        // Add description tag with the serialized zap request
+        let mut tags = template.tags.clone();
+        let description_json = zap_request.to_json();
+        tags.push(vec!["description".to_string(), description_json]);
+
+        let new_template = Template {
+            kind: template.kind,
+            tags,
+            content,
+        };
+
+        self.signer_manager
+            .sign_event(&new_template)
+            .map_err(|e| ParserError::Other(format!("failed to sign event: {}", e)))
     }
 }
 
@@ -287,9 +488,9 @@ pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
         .as_ref()
         .map(|s| builder.create_string(s));
 
-    // Build description tags
+    // Build description tags - access inner Vec via .0
     let mut description_tags_offsets = Vec::new();
-    for tag in &parsed.description.tags {
+    for tag in &parsed.description.tags.0 {
         let tag_offsets: Vec<_> = tag.iter().map(|t| builder.create_string(t)).collect();
         let tag_vector = builder.create_vector(&tag_offsets);
         description_tags_offsets.push(tag_vector);
@@ -302,7 +503,7 @@ pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
         content: Some(description_content),
         tags: Some({
             let mut string_vec_offsets = Vec::new();
-            for tag in &parsed.description.tags {
+            for tag in &parsed.description.tags.0 {
                 let tag_strings: Vec<_> = tag.iter().map(|t| builder.create_string(t)).collect();
                 let tag_vector = builder.create_vector(&tag_strings);
                 let string_vec = fb::StringVec::create(

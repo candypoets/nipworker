@@ -1,21 +1,22 @@
-use crate::types::nostr::{Event, Template, UnsignedEvent};
-use crate::types::SignerType;
-use anyhow::Result;
-use std::sync::{Arc, Mutex};
-use tracing::{debug, error, info, warn};
-use wasm_bindgen::prelude::*;
+use crate::generated::nostr::fb;
+use crate::signer::SignerError;
+use crate::types::nostr::{Event, Template};
 
-use super::interface::{Signer, SignerManager};
+use std::sync::{Arc, Mutex};
+
+type Result<T> = std::result::Result<T, SignerError>;
+use tracing::{debug, info};
+
+use super::interface::{SignerInterface, SignerManagerInterface};
 use super::pk::PrivateKeySigner;
 
 /// SignerManagerImpl handles event signing operations and manages the current signer
-pub struct SignerManagerImpl {
-    current: Arc<Mutex<Option<Box<dyn Signer>>>>,
-    signer_type: Arc<Mutex<Option<SignerType>>>,
-    callback: Option<js_sys::Function>,
+pub struct SignerManager {
+    current: Arc<Mutex<Option<Box<dyn SignerInterface>>>>,
+    signer_type: Arc<Mutex<Option<fb::SignerType>>>,
 }
 
-impl SignerManagerImpl {
+impl SignerManager {
     /// Creates a new signer manager
     pub fn new() -> Self {
         info!("Creating new SignerManager");
@@ -23,38 +24,15 @@ impl SignerManagerImpl {
         Self {
             current: Arc::new(Mutex::new(None)),
             signer_type: Arc::new(Mutex::new(None)),
-            callback: None,
-        }
-    }
-
-    /// Creates a signer based on the type and data
-    fn create_signer(signer_type: SignerType, data: &str) -> Result<Box<dyn Signer>> {
-        match signer_type {
-            SignerType::PrivKey => {
-                if data.is_empty() {
-                    // Generate new private key if no data provided
-                    Ok(Box::new(PrivateKeySigner::generate()))
-                } else if data.starts_with("nsec") {
-                    // Handle nsec format
-                    Ok(Box::new(PrivateKeySigner::from_nsec(data)?))
-                } else {
-                    // Handle hex format
-                    Ok(Box::new(PrivateKeySigner::new(data)?))
-                }
-            }
         }
     }
 }
 
-impl SignerManager for SignerManagerImpl {
+impl SignerManagerInterface for SignerManager {
     /// Signs an event with the current signer
     fn sign_event(&self, event: &Template) -> Result<Event> {
-        info!("Signing event of kind {}", event.kind);
-
         let current_lock = self.current.lock().unwrap();
-        let signer = current_lock
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("No signer available"))?;
+        let signer = current_lock.as_ref().ok_or_else(|| SignerError::NoSigner)?;
 
         let signed_event = signer.sign_event(event)?;
 
@@ -81,43 +59,25 @@ impl SignerManager for SignerManagerImpl {
 
     /// Returns the public key of the current signer
     fn get_public_key(&self) -> Result<String> {
-        debug!("Getting public key");
-
         let current_lock = self.current.lock().unwrap();
-        let signer = current_lock
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("No signer available"))?;
+        let signer = current_lock.as_ref().ok_or_else(|| SignerError::NoSigner)?;
 
         let pubkey = signer.get_public_key()?;
-        debug!("Retrieved public key: {}", pubkey);
 
         Ok(pubkey)
     }
 
-    /// Sets the current signer
-    fn set_signer(&self, signer_type: SignerType, signer_data: &str) -> Result<()> {
-        info!("Setting signer: type={}", signer_type);
+    fn set_privatekey_signer(&self, private_key_hex: &str) -> Result<()> {
+        self.current
+            .lock()
+            .unwrap()
+            .replace(Box::new(PrivateKeySigner::new(private_key_hex)?));
 
-        let new_signer = Self::create_signer(signer_type.clone(), signer_data)?;
-
-        // Update the current signer
-        {
-            let mut current_lock = self.current.lock().unwrap();
-            *current_lock = Some(new_signer);
-        }
-
-        // Update the signer type
-        {
-            let mut type_lock = self.signer_type.lock().unwrap();
-            *type_lock = Some(signer_type);
-        }
-
-        info!("Signer changed successfully");
-        Ok(())
+        return Ok(());
     }
 
     /// Gets the current signer type
-    fn get_signer_type(&self) -> Option<SignerType> {
+    fn get_signer_type(&self) -> Option<fb::SignerType> {
         let type_lock = self.signer_type.lock().unwrap();
         type_lock.clone()
     }
@@ -130,154 +90,47 @@ impl SignerManager for SignerManagerImpl {
 
     /// Encrypts a message for a recipient using NIP-04
     fn nip04_encrypt(&self, recipient_pubkey: &str, plaintext: &str) -> Result<String> {
-        info!(
-            "Encrypting message using NIP-04 for recipient: {}",
-            recipient_pubkey
-        );
-
         let current_lock = self.current.lock().unwrap();
-        let signer = current_lock
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("No signer available"))?;
+        let signer = current_lock.as_ref().ok_or_else(|| SignerError::NoSigner)?;
 
         let encrypted = signer.nip04_encrypt(recipient_pubkey, plaintext)?;
-        debug!("Successfully encrypted message using NIP-04");
 
         Ok(encrypted)
     }
 
     /// Decrypts a message from a sender using NIP-04
     fn nip04_decrypt(&self, sender_pubkey: &str, ciphertext: &str) -> Result<String> {
-        debug!(
-            "Decrypting message using NIP-04 from sender: {}",
-            sender_pubkey
-        );
-
         let current_lock = self.current.lock().unwrap();
-        let signer = current_lock
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("No signer available"))?;
+        let signer = current_lock.as_ref().ok_or_else(|| SignerError::NoSigner)?;
 
         let decrypted = signer.nip04_decrypt(sender_pubkey, ciphertext)?;
-        debug!("Successfully decrypted message using NIP-04");
 
         Ok(decrypted)
     }
 
     /// Encrypts a message for a recipient using NIP-44
     fn nip44_encrypt(&self, recipient_pubkey: &str, plaintext: &str) -> Result<String> {
-        info!(
-            "Encrypting message using NIP-44 for recipient: {}",
-            recipient_pubkey
-        );
-
         let current_lock = self.current.lock().unwrap();
-        let signer = current_lock
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("No signer available"))?;
+        let signer = current_lock.as_ref().ok_or_else(|| SignerError::NoSigner)?;
 
         let encrypted = signer.nip44_encrypt(recipient_pubkey, plaintext)?;
-        debug!("Successfully encrypted message using NIP-44");
 
         Ok(encrypted)
     }
 
     /// Decrypts a message from a sender using NIP-44
     fn nip44_decrypt(&self, sender_pubkey: &str, ciphertext: &str) -> Result<String> {
-        debug!(
-            "Decrypting message using NIP-44 from sender: {}",
-            sender_pubkey
-        );
-
         let current_lock = self.current.lock().unwrap();
-        let signer = current_lock
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("No signer available"))?;
+        let signer = current_lock.as_ref().ok_or_else(|| SignerError::NoSigner)?;
 
         let decrypted = signer.nip44_decrypt(sender_pubkey, ciphertext)?;
-        debug!("Successfully decrypted message using NIP-44");
 
         Ok(decrypted)
     }
 }
 
-impl Default for SignerManagerImpl {
+impl Default for SignerManager {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-unsafe impl Send for SignerManagerImpl {}
-unsafe impl Sync for SignerManagerImpl {}
-
-/// WASM bindings for the signer manager
-pub struct WasmSignerManager {
-    inner: SignerManagerImpl,
-}
-
-impl WasmSignerManager {
-    pub fn new() -> Self {
-        Self {
-            inner: SignerManagerImpl::new(),
-        }
-    }
-
-    pub fn sign_event(&self, template: &Template) -> Result<Event, JsValue> {
-        self.inner
-            .sign_event(template)
-            .map_err(|e| JsValue::from_str(&e.to_string()))
-    }
-
-    pub fn get_public_key(&self) -> Result<String, JsValue> {
-        self.inner
-            .get_public_key()
-            .map_err(|e| JsValue::from_str(&e.to_string()))
-    }
-
-    pub fn set_signer(&self, signer_type: &str, data: Option<&str>) -> Result<(), JsValue> {
-        let signer_type_enum: SignerType = signer_type
-            .parse()
-            .map_err(|e| JsValue::from_str(&format!("Invalid signer type: {}", e)))?;
-        let signer_data = data.unwrap_or("");
-
-        self.inner
-            .set_signer(signer_type_enum, signer_data)
-            .map_err(|e| JsValue::from_str(&e.to_string()))
-    }
-
-    pub fn has_signer(&self) -> bool {
-        self.inner.has_signer()
-    }
-
-    pub fn nip04_encrypt(
-        &self,
-        recipient_pubkey: &str,
-        plaintext: &str,
-    ) -> Result<String, JsValue> {
-        self.inner
-            .nip04_encrypt(recipient_pubkey, plaintext)
-            .map_err(|e| JsValue::from_str(&e.to_string()))
-    }
-
-    pub fn nip04_decrypt(&self, sender_pubkey: &str, ciphertext: &str) -> Result<String, JsValue> {
-        self.inner
-            .nip04_decrypt(sender_pubkey, ciphertext)
-            .map_err(|e| JsValue::from_str(&e.to_string()))
-    }
-
-    pub fn nip44_encrypt(
-        &self,
-        recipient_pubkey: &str,
-        plaintext: &str,
-    ) -> Result<String, JsValue> {
-        self.inner
-            .nip44_encrypt(recipient_pubkey, plaintext)
-            .map_err(|e| JsValue::from_str(&e.to_string()))
-    }
-
-    pub fn nip44_decrypt(&self, sender_pubkey: &str, ciphertext: &str) -> Result<String, JsValue> {
-        self.inner
-            .nip44_decrypt(sender_pubkey, ciphertext)
-            .map_err(|e| JsValue::from_str(&e.to_string()))
     }
 }

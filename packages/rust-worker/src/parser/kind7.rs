@@ -1,8 +1,8 @@
 use crate::parser::Parser;
+use crate::parser::{ParserError, Result};
 use crate::types::network::Request;
 use crate::types::nostr::Event;
 use crate::utils::request_deduplication::RequestDeduplicator;
-use anyhow::{anyhow, Result};
 
 // NEW: Imports for FlatBuffers
 use crate::generated::nostr::*;
@@ -38,7 +38,7 @@ impl Parser {
 
     pub fn parse_kind_7(&self, event: &Event) -> Result<(Kind7Parsed, Option<Vec<Request>>)> {
         if event.kind != 7 {
-            return Err(anyhow!("event is not kind 7"));
+            return Err(ParserError::Other("event is not kind 7".to_string()));
         }
 
         let mut requests = Vec::new();
@@ -56,11 +56,12 @@ impl Parser {
         });
 
         // Find the e tag for the target event (should be the last one if multiple)
-        let e_tag = Self::find_last_tag(&event.tags, "e")
-            .ok_or_else(|| anyhow!("reaction must have at least one e tag"))?;
+        let e_tag = Self::find_last_tag(&event.tags, "e").ok_or_else(|| {
+            ParserError::Other("reaction must have at least one e tag".to_string())
+        })?;
 
         if e_tag.len() < 2 {
-            return Err(anyhow!("invalid e tag format"));
+            return Err(ParserError::Other("invalid e tag format".to_string()));
         }
 
         let event_id = e_tag[1].clone();
@@ -120,7 +121,7 @@ impl Parser {
         };
 
         // Deduplicate requests using the utility
-        let deduplicated_requests = RequestDeduplicator::deduplicate_requests(requests);
+        let deduplicated_requests = RequestDeduplicator::deduplicate_requests(&requests);
 
         Ok((result, Some(deduplicated_requests)))
     }

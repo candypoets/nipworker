@@ -7,10 +7,10 @@ pub struct KindFilterPipe {
 }
 
 impl KindFilterPipe {
-    pub fn new(kinds: Vec<u64>) -> Self {
+    pub fn new(kinds: Vec<u16>) -> Self {
         Self {
             name: format!("KindFilter({:?})", kinds),
-            kinds: kinds.into_iter().map(|k| k as u16).collect(),
+            kinds: kinds.into_iter().map(|k| k).collect(),
         }
     }
 }

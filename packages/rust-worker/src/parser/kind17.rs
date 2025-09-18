@@ -1,7 +1,7 @@
 use crate::parser::Parser;
 use crate::types::network::Request;
 use crate::types::nostr::Event;
-use anyhow::{anyhow, Result};
+use crate::parser::{ParserError, Result};
 
 // NEW: Imports for FlatBuffers
 use crate::generated::nostr::*;
@@ -24,7 +24,7 @@ pub type Kind17Parsed = crate::parser::kind7::Kind7Parsed;
 impl Parser {
     pub fn parse_kind_17(&self, event: &Event) -> Result<(Kind17Parsed, Option<Vec<Request>>)> {
         if event.kind != 17 {
-            return Err(anyhow!("event is not kind 17"));
+            return Err(ParserError::Other("event is not kind 17".to_string()));
         }
 
         // Find the r tag for the URL being reacted to
@@ -32,7 +32,7 @@ impl Parser {
             .tags
             .iter()
             .find(|tag| tag.len() >= 2 && tag[0] == "r")
-            .ok_or_else(|| anyhow!("kind 17 must have an r tag"))?;
+            .ok_or_else(|| ParserError::Other("kind 17 must have an r tag".to_string()))?;
 
         // Parse reaction type
         let content = &event.content;

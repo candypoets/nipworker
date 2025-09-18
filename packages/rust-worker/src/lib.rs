@@ -1,9 +1,8 @@
 #![allow(async_fn_in_trait)]
 
+use flatbuffers::FlatBufferBuilder;
 use wasm_bindgen::prelude::*;
 
-// Re-export common types and modules
-pub mod config;
 pub mod db;
 pub mod generated;
 pub mod network;
@@ -18,12 +17,9 @@ pub mod utils;
 pub use db::NostrDB;
 pub use network::NetworkManager;
 pub use parser::Parser;
-pub use signer::{PrivateKeySigner, SharedSignerManager, Signer, SignerManager, SignerManagerImpl};
+pub use signer::{PrivateKeySigner, SignerInterface, SignerManager, SignerManagerInterface};
 
 pub use types::*;
-
-// Re-export communication types for external use
-pub use types::thread::MainToWorkerMessage;
 
 // Type aliases to match Go implementation
 pub type NostrEvent = Event;
@@ -32,19 +28,29 @@ pub type NostrEvent = Event;
 #[derive(Debug, thiserror::Error)]
 pub enum NostrError {
     #[error("Database error: {0}")]
-    Database(#[from] anyhow::Error),
+    Database(#[from] db::types::DatabaseError),
     #[error("Network error: {0}")]
     Network(String),
     #[error("Parse error: {0}")]
     Parse(String),
     #[error("Signer error: {0}")]
     Signer(String),
-    #[error("Serialization error: {0}")]
-    Serialization(#[from] serde_json::Error),
-    #[error("MessagePack error: {0}")]
-    MessagePack(#[from] rmp_serde::encode::Error),
-    #[error("MessagePack decode error: {0}")]
-    MessagePackDecode(#[from] rmp_serde::decode::Error),
+    #[error("Relay error: {0}")]
+    Relay(#[from] relays::types::RelayError),
+    #[error("Types error: {0}")]
+    Types(#[from] types::TypesError),
+    #[error("Parser error: {0}")]
+    Parser(#[from] parser::ParserError),
+    #[error("HTTP error: {0}")]
+    Http(String),
+    #[error("Other error: {0}")]
+    Other(String),
+}
+
+impl From<gloo_net::Error> for NostrError {
+    fn from(err: gloo_net::Error) -> Self {
+        NostrError::Http(err.to_string())
+    }
 }
 
 impl Into<JsValue> for NostrError {
@@ -72,11 +78,11 @@ macro_rules! console_error {
 }
 
 // Worker implementation
-use js_sys::{SharedArrayBuffer, Uint8Array};
+use js_sys::Uint8Array;
 use std::sync::{Arc, Once};
 use tracing::info;
 
-use crate::types::{network::Request, nostr::Template};
+use crate::{generated::nostr::fb, relays::ConnectionRegistry, types::nostr::Template};
 
 #[wasm_bindgen]
 extern "C" {
@@ -140,7 +146,7 @@ fn setup_tracing() {
             .with_writer(|| ConsoleWriter)
             .without_time()
             .with_target(false)
-            .with_max_level(tracing::Level::ERROR)
+            .with_max_level(tracing::Level::INFO)
             .try_init();
 
         console_log!("Tracing subscriber initialized for Web Worker");
@@ -163,9 +169,8 @@ const INDEXER_RELAYS: &[&str] = &[
 
 #[wasm_bindgen]
 pub struct NostrClient {
-    connection_registry: Arc<relays::ConnectionRegistry>,
-    network_manager: Arc<NetworkManager>,
-    signer_manager: SharedSignerManager,
+    network_manager: NetworkManager,
+    signer_manager: Arc<SignerManager>,
 }
 
 #[wasm_bindgen]
@@ -193,43 +198,23 @@ impl NostrClient {
             })
             .expect("Database initialization failed");
 
-        let shared_signer_manager: SharedSignerManager = Arc::new(SignerManagerImpl::new());
+        let signer_manager = Arc::new(SignerManager::new());
 
-        let connection_registry = Arc::new(relays::ConnectionRegistry::new());
+        let connection_registry = Arc::new(ConnectionRegistry::new());
 
         let parser = Arc::new(Parser::new_with_signer(
-            shared_signer_manager.clone(),
+            signer_manager.clone(),
             database.clone(),
         ));
 
-        let network_manager = Arc::new(NetworkManager::new(
-            database.clone(),
-            connection_registry.clone() as Arc<relays::ConnectionRegistry>,
-            parser.clone(),
-        ));
+        let network_manager = NetworkManager::new(database, connection_registry, parser);
 
         info!("NostrClient components initialized");
 
         Self {
-            connection_registry,
             network_manager,
-            signer_manager: shared_signer_manager,
+            signer_manager,
         }
-    }
-
-    pub async fn open_subscription(
-        &self,
-        subscription_id: String,
-        requests_data: &[u8],
-        shared_buffer: SharedArrayBuffer,
-    ) -> Result<(), JsValue> {
-        let requests: Vec<Request> = rmp_serde::from_slice(requests_data)
-            .map_err(|e| JsValue::from_str(&format!("Failed to parse requests: {}", e)))?;
-
-        self.network_manager
-            .open_subscription(subscription_id, requests, shared_buffer, None)
-            .await
-            .map_err(|e| JsValue::from_str(&format!("Failed to open subscription: {}", e)))
     }
 
     pub async fn close_subscription(&self, subscription_id: String) -> Result<(), JsValue> {
@@ -239,22 +224,6 @@ impl NostrClient {
             .map_err(|e| JsValue::from_str(&format!("Failed to close subscription: {}", e)))
     }
 
-    async fn publish_event(
-        &self,
-        publish_id: String,
-        template: Template,
-        shared_buffer: SharedArrayBuffer,
-    ) -> Result<String, JsValue> {
-        let summary = self
-            .network_manager
-            .publish_event(publish_id, &template, shared_buffer)
-            .await
-            .map_err(|e| JsValue::from_str(&format!("Failed to publish event: {}", e)))?;
-
-        serde_json::to_string(&summary)
-            .map_err(|e| JsValue::from_str(&format!("Failed to serialize summary: {}", e)))
-    }
-
     fn sign_event(&self, template: Template) -> Result<(), JsValue> {
         // Sign the event using the signer manager
         let signed_event = self
@@ -262,39 +231,7 @@ impl NostrClient {
             .sign_event(&template)
             .map_err(|e| JsValue::from_str(&format!("Failed to sign event: {}", e)))?;
 
-        let json_string = signed_event.as_json();
-        let signed_event_pack: Vec<u8> = json_string.into_bytes();
-
-        // Send signed event back to main thread
-        let signed_event_message = SignerMessage::Signed {
-            payload: signed_event_pack,
-        };
-
-        let data = match rmp_serde::to_vec_named(&signed_event_message) {
-            Ok(msgpack) => msgpack,
-            Err(e) => {
-                console_error!("Failed to serialize signed event message: {}", e);
-                return Err(JsValue::from_str(
-                    "Failed to serialize signed event message",
-                ));
-            }
-        };
-
-        let uint8_array = Uint8Array::new_with_length(data.len() as u32);
-        uint8_array.copy_from(&data);
-        postMessage(&uint8_array.into());
-
         Ok(())
-    }
-
-    pub fn set_signer(&self, signer_type: String, private_key: String) -> Result<(), JsValue> {
-        let signer_type_enum: SignerType = signer_type
-            .parse()
-            .map_err(|e| JsValue::from_str(&format!("Invalid signer type: {}", e)))?;
-
-        self.signer_manager
-            .set_signer(signer_type_enum, &private_key)
-            .map_err(|e| JsValue::from_str(&format!("Failed to set signer: {}", e)))
     }
 
     pub fn get_public_key(&self) -> Result<(), JsValue> {
@@ -304,16 +241,35 @@ impl NostrClient {
             .get_public_key()
             .map_err(|e| JsValue::from_str(&format!("Failed to get public key: {}", e)))?;
 
-        let pubkey_message = SignerMessage::PubKey { payload: pubkey };
+        // Create FlatBuffer message
+        let mut builder = FlatBufferBuilder::new();
 
-        let data = match rmp_serde::to_vec_named(&pubkey_message) {
-            Ok(msgpack) => msgpack,
-            Err(e) => {
-                console_error!("Failed to serialize public key message: {}", e);
-                return Err(JsValue::from_str("Failed to serialize public key message"));
-            }
-        };
+        // Create the pubkey string
+        let pubkey_offset = builder.create_string(&pubkey);
 
+        // Create PubKeyPayload
+        let pubkey_payload = fb::Pubkey::create(
+            &mut builder,
+            &fb::PubkeyArgs {
+                pubkey: Some(pubkey_offset),
+            },
+        );
+
+        // Create SignerMessage wrapper
+        let signer_msg = fb::WorkerMessage::create(
+            &mut builder,
+            &fb::WorkerMessageArgs {
+                type_: fb::MessageType::Pubkey,
+                content_type: fb::Message::Pubkey,
+                content: Some(pubkey_payload.as_union_value()),
+            },
+        );
+
+        // Finish the buffer
+        builder.finish(signer_msg, None);
+        let data = builder.finished_data().to_vec();
+
+        // Send the message
         let uint8_array = Uint8Array::new_with_length(data.len() as u32);
         uint8_array.copy_from(&data);
         postMessage(&uint8_array.into());
@@ -325,134 +281,139 @@ impl NostrClient {
         self.network_manager.get_active_subscription_count().await
     }
 
-    pub async fn get_connection_count(&self) -> u32 {
-        self.connection_registry
-            .active_subscription_ids()
-            .await
-            .len() as u32
-    }
-
     pub async fn handle_message(&self, message_obj: &JsValue) -> Result<(), JsValue> {
-        // Check if this is the new format with serializedMessage and sharedBuffer
-        if let Some(obj) = message_obj.dyn_ref::<js_sys::Object>() {
-            if js_sys::Reflect::has(obj, &JsValue::from_str("serializedMessage")).unwrap_or(false)
-                && js_sys::Reflect::has(obj, &JsValue::from_str("sharedBuffer")).unwrap_or(false)
-            {
-                // Extract serialized message
+        // Extract serialized message and optional SharedArrayBuffer
+        let (message_bytes, shared_buffer) = if message_obj.is_instance_of::<Uint8Array>() {
+            // Legacy format - just Uint8Array (check this first to avoid it being caught as an Object)
+            let uint8_array: Uint8Array = message_obj.clone().dyn_into()?;
+            (uint8_array.to_vec(), None)
+        } else if let Some(obj) = message_obj.dyn_ref::<js_sys::Object>() {
+            // New format with serializedMessage and sharedBuffer
+            if js_sys::Reflect::has(obj, &JsValue::from_str("serializedMessage")).unwrap_or(false) {
                 let serialized_msg =
                     js_sys::Reflect::get(obj, &JsValue::from_str("serializedMessage"))?;
                 let message_uint8 = js_sys::Uint8Array::from(serialized_msg);
                 let mut message_bytes = vec![0u8; message_uint8.length() as usize];
                 message_uint8.copy_to(&mut message_bytes);
 
-                // Extract SharedArrayBuffer
-                let shared_buffer = js_sys::Reflect::get(obj, &JsValue::from_str("sharedBuffer"))?;
-                let shared_buffer = shared_buffer
-                    .dyn_into::<js_sys::SharedArrayBuffer>()
-                    .map_err(|_| JsValue::from_str("Invalid SharedArrayBuffer"))?;
+                // SharedArrayBuffer is optional - only Subscribe and Publish require it
+                let shared_buffer = if js_sys::Reflect::has(obj, &JsValue::from_str("sharedBuffer"))
+                    .unwrap_or(false)
+                {
+                    let buffer = js_sys::Reflect::get(obj, &JsValue::from_str("sharedBuffer"))?;
+                    Some(
+                        buffer
+                            .dyn_into::<js_sys::SharedArrayBuffer>()
+                            .map_err(|_| JsValue::from_str("Invalid SharedArrayBuffer"))?,
+                    )
+                } else {
+                    None
+                };
 
-                let main_message: MainToWorkerMessage = rmp_serde::from_slice(&message_bytes)
-                    .map_err(|e| JsValue::from_str(&format!("Failed to decode message: {}", e)))?;
-
-                match main_message {
-                    MainToWorkerMessage::Subscribe {
-                        subscription_id,
-                        requests,
-                        config,
-                    } => {
-                        let requests_data = rmp_serde::to_vec_named(&requests).map_err(|e| {
-                            JsValue::from_str(&format!("Failed to serialize requests: {}", e))
-                        })?;
-                        self.open_subscription_with_config(
-                            subscription_id,
-                            &requests_data,
-                            shared_buffer,
-                            config,
-                        )
-                        .await?;
-                    }
-                    MainToWorkerMessage::Publish {
-                        publish_id,
-                        template,
-                    } => {
-                        self.publish_event(publish_id, template, shared_buffer)
-                            .await?;
-                    }
-                    _ => {
-                        return Err(JsValue::from_str(
-                            "Only Subscribe adn Publish messages support new format",
-                        ));
-                    }
-                }
-                return Ok(());
+                (message_bytes, shared_buffer)
+            } else {
+                return Err(JsValue::from_str("Missing serializedMessage field"));
             }
-        }
-
-        // Fall back to old format for other message types
-        let message_bytes = if message_obj.is_instance_of::<Uint8Array>() {
-            let uint8_array: Uint8Array = message_obj.clone().dyn_into()?;
-            uint8_array.to_vec()
         } else {
-            return Err(JsValue::from_str("Expected Uint8Array message"));
+            return Err(JsValue::from_str("Invalid message format"));
         };
 
         info!("Received message in worker: {} bytes", message_bytes.len());
 
-        let main_message: MainToWorkerMessage = rmp_serde::from_slice(&message_bytes)
-            .map_err(|e| JsValue::from_str(&format!("Failed to decode message: {}", e)))?;
+        // Decode FlatBuffer message
+        let main_message = flatbuffers::root::<fb::MainMessage>(&message_bytes)
+            .map_err(|e| JsValue::from_str(&format!("Failed to decode FlatBuffer: {:?}", e)))?;
 
-        match main_message {
-            MainToWorkerMessage::Subscribe {
-                subscription_id: _,
-                requests: _,
-                config: _,
-            } => {
-                return Err(JsValue::from_str(
-                    "Subscribe requires SharedArrayBuffer in new format",
-                ));
+        // Process based on message type
+        match main_message.content_type() {
+            fb::MainContent::Subscribe => {
+                let subscribe = main_message.content_as_subscribe().unwrap();
+                let shared_buffer = shared_buffer
+                    .ok_or_else(|| JsValue::from_str("Subscribe requires SharedArrayBuffer"))?;
+
+                let subscription_id = subscribe.subscription_id().to_string();
+
+                // Convert FlatBuffer requests to your Request type
+                let mut requests = Vec::new();
+                let fb_requests = subscribe.requests();
+                for i in 0..fb_requests.len() {
+                    let fb_req = fb_requests.get(i);
+                    requests.push(fb_req);
+                }
+
+                let fb_config = subscribe.config();
+
+                self.network_manager
+                    .open_subscription(subscription_id, shared_buffer, &requests, &fb_config)
+                    .await
+                    .map_err(|e| {
+                        JsValue::from_str(&format!("Failed to open subscription: {}", e))
+                    })?;
             }
-            MainToWorkerMessage::Unsubscribe { subscription_id } => {
-                self.close_subscription(subscription_id).await?;
+
+            fb::MainContent::Unsubscribe => {
+                let unsubscribe = main_message.content_as_unsubscribe().unwrap();
+                let subscription_id = unsubscribe.subscription_id().to_string();
+                self.network_manager
+                    .close_subscription(subscription_id)
+                    .await
+                    .map_err(|e| JsValue::from_str(&format!("Failed to unsubscribe: {}", e)))?;
             }
-            MainToWorkerMessage::Publish {
-                publish_id: _,
-                template: _,
-            } => {
-                return Err(JsValue::from_str(
-                    "Publish requires SharedArrayBuffer in new format",
-                ));
+
+            fb::MainContent::Publish => {
+                let publish = main_message.content_as_publish().unwrap();
+                let shared_buffer = shared_buffer
+                    .ok_or_else(|| JsValue::from_str("Publish requires SharedArrayBuffer"))?;
+
+                let publish_id = publish.publish_id().to_string();
+                let template = Template::from_flatbuffer(&publish.template());
+
+                self.network_manager
+                    .publish_event(publish_id, &template, shared_buffer)
+                    .await
+                    .map_err(|e| JsValue::from_str(&format!("Failed to publish event: {}", e)))?;
             }
-            MainToWorkerMessage::SignEvent { template } => {
-                self.sign_event(template)?;
+
+            fb::MainContent::SignEvent => {
+                if let Some(sign_event) = main_message.content_as_sign_event() {
+                    let template = Template::from_flatbuffer(&sign_event.template());
+                    self.sign_event(template)?;
+                } else {
+                    return Err(JsValue::from_str("Invalid SignEvent message"));
+                }
             }
-            MainToWorkerMessage::SetSigner {
-                signer_type,
-                private_key,
-            } => {
-                self.set_signer(signer_type, private_key)?;
+
+            fb::MainContent::SetSigner => {
+                let set_signer = main_message.content_as_set_signer().unwrap();
+                match set_signer.signer_type_type() {
+                    fb::SignerType::PrivateKey => {
+                        let pk_type = set_signer.signer_type_as_private_key().unwrap();
+                        self.signer_manager
+                            .set_privatekey_signer(pk_type.private_key())
+                            .map_err(|e| {
+                                JsValue::from_str(&format!(
+                                    "Failed to set private key signer: {}",
+                                    e
+                                ))
+                            })?;
+                    }
+                    _ => {
+                        // Handle other signer types here
+                    }
+                }
+
+                // self.set_signer(set_signer)?;
             }
-            MainToWorkerMessage::GetPublicKey {} => {
+
+            fb::MainContent::GetPublicKey => {
+                // GetPublicKey has no fields, just process it
                 self.get_public_key()?;
             }
+
+            _ => {
+                return Err(JsValue::from_str("Empty message content"));
+            }
         }
-
-        Ok(())
-    }
-
-    async fn open_subscription_with_config(
-        &self,
-        subscription_id: String,
-        requests_data: &[u8],
-        shared_buffer: SharedArrayBuffer,
-        config: Option<crate::types::thread::SubscriptionConfig>,
-    ) -> Result<(), JsValue> {
-        let requests: Vec<Request> = rmp_serde::from_slice(requests_data)
-            .map_err(|e| JsValue::from_str(&format!("Failed to deserialize requests: {}", e)))?;
-
-        self.network_manager
-            .open_subscription(subscription_id, requests, shared_buffer, config)
-            .await
-            .map_err(|e| JsValue::from_str(&format!("Failed to open subscription: {}", e)))?;
 
         Ok(())
     }

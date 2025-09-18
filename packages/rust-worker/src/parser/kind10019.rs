@@ -1,8 +1,9 @@
 use crate::nostr::Template;
 use crate::parser::Parser;
+use crate::parser::{ParserError, Result};
+use crate::signer::interface::SignerManagerInterface;
 use crate::types::network::Request;
-use crate::types::nostr::{Event, UnsignedEvent};
-use anyhow::{anyhow, Result};
+use crate::types::nostr::Event;
 use tracing::info;
 
 // NEW: Imports for FlatBuffers
@@ -26,7 +27,7 @@ impl Parser {
         event: &Event,
     ) -> Result<(Kind10019Parsed, Option<Vec<Request>>)> {
         if event.kind != 10019 {
-            return Err(anyhow!("event is not kind 10019"));
+            return Err(ParserError::Other("event is not kind 10019".to_string()));
         }
 
         let mut parsed = Kind10019Parsed {
@@ -71,7 +72,9 @@ impl Parser {
 
         // Check if required fields are present
         if parsed.trusted_mints.is_empty() || parsed.p2pk_pubkey.is_none() {
-            return Err(anyhow!("missing required mint tags or pubkey tag"));
+            return Err(ParserError::Other(
+                "missing required mint tags or pubkey tag".to_string(),
+            ));
         }
 
         Ok((parsed, None))
@@ -79,7 +82,7 @@ impl Parser {
 
     pub fn prepare_kind_10019(&self, template: &Template) -> Result<Event> {
         if template.kind != 10019 {
-            return Err(anyhow!("event is not kind 10019"));
+            return Err(ParserError::Other("event is not kind 10019".to_string()));
         }
 
         // Validate required tags
@@ -97,15 +100,19 @@ impl Parser {
         }
 
         if !has_mint {
-            return Err(anyhow!("kind 10019 must include at least one mint tag"));
+            return Err(ParserError::Other(
+                "kind 10019 must include at least one mint tag".to_string(),
+            ));
         }
 
         if !has_pubkey {
-            return Err(anyhow!("kind 10019 must include a pubkey tag"));
+            return Err(ParserError::Other(
+                "kind 10019 must include a pubkey tag".to_string(),
+            ));
         }
         self.signer_manager
             .sign_event(template)
-            .map_err(|e| anyhow!("failed to sign event: {}", e))
+            .map_err(|e| ParserError::Other(format!("failed to sign event: {}", e)))
     }
 }
 

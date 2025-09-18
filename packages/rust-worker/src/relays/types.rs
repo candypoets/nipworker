@@ -3,10 +3,7 @@
 //! This module defines the message types used in the Nostr relay protocol
 //! as specified in NIP-01, along with connection and operation status types.
 
-use crate::types::nostr::{Event, EventId, Filter};
-use futures::future::AbortHandle;
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use crate::types::nostr::{Event, Filter};
 use thiserror::Error;
 
 /// Client-to-relay messages as defined in NIP-01
@@ -127,7 +124,7 @@ pub enum PublishStatus {
 pub struct RelayResponse {
     pub relay_url: String,
     pub message: RelayMessage,
-    pub timestamp: instant::Instant,
+    pub timestamp: u64,
 }
 
 /// Error types for relay operations
@@ -138,12 +135,6 @@ pub enum RelayError {
 
     #[error("Connection error: {0}")]
     ConnectionError(String),
-
-    #[error("Parse error: {0}")]
-    ParseError(#[from] serde_json::Error),
-
-    #[error("Serialize error: {0}")]
-    SerializeError(serde_json::Error),
 
     #[error("Invalid URL: {0}")]
     InvalidUrl(String),
@@ -219,36 +210,7 @@ pub struct ConnectionStats {
     /// Number of reconnection attempts
     pub reconnect_attempts: usize,
     /// Connection uptime
-    pub connected_at: Option<instant::Instant>,
-}
-
-impl ConnectionStats {
-    pub fn uptime(&self) -> Option<std::time::Duration> {
-        self.connected_at.map(|start| start.elapsed())
-    }
-}
-
-/// Handle for cancelling operations
-#[derive(Debug)]
-pub struct CancellationToken {
-    pub(crate) abort_handle: AbortHandle,
-}
-
-impl CancellationToken {
-    /// Create a new cancellation token
-    pub fn new(abort_handle: AbortHandle) -> Self {
-        Self { abort_handle }
-    }
-
-    /// Cancel the operation
-    pub fn cancel(&self) {
-        self.abort_handle.abort();
-    }
-
-    /// Check if the operation was cancelled
-    pub fn is_cancelled(&self) -> bool {
-        self.abort_handle.is_aborted()
-    }
+    pub connected_at: Option<u64>,
 }
 
 /// Utility functions for message handling
@@ -290,130 +252,6 @@ impl ClientMessage {
             ClientMessage::Close { subscription_id } => {
                 Ok(format!(r#"["CLOSE","{}"]"#, subscription_id))
             }
-        }
-    }
-}
-
-impl RelayMessage {
-    /// Parse from JSON array format as per NIP-01
-    pub fn from_json(json: &str) -> Result<Self, RelayError> {
-        let value: serde_json::Value = serde_json::from_str(json)?;
-        let array = value.as_array().ok_or(RelayError::InvalidMessage)?;
-
-        if array.is_empty() {
-            return Err(RelayError::InvalidMessage);
-        }
-
-        let message_type = array[0].as_str().ok_or(RelayError::InvalidMessage)?;
-
-        match message_type {
-            "EVENT" => {
-                if array.len() != 3 {
-                    return Err(RelayError::InvalidMessage);
-                }
-                let subscription_id = array[1]
-                    .as_str()
-                    .ok_or(RelayError::InvalidMessage)?
-                    .to_string();
-                let event: Event = serde_json::from_value(array[2].clone())?;
-                Ok(RelayMessage::Event {
-                    message_type: "EVENT".to_string(),
-                    subscription_id,
-                    event,
-                })
-            }
-            "OK" => {
-                if array.len() != 4 {
-                    return Err(RelayError::InvalidMessage);
-                }
-                let event_id = array[1]
-                    .as_str()
-                    .ok_or(RelayError::InvalidMessage)?
-                    .to_string();
-                let accepted = array[2].as_bool().ok_or(RelayError::InvalidMessage)?;
-                let message = array[3]
-                    .as_str()
-                    .ok_or(RelayError::InvalidMessage)?
-                    .to_string();
-                Ok(RelayMessage::Ok {
-                    message_type: "OK".to_string(),
-                    event_id,
-                    accepted,
-                    message,
-                })
-            }
-            "EOSE" => {
-                if array.len() != 2 {
-                    return Err(RelayError::InvalidMessage);
-                }
-                let subscription_id = array[1]
-                    .as_str()
-                    .ok_or(RelayError::InvalidMessage)?
-                    .to_string();
-                Ok(RelayMessage::Eose {
-                    message_type: "EOSE".to_string(),
-                    subscription_id,
-                })
-            }
-            "CLOSED" => {
-                if array.len() != 3 {
-                    return Err(RelayError::InvalidMessage);
-                }
-                let subscription_id = array[1]
-                    .as_str()
-                    .ok_or(RelayError::InvalidMessage)?
-                    .to_string();
-                let message = array[2]
-                    .as_str()
-                    .ok_or(RelayError::InvalidMessage)?
-                    .to_string();
-                Ok(RelayMessage::Closed {
-                    message_type: "CLOSED".to_string(),
-                    subscription_id,
-                    message,
-                })
-            }
-            "NOTICE" => {
-                if array.len() != 2 {
-                    return Err(RelayError::InvalidMessage);
-                }
-                let message = array[1]
-                    .as_str()
-                    .ok_or(RelayError::InvalidMessage)?
-                    .to_string();
-                Ok(RelayMessage::Notice {
-                    message_type: "NOTICE".to_string(),
-                    message,
-                })
-            }
-            _ => Err(RelayError::ProtocolError(format!(
-                "Unknown message type: {}",
-                message_type
-            ))),
-        }
-    }
-
-    /// Get the subscription ID if this is a subscription-related message
-    pub fn subscription_id(&self) -> Option<&str> {
-        match self {
-            RelayMessage::Event {
-                subscription_id, ..
-            }
-            | RelayMessage::Eose {
-                subscription_id, ..
-            }
-            | RelayMessage::Closed {
-                subscription_id, ..
-            } => Some(subscription_id),
-            _ => None,
-        }
-    }
-
-    /// Get the event ID if this is an OK message
-    pub fn event_id(&self) -> Option<&str> {
-        match self {
-            RelayMessage::Ok { event_id, .. } => Some(event_id),
-            _ => None,
         }
     }
 }

@@ -1,14 +1,19 @@
 use crate::{
     nostr::{timestamp_now, Template},
+    signer::{
+        nip44::{decrypt, encrypt, ConversationKey},
+        SignerError,
+    },
     types::{Event, Keys, PublicKey},
-    EventId,
+    EventId, SecretKey,
 };
-use anyhow::Result;
 use k256::schnorr::signature::Signer;
 use k256::schnorr::SigningKey;
 use tracing::{debug, info};
 
-use super::interface::Signer as SignerInterface;
+use super::interface::SignerInterface;
+
+type Result<T> = std::result::Result<T, SignerError>;
 
 /// PrivateKeySigner provides cryptographic operations using a private key
 /// It implements methods for NIP-04, NIP-44 encryption/decryption, and event signing
@@ -20,7 +25,8 @@ pub struct PrivateKeySigner {
 impl PrivateKeySigner {
     /// Creates a new PrivateKeySigner from a hex-encoded private key
     pub fn new(private_key_hex: &str) -> Result<Self> {
-        let secret_key = crate::types::SecretKey::from_hex(private_key_hex)?;
+        let secret_key = SecretKey::from_hex(private_key_hex)
+            .map_err(|e| SignerError::Other(format!("Invalid private key: {}", e)))?;
         let keys = Keys::new(secret_key);
 
         info!(
@@ -33,7 +39,8 @@ impl PrivateKeySigner {
 
     /// Creates a new PrivateKeySigner from an nsec (bech32-encoded private key)
     pub fn from_nsec(nsec: &str) -> Result<Self> {
-        let keys = Keys::parse(nsec)?;
+        let keys =
+            Keys::parse(nsec).map_err(|e| SignerError::Other(format!("Invalid nsec: {}", e)))?;
 
         info!(
             "Created new PrivateKeySigner from nsec with public key: {}",
@@ -76,8 +83,6 @@ impl SignerInterface for PrivateKeySigner {
 
     /// Signs a nostr event with the private key
     fn sign_event(&self, template: &Template) -> Result<Event> {
-        debug!("Signing event of kind {}", template.kind);
-
         let created_at = timestamp_now();
         let pubkey = self.keys.public_key();
 
@@ -92,10 +97,18 @@ impl SignerInterface for PrivateKeySigner {
         };
 
         // Compute the event ID
-        event.compute_id()?;
+        event
+            .compute_id()
+            .map_err(|e| SignerError::Other(format!("Failed to compute event ID: {}", e)))?;
 
         // Sign the event
-        let signing_key = SigningKey::from_bytes(&self.keys.secret_key.0)?;
+        let secret_key = self
+            .keys
+            .secret_key()
+            .map_err(|e| SignerError::Other(format!("Failed to get secret key: {}", e)))?;
+
+        let signing_key = SigningKey::from_bytes(&secret_key.0)
+            .map_err(|e| SignerError::Other(format!("Failed to create signing key: {}", e)))?;
 
         let signature = signing_key.sign(&event.id.0);
         event.sig = hex::encode(signature.to_bytes());
@@ -114,11 +127,11 @@ impl SignerInterface for PrivateKeySigner {
     /// Encrypts a message for a recipient using NIP-04
     fn nip04_encrypt(&self, recipient_pubkey: &str, plaintext: &str) -> Result<String> {
         let recipient_pk = PublicKey::from_hex(recipient_pubkey)
-            .map_err(|e| anyhow::anyhow!("Invalid recipient public key: {}", e))?;
+            .map_err(|e| SignerError::Other(format!("Invalid recipient public key: {}", e)))?;
         let secret_key = self
             .keys
             .secret_key()
-            .map_err(|e| anyhow::anyhow!("Failed to get secret key: {}", e))?;
+            .map_err(|e| SignerError::Other(format!("Failed to get secret key: {}", e)))?;
 
         debug!(
             "Encrypting message using NIP-04 for recipient: {}",
@@ -135,11 +148,11 @@ impl SignerInterface for PrivateKeySigner {
     /// Decrypts a message from a sender using NIP-04
     fn nip04_decrypt(&self, sender_pubkey: &str, ciphertext: &str) -> Result<String> {
         let sender_pk = PublicKey::from_hex(sender_pubkey)
-            .map_err(|e| anyhow::anyhow!("Invalid sender public key: {}", e))?;
+            .map_err(|e| SignerError::Other(format!("Invalid sender public key: {}", e)))?;
         let secret_key = self
             .keys
             .secret_key()
-            .map_err(|e| anyhow::anyhow!("Failed to get secret key: {}", e))?;
+            .map_err(|e| SignerError::Other(format!("Failed to get secret key: {}", e)))?;
 
         debug!(
             "Decrypting message using NIP-04 from sender: {}",
@@ -156,19 +169,22 @@ impl SignerInterface for PrivateKeySigner {
     /// Encrypts a message for a recipient using NIP-44
     fn nip44_encrypt(&self, recipient_pubkey: &str, plaintext: &str) -> Result<String> {
         let recipient_pk = PublicKey::from_hex(recipient_pubkey)
-            .map_err(|e| anyhow::anyhow!("Invalid recipient public key: {}", e))?;
+            .map_err(|e| SignerError::Other(format!("Invalid recipient public key: {}", e)))?;
         let secret_key = self
             .keys
             .secret_key()
-            .map_err(|e| anyhow::anyhow!("Failed to get secret key: {}", e))?;
+            .map_err(|e| SignerError::Other(format!("Failed to get secret key: {}", e)))?;
 
         debug!(
             "Encrypting message using NIP-44 for recipient: {}",
             recipient_pubkey
         );
 
-        // TODO: Implement NIP-44 encryption
-        let encrypted = format!("nip44_encrypted_{}", plaintext);
+        // Derive conversation key from our secret key and recipient's public key
+        let conversation_key = ConversationKey::derive(&secret_key, &recipient_pk)?;
+
+        // Encrypt the plaintext using NIP-44
+        let encrypted = encrypt(plaintext, &conversation_key)?;
 
         debug!("Successfully encrypted message using NIP-44");
         Ok(encrypted)
@@ -177,19 +193,22 @@ impl SignerInterface for PrivateKeySigner {
     /// Decrypts a message from a sender using NIP-44
     fn nip44_decrypt(&self, sender_pubkey: &str, ciphertext: &str) -> Result<String> {
         let sender_pk = PublicKey::from_hex(sender_pubkey)
-            .map_err(|e| anyhow::anyhow!("Invalid sender public key: {}", e))?;
+            .map_err(|e| SignerError::Other(format!("Invalid sender public key: {}", e)))?;
         let secret_key = self
             .keys
             .secret_key()
-            .map_err(|e| anyhow::anyhow!("Failed to get secret key: {}", e))?;
+            .map_err(|e| SignerError::Other(format!("Failed to get secret key: {}", e)))?;
 
         debug!(
             "Decrypting message using NIP-44 from sender: {}",
             sender_pubkey
         );
 
-        // TODO: Implement NIP-44 decryption
-        let decrypted = ciphertext.replace("nip44_encrypted_", "");
+        // Derive conversation key from secret key and sender's public key
+        let conversation_key = ConversationKey::derive(&secret_key, &sender_pk)?;
+
+        // Decrypt the ciphertext using NIP-44
+        let decrypted = decrypt(ciphertext, &conversation_key)?;
 
         debug!("Successfully decrypted message using NIP-44");
         Ok(decrypted)

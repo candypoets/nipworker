@@ -1,9 +1,11 @@
 use crate::nostr::Template;
+use crate::parser::{ParserError, Result};
+use crate::signer::interface::SignerManagerInterface;
 use crate::types::network::Request;
-use crate::types::nostr::{Event, UnsignedEvent};
+use crate::types::nostr::Event;
+use crate::types::proof::TokenContent;
 use crate::{parser::Parser, Proof};
-use anyhow::{anyhow, Result};
-use serde::{Deserialize, Serialize};
+
 use tracing::warn;
 
 // NEW: Imports for FlatBuffers
@@ -16,19 +18,10 @@ pub struct Kind7375Parsed {
     pub decrypted: bool,
 }
 
-#[derive(Deserialize)]
-struct TokenContent {
-    pub mint: String,
-    pub proofs: Vec<Proof>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
-    pub del: Option<Vec<String>>,
-}
-
 impl Parser {
     pub fn parse_kind_7375(&self, event: &Event) -> Result<(Kind7375Parsed, Option<Vec<Request>>)> {
         if event.kind != 7375 {
-            return Err(anyhow!("event is not kind 7375"));
+            return Err(ParserError::Other("event is not kind 7375".to_string()));
         }
 
         let mut parsed = Kind7375Parsed {
@@ -44,12 +37,12 @@ impl Parser {
             let pubkey = signer.get_public_key()?;
             if let Ok(decrypted) = signer.nip44_decrypt(&pubkey, &event.content) {
                 if !decrypted.is_empty() {
-                    if let Ok(content) = serde_json::from_str::<TokenContent>(&decrypted) {
+                    if let Ok(content) = TokenContent::from_json(&decrypted) {
                         parsed.mint_url = content.mint;
                         parsed.proofs = content.proofs;
                         parsed.deleted_ids = content.del.unwrap_or_default();
                         parsed.decrypted = true;
-                    } else if let Err(e) = serde_json::from_str::<TokenContent>(&decrypted) {
+                    } else if let Err(e) = TokenContent::from_json(&decrypted) {
                         warn!("Failed to parse 7375 token content: {}", e);
                     }
                 }
@@ -63,26 +56,32 @@ impl Parser {
 
     pub fn prepare_kind_7375(&self, template: &Template) -> Result<Event> {
         if template.kind != 7375 {
-            return Err(anyhow!("event is not kind 7375"));
+            return Err(ParserError::Other("event is not kind 7375".to_string()));
         }
 
         // Content must be a valid JSON for TokenContent
-        let _content: TokenContent = serde_json::from_str(&template.content)
-            .map_err(|e| anyhow!("invalid token content: {}", e))?;
+        let _content: TokenContent = TokenContent::from_json(&template.content)
+            .map_err(|e| ParserError::Other(format!("invalid token content: {}", e)))?;
 
         // Validate content
         if _content.mint.is_empty() {
-            return Err(anyhow!("token content must specify a mint"));
+            return Err(ParserError::Other(
+                "token content must specify a mint".to_string(),
+            ));
         }
 
         if _content.proofs.is_empty() {
-            return Err(anyhow!("token content must include at least one proof"));
+            return Err(ParserError::Other(
+                "token content must include at least one proof".to_string(),
+            ));
         }
 
         let signer = &self.signer_manager;
 
         if !signer.has_signer() {
-            return Err(anyhow!("no signer available for encryption"));
+            return Err(ParserError::Other(
+                "no signer available for encryption".to_string(),
+            ));
         }
 
         let pubkey = signer.get_public_key()?;

@@ -1,5 +1,5 @@
+use crate::parser::{ParserError, Result};
 use crate::types::nostr::nips::nip19::{self, Nip19};
-use anyhow::Result;
 use regex::Regex;
 
 use crate::generated::nostr::fb;
@@ -682,30 +682,34 @@ fn process_link(text: &str, _caps: &regex::Captures) -> Result<ContentBlock> {
     Ok(
         ContentBlock::new("link".to_string(), text.to_string()).with_data(ContentData::Link {
             url: text.to_string(),
-            title: Some(
-                preview["title"]
-                    .as_str()
-                    .unwrap_or("Link Preview")
-                    .to_string(),
-            ),
-            description: Some(
-                preview["description"]
-                    .as_str()
-                    .unwrap_or("Link preview not implemented")
-                    .to_string(),
-            ),
-            image: preview["url"].as_str().map(|s| s.to_string()),
+            title: preview.title,
+            description: preview.description,
+            image: preview.image,
         }),
     )
 }
 
-fn get_link_preview(url: &str) -> serde_json::Value {
-    // Placeholder for link preview functionality
-    serde_json::json!({
-        "url": format!("https://proxy.nuts.cash/?url={}", url),
-        "title": "Link Preview",
-        "description": "Link preview not implemented"
-    })
+#[derive(Debug, Clone)]
+pub struct LinkPreview {
+    pub url: String,
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub image: Option<String>,
+}
+
+impl LinkPreview {
+    pub fn new(url: &str) -> Self {
+        Self {
+            url: format!("https://proxy.nuts.cash/?url={}", url),
+            title: Some("Link Preview".to_string()),
+            description: Some("Link preview not implemented".to_string()),
+            image: None,
+        }
+    }
+}
+
+fn get_link_preview(url: &str) -> LinkPreview {
+    LinkPreview::new(url)
 }
 
 // Public function to parse content

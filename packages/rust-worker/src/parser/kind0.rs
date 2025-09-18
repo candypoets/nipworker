@@ -1,8 +1,7 @@
+use crate::parser::{ParserError, Result};
 use crate::types::nostr::Event;
 use crate::{generated::nostr::*, parser::Parser, types::network::Request};
-use anyhow::{anyhow, Result};
 use rustc_hash::FxHashMap;
-use serde_json::Value;
 
 pub struct Kind0Parsed {
     pub pubkey: String,
@@ -29,6 +28,197 @@ pub struct Kind0Parsed {
     pub background: Option<String>,
 }
 
+impl Kind0Parsed {
+    #[inline(always)]
+    fn parse_profile_json(json_str: &str) -> Result<Kind0Parsed> {
+        // Unescape the entire JSON string first
+        let unescaped = Self::unescape_json(json_str);
+        let parser = ProfileJsonParser::new(unescaped.as_bytes());
+        parser.parse()
+    }
+
+    #[inline(always)]
+    fn unescape_json(input: &str) -> String {
+        let mut result = String::with_capacity(input.len());
+        let mut chars = input.chars().peekable();
+
+        while let Some(ch) = chars.next() {
+            if ch == '\\' {
+                if let Some(&next_ch) = chars.peek() {
+                    match next_ch {
+                        '"' | '\\' | '/' | '{' | '}' | '[' | ']' => {
+                            chars.next(); // consume the escaped char
+                            result.push(next_ch);
+                        }
+                        _ => {
+                            // Keep the backslash for other escape sequences that will be handled during parsing
+                            result.push(ch);
+                        }
+                    }
+                } else {
+                    result.push(ch);
+                }
+            } else {
+                result.push(ch);
+            }
+        }
+
+        result
+    }
+}
+
+struct ProfileJsonParser<'a> {
+    bytes: &'a [u8],
+    pos: usize,
+}
+
+impl<'a> ProfileJsonParser<'a> {
+    #[inline(always)]
+    fn new(bytes: &'a [u8]) -> Self {
+        Self { bytes, pos: 0 }
+    }
+
+    #[inline(always)]
+    fn parse(mut self) -> Result<Kind0Parsed> {
+        self.skip_whitespace();
+        self.expect_byte(b'{')?;
+
+        let mut profile = Kind0Parsed {
+            pubkey: "".to_string(),
+            name: None,
+            display_name: None,
+            picture: None,
+            banner: None,
+            website: None,
+            about: None,
+            nip05: None,
+            lud06: None,
+            lud16: None,
+            github: None,
+            twitter: None,
+            mastodon: None,
+            nostr: None,
+            display_name_alt: None,
+            username: None,
+            bio: None,
+            image: None,
+            avatar: None,
+            background: None,
+        };
+
+        while self.pos < self.bytes.len() {
+            self.skip_whitespace();
+            if self.peek() == b'}' {
+                self.pos += 1;
+                break;
+            }
+
+            let key = self.parse_string()?;
+            self.skip_whitespace();
+            self.expect_byte(b':')?;
+            self.skip_whitespace();
+
+            let value = self.parse_string()?;
+            let str_value = if value.is_empty() {
+                None
+            } else {
+                Some(value.to_string())
+            };
+
+            // Match field names to profile fields
+            match key {
+                "name" => profile.name = str_value,
+                "display_name" => profile.display_name = str_value,
+                "displayName" => profile.display_name_alt = str_value,
+                "username" => profile.username = str_value,
+                "picture" => profile.picture = str_value,
+                "image" => profile.image = str_value,
+                "avatar" => profile.avatar = str_value,
+                "banner" => profile.banner = str_value,
+                "background" => profile.background = str_value,
+                "about" => profile.about = str_value,
+                "bio" => profile.bio = str_value,
+                "website" => profile.website = str_value,
+                "nip05" => profile.nip05 = str_value,
+                "lud06" => profile.lud06 = str_value,
+                "lud16" => profile.lud16 = str_value,
+                "github" => profile.github = str_value,
+                "twitter" => profile.twitter = str_value,
+                "mastodon" => profile.mastodon = str_value,
+                "nostr" => profile.nostr = str_value,
+                _ => {} // Ignore unknown fields
+            }
+
+            self.skip_comma_or_end()?;
+        }
+
+        Ok(profile)
+    }
+
+    #[inline(always)]
+    fn peek(&self) -> u8 {
+        self.bytes[self.pos]
+    }
+
+    #[inline(always)]
+    fn skip_whitespace(&mut self) {
+        while self.pos < self.bytes.len() && self.bytes[self.pos].is_ascii_whitespace() {
+            self.pos += 1;
+        }
+    }
+
+    #[inline(always)]
+    fn expect_byte(&mut self, expected: u8) -> Result<()> {
+        if self.pos >= self.bytes.len() || self.bytes[self.pos] != expected {
+            return Err(ParserError::InvalidFormat(
+                "Unexpected byte in profile JSON".to_string(),
+            ));
+        }
+        self.pos += 1;
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn parse_string(&mut self) -> Result<&'a str> {
+        self.expect_byte(b'"')?;
+        let start = self.pos;
+
+        // Find the end quote, handling escaped quotes
+        while self.pos < self.bytes.len() {
+            match self.bytes[self.pos] {
+                b'"' => {
+                    let result =
+                        unsafe { std::str::from_utf8_unchecked(&self.bytes[start..self.pos]) };
+                    self.pos += 1;
+                    return Ok(result);
+                }
+                b'\\' => {
+                    // Skip escaped character (simple handling for common escapes)
+                    if self.pos + 1 < self.bytes.len() {
+                        self.pos += 2; // Skip \ and next char
+                    } else {
+                        self.pos += 1;
+                    }
+                }
+                _ => self.pos += 1,
+            }
+        }
+
+        Err(ParserError::InvalidFormat(
+            "Unterminated string in profile JSON".to_string(),
+        ))
+    }
+
+    #[inline(always)]
+    fn skip_comma_or_end(&mut self) -> Result<()> {
+        self.skip_whitespace();
+        if self.pos < self.bytes.len() && self.bytes[self.pos] == b',' {
+            self.pos += 1;
+        }
+        Ok(())
+    }
+}
+
 pub struct ProfilePointer {
     pub pubkey: String,
     pub relays: Vec<String>,
@@ -42,7 +232,7 @@ pub struct Nip05Response {
 impl Parser {
     pub fn parse_kind_0(&self, event: &Event) -> Result<(Kind0Parsed, Option<Vec<Request>>)> {
         if event.kind != 0 {
-            return Err(anyhow!("event is not kind 0"));
+            return Err(ParserError::Other("event is not kind 0".to_string()));
         }
 
         let mut profile = Kind0Parsed {
@@ -70,40 +260,16 @@ impl Parser {
 
         // Parse the content JSON
         if !event.content.is_empty() {
-            if let Ok(content_value) = serde_json::from_str::<Value>(&event.content) {
-                if let Some(content_obj) = content_value.as_object() {
-                    for (key, value) in content_obj {
-                        if let Some(str_value) = value.as_str() {
-                            let str_value = if str_value.is_empty() {
-                                None
-                            } else {
-                                Some(str_value.to_string())
-                            };
-
-                            match key.as_str() {
-                                "name" => profile.name = str_value,
-                                "display_name" => profile.display_name = str_value,
-                                "displayName" => profile.display_name_alt = str_value,
-                                "username" => profile.username = str_value,
-                                "picture" => profile.picture = str_value,
-                                "image" => profile.image = str_value,
-                                "avatar" => profile.avatar = str_value,
-                                "banner" => profile.banner = str_value,
-                                "background" => profile.background = str_value,
-                                "about" => profile.about = str_value,
-                                "bio" => profile.bio = str_value,
-                                "website" => profile.website = str_value,
-                                "nip05" => profile.nip05 = str_value,
-                                "lud06" => profile.lud06 = str_value,
-                                "lud16" => profile.lud16 = str_value,
-                                "github" => profile.github = str_value,
-                                "twitter" => profile.twitter = str_value,
-                                "mastodon" => profile.mastodon = str_value,
-                                "nostr" => profile.nostr = str_value,
-                                _ => {} // Ignore unknown fields
-                            }
-                        }
-                    }
+            match Kind0Parsed::parse_profile_json(&event.content) {
+                Ok(parsed_profile) => {
+                    profile = parsed_profile;
+                }
+                Err(e) => {
+                    tracing::error!(
+                        "Failed to parse profile JSON for event {}: {}",
+                        event.content(),
+                        e
+                    );
                 }
             }
         }
@@ -116,7 +282,7 @@ impl Parser {
                 profile.name = Some(display_name_alt.clone());
             }
         }
-
+        profile.pubkey = event.pubkey.to_hex();
         // Note: NIP-05 verification is commented out in the original Go code
         // because synchronous HTTP requests can cause deadlocks
         // We would need to implement async verification separately

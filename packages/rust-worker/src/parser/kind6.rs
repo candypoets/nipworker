@@ -1,10 +1,10 @@
 use crate::parsed_event::ParsedData;
+use crate::parser::{ParserError, Result};
 use crate::types::network::Request;
 use crate::types::nostr::{Event, Kind, REPOST};
 use crate::utils::request_deduplication::RequestDeduplicator;
 use crate::TEXT_NOTE;
 use crate::{parsed_event::ParsedEvent, parser::Parser};
-use anyhow::{anyhow, Result};
 
 use tracing::debug;
 
@@ -12,14 +12,14 @@ use tracing::debug;
 use crate::generated::nostr::*;
 
 pub struct Kind6Parsed {
-    pub reposted_event: Option<serde_json::Value>,
+    pub reposted_event: Option<Event>,
 }
 
 impl Parser {
     pub fn parse_kind_6(&self, event: &Event) -> Result<(Kind6Parsed, Option<Vec<Request>>)> {
         let mut requests = Vec::<Request>::new();
         if event.kind() != REPOST {
-            return Err(anyhow!("event is not kind 6"));
+            return Err(ParserError::Other("event is not kind 6".to_string()));
         }
 
         // Add request for the author's metadata
@@ -42,7 +42,11 @@ impl Parser {
             .find(|tag| tag.first().map(|s| s.as_str()) == Some("e"))
         {
             Some(tag) if tag.len() >= 2 => tag,
-            _ => return Err(anyhow!("repost must have at least one e tag")),
+            _ => {
+                return Err(ParserError::Other(
+                    "repost must have at least one e tag".to_string(),
+                ))
+            }
         };
 
         let event_id = e_tag[1].clone();
@@ -54,14 +58,14 @@ impl Parser {
         }
 
         // Try to parse the reposted event from content
-        let mut reposted_event = None;
+        let reposted_event: Option<Event> = None;
 
         if !event.content.is_empty() {
             debug!(
                 "Attempting to parse reposted event from content: {}",
                 event.content
             );
-            match serde_json::from_str::<Event>(&event.content) {
+            match Event::from_json(&event.content) {
                 Ok(parsed_event)
                     if !parsed_event.id.to_string().is_empty()
                         && parsed_event.kind() == TEXT_NOTE =>
@@ -76,6 +80,8 @@ impl Parser {
                                 relays: vec![],
                                 requests: Some(vec![]),
                             };
+
+                            // reposted_event = parsed_event_struct;
                             // reposted_event = serde_json::to_value(parsed_event_struct).ok();
 
                             // Add all requests from kind1 parsing
@@ -112,7 +118,7 @@ impl Parser {
         let result = Kind6Parsed { reposted_event };
 
         // Deduplicate requests using the utility
-        let deduplicated_requests = RequestDeduplicator::deduplicate_requests(requests);
+        let deduplicated_requests = RequestDeduplicator::deduplicate_requests(&requests);
 
         Ok((result, Some(deduplicated_requests)))
     }

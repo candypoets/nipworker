@@ -33,37 +33,6 @@ optimize_wasm() {
         # Create backup
         cp "$file_path" "$backup_path"
 
-        # Try full optimization first
-        echo "Applying full wasm-opt optimizations..."
-        if wasm-opt -O3 \
-            --enable-simd \
-            --enable-bulk-memory \
-            --enable-sign-ext \
-            --enable-mutable-globals \
-            --enable-nontrapping-float-to-int \
-            --inline-functions-with-loops \
-            --optimize-for-js \
-            --strip-debug \
-            --strip-producers \
-            "$backup_path" -o "$file_path"; then
-            echo "✅ Full optimization successful"
-        else
-            echo "⚠️ Full optimization failed, trying fallback..."
-            if wasm-opt -O2 \
-                --enable-bulk-memory \
-                --enable-sign-ext \
-                --strip-debug \
-                --strip-producers \
-                "$backup_path" -o "$file_path"; then
-                echo "✅ Fallback optimization successful"
-            else
-                echo "⚠️ All optimizations failed, using unoptimized version"
-                mv "$backup_path" "$file_path"
-                rm -f "$backup_path"
-                return 0
-            fi
-        fi
-
         # Get optimized size
         OPTIMIZED_SIZE=$(wc -c < "$file_path")
         REDUCTION=$((ORIGINAL_SIZE - OPTIMIZED_SIZE))

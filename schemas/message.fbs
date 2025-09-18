@@ -1,5 +1,6 @@
 // Top-level schema that includes all dependencies
 include "common.fbs";
+include "main.fbs";
 include "kinds/kind0.fbs";
 include "kinds/kind1.fbs";
 include "kinds/kind3.fbs";
@@ -17,6 +18,7 @@ include "kinds/kind7376.fbs";
 include "kinds/kind9321.fbs";
 include "kinds/kind9735.fbs";
 
+
 namespace nostr.fb;
 
 // -- Union Types --
@@ -26,7 +28,9 @@ enum MessageType : uint32 {
   CountResponse = 2,
   Eoce = 3,
   BufferFull = 4,
-  ValidProofs = 5
+  ValidProofs = 5,
+  SignedEvent = 6,
+  Pubkey = 7,
 }
 
 enum ParsedDataUnion : uint32 {
@@ -109,6 +113,14 @@ table MintProofs {
   proofs: [Proof] (required);
 }
 
+table Pubkey {
+  pubkey: string (required);
+}
+
+table SignedEvent {
+    event: NostrEvent (required);
+}
+
 // Root union type
 union Message {
   ParsedEvent,
@@ -116,7 +128,9 @@ union Message {
   CountResponse,
   Eoce,
   BufferFull,
-  ValidProofs
+  ValidProofs,
+  SignedEvent,
+  Pubkey,
 }
 
 // NEW: Wrapper table

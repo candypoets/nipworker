@@ -1,12 +1,12 @@
 use crate::parser::Parser;
+use crate::parser::{ParserError, Result};
 use crate::types::network::Request;
 use crate::types::nostr::Event;
-use anyhow::{anyhow, Result};
-use serde_json::Value;
+use crate::utils::json::BaseJsonParser;
+use std::fmt::Write;
 
 // NEW: Imports for FlatBuffers
 use crate::generated::nostr::*;
-use flatbuffers::FlatBufferBuilder;
 
 pub struct Kind39089Parsed {
     pub list_identifier: String,
@@ -16,13 +16,114 @@ pub struct Kind39089Parsed {
     pub image: Option<String>,
 }
 
+impl Kind39089Parsed {
+    /// Parse Kind39089Parsed from JSON string
+    pub fn from_json(json: &str) -> Result<Self> {
+        let parser = Kind39089ParsedParser::new(json.as_bytes());
+        parser.parse()
+    }
+
+    /// Serialize Kind39089Parsed to JSON string
+    pub fn to_json(&self) -> String {
+        let mut result = String::with_capacity(self.calculate_json_size());
+
+        result.push('{');
+
+        // Required fields
+        write!(
+            result,
+            r#""list_identifier":"{}","people":["#,
+            Self::escape_string(&self.list_identifier)
+        )
+        .unwrap();
+
+        for (i, person) in self.people.iter().enumerate() {
+            if i > 0 {
+                result.push(',');
+            }
+            result.push('"');
+            Self::escape_string_to(&mut result, person);
+            result.push('"');
+        }
+        result.push_str("]");
+
+        // Optional fields
+        if let Some(ref title) = self.title {
+            write!(result, r#","title":"{}""#, Self::escape_string(title)).unwrap();
+        }
+        if let Some(ref description) = self.description {
+            write!(
+                result,
+                r#","description":"{}""#,
+                Self::escape_string(description)
+            )
+            .unwrap();
+        }
+        if let Some(ref image) = self.image {
+            write!(result, r#","image":"{}""#, Self::escape_string(image)).unwrap();
+        }
+
+        result.push('}');
+        result
+    }
+
+    #[inline(always)]
+    fn calculate_json_size(&self) -> usize {
+        let mut size = 30; // Base structure
+
+        // Required fields
+        size += self.list_identifier.len() * 2; // Escaping
+        for person in &self.people {
+            size += person.len() * 2 + 4; // Escaped string + quotes + comma
+        }
+
+        // Optional fields
+        if let Some(ref title) = self.title {
+            size += 10 + title.len() * 2; // "title":"" + escaping
+        }
+        if let Some(ref description) = self.description {
+            size += 16 + description.len() * 2; // "description":"" + escaping
+        }
+        if let Some(ref image) = self.image {
+            size += 10 + image.len() * 2; // "image":"" + escaping
+        }
+
+        size
+    }
+
+    #[inline(always)]
+    fn escape_string(s: &str) -> String {
+        if !s.contains('\\') && !s.contains('"') {
+            s.to_string()
+        } else {
+            let mut result = String::with_capacity(s.len() + 4);
+            Self::escape_string_to(&mut result, s);
+            result
+        }
+    }
+
+    #[inline(always)]
+    fn escape_string_to(result: &mut String, s: &str) {
+        for ch in s.chars() {
+            match ch {
+                '\\' => result.push_str("\\\\"),
+                '"' => result.push_str("\\\""),
+                '\n' => result.push_str("\\n"),
+                '\r' => result.push_str("\\r"),
+                '\t' => result.push_str("\\t"),
+                other => result.push(other),
+            }
+        }
+    }
+}
+
 impl Parser {
     pub fn parse_kind_39089(
         &self,
         event: &Event,
     ) -> Result<(Kind39089Parsed, Option<Vec<Request>>)> {
         if event.kind != 39089 {
-            return Err(anyhow!("event is not kind 39089"));
+            return Err(ParserError::Other("event is not kind 39089".to_string()));
         }
 
         let mut requests = Vec::new();
@@ -43,7 +144,9 @@ impl Parser {
         }
 
         if result.list_identifier.is_empty() {
-            return Err(anyhow!("missing required 'd' tag for list identifier"));
+            return Err(ParserError::Other(
+                "missing required 'd' tag for list identifier".to_string(),
+            ));
         }
 
         // Extract people from p tags
@@ -53,26 +156,17 @@ impl Parser {
             }
         }
 
-        // Parse content for metadata if present
+        // ✅ UPDATED: Parse content using our custom parser instead of serde_json
         if !event.content.is_empty() {
-            if let Ok(content_value) = serde_json::from_str::<Value>(&event.content) {
-                if let Some(content_obj) = content_value.as_object() {
-                    if let Some(title) = content_obj.get("title").and_then(|v| v.as_str()) {
-                        result.title = Some(title.to_string());
-                    }
-                    if let Some(description) =
-                        content_obj.get("description").and_then(|v| v.as_str())
-                    {
-                        result.description = Some(description.to_string());
-                    }
-                    if let Some(image) = content_obj.get("image").and_then(|v| v.as_str()) {
-                        result.image = Some(image.to_string());
-                    }
-                }
+            if let Ok(content) = Kind39089Parsed::from_json(&event.content) {
+                // Use the parsed content for metadata
+                result.title = content.title;
+                result.description = content.description;
+                result.image = content.image;
             }
         }
 
-        // Check for title, description, or image tags
+        // Check for title, description, or image tags (fallback)
         for tag in &event.tags {
             if tag.len() >= 2 {
                 match tag[0].as_str() {
@@ -143,4 +237,84 @@ pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
     let offset = fb::Kind39089Parsed::create(builder, &args);
 
     Ok(offset)
+}
+
+// Custom JSON parser for Kind39089Parsed
+struct Kind39089ParsedParser<'a>(BaseJsonParser<'a>);
+
+impl<'a> Kind39089ParsedParser<'a> {
+    #[inline(always)]
+    fn new(bytes: &'a [u8]) -> Self {
+        Self(BaseJsonParser::new(bytes))
+    }
+
+    #[inline(always)]
+    fn parse(mut self) -> Result<Kind39089Parsed> {
+        self.0.skip_whitespace();
+        self.0.expect_byte(b'{')?;
+
+        let mut list_identifier = String::new();
+        let mut people = Vec::new();
+        let mut title = None;
+        let mut description = None;
+        let mut image = None;
+
+        while self.0.pos < self.0.bytes.len() {
+            self.0.skip_whitespace();
+            if self.0.peek() == b'}' {
+                self.0.pos += 1;
+                break;
+            }
+
+            let key = self.0.parse_string()?;
+            self.0.skip_whitespace();
+            self.0.expect_byte(b':')?;
+            self.0.skip_whitespace();
+
+            match key {
+                "list_identifier" => list_identifier = self.0.parse_string()?.to_string(),
+                "people" => people = self.parse_string_array()?,
+                "title" => title = Some(self.0.parse_string()?.to_string()),
+                "description" => description = Some(self.0.parse_string()?.to_string()),
+                "image" => image = Some(self.0.parse_string()?.to_string()),
+                _ => self.0.skip_value()?,
+            }
+
+            self.0.skip_comma_or_end()?;
+        }
+
+        if list_identifier.is_empty() {
+            return Err(ParserError::InvalidFormat(
+                "Missing required list_identifier field".to_string(),
+            ));
+        }
+
+        Ok(Kind39089Parsed {
+            list_identifier,
+            people,
+            title,
+            description,
+            image,
+        })
+    }
+
+    #[inline(always)]
+    fn parse_string_array(&mut self) -> Result<Vec<String>> {
+        self.0.expect_byte(b'[')?;
+        let mut array = Vec::new();
+
+        while self.0.pos < self.0.bytes.len() {
+            self.0.skip_whitespace();
+            if self.0.peek() == b']' {
+                self.0.pos += 1;
+                break;
+            }
+
+            let value = self.0.parse_string()?.to_string();
+            array.push(value);
+            self.0.skip_comma_or_end()?;
+        }
+
+        Ok(array)
+    }
 }

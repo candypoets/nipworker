@@ -62,9 +62,9 @@ pub fn new_registry() -> ConnectionRegistry {
 
 /// Utility functions for the relay module
 pub mod utils {
-    const BLACKLISTED_RELAYS: &[&str] = &["wheat.happytavern.co"];
+    use crate::relays::RelayError;
 
-    use super::types::{ClientMessage, RelayError, RelayMessage};
+    const BLACKLISTED_RELAYS: &[&str] = &["wheat.happytavern.co"];
 
     /// Parse a relay message from JSON string
     // pub fn parse_relay_message(json: &str) -> Result<RelayMessage, RelayError> {

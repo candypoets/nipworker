@@ -1,18 +1,18 @@
 pub mod cache_processor;
 pub mod interfaces;
-pub mod optimizer;
 pub mod publish;
 pub mod subscription;
 
 use crate::db::NostrDB;
+use crate::generated::nostr::fb;
 use crate::nostr::Template;
 use crate::parser::Parser;
 use crate::relays::ConnectionRegistry;
-use crate::types::network::Request;
-use crate::types::*;
-use anyhow::Result;
+use crate::NostrError;
 use js_sys::SharedArrayBuffer;
 use std::sync::Arc;
+
+type Result<T> = std::result::Result<T, NostrError>;
 
 pub struct NetworkManager {
     publish_manager: publish::PublishManager,
@@ -31,8 +31,11 @@ impl NetworkManager {
             parser.clone(),
         );
 
-        let subscription_manager =
-            subscription::SubscriptionManager::new(database.clone(), parser.clone());
+        let subscription_manager = subscription::SubscriptionManager::new(
+            database.clone(),
+            connection_registry.clone(),
+            parser.clone(),
+        );
 
         Self {
             publish_manager,
@@ -43,12 +46,12 @@ impl NetworkManager {
     pub async fn open_subscription(
         &self,
         subscription_id: String,
-        requests: Vec<Request>,
         shared_buffer: SharedArrayBuffer,
-        config: Option<SubscriptionConfig>,
+        requests: &Vec<fb::Request<'_>>,
+        config: &fb::SubscriptionConfig<'_>,
     ) -> Result<()> {
         self.subscription_manager
-            .open_subscription(subscription_id, requests, shared_buffer, config)
+            .open_subscription(subscription_id, shared_buffer, &requests, config)
             .await
     }
 

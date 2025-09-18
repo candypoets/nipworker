@@ -1,10 +1,11 @@
 use crate::parser::content::serialize_content_data;
 use crate::parser::ContentBlock;
 use crate::parser::{content::parse_content, Parser};
+use crate::parser::{ParserError, Result};
+use crate::signer::interface::SignerManagerInterface;
 use crate::types::network::Request;
 use crate::types::nostr::{Event, Template};
 use crate::utils::request_deduplication::RequestDeduplicator;
-use anyhow::{anyhow, Result};
 
 use tracing::warn;
 
@@ -21,7 +22,7 @@ pub struct Kind4Parsed {
 impl Parser {
     pub fn parse_kind_4(&self, event: &Event) -> Result<(Kind4Parsed, Option<Vec<Request>>)> {
         if event.kind != 4 {
-            return Err(anyhow!("event is not kind 4"));
+            return Err(ParserError::Other("event is not kind 4".to_string()));
         }
 
         let mut requests = Vec::new();
@@ -37,7 +38,7 @@ impl Parser {
                     None
                 }
             })
-            .ok_or_else(|| anyhow!("no recipient found in DM"))?;
+            .ok_or_else(|| ParserError::Other("no recipient found in DM".to_string()))?;
 
         let event_pubkey = event.pubkey.to_hex();
 
@@ -137,7 +138,7 @@ impl Parser {
         }
 
         // Deduplicate requests using the utility
-        let deduplicated_requests = RequestDeduplicator::deduplicate_requests(requests);
+        let deduplicated_requests = RequestDeduplicator::deduplicate_requests(&requests);
 
         Ok((parsed, Some(deduplicated_requests)))
     }
@@ -154,11 +155,13 @@ impl Parser {
                     None
                 }
             })
-            .ok_or_else(|| anyhow!("no recipient found in p tag"))?;
+            .ok_or_else(|| ParserError::Other("no recipient found in p tag".to_string()))?;
 
         // Check if signer manager has a signer available
         if !self.signer_manager.has_signer() {
-            return Err(anyhow!("no signer available to encrypt message"));
+            return Err(ParserError::Other(
+                "no signer available to encrypt message".to_string(),
+            ));
         }
 
         // Encrypt the message content using NIP-04

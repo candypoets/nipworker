@@ -90,30 +90,37 @@ until():number {
   return offset ? this.bb!.readInt32(this.bb_pos + offset) : 0;
 }
 
+search(): ByteString|null
+search(optionalEncoding:flatbuffers.Encoding): ByteString|Uint8Array|null
+search(optionalEncoding?:any): ByteString|Uint8Array|null {
+  const offset = this.bb!.__offset(this.bb_pos, 18);
+  return offset ? this.bb!.__stringByteString(this.bb_pos + offset, optionalEncoding) : null;
+}
+
 relays(index: number): ByteString
 relays(index: number,optionalEncoding:flatbuffers.Encoding): ByteString|Uint8Array
 relays(index: number,optionalEncoding?:any): ByteString|Uint8Array|null {
-  const offset = this.bb!.__offset(this.bb_pos, 18);
+  const offset = this.bb!.__offset(this.bb_pos, 20);
   return offset ? this.bb!.__stringByteString(this.bb!.__vector(this.bb_pos + offset) + index * 4, optionalEncoding) : null;
 }
 
 relaysLength():number {
-  const offset = this.bb!.__offset(this.bb_pos, 18);
+  const offset = this.bb!.__offset(this.bb_pos, 20);
   return offset ? this.bb!.__vector_len(this.bb_pos + offset) : 0;
 }
 
 closeOnEose():boolean {
-  const offset = this.bb!.__offset(this.bb_pos, 20);
-  return offset ? !!this.bb!.readInt8(this.bb_pos + offset) : false;
-}
-
-cacheFirst():boolean {
   const offset = this.bb!.__offset(this.bb_pos, 22);
   return offset ? !!this.bb!.readInt8(this.bb_pos + offset) : false;
 }
 
+cacheFirst():boolean {
+  const offset = this.bb!.__offset(this.bb_pos, 24);
+  return offset ? !!this.bb!.readInt8(this.bb_pos + offset) : false;
+}
+
 static startRequest(builder:flatbuffers.Builder) {
-  builder.startObject(10);
+  builder.startObject(11);
 }
 
 static addIds(builder:flatbuffers.Builder, idsOffset:flatbuffers.Offset) {
@@ -197,8 +204,12 @@ static addUntil(builder:flatbuffers.Builder, until:number) {
   builder.addFieldInt32(6, until, 0);
 }
 
+static addSearch(builder:flatbuffers.Builder, searchOffset:flatbuffers.Offset) {
+  builder.addFieldOffset(7, searchOffset, 0);
+}
+
 static addRelays(builder:flatbuffers.Builder, relaysOffset:flatbuffers.Offset) {
-  builder.addFieldOffset(7, relaysOffset, 0);
+  builder.addFieldOffset(8, relaysOffset, 0);
 }
 
 static createRelaysVector(builder:flatbuffers.Builder, data:flatbuffers.Offset[]):flatbuffers.Offset {
@@ -214,11 +225,11 @@ static startRelaysVector(builder:flatbuffers.Builder, numElems:number) {
 }
 
 static addCloseOnEose(builder:flatbuffers.Builder, closeOnEose:boolean) {
-  builder.addFieldInt8(8, +closeOnEose, +false);
+  builder.addFieldInt8(9, +closeOnEose, +false);
 }
 
 static addCacheFirst(builder:flatbuffers.Builder, cacheFirst:boolean) {
-  builder.addFieldInt8(9, +cacheFirst, +false);
+  builder.addFieldInt8(10, +cacheFirst, +false);
 }
 
 static endRequest(builder:flatbuffers.Builder):flatbuffers.Offset {
@@ -226,7 +237,7 @@ static endRequest(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createRequest(builder:flatbuffers.Builder, idsOffset:flatbuffers.Offset, authorsOffset:flatbuffers.Offset, kindsOffset:flatbuffers.Offset, tagsOffset:flatbuffers.Offset, limit:number, since:number, until:number, relaysOffset:flatbuffers.Offset, closeOnEose:boolean, cacheFirst:boolean):flatbuffers.Offset {
+static createRequest(builder:flatbuffers.Builder, idsOffset:flatbuffers.Offset, authorsOffset:flatbuffers.Offset, kindsOffset:flatbuffers.Offset, tagsOffset:flatbuffers.Offset, limit:number, since:number, until:number, searchOffset:flatbuffers.Offset, relaysOffset:flatbuffers.Offset, closeOnEose:boolean, cacheFirst:boolean):flatbuffers.Offset {
   Request.startRequest(builder);
   Request.addIds(builder, idsOffset);
   Request.addAuthors(builder, authorsOffset);
@@ -235,6 +246,7 @@ static createRequest(builder:flatbuffers.Builder, idsOffset:flatbuffers.Offset, 
   Request.addLimit(builder, limit);
   Request.addSince(builder, since);
   Request.addUntil(builder, until);
+  Request.addSearch(builder, searchOffset);
   Request.addRelays(builder, relaysOffset);
   Request.addCloseOnEose(builder, closeOnEose);
   Request.addCacheFirst(builder, cacheFirst);
@@ -250,6 +262,7 @@ unpack(): RequestT {
     this.limit(),
     this.since(),
     this.until(),
+    this.search(),
     this.bb!.createScalarList<string>(this.relays.bind(this), this.relaysLength()),
     this.closeOnEose(),
     this.cacheFirst()
@@ -265,6 +278,7 @@ unpackTo(_o: RequestT): void {
   _o.limit = this.limit();
   _o.since = this.since();
   _o.until = this.until();
+  _o.search = this.search();
   _o.relays = this.bb!.createScalarList<string>(this.relays.bind(this), this.relaysLength());
   _o.closeOnEose = this.closeOnEose();
   _o.cacheFirst = this.cacheFirst();
@@ -280,6 +294,7 @@ constructor(
   public limit: number = 0,
   public since: number = 0,
   public until: number = 0,
+  public search: ByteString|Uint8Array|null = null,
   public relays: (string)[] = [],
   public closeOnEose: boolean = false,
   public cacheFirst: boolean = false
@@ -291,6 +306,7 @@ pack(builder:flatbuffers.Builder): flatbuffers.Offset {
   const authors = Request.createAuthorsVector(builder, builder.createObjectOffsetList(this.authors));
   const kinds = Request.createKindsVector(builder, this.kinds);
   const tags = Request.createTagsVector(builder, builder.createObjectOffsetList(this.tags));
+  const search = (this.search !== null ? builder.createString(this.search!) : 0);
   const relays = Request.createRelaysVector(builder, builder.createObjectOffsetList(this.relays));
 
   return Request.createRequest(builder,
@@ -301,6 +317,7 @@ pack(builder:flatbuffers.Builder): flatbuffers.Offset {
     this.limit,
     this.since,
     this.until,
+    search,
     relays,
     this.closeOnEose,
     this.cacheFirst

@@ -1,32 +1,12 @@
 import { SharedBufferReader } from "src/lib/SharedBuffer";
 
-import type {  MainToWorkerMessage, PipelineConfig, RequestObject, SubscriptionConfig, WorkerMessage } from "src/types";
 
-import { decode, encode } from "@msgpack/msgpack";
 import type { NostrEvent } from "nostr-tools";
 
 import RustWorker from "@candypoets/rust-worker/worker.js?worker";
-
-
-
-// Callback for subscription events
-export type SubscriptionCallback = (
-  data: WorkerMessage,
-) => void;
-
-
-export interface SubscriptionOptions {
-  pipeline?: PipelineConfig;
-  closeOnEose?: boolean;
-  cacheFirst?: boolean;
-  timeoutMs?: number;
-  maxEvents?: number;
-  enableOptimization?: boolean;
-  skipCache?: boolean;
-  force?: boolean;
-  bytesPerEvent?: number;
-  initialMessage?: Uint8Array;
-}
+import * as flatbuffers from "flatbuffers";
+import { pipeConfigMap, Request, RequestObject, SubscriptionConfig } from "src/types";
+import { GetPublicKeyT, MainContent, MainMessage, MainMessageT, PipeConfig, PipelineConfigT, PipeT, PrivateKeyT, PublishT, RequestT, SetSignerT, SignerType, SignEventT, StringVecT, SubscribeT, SubscriptionConfigT, TemplateT, UnsubscribeT } from "./generated/nostr/fb";
 
 /**
  * Configuration for the Nostr Manager
@@ -44,11 +24,12 @@ export interface NostrManagerConfig {
  */
 export class NostrManager {
   private worker: Worker;
+  private textEncoder = new TextEncoder();
   private subscriptions = new Map<
     string,
     {
       buffer: SharedArrayBuffer;
-      options: SubscriptionOptions;
+      options: SubscriptionConfig;
       refCount: number;
     }
   >();
@@ -130,7 +111,7 @@ export class NostrManager {
   subscribe(
     subscriptionId: string,
     requests: RequestObject[],
-    options: SubscriptionOptions = {},
+    options: SubscriptionConfig,
   ): SharedArrayBuffer {
     const subId = this.createShortId(subscriptionId);
 
@@ -141,14 +122,6 @@ export class NostrManager {
       return existingSubscription.buffer;
     }
 
-    const defaultOptions: SubscriptionOptions = {
-      closeOnEose: false,
-      cacheFirst: true,
-      skipCache: false,
-      force: false,
-      enableOptimization: true,
-      ...options,
-    };
 
     const totalLimit = requests.reduce(
       (sum, req) => sum + (req.limit || 100),
@@ -161,10 +134,6 @@ export class NostrManager {
     );
 
     let initialMessage: Uint8Array<ArrayBufferLike> = new Uint8Array();
-
-    if(options.initialMessage) {
-      initialMessage = encode(options.initialMessage);
-    }
 
     const buffer = new SharedArrayBuffer(bufferSize + initialMessage.length);
 
@@ -181,35 +150,54 @@ export class NostrManager {
 
     this.subscriptions.set(subId, {
       buffer,
-      options: defaultOptions,
+      options,
       refCount: 1,
     });
 
-    // Convert SubscriptionOptions to SubscriptionConfig for the worker
-    const config: SubscriptionConfig = {
-      pipeline: defaultOptions.pipeline,
-      closeOnEose: defaultOptions.closeOnEose,
-      cacheFirst: defaultOptions.cacheFirst,
-      timeoutMs: defaultOptions.timeoutMs,
-      maxEvents: defaultOptions.maxEvents,
-      enableOptimization: defaultOptions.enableOptimization,
-      skipCache: defaultOptions.skipCache,
-      force: defaultOptions.force,
-      bytesPerEvent: defaultOptions.bytesPerEvent,
-    };
+    const optionsT = new SubscriptionConfigT(
+      new PipelineConfigT((options.pipeline || [])),
+      options.closeOnEose,
+      options.cacheFirst,
+      options.timeoutMs ? BigInt(options.timeoutMs) : undefined,
+      options.maxEvents,
+      options.skipCache,
+      options.force,
+      options.bytesPerEvent
+    );
 
-    const message: MainToWorkerMessage = {
-      Subscribe: {
-        subscription_id: subId,
-        requests: requests,
-        config: config,
-      },
-    };
+
+
+    const subscribeT = new SubscribeT(
+      this.textEncoder.encode(subId),
+      requests.map(r =>
+        new RequestT(
+          r.ids,
+          r.authors,
+          r.kinds,
+          Object.entries(r.tags || {}).flatMap(([key, values]) => new StringVecT([key, ...values])),
+          r.limit,
+          r.since,
+          r.until,
+          this.textEncoder.encode(r.search),
+          r.relays,
+          r.closeOnEOSE,
+          r.cacheFirst
+        )
+      ),
+      optionsT)
+
+    // Wrap in MainMessageT as Subscribe variant
+    const mainT = new MainMessageT(MainContent.Subscribe, subscribeT);
+
+    // Serialize with FlatBuffers builder
+    const builder = new flatbuffers.Builder(2048);
+    const mainOffset = mainT.pack(builder);
+    builder.finish(mainOffset);
+    const serializedMessage = builder.asUint8Array();
 
     try {
-      const pack = encode(message);
       this.worker.postMessage({
-        serializedMessage: pack,
+        serializedMessage,
         sharedBuffer: buffer,
       });
 
@@ -249,22 +237,19 @@ export class NostrManager {
     SharedBufferReader.initializeBuffer(buffer);
 
     try {
-      const template = {
-        kind: event.kind,
-        content: event.content,
-        tags: event.tags || [],
-      };
+      const templateT = new TemplateT(event.kind, this.textEncoder.encode(event.content), event.tags.map(t => new StringVecT(t)) || []);
+      const publishT = new PublishT(this.textEncoder.encode(publish_id), templateT);
 
-      const message: MainToWorkerMessage = {
-        Publish: {
-          publish_id: publish_id,
-          template,
-        },
-      };
+      // Wrap in MainMessageT as Publish variant
+      const mainT = new MainMessageT(MainContent.Publish, publishT);
 
-      const p = encode(message);
+      // Serialize with FlatBuffers builder
+      const builder = new flatbuffers.Builder(2048);
+      const mainOffset = mainT.pack(builder);
+      builder.finish(mainOffset);
+      const serializedMessage = builder.asUint8Array();
 
-      this.worker.postMessage({ serializedMessage: p, sharedBuffer: buffer });
+      this.worker.postMessage({ serializedMessage, sharedBuffer: buffer });
 
       this.publishes.set(publish_id, {buffer});
       return buffer;
@@ -275,40 +260,49 @@ export class NostrManager {
   }
 
   setSigner(name: string, secretKeyHex: string): void {
-    const message: MainToWorkerMessage = {
-      SetSigner: {
-        signer_type: name,
-        private_key: secretKeyHex,
-      },
-    };
+      console.log('setSigner', name, secretKeyHex);
 
-    const pack = encode(message);
-    this.worker.postMessage(pack);
-    this.signers.set(name, secretKeyHex);
+      // Create the PrivateKeyT object
+      const privateKeyT = new PrivateKeyT(this.textEncoder.encode(secretKeyHex));
+
+      // Create the SetSignerT object and set the union
+      const setSignerT = new SetSignerT(SignerType.PrivateKey, privateKeyT);
+
+      // Create the MainMessageT with the properly constructed SetSignerT
+      const mainT = new MainMessageT(MainContent.SetSigner, setSignerT);
+
+      // Serialize with FlatBuffers builder (unchanged)
+      const builder = new flatbuffers.Builder(2048);
+      const mainOffset = mainT.pack(builder);
+      builder.finish(mainOffset);
+      const serializedMessage = builder.asUint8Array();
+
+      this.worker.postMessage(serializedMessage);
+      this.signers.set(name, secretKeyHex);
   }
 
   signEvent(event: NostrEvent) {
-    const template = {
-      kind: event.kind,
-      content: event.content,
-      tags: event.tags,
-    };
+    const mainT = new MainMessageT(MainContent.SignEvent, new SignEventT(new TemplateT(event.kind, this.textEncoder.encode(event.content), event.tags.map(t => new StringVecT(t)))));
 
-    const message: MainToWorkerMessage = {
-      SignEvent: {
-        template: template,
-      },
-    };
-    const pack = encode(message);
-    this.worker.postMessage(pack);
+    // Serialize with FlatBuffers builder
+    const builder = new flatbuffers.Builder(2048);
+    const mainOffset = mainT.pack(builder);
+    builder.finish(mainOffset);
+    const serializedMessage = builder.asUint8Array();
+
+    this.worker.postMessage(serializedMessage);
   }
 
   getPublicKey() {
-    const message: MainToWorkerMessage = {
-      GetPublicKey: {},
-    };
-    const pack = encode(message);
-    this.worker.postMessage(pack);
+    const mainT = new MainMessageT(MainContent.GetPublicKey, new GetPublicKeyT());
+
+    // Serialize with FlatBuffers builder
+    const builder = new flatbuffers.Builder(2048);
+    const mainOffset = mainT.pack(builder);
+    builder.finish(mainOffset);
+    const serializedMessage = builder.asUint8Array();
+
+    this.worker.postMessage(serializedMessage);
   }
 
   cleanup(): void {
@@ -326,13 +320,14 @@ export class NostrManager {
     for (const subId of subscriptionsToDelete) {
       const subscription = this.subscriptions.get(subId);
       if (subscription) {
-        const message: MainToWorkerMessage = {
-          Unsubscribe: {
-            subscription_id: subId,
-          },
-        };
-        const pack = encode(message);
-        this.worker.postMessage(pack);
+        const mainT = new MainMessageT(MainContent.Unsubscribe, new UnsubscribeT(this.textEncoder.encode(subId)));
+        // Serialize with FlatBuffers builder
+        const builder = new flatbuffers.Builder(2048);
+        const mainOffset = mainT.pack(builder);
+        builder.finish(mainOffset);
+        const serializedMessage = builder.asUint8Array();
+
+        this.worker.postMessage(serializedMessage);
         this.subscriptions.delete(subId);
       }
     }

@@ -154,6 +154,7 @@ table Request {
   limit: int;
   since: int;
   until: int;
+  search: string;
   relays: [string];
   close_on_eose: bool;
   cache_first: bool;
@@ -167,4 +168,16 @@ table NostrEvent {
   tags: [StringVec] (required);
   created_at: int;
   sig: string (required);
+}
+
+// Signers
+
+
+table PrivateKey {
+    private_key: string (required);
+}
+
+
+union SignerType {
+    PrivateKey
 }

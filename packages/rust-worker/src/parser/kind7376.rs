@@ -1,12 +1,12 @@
-use crate::nostr::Template;
+use crate::nostr::{NostrTags, Template};
 use crate::parser::Parser;
+use crate::parser::{ParserError, Result};
+use crate::signer::interface::SignerManagerInterface;
 use crate::types::network::Request;
-use crate::types::nostr::{Event, UnsignedEvent};
-use anyhow::{anyhow, Result};
+use crate::types::nostr::Event;
 
 // NEW: Imports for FlatBuffers
 use crate::generated::nostr::*;
-use flatbuffers::FlatBufferBuilder;
 
 pub struct HistoryTag {
     pub name: String,
@@ -28,7 +28,7 @@ pub struct Kind7376Parsed {
 impl Parser {
     pub fn parse_kind_7376(&self, event: &Event) -> Result<(Kind7376Parsed, Option<Vec<Request>>)> {
         if event.kind != 7376 {
-            return Err(anyhow!("event is not kind 7376"));
+            return Err(ParserError::Other("event is not kind 7376".to_string()));
         }
 
         let mut requests = Vec::new();
@@ -67,12 +67,12 @@ impl Parser {
             let pubkey = signer.get_public_key()?;
             if let Ok(decrypted) = signer.nip44_decrypt(&pubkey, &event.content) {
                 if !decrypted.is_empty() {
-                    if let Ok(tags) = serde_json::from_str::<Vec<Vec<String>>>(&decrypted) {
+                    if let Ok(tags) = NostrTags::from_json(&decrypted) {
                         parsed.decrypted = true;
                         parsed.tags = Vec::new();
 
-                        // Process decrypted tags
-                        for tag in tags {
+                        // Process decrypted tags - access inner Vec<Vec<String>> via .0
+                        for tag in &tags.0 {
                             if tag.len() >= 2 {
                                 let history_tag = HistoryTag {
                                     name: tag[0].clone(),
@@ -120,24 +120,25 @@ impl Parser {
 
     pub fn prepare_kind_7376(&self, template: &Template) -> Result<Event> {
         if template.kind != 7376 {
-            return Err(anyhow!("event is not kind 7376"));
+            return Err(ParserError::Other("event is not kind 7376".to_string()));
         }
 
-        // For spending history events, the content is an array of tags
-        let tags: Vec<Vec<String>> = serde_json::from_str(&template.content)
-            .map_err(|e| anyhow!("invalid spending history content: {}", e))?;
+        let tags: NostrTags = NostrTags::from_json(&template.content)
+            .map_err(|e| ParserError::Other(format!("invalid spending history content: {}", e)))?;
 
-        // Check for required direction and amount tags
+        // Check for required direction and amount tags - access inner Vec via .0
         let mut has_direction = false;
         let mut has_amount = false;
 
-        for tag in &tags {
+        for tag in &tags.0 {
             if tag.len() >= 2 {
                 match tag[0].as_str() {
                     "direction" => {
                         has_direction = true;
                         if tag[1] != "in" && tag[1] != "out" {
-                            return Err(anyhow!("direction must be 'in' or 'out'"));
+                            return Err(ParserError::Other(
+                                "direction must be 'in' or 'out'".to_string(),
+                            ));
                         }
                     }
                     "amount" => has_amount = true,
@@ -147,33 +148,33 @@ impl Parser {
         }
 
         if !has_direction || !has_amount {
-            return Err(anyhow!(
-                "spending history must include direction and amount"
+            return Err(ParserError::Other(
+                "spending history must include direction and amount".to_string(),
             ));
         }
 
-        // NIP-44 encrypt the content
-        let tags_json =
-            serde_json::to_string(&tags).map_err(|e| anyhow!("failed to marshal tags: {}", e))?;
+        let tags_json = tags.to_json();
 
         let signer_manager = &self.signer_manager;
 
         if !signer_manager.has_signer() {
-            return Err(anyhow!("no signer available for encryption"));
+            return Err(ParserError::Other(
+                "no signer available for encryption".to_string(),
+            ));
         }
 
         let pubkey = signer_manager.get_public_key()?;
 
         let encrypted = signer_manager
             .nip44_encrypt(&pubkey, &tags_json)
-            .map_err(|e| anyhow!("failed to encrypt tags: {}", e))?;
+            .map_err(|e| ParserError::Other(format!("failed to encrypt tags: {}", e)))?;
 
         let encrypted_template = Template::new(template.kind, encrypted, template.tags.clone());
 
         // Sign the event
         signer_manager
             .sign_event(&encrypted_template)
-            .map_err(|e| anyhow!("failed to sign event: {}", e))
+            .map_err(|e| ParserError::Other(format!("failed to sign event: {}", e)))
     }
 }
 

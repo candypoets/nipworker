@@ -9,5 +9,7 @@ export enum MessageType {
   CountResponse = 2,
   Eoce = 3,
   BufferFull = 4,
-  ValidProofs = 5
+  ValidProofs = 5,
+  SignedEvent = 6,
+  Pubkey = 7
 }

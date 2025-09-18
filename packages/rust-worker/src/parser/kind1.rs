@@ -2,10 +2,10 @@ use crate::parser::{
     content::{parse_content, serialize_content_data, ContentBlock, ContentParser},
     Parser,
 };
+use crate::parser::{ParserError, Result};
 use crate::types::network::Request;
 use crate::types::nostr::Event;
 use crate::utils::request_deduplication::RequestDeduplicator;
-use anyhow::{anyhow, Result};
 
 // NEW: Imports for FlatBuffers
 use crate::generated::nostr::*;
@@ -34,7 +34,7 @@ pub struct Kind1Parsed {
 impl Parser {
     pub fn parse_kind_1(&self, event: &Event) -> Result<(Kind1Parsed, Option<Vec<Request>>)> {
         if event.kind != 1 {
-            return Err(anyhow!("event is not kind 1"));
+            return Err(ParserError::Other("event is not kind 1".to_string()));
         }
 
         let mut requests = Vec::new();
@@ -144,12 +144,15 @@ impl Parser {
                 };
             }
             Err(err) => {
-                return Err(anyhow!("error parsing content: {}", err));
+                return Err(ParserError::Other(format!(
+                    "error parsing content: {}",
+                    err
+                )));
             }
         }
 
         // Deduplicate requests using the utility
-        let deduplicated_requests = RequestDeduplicator::deduplicate_requests(requests);
+        let deduplicated_requests = RequestDeduplicator::deduplicate_requests(&requests);
 
         Ok((parsed, Some(deduplicated_requests)))
     }

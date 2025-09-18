@@ -1,7 +1,7 @@
 use crate::parser::Parser;
 use crate::types::network::Request;
 use crate::types::nostr::Event;
-use anyhow::{anyhow, Result};
+use crate::parser::{ParserError, Result};
 
 // NEW: Imports for FlatBuffers
 use crate::generated::nostr::*;
@@ -21,7 +21,7 @@ impl Parser {
         event: &Event,
     ) -> Result<(Kind10002Parsed, Option<Vec<Request>>)> {
         if event.kind != 10002 {
-            return Err(anyhow!("event is not kind 10002"));
+            return Err(ParserError::Other("event is not kind 10002".to_string()));
         }
 
         let mut relays = Vec::new();

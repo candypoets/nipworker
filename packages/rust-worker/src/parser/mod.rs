@@ -1,12 +1,48 @@
 use crate::db::index::NostrDB;
 use crate::nostr::Template;
 use crate::parsed_event::{ParsedData, ParsedEvent};
-use crate::signer::{create_shared_signer_manager, SharedSignerManager};
+use crate::signer::interface::SignerManagerInterface;
+use crate::signer::manager::SignerManager;
+
 use crate::types::nostr::Event;
-use crate::types::*;
-use anyhow::{anyhow, Result};
 use std::sync::Arc;
-use tracing::info;
+use thiserror::Error;
+
+/// Parser-specific error type
+#[derive(Debug, Error)]
+pub enum ParserError {
+    #[error("Invalid event kind: {0}")]
+    InvalidKind(u32),
+
+    #[error("Missing required field: {0}")]
+    MissingField(String),
+
+    #[error("Invalid format: {0}")]
+    InvalidFormat(String),
+
+    #[error("Invalid content format: {0}")]
+    InvalidContent(String),
+
+    #[error("Cryptographic error: {0}")]
+    Crypto(String),
+
+    #[error("Signer error: {0}")]
+    SignerError(#[from] crate::signer::SignerError),
+
+    #[error("Types error: {0}")]
+    TypesError(#[from] crate::types::TypesError),
+
+    #[error("Invalid tag format: {0}")]
+    InvalidTag(String),
+
+    #[error("Parse error: {0}")]
+    Parse(String),
+
+    #[error("Other error: {0}")]
+    Other(String),
+}
+
+pub type Result<T> = std::result::Result<T, ParserError>;
 
 // Declare all parser modules
 pub mod content;
@@ -47,20 +83,12 @@ pub use kind9321::Kind9321Parsed;
 pub use kind9735::{Kind9735Parsed, ZapRequest};
 
 pub struct Parser {
-    pub signer_manager: SharedSignerManager,
+    pub signer_manager: Arc<SignerManager>,
     pub database: Arc<NostrDB>,
 }
 
 impl Parser {
-    pub fn new(database: Arc<NostrDB>) -> Self {
-        info!("Creating new parser");
-        Self {
-            signer_manager: create_shared_signer_manager(),
-            database,
-        }
-    }
-
-    pub fn new_with_signer(signer_manager: SharedSignerManager, database: Arc<NostrDB>) -> Self {
+    pub fn new_with_signer(signer_manager: Arc<SignerManager>, database: Arc<NostrDB>) -> Self {
         Self {
             signer_manager,
             database,
@@ -136,7 +164,7 @@ impl Parser {
                 (Some(ParsedData::Kind39089(parsed)), requests)
             }
             _ => {
-                return Err(anyhow!("no parser available for kind {}", kind));
+                return Err(ParserError::InvalidKind(kind as u32));
             }
         };
 

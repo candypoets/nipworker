@@ -1,7 +1,7 @@
 use crate::parser::Parser;
 use crate::types::network::Request;
 use crate::types::nostr::Event;
-use anyhow::{anyhow, Result};
+use crate::parser::{ParserError, Result};
 
 // NEW: Imports for FlatBuffers
 use crate::generated::nostr::*;
@@ -17,7 +17,7 @@ pub type Kind3Parsed = Vec<Contact>;
 impl Parser {
     pub fn parse_kind_3(&self, event: &Event) -> Result<(Kind3Parsed, Option<Vec<Request>>)> {
         if event.kind != 3 {
-            return Err(anyhow!("event is not kind 3"));
+            return Err(ParserError::Other("event is not kind 3".to_string()));
         }
 
         let mut contacts = Vec::new();

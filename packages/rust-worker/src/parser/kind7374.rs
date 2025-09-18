@@ -1,8 +1,9 @@
 use crate::nostr::Template;
 use crate::parser::Parser;
+use crate::parser::{ParserError, Result};
+use crate::signer::interface::SignerManagerInterface;
 use crate::types::network::Request;
 use crate::types::nostr::{Event, UnsignedEvent};
-use anyhow::{anyhow, Result};
 
 // NEW: Imports for FlatBuffers
 use crate::generated::nostr::*;
@@ -17,7 +18,7 @@ pub struct Kind7374Parsed {
 impl Parser {
     pub fn parse_kind_7374(&self, event: &Event) -> Result<(Kind7374Parsed, Option<Vec<Request>>)> {
         if event.kind != 7374 {
-            return Err(anyhow!("event is not kind 7374"));
+            return Err(ParserError::Other("event is not kind 7374".to_string()));
         }
 
         // Extract mint URL from tags
@@ -41,7 +42,9 @@ impl Parser {
         }
 
         if mint_url.is_empty() {
-            return Err(anyhow!("mint URL not found in quote event"));
+            return Err(ParserError::Other(
+                "mint URL not found in quote event".to_string(),
+            ));
         }
 
         let mut quote_id = String::new();
@@ -66,7 +69,7 @@ impl Parser {
 
     pub fn prepare_kind_7374(&self, template: &Template) -> Result<Event> {
         if template.kind != 7374 {
-            return Err(anyhow!("event is not kind 7374"));
+            return Err(ParserError::Other("event is not kind 7374".to_string()));
         }
 
         // Validate required tags
@@ -79,7 +82,9 @@ impl Parser {
         }
 
         if !has_mint {
-            return Err(anyhow!("kind 7374 events must have a mint tag"));
+            return Err(ParserError::Other(
+                "kind 7374 events must have a mint tag".to_string(),
+            ));
         }
 
         if self.signer_manager.has_signer() {
@@ -91,7 +96,9 @@ impl Parser {
             let new_event = self.signer_manager.sign_event(&encrypted_template)?;
             Ok(new_event)
         } else {
-            Err(anyhow!("signer is required for kind 7374 events"))
+            Err(ParserError::Other(
+                "signer is required for kind 7374 events".to_string(),
+            ))
         }
     }
 }

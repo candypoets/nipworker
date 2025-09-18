@@ -551,18 +551,730 @@ impl<'a> flatbuffers::Verifiable for SubscribeKind {
 
 impl flatbuffers::SimpleToVerifyInSlice for SubscribeKind {}
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MIN_MESSAGE_TYPE: u32 = 0;
+pub const ENUM_MIN_SIGNER_TYPE: u8 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MAX_MESSAGE_TYPE: u32 = 5;
+pub const ENUM_MAX_SIGNER_TYPE: u8 = 1;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_MESSAGE_TYPE: [MessageType; 6] = [
+pub const ENUM_VALUES_SIGNER_TYPE: [SignerType; 2] = [
+  SignerType::NONE,
+  SignerType::PrivateKey,
+];
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[repr(transparent)]
+pub struct SignerType(pub u8);
+#[allow(non_upper_case_globals)]
+impl SignerType {
+  pub const NONE: Self = Self(0);
+  pub const PrivateKey: Self = Self(1);
+
+  pub const ENUM_MIN: u8 = 0;
+  pub const ENUM_MAX: u8 = 1;
+  pub const ENUM_VALUES: &'static [Self] = &[
+    Self::NONE,
+    Self::PrivateKey,
+  ];
+  /// Returns the variant's name or "" if unknown.
+  pub fn variant_name(self) -> Option<&'static str> {
+    match self {
+      Self::NONE => Some("NONE"),
+      Self::PrivateKey => Some("PrivateKey"),
+      _ => None,
+    }
+  }
+}
+impl core::fmt::Debug for SignerType {
+  fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+    if let Some(name) = self.variant_name() {
+      f.write_str(name)
+    } else {
+      f.write_fmt(format_args!("<UNKNOWN {:?}>", self.0))
+    }
+  }
+}
+impl<'a> flatbuffers::Follow<'a> for SignerType {
+  type Inner = Self;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    let b = flatbuffers::read_scalar_at::<u8>(buf, loc);
+    Self(b)
+  }
+}
+
+impl flatbuffers::Push for SignerType {
+    type Output = SignerType;
+    #[inline]
+    unsafe fn push(&self, dst: &mut [u8], _written_len: usize) {
+        flatbuffers::emplace_scalar::<u8>(dst, self.0);
+    }
+}
+
+impl flatbuffers::EndianScalar for SignerType {
+  type Scalar = u8;
+  #[inline]
+  fn to_little_endian(self) -> u8 {
+    self.0.to_le()
+  }
+  #[inline]
+  #[allow(clippy::wrong_self_convention)]
+  fn from_little_endian(v: u8) -> Self {
+    let b = u8::from_le(v);
+    Self(b)
+  }
+}
+
+impl<'a> flatbuffers::Verifiable for SignerType {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    u8::run_verifier(v, pos)
+  }
+}
+
+impl flatbuffers::SimpleToVerifyInSlice for SignerType {}
+pub struct SignerTypeUnionTableOffset {}
+
+#[allow(clippy::upper_case_acronyms)]
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub enum SignerTypeT {
+  NONE,
+  PrivateKey(Box<PrivateKeyT>),
+}
+impl Default for SignerTypeT {
+  fn default() -> Self {
+    Self::NONE
+  }
+}
+impl SignerTypeT {
+  pub fn signer_type_type(&self) -> SignerType {
+    match self {
+      Self::NONE => SignerType::NONE,
+      Self::PrivateKey(_) => SignerType::PrivateKey,
+    }
+  }
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(&self, fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>) -> Option<flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>> {
+    match self {
+      Self::NONE => None,
+      Self::PrivateKey(v) => Some(v.pack(fbb).as_union_value()),
+    }
+  }
+  /// If the union variant matches, return the owned PrivateKeyT, setting the union to NONE.
+  pub fn take_private_key(&mut self) -> Option<Box<PrivateKeyT>> {
+    if let Self::PrivateKey(_) = self {
+      let v = core::mem::replace(self, Self::NONE);
+      if let Self::PrivateKey(w) = v {
+        Some(w)
+      } else {
+        unreachable!()
+      }
+    } else {
+      None
+    }
+  }
+  /// If the union variant matches, return a reference to the PrivateKeyT.
+  pub fn as_private_key(&self) -> Option<&PrivateKeyT> {
+    if let Self::PrivateKey(v) = self { Some(v.as_ref()) } else { None }
+  }
+  /// If the union variant matches, return a mutable reference to the PrivateKeyT.
+  pub fn as_private_key_mut(&mut self) -> Option<&mut PrivateKeyT> {
+    if let Self::PrivateKey(v) = self { Some(v.as_mut()) } else { None }
+  }
+}
+#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
+pub const ENUM_MIN_PIPE_CONFIG: u8 = 0;
+#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
+pub const ENUM_MAX_PIPE_CONFIG: u8 = 7;
+#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
+#[allow(non_camel_case_types)]
+pub const ENUM_VALUES_PIPE_CONFIG: [PipeConfig; 8] = [
+  PipeConfig::NONE,
+  PipeConfig::ParsePipeConfig,
+  PipeConfig::KindFilterPipeConfig,
+  PipeConfig::CounterPipeConfig,
+  PipeConfig::NpubLimiterPipeConfig,
+  PipeConfig::SaveToDbPipeConfig,
+  PipeConfig::SerializeEventsPipeConfig,
+  PipeConfig::ProofVerificationPipeConfig,
+];
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[repr(transparent)]
+pub struct PipeConfig(pub u8);
+#[allow(non_upper_case_globals)]
+impl PipeConfig {
+  pub const NONE: Self = Self(0);
+  pub const ParsePipeConfig: Self = Self(1);
+  pub const KindFilterPipeConfig: Self = Self(2);
+  pub const CounterPipeConfig: Self = Self(3);
+  pub const NpubLimiterPipeConfig: Self = Self(4);
+  pub const SaveToDbPipeConfig: Self = Self(5);
+  pub const SerializeEventsPipeConfig: Self = Self(6);
+  pub const ProofVerificationPipeConfig: Self = Self(7);
+
+  pub const ENUM_MIN: u8 = 0;
+  pub const ENUM_MAX: u8 = 7;
+  pub const ENUM_VALUES: &'static [Self] = &[
+    Self::NONE,
+    Self::ParsePipeConfig,
+    Self::KindFilterPipeConfig,
+    Self::CounterPipeConfig,
+    Self::NpubLimiterPipeConfig,
+    Self::SaveToDbPipeConfig,
+    Self::SerializeEventsPipeConfig,
+    Self::ProofVerificationPipeConfig,
+  ];
+  /// Returns the variant's name or "" if unknown.
+  pub fn variant_name(self) -> Option<&'static str> {
+    match self {
+      Self::NONE => Some("NONE"),
+      Self::ParsePipeConfig => Some("ParsePipeConfig"),
+      Self::KindFilterPipeConfig => Some("KindFilterPipeConfig"),
+      Self::CounterPipeConfig => Some("CounterPipeConfig"),
+      Self::NpubLimiterPipeConfig => Some("NpubLimiterPipeConfig"),
+      Self::SaveToDbPipeConfig => Some("SaveToDbPipeConfig"),
+      Self::SerializeEventsPipeConfig => Some("SerializeEventsPipeConfig"),
+      Self::ProofVerificationPipeConfig => Some("ProofVerificationPipeConfig"),
+      _ => None,
+    }
+  }
+}
+impl core::fmt::Debug for PipeConfig {
+  fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+    if let Some(name) = self.variant_name() {
+      f.write_str(name)
+    } else {
+      f.write_fmt(format_args!("<UNKNOWN {:?}>", self.0))
+    }
+  }
+}
+impl<'a> flatbuffers::Follow<'a> for PipeConfig {
+  type Inner = Self;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    let b = flatbuffers::read_scalar_at::<u8>(buf, loc);
+    Self(b)
+  }
+}
+
+impl flatbuffers::Push for PipeConfig {
+    type Output = PipeConfig;
+    #[inline]
+    unsafe fn push(&self, dst: &mut [u8], _written_len: usize) {
+        flatbuffers::emplace_scalar::<u8>(dst, self.0);
+    }
+}
+
+impl flatbuffers::EndianScalar for PipeConfig {
+  type Scalar = u8;
+  #[inline]
+  fn to_little_endian(self) -> u8 {
+    self.0.to_le()
+  }
+  #[inline]
+  #[allow(clippy::wrong_self_convention)]
+  fn from_little_endian(v: u8) -> Self {
+    let b = u8::from_le(v);
+    Self(b)
+  }
+}
+
+impl<'a> flatbuffers::Verifiable for PipeConfig {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    u8::run_verifier(v, pos)
+  }
+}
+
+impl flatbuffers::SimpleToVerifyInSlice for PipeConfig {}
+pub struct PipeConfigUnionTableOffset {}
+
+#[allow(clippy::upper_case_acronyms)]
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub enum PipeConfigT {
+  NONE,
+  ParsePipeConfig(Box<ParsePipeConfigT>),
+  KindFilterPipeConfig(Box<KindFilterPipeConfigT>),
+  CounterPipeConfig(Box<CounterPipeConfigT>),
+  NpubLimiterPipeConfig(Box<NpubLimiterPipeConfigT>),
+  SaveToDbPipeConfig(Box<SaveToDbPipeConfigT>),
+  SerializeEventsPipeConfig(Box<SerializeEventsPipeConfigT>),
+  ProofVerificationPipeConfig(Box<ProofVerificationPipeConfigT>),
+}
+impl Default for PipeConfigT {
+  fn default() -> Self {
+    Self::NONE
+  }
+}
+impl PipeConfigT {
+  pub fn pipe_config_type(&self) -> PipeConfig {
+    match self {
+      Self::NONE => PipeConfig::NONE,
+      Self::ParsePipeConfig(_) => PipeConfig::ParsePipeConfig,
+      Self::KindFilterPipeConfig(_) => PipeConfig::KindFilterPipeConfig,
+      Self::CounterPipeConfig(_) => PipeConfig::CounterPipeConfig,
+      Self::NpubLimiterPipeConfig(_) => PipeConfig::NpubLimiterPipeConfig,
+      Self::SaveToDbPipeConfig(_) => PipeConfig::SaveToDbPipeConfig,
+      Self::SerializeEventsPipeConfig(_) => PipeConfig::SerializeEventsPipeConfig,
+      Self::ProofVerificationPipeConfig(_) => PipeConfig::ProofVerificationPipeConfig,
+    }
+  }
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(&self, fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>) -> Option<flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>> {
+    match self {
+      Self::NONE => None,
+      Self::ParsePipeConfig(v) => Some(v.pack(fbb).as_union_value()),
+      Self::KindFilterPipeConfig(v) => Some(v.pack(fbb).as_union_value()),
+      Self::CounterPipeConfig(v) => Some(v.pack(fbb).as_union_value()),
+      Self::NpubLimiterPipeConfig(v) => Some(v.pack(fbb).as_union_value()),
+      Self::SaveToDbPipeConfig(v) => Some(v.pack(fbb).as_union_value()),
+      Self::SerializeEventsPipeConfig(v) => Some(v.pack(fbb).as_union_value()),
+      Self::ProofVerificationPipeConfig(v) => Some(v.pack(fbb).as_union_value()),
+    }
+  }
+  /// If the union variant matches, return the owned ParsePipeConfigT, setting the union to NONE.
+  pub fn take_parse_pipe_config(&mut self) -> Option<Box<ParsePipeConfigT>> {
+    if let Self::ParsePipeConfig(_) = self {
+      let v = core::mem::replace(self, Self::NONE);
+      if let Self::ParsePipeConfig(w) = v {
+        Some(w)
+      } else {
+        unreachable!()
+      }
+    } else {
+      None
+    }
+  }
+  /// If the union variant matches, return a reference to the ParsePipeConfigT.
+  pub fn as_parse_pipe_config(&self) -> Option<&ParsePipeConfigT> {
+    if let Self::ParsePipeConfig(v) = self { Some(v.as_ref()) } else { None }
+  }
+  /// If the union variant matches, return a mutable reference to the ParsePipeConfigT.
+  pub fn as_parse_pipe_config_mut(&mut self) -> Option<&mut ParsePipeConfigT> {
+    if let Self::ParsePipeConfig(v) = self { Some(v.as_mut()) } else { None }
+  }
+  /// If the union variant matches, return the owned KindFilterPipeConfigT, setting the union to NONE.
+  pub fn take_kind_filter_pipe_config(&mut self) -> Option<Box<KindFilterPipeConfigT>> {
+    if let Self::KindFilterPipeConfig(_) = self {
+      let v = core::mem::replace(self, Self::NONE);
+      if let Self::KindFilterPipeConfig(w) = v {
+        Some(w)
+      } else {
+        unreachable!()
+      }
+    } else {
+      None
+    }
+  }
+  /// If the union variant matches, return a reference to the KindFilterPipeConfigT.
+  pub fn as_kind_filter_pipe_config(&self) -> Option<&KindFilterPipeConfigT> {
+    if let Self::KindFilterPipeConfig(v) = self { Some(v.as_ref()) } else { None }
+  }
+  /// If the union variant matches, return a mutable reference to the KindFilterPipeConfigT.
+  pub fn as_kind_filter_pipe_config_mut(&mut self) -> Option<&mut KindFilterPipeConfigT> {
+    if let Self::KindFilterPipeConfig(v) = self { Some(v.as_mut()) } else { None }
+  }
+  /// If the union variant matches, return the owned CounterPipeConfigT, setting the union to NONE.
+  pub fn take_counter_pipe_config(&mut self) -> Option<Box<CounterPipeConfigT>> {
+    if let Self::CounterPipeConfig(_) = self {
+      let v = core::mem::replace(self, Self::NONE);
+      if let Self::CounterPipeConfig(w) = v {
+        Some(w)
+      } else {
+        unreachable!()
+      }
+    } else {
+      None
+    }
+  }
+  /// If the union variant matches, return a reference to the CounterPipeConfigT.
+  pub fn as_counter_pipe_config(&self) -> Option<&CounterPipeConfigT> {
+    if let Self::CounterPipeConfig(v) = self { Some(v.as_ref()) } else { None }
+  }
+  /// If the union variant matches, return a mutable reference to the CounterPipeConfigT.
+  pub fn as_counter_pipe_config_mut(&mut self) -> Option<&mut CounterPipeConfigT> {
+    if let Self::CounterPipeConfig(v) = self { Some(v.as_mut()) } else { None }
+  }
+  /// If the union variant matches, return the owned NpubLimiterPipeConfigT, setting the union to NONE.
+  pub fn take_npub_limiter_pipe_config(&mut self) -> Option<Box<NpubLimiterPipeConfigT>> {
+    if let Self::NpubLimiterPipeConfig(_) = self {
+      let v = core::mem::replace(self, Self::NONE);
+      if let Self::NpubLimiterPipeConfig(w) = v {
+        Some(w)
+      } else {
+        unreachable!()
+      }
+    } else {
+      None
+    }
+  }
+  /// If the union variant matches, return a reference to the NpubLimiterPipeConfigT.
+  pub fn as_npub_limiter_pipe_config(&self) -> Option<&NpubLimiterPipeConfigT> {
+    if let Self::NpubLimiterPipeConfig(v) = self { Some(v.as_ref()) } else { None }
+  }
+  /// If the union variant matches, return a mutable reference to the NpubLimiterPipeConfigT.
+  pub fn as_npub_limiter_pipe_config_mut(&mut self) -> Option<&mut NpubLimiterPipeConfigT> {
+    if let Self::NpubLimiterPipeConfig(v) = self { Some(v.as_mut()) } else { None }
+  }
+  /// If the union variant matches, return the owned SaveToDbPipeConfigT, setting the union to NONE.
+  pub fn take_save_to_db_pipe_config(&mut self) -> Option<Box<SaveToDbPipeConfigT>> {
+    if let Self::SaveToDbPipeConfig(_) = self {
+      let v = core::mem::replace(self, Self::NONE);
+      if let Self::SaveToDbPipeConfig(w) = v {
+        Some(w)
+      } else {
+        unreachable!()
+      }
+    } else {
+      None
+    }
+  }
+  /// If the union variant matches, return a reference to the SaveToDbPipeConfigT.
+  pub fn as_save_to_db_pipe_config(&self) -> Option<&SaveToDbPipeConfigT> {
+    if let Self::SaveToDbPipeConfig(v) = self { Some(v.as_ref()) } else { None }
+  }
+  /// If the union variant matches, return a mutable reference to the SaveToDbPipeConfigT.
+  pub fn as_save_to_db_pipe_config_mut(&mut self) -> Option<&mut SaveToDbPipeConfigT> {
+    if let Self::SaveToDbPipeConfig(v) = self { Some(v.as_mut()) } else { None }
+  }
+  /// If the union variant matches, return the owned SerializeEventsPipeConfigT, setting the union to NONE.
+  pub fn take_serialize_events_pipe_config(&mut self) -> Option<Box<SerializeEventsPipeConfigT>> {
+    if let Self::SerializeEventsPipeConfig(_) = self {
+      let v = core::mem::replace(self, Self::NONE);
+      if let Self::SerializeEventsPipeConfig(w) = v {
+        Some(w)
+      } else {
+        unreachable!()
+      }
+    } else {
+      None
+    }
+  }
+  /// If the union variant matches, return a reference to the SerializeEventsPipeConfigT.
+  pub fn as_serialize_events_pipe_config(&self) -> Option<&SerializeEventsPipeConfigT> {
+    if let Self::SerializeEventsPipeConfig(v) = self { Some(v.as_ref()) } else { None }
+  }
+  /// If the union variant matches, return a mutable reference to the SerializeEventsPipeConfigT.
+  pub fn as_serialize_events_pipe_config_mut(&mut self) -> Option<&mut SerializeEventsPipeConfigT> {
+    if let Self::SerializeEventsPipeConfig(v) = self { Some(v.as_mut()) } else { None }
+  }
+  /// If the union variant matches, return the owned ProofVerificationPipeConfigT, setting the union to NONE.
+  pub fn take_proof_verification_pipe_config(&mut self) -> Option<Box<ProofVerificationPipeConfigT>> {
+    if let Self::ProofVerificationPipeConfig(_) = self {
+      let v = core::mem::replace(self, Self::NONE);
+      if let Self::ProofVerificationPipeConfig(w) = v {
+        Some(w)
+      } else {
+        unreachable!()
+      }
+    } else {
+      None
+    }
+  }
+  /// If the union variant matches, return a reference to the ProofVerificationPipeConfigT.
+  pub fn as_proof_verification_pipe_config(&self) -> Option<&ProofVerificationPipeConfigT> {
+    if let Self::ProofVerificationPipeConfig(v) = self { Some(v.as_ref()) } else { None }
+  }
+  /// If the union variant matches, return a mutable reference to the ProofVerificationPipeConfigT.
+  pub fn as_proof_verification_pipe_config_mut(&mut self) -> Option<&mut ProofVerificationPipeConfigT> {
+    if let Self::ProofVerificationPipeConfig(v) = self { Some(v.as_mut()) } else { None }
+  }
+}
+#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
+pub const ENUM_MIN_MAIN_CONTENT: u8 = 0;
+#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
+pub const ENUM_MAX_MAIN_CONTENT: u8 = 6;
+#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
+#[allow(non_camel_case_types)]
+pub const ENUM_VALUES_MAIN_CONTENT: [MainContent; 7] = [
+  MainContent::NONE,
+  MainContent::Subscribe,
+  MainContent::Unsubscribe,
+  MainContent::Publish,
+  MainContent::SignEvent,
+  MainContent::SetSigner,
+  MainContent::GetPublicKey,
+];
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[repr(transparent)]
+pub struct MainContent(pub u8);
+#[allow(non_upper_case_globals)]
+impl MainContent {
+  pub const NONE: Self = Self(0);
+  pub const Subscribe: Self = Self(1);
+  pub const Unsubscribe: Self = Self(2);
+  pub const Publish: Self = Self(3);
+  pub const SignEvent: Self = Self(4);
+  pub const SetSigner: Self = Self(5);
+  pub const GetPublicKey: Self = Self(6);
+
+  pub const ENUM_MIN: u8 = 0;
+  pub const ENUM_MAX: u8 = 6;
+  pub const ENUM_VALUES: &'static [Self] = &[
+    Self::NONE,
+    Self::Subscribe,
+    Self::Unsubscribe,
+    Self::Publish,
+    Self::SignEvent,
+    Self::SetSigner,
+    Self::GetPublicKey,
+  ];
+  /// Returns the variant's name or "" if unknown.
+  pub fn variant_name(self) -> Option<&'static str> {
+    match self {
+      Self::NONE => Some("NONE"),
+      Self::Subscribe => Some("Subscribe"),
+      Self::Unsubscribe => Some("Unsubscribe"),
+      Self::Publish => Some("Publish"),
+      Self::SignEvent => Some("SignEvent"),
+      Self::SetSigner => Some("SetSigner"),
+      Self::GetPublicKey => Some("GetPublicKey"),
+      _ => None,
+    }
+  }
+}
+impl core::fmt::Debug for MainContent {
+  fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+    if let Some(name) = self.variant_name() {
+      f.write_str(name)
+    } else {
+      f.write_fmt(format_args!("<UNKNOWN {:?}>", self.0))
+    }
+  }
+}
+impl<'a> flatbuffers::Follow<'a> for MainContent {
+  type Inner = Self;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    let b = flatbuffers::read_scalar_at::<u8>(buf, loc);
+    Self(b)
+  }
+}
+
+impl flatbuffers::Push for MainContent {
+    type Output = MainContent;
+    #[inline]
+    unsafe fn push(&self, dst: &mut [u8], _written_len: usize) {
+        flatbuffers::emplace_scalar::<u8>(dst, self.0);
+    }
+}
+
+impl flatbuffers::EndianScalar for MainContent {
+  type Scalar = u8;
+  #[inline]
+  fn to_little_endian(self) -> u8 {
+    self.0.to_le()
+  }
+  #[inline]
+  #[allow(clippy::wrong_self_convention)]
+  fn from_little_endian(v: u8) -> Self {
+    let b = u8::from_le(v);
+    Self(b)
+  }
+}
+
+impl<'a> flatbuffers::Verifiable for MainContent {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    u8::run_verifier(v, pos)
+  }
+}
+
+impl flatbuffers::SimpleToVerifyInSlice for MainContent {}
+pub struct MainContentUnionTableOffset {}
+
+#[allow(clippy::upper_case_acronyms)]
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub enum MainContentT {
+  NONE,
+  Subscribe(Box<SubscribeT>),
+  Unsubscribe(Box<UnsubscribeT>),
+  Publish(Box<PublishT>),
+  SignEvent(Box<SignEventT>),
+  SetSigner(Box<SetSignerT>),
+  GetPublicKey(Box<GetPublicKeyT>),
+}
+impl Default for MainContentT {
+  fn default() -> Self {
+    Self::NONE
+  }
+}
+impl MainContentT {
+  pub fn main_content_type(&self) -> MainContent {
+    match self {
+      Self::NONE => MainContent::NONE,
+      Self::Subscribe(_) => MainContent::Subscribe,
+      Self::Unsubscribe(_) => MainContent::Unsubscribe,
+      Self::Publish(_) => MainContent::Publish,
+      Self::SignEvent(_) => MainContent::SignEvent,
+      Self::SetSigner(_) => MainContent::SetSigner,
+      Self::GetPublicKey(_) => MainContent::GetPublicKey,
+    }
+  }
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(&self, fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>) -> Option<flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>> {
+    match self {
+      Self::NONE => None,
+      Self::Subscribe(v) => Some(v.pack(fbb).as_union_value()),
+      Self::Unsubscribe(v) => Some(v.pack(fbb).as_union_value()),
+      Self::Publish(v) => Some(v.pack(fbb).as_union_value()),
+      Self::SignEvent(v) => Some(v.pack(fbb).as_union_value()),
+      Self::SetSigner(v) => Some(v.pack(fbb).as_union_value()),
+      Self::GetPublicKey(v) => Some(v.pack(fbb).as_union_value()),
+    }
+  }
+  /// If the union variant matches, return the owned SubscribeT, setting the union to NONE.
+  pub fn take_subscribe(&mut self) -> Option<Box<SubscribeT>> {
+    if let Self::Subscribe(_) = self {
+      let v = core::mem::replace(self, Self::NONE);
+      if let Self::Subscribe(w) = v {
+        Some(w)
+      } else {
+        unreachable!()
+      }
+    } else {
+      None
+    }
+  }
+  /// If the union variant matches, return a reference to the SubscribeT.
+  pub fn as_subscribe(&self) -> Option<&SubscribeT> {
+    if let Self::Subscribe(v) = self { Some(v.as_ref()) } else { None }
+  }
+  /// If the union variant matches, return a mutable reference to the SubscribeT.
+  pub fn as_subscribe_mut(&mut self) -> Option<&mut SubscribeT> {
+    if let Self::Subscribe(v) = self { Some(v.as_mut()) } else { None }
+  }
+  /// If the union variant matches, return the owned UnsubscribeT, setting the union to NONE.
+  pub fn take_unsubscribe(&mut self) -> Option<Box<UnsubscribeT>> {
+    if let Self::Unsubscribe(_) = self {
+      let v = core::mem::replace(self, Self::NONE);
+      if let Self::Unsubscribe(w) = v {
+        Some(w)
+      } else {
+        unreachable!()
+      }
+    } else {
+      None
+    }
+  }
+  /// If the union variant matches, return a reference to the UnsubscribeT.
+  pub fn as_unsubscribe(&self) -> Option<&UnsubscribeT> {
+    if let Self::Unsubscribe(v) = self { Some(v.as_ref()) } else { None }
+  }
+  /// If the union variant matches, return a mutable reference to the UnsubscribeT.
+  pub fn as_unsubscribe_mut(&mut self) -> Option<&mut UnsubscribeT> {
+    if let Self::Unsubscribe(v) = self { Some(v.as_mut()) } else { None }
+  }
+  /// If the union variant matches, return the owned PublishT, setting the union to NONE.
+  pub fn take_publish(&mut self) -> Option<Box<PublishT>> {
+    if let Self::Publish(_) = self {
+      let v = core::mem::replace(self, Self::NONE);
+      if let Self::Publish(w) = v {
+        Some(w)
+      } else {
+        unreachable!()
+      }
+    } else {
+      None
+    }
+  }
+  /// If the union variant matches, return a reference to the PublishT.
+  pub fn as_publish(&self) -> Option<&PublishT> {
+    if let Self::Publish(v) = self { Some(v.as_ref()) } else { None }
+  }
+  /// If the union variant matches, return a mutable reference to the PublishT.
+  pub fn as_publish_mut(&mut self) -> Option<&mut PublishT> {
+    if let Self::Publish(v) = self { Some(v.as_mut()) } else { None }
+  }
+  /// If the union variant matches, return the owned SignEventT, setting the union to NONE.
+  pub fn take_sign_event(&mut self) -> Option<Box<SignEventT>> {
+    if let Self::SignEvent(_) = self {
+      let v = core::mem::replace(self, Self::NONE);
+      if let Self::SignEvent(w) = v {
+        Some(w)
+      } else {
+        unreachable!()
+      }
+    } else {
+      None
+    }
+  }
+  /// If the union variant matches, return a reference to the SignEventT.
+  pub fn as_sign_event(&self) -> Option<&SignEventT> {
+    if let Self::SignEvent(v) = self { Some(v.as_ref()) } else { None }
+  }
+  /// If the union variant matches, return a mutable reference to the SignEventT.
+  pub fn as_sign_event_mut(&mut self) -> Option<&mut SignEventT> {
+    if let Self::SignEvent(v) = self { Some(v.as_mut()) } else { None }
+  }
+  /// If the union variant matches, return the owned SetSignerT, setting the union to NONE.
+  pub fn take_set_signer(&mut self) -> Option<Box<SetSignerT>> {
+    if let Self::SetSigner(_) = self {
+      let v = core::mem::replace(self, Self::NONE);
+      if let Self::SetSigner(w) = v {
+        Some(w)
+      } else {
+        unreachable!()
+      }
+    } else {
+      None
+    }
+  }
+  /// If the union variant matches, return a reference to the SetSignerT.
+  pub fn as_set_signer(&self) -> Option<&SetSignerT> {
+    if let Self::SetSigner(v) = self { Some(v.as_ref()) } else { None }
+  }
+  /// If the union variant matches, return a mutable reference to the SetSignerT.
+  pub fn as_set_signer_mut(&mut self) -> Option<&mut SetSignerT> {
+    if let Self::SetSigner(v) = self { Some(v.as_mut()) } else { None }
+  }
+  /// If the union variant matches, return the owned GetPublicKeyT, setting the union to NONE.
+  pub fn take_get_public_key(&mut self) -> Option<Box<GetPublicKeyT>> {
+    if let Self::GetPublicKey(_) = self {
+      let v = core::mem::replace(self, Self::NONE);
+      if let Self::GetPublicKey(w) = v {
+        Some(w)
+      } else {
+        unreachable!()
+      }
+    } else {
+      None
+    }
+  }
+  /// If the union variant matches, return a reference to the GetPublicKeyT.
+  pub fn as_get_public_key(&self) -> Option<&GetPublicKeyT> {
+    if let Self::GetPublicKey(v) = self { Some(v.as_ref()) } else { None }
+  }
+  /// If the union variant matches, return a mutable reference to the GetPublicKeyT.
+  pub fn as_get_public_key_mut(&mut self) -> Option<&mut GetPublicKeyT> {
+    if let Self::GetPublicKey(v) = self { Some(v.as_mut()) } else { None }
+  }
+}
+#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
+pub const ENUM_MIN_MESSAGE_TYPE: u32 = 0;
+#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
+pub const ENUM_MAX_MESSAGE_TYPE: u32 = 7;
+#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
+#[allow(non_camel_case_types)]
+pub const ENUM_VALUES_MESSAGE_TYPE: [MessageType; 8] = [
   MessageType::ParsedNostrEvent,
   MessageType::ConnectionStatus,
   MessageType::CountResponse,
   MessageType::Eoce,
   MessageType::BufferFull,
   MessageType::ValidProofs,
+  MessageType::SignedEvent,
+  MessageType::Pubkey,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -576,9 +1288,11 @@ impl MessageType {
   pub const Eoce: Self = Self(3);
   pub const BufferFull: Self = Self(4);
   pub const ValidProofs: Self = Self(5);
+  pub const SignedEvent: Self = Self(6);
+  pub const Pubkey: Self = Self(7);
 
   pub const ENUM_MIN: u32 = 0;
-  pub const ENUM_MAX: u32 = 5;
+  pub const ENUM_MAX: u32 = 7;
   pub const ENUM_VALUES: &'static [Self] = &[
     Self::ParsedNostrEvent,
     Self::ConnectionStatus,
@@ -586,6 +1300,8 @@ impl MessageType {
     Self::Eoce,
     Self::BufferFull,
     Self::ValidProofs,
+    Self::SignedEvent,
+    Self::Pubkey,
   ];
   /// Returns the variant's name or "" if unknown.
   pub fn variant_name(self) -> Option<&'static str> {
@@ -596,6 +1312,8 @@ impl MessageType {
       Self::Eoce => Some("Eoce"),
       Self::BufferFull => Some("BufferFull"),
       Self::ValidProofs => Some("ValidProofs"),
+      Self::SignedEvent => Some("SignedEvent"),
+      Self::Pubkey => Some("Pubkey"),
       _ => None,
     }
   }
@@ -1349,10 +2067,10 @@ impl ParsedDataT {
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_MESSAGE: u8 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MAX_MESSAGE: u8 = 6;
+pub const ENUM_MAX_MESSAGE: u8 = 8;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_MESSAGE: [Message; 7] = [
+pub const ENUM_VALUES_MESSAGE: [Message; 9] = [
   Message::NONE,
   Message::ParsedEvent,
   Message::ConnectionStatus,
@@ -1360,6 +2078,8 @@ pub const ENUM_VALUES_MESSAGE: [Message; 7] = [
   Message::Eoce,
   Message::BufferFull,
   Message::ValidProofs,
+  Message::SignedEvent,
+  Message::Pubkey,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -1374,9 +2094,11 @@ impl Message {
   pub const Eoce: Self = Self(4);
   pub const BufferFull: Self = Self(5);
   pub const ValidProofs: Self = Self(6);
+  pub const SignedEvent: Self = Self(7);
+  pub const Pubkey: Self = Self(8);
 
   pub const ENUM_MIN: u8 = 0;
-  pub const ENUM_MAX: u8 = 6;
+  pub const ENUM_MAX: u8 = 8;
   pub const ENUM_VALUES: &'static [Self] = &[
     Self::NONE,
     Self::ParsedEvent,
@@ -1385,6 +2107,8 @@ impl Message {
     Self::Eoce,
     Self::BufferFull,
     Self::ValidProofs,
+    Self::SignedEvent,
+    Self::Pubkey,
   ];
   /// Returns the variant's name or "" if unknown.
   pub fn variant_name(self) -> Option<&'static str> {
@@ -1396,6 +2120,8 @@ impl Message {
       Self::Eoce => Some("Eoce"),
       Self::BufferFull => Some("BufferFull"),
       Self::ValidProofs => Some("ValidProofs"),
+      Self::SignedEvent => Some("SignedEvent"),
+      Self::Pubkey => Some("Pubkey"),
       _ => None,
     }
   }
@@ -1464,6 +2190,8 @@ pub enum MessageT {
   Eoce(Box<EoceT>),
   BufferFull(Box<BufferFullT>),
   ValidProofs(Box<ValidProofsT>),
+  SignedEvent(Box<SignedEventT>),
+  Pubkey(Box<PubkeyT>),
 }
 impl Default for MessageT {
   fn default() -> Self {
@@ -1480,6 +2208,8 @@ impl MessageT {
       Self::Eoce(_) => Message::Eoce,
       Self::BufferFull(_) => Message::BufferFull,
       Self::ValidProofs(_) => Message::ValidProofs,
+      Self::SignedEvent(_) => Message::SignedEvent,
+      Self::Pubkey(_) => Message::Pubkey,
     }
   }
   pub fn pack<'b, A: flatbuffers::Allocator + 'b>(&self, fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>) -> Option<flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>> {
@@ -1491,6 +2221,8 @@ impl MessageT {
       Self::Eoce(v) => Some(v.pack(fbb).as_union_value()),
       Self::BufferFull(v) => Some(v.pack(fbb).as_union_value()),
       Self::ValidProofs(v) => Some(v.pack(fbb).as_union_value()),
+      Self::SignedEvent(v) => Some(v.pack(fbb).as_union_value()),
+      Self::Pubkey(v) => Some(v.pack(fbb).as_union_value()),
     }
   }
   /// If the union variant matches, return the owned ParsedEventT, setting the union to NONE.
@@ -1618,6 +2350,48 @@ impl MessageT {
   /// If the union variant matches, return a mutable reference to the ValidProofsT.
   pub fn as_valid_proofs_mut(&mut self) -> Option<&mut ValidProofsT> {
     if let Self::ValidProofs(v) = self { Some(v.as_mut()) } else { None }
+  }
+  /// If the union variant matches, return the owned SignedEventT, setting the union to NONE.
+  pub fn take_signed_event(&mut self) -> Option<Box<SignedEventT>> {
+    if let Self::SignedEvent(_) = self {
+      let v = core::mem::replace(self, Self::NONE);
+      if let Self::SignedEvent(w) = v {
+        Some(w)
+      } else {
+        unreachable!()
+      }
+    } else {
+      None
+    }
+  }
+  /// If the union variant matches, return a reference to the SignedEventT.
+  pub fn as_signed_event(&self) -> Option<&SignedEventT> {
+    if let Self::SignedEvent(v) = self { Some(v.as_ref()) } else { None }
+  }
+  /// If the union variant matches, return a mutable reference to the SignedEventT.
+  pub fn as_signed_event_mut(&mut self) -> Option<&mut SignedEventT> {
+    if let Self::SignedEvent(v) = self { Some(v.as_mut()) } else { None }
+  }
+  /// If the union variant matches, return the owned PubkeyT, setting the union to NONE.
+  pub fn take_pubkey(&mut self) -> Option<Box<PubkeyT>> {
+    if let Self::Pubkey(_) = self {
+      let v = core::mem::replace(self, Self::NONE);
+      if let Self::Pubkey(w) = v {
+        Some(w)
+      } else {
+        unreachable!()
+      }
+    } else {
+      None
+    }
+  }
+  /// If the union variant matches, return a reference to the PubkeyT.
+  pub fn as_pubkey(&self) -> Option<&PubkeyT> {
+    if let Self::Pubkey(v) = self { Some(v.as_ref()) } else { None }
+  }
+  /// If the union variant matches, return a mutable reference to the PubkeyT.
+  pub fn as_pubkey_mut(&mut self) -> Option<&mut PubkeyT> {
+    if let Self::Pubkey(v) = self { Some(v.as_mut()) } else { None }
   }
 }
 pub enum CodeDataOffset {}
@@ -5681,9 +6455,10 @@ impl<'a> Request<'a> {
   pub const VT_LIMIT: flatbuffers::VOffsetT = 12;
   pub const VT_SINCE: flatbuffers::VOffsetT = 14;
   pub const VT_UNTIL: flatbuffers::VOffsetT = 16;
-  pub const VT_RELAYS: flatbuffers::VOffsetT = 18;
-  pub const VT_CLOSE_ON_EOSE: flatbuffers::VOffsetT = 20;
-  pub const VT_CACHE_FIRST: flatbuffers::VOffsetT = 22;
+  pub const VT_SEARCH: flatbuffers::VOffsetT = 18;
+  pub const VT_RELAYS: flatbuffers::VOffsetT = 20;
+  pub const VT_CLOSE_ON_EOSE: flatbuffers::VOffsetT = 22;
+  pub const VT_CACHE_FIRST: flatbuffers::VOffsetT = 24;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -5696,6 +6471,7 @@ impl<'a> Request<'a> {
   ) -> flatbuffers::WIPOffset<Request<'bldr>> {
     let mut builder = RequestBuilder::new(_fbb);
     if let Some(x) = args.relays { builder.add_relays(x); }
+    if let Some(x) = args.search { builder.add_search(x); }
     builder.add_until(args.until);
     builder.add_since(args.since);
     builder.add_limit(args.limit);
@@ -5724,6 +6500,9 @@ impl<'a> Request<'a> {
     let limit = self.limit();
     let since = self.since();
     let until = self.until();
+    let search = self.search().map(|x| {
+      x.to_string()
+    });
     let relays = self.relays().map(|x| {
       x.iter().map(|s| s.to_string()).collect()
     });
@@ -5737,6 +6516,7 @@ impl<'a> Request<'a> {
       limit,
       since,
       until,
+      search,
       relays,
       close_on_eose,
       cache_first,
@@ -5793,6 +6573,13 @@ impl<'a> Request<'a> {
     unsafe { self._tab.get::<i32>(Request::VT_UNTIL, Some(0)).unwrap()}
   }
   #[inline]
+  pub fn search(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Request::VT_SEARCH, None)}
+  }
+  #[inline]
   pub fn relays(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>> {
     // Safety:
     // Created from valid Table for this object
@@ -5829,6 +6616,7 @@ impl flatbuffers::Verifiable for Request<'_> {
      .visit_field::<i32>("limit", Self::VT_LIMIT, false)?
      .visit_field::<i32>("since", Self::VT_SINCE, false)?
      .visit_field::<i32>("until", Self::VT_UNTIL, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("search", Self::VT_SEARCH, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("relays", Self::VT_RELAYS, false)?
      .visit_field::<bool>("close_on_eose", Self::VT_CLOSE_ON_EOSE, false)?
      .visit_field::<bool>("cache_first", Self::VT_CACHE_FIRST, false)?
@@ -5844,6 +6632,7 @@ pub struct RequestArgs<'a> {
     pub limit: i32,
     pub since: i32,
     pub until: i32,
+    pub search: Option<flatbuffers::WIPOffset<&'a str>>,
     pub relays: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>,
     pub close_on_eose: bool,
     pub cache_first: bool,
@@ -5859,6 +6648,7 @@ impl<'a> Default for RequestArgs<'a> {
       limit: 0,
       since: 0,
       until: 0,
+      search: None,
       relays: None,
       close_on_eose: false,
       cache_first: false,
@@ -5900,6 +6690,10 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> RequestBuilder<'a, 'b, A> {
     self.fbb_.push_slot::<i32>(Request::VT_UNTIL, until, 0);
   }
   #[inline]
+  pub fn add_search(&mut self, search: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Request::VT_SEARCH, search);
+  }
+  #[inline]
   pub fn add_relays(&mut self, relays: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<&'b  str>>>) {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Request::VT_RELAYS, relays);
   }
@@ -5936,6 +6730,7 @@ impl core::fmt::Debug for Request<'_> {
       ds.field("limit", &self.limit());
       ds.field("since", &self.since());
       ds.field("until", &self.until());
+      ds.field("search", &self.search());
       ds.field("relays", &self.relays());
       ds.field("close_on_eose", &self.close_on_eose());
       ds.field("cache_first", &self.cache_first());
@@ -5952,6 +6747,7 @@ pub struct RequestT {
   pub limit: i32,
   pub since: i32,
   pub until: i32,
+  pub search: Option<String>,
   pub relays: Option<Vec<String>>,
   pub close_on_eose: bool,
   pub cache_first: bool,
@@ -5966,6 +6762,7 @@ impl Default for RequestT {
       limit: 0,
       since: 0,
       until: 0,
+      search: None,
       relays: None,
       close_on_eose: false,
       cache_first: false,
@@ -5992,6 +6789,9 @@ impl RequestT {
     let limit = self.limit;
     let since = self.since;
     let until = self.until;
+    let search = self.search.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
     let relays = self.relays.as_ref().map(|x|{
       let w: Vec<_> = x.iter().map(|s| _fbb.create_string(s)).collect();_fbb.create_vector(&w)
     });
@@ -6005,6 +6805,7 @@ impl RequestT {
       limit,
       since,
       until,
+      search,
       relays,
       close_on_eose,
       cache_first,
@@ -6307,6 +7108,3253 @@ impl NostrEventT {
       tags,
       created_at,
       sig,
+    })
+  }
+}
+pub enum PrivateKeyOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct PrivateKey<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for PrivateKey<'a> {
+  type Inner = PrivateKey<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> PrivateKey<'a> {
+  pub const VT_PRIVATE_KEY: flatbuffers::VOffsetT = 4;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    PrivateKey { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args PrivateKeyArgs<'args>
+  ) -> flatbuffers::WIPOffset<PrivateKey<'bldr>> {
+    let mut builder = PrivateKeyBuilder::new(_fbb);
+    if let Some(x) = args.private_key { builder.add_private_key(x); }
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> PrivateKeyT {
+    let private_key = {
+      let x = self.private_key();
+      x.to_string()
+    };
+    PrivateKeyT {
+      private_key,
+    }
+  }
+
+  #[inline]
+  pub fn private_key(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(PrivateKey::VT_PRIVATE_KEY, None).unwrap()}
+  }
+}
+
+impl flatbuffers::Verifiable for PrivateKey<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("private_key", Self::VT_PRIVATE_KEY, true)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct PrivateKeyArgs<'a> {
+    pub private_key: Option<flatbuffers::WIPOffset<&'a str>>,
+}
+impl<'a> Default for PrivateKeyArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    PrivateKeyArgs {
+      private_key: None, // required field
+    }
+  }
+}
+
+pub struct PrivateKeyBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> PrivateKeyBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_private_key(&mut self, private_key: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(PrivateKey::VT_PRIVATE_KEY, private_key);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> PrivateKeyBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    PrivateKeyBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<PrivateKey<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, PrivateKey::VT_PRIVATE_KEY,"private_key");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for PrivateKey<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("PrivateKey");
+      ds.field("private_key", &self.private_key());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct PrivateKeyT {
+  pub private_key: String,
+}
+impl Default for PrivateKeyT {
+  fn default() -> Self {
+    Self {
+      private_key: "".to_string(),
+    }
+  }
+}
+impl PrivateKeyT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<PrivateKey<'b>> {
+    let private_key = Some({
+      let x = &self.private_key;
+      _fbb.create_string(x)
+    });
+    PrivateKey::create(_fbb, &PrivateKeyArgs{
+      private_key,
+    })
+  }
+}
+pub enum ParsePipeConfigOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct ParsePipeConfig<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for ParsePipeConfig<'a> {
+  type Inner = ParsePipeConfig<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> ParsePipeConfig<'a> {
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    ParsePipeConfig { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    _args: &'args ParsePipeConfigArgs
+  ) -> flatbuffers::WIPOffset<ParsePipeConfig<'bldr>> {
+    let mut builder = ParsePipeConfigBuilder::new(_fbb);
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> ParsePipeConfigT {
+    ParsePipeConfigT {
+    }
+  }
+}
+
+impl flatbuffers::Verifiable for ParsePipeConfig<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct ParsePipeConfigArgs {
+}
+impl<'a> Default for ParsePipeConfigArgs {
+  #[inline]
+  fn default() -> Self {
+    ParsePipeConfigArgs {
+    }
+  }
+}
+
+pub struct ParsePipeConfigBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> ParsePipeConfigBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> ParsePipeConfigBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    ParsePipeConfigBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<ParsePipeConfig<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for ParsePipeConfig<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("ParsePipeConfig");
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParsePipeConfigT {
+}
+impl Default for ParsePipeConfigT {
+  fn default() -> Self {
+    Self {
+    }
+  }
+}
+impl ParsePipeConfigT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<ParsePipeConfig<'b>> {
+    ParsePipeConfig::create(_fbb, &ParsePipeConfigArgs{
+    })
+  }
+}
+pub enum KindFilterPipeConfigOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct KindFilterPipeConfig<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for KindFilterPipeConfig<'a> {
+  type Inner = KindFilterPipeConfig<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> KindFilterPipeConfig<'a> {
+  pub const VT_KINDS: flatbuffers::VOffsetT = 4;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    KindFilterPipeConfig { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args KindFilterPipeConfigArgs<'args>
+  ) -> flatbuffers::WIPOffset<KindFilterPipeConfig<'bldr>> {
+    let mut builder = KindFilterPipeConfigBuilder::new(_fbb);
+    if let Some(x) = args.kinds { builder.add_kinds(x); }
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> KindFilterPipeConfigT {
+    let kinds = {
+      let x = self.kinds();
+      x.into_iter().collect()
+    };
+    KindFilterPipeConfigT {
+      kinds,
+    }
+  }
+
+  #[inline]
+  pub fn kinds(&self) -> flatbuffers::Vector<'a, u16> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, u16>>>(KindFilterPipeConfig::VT_KINDS, None).unwrap()}
+  }
+}
+
+impl flatbuffers::Verifiable for KindFilterPipeConfig<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u16>>>("kinds", Self::VT_KINDS, true)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct KindFilterPipeConfigArgs<'a> {
+    pub kinds: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u16>>>,
+}
+impl<'a> Default for KindFilterPipeConfigArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    KindFilterPipeConfigArgs {
+      kinds: None, // required field
+    }
+  }
+}
+
+pub struct KindFilterPipeConfigBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> KindFilterPipeConfigBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_kinds(&mut self, kinds: flatbuffers::WIPOffset<flatbuffers::Vector<'b , u16>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(KindFilterPipeConfig::VT_KINDS, kinds);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> KindFilterPipeConfigBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    KindFilterPipeConfigBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<KindFilterPipeConfig<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, KindFilterPipeConfig::VT_KINDS,"kinds");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for KindFilterPipeConfig<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("KindFilterPipeConfig");
+      ds.field("kinds", &self.kinds());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct KindFilterPipeConfigT {
+  pub kinds: Vec<u16>,
+}
+impl Default for KindFilterPipeConfigT {
+  fn default() -> Self {
+    Self {
+      kinds: Default::default(),
+    }
+  }
+}
+impl KindFilterPipeConfigT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<KindFilterPipeConfig<'b>> {
+    let kinds = Some({
+      let x = &self.kinds;
+      _fbb.create_vector(x)
+    });
+    KindFilterPipeConfig::create(_fbb, &KindFilterPipeConfigArgs{
+      kinds,
+    })
+  }
+}
+pub enum CounterPipeConfigOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct CounterPipeConfig<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for CounterPipeConfig<'a> {
+  type Inner = CounterPipeConfig<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> CounterPipeConfig<'a> {
+  pub const VT_KINDS: flatbuffers::VOffsetT = 4;
+  pub const VT_PUBKEY: flatbuffers::VOffsetT = 6;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    CounterPipeConfig { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args CounterPipeConfigArgs<'args>
+  ) -> flatbuffers::WIPOffset<CounterPipeConfig<'bldr>> {
+    let mut builder = CounterPipeConfigBuilder::new(_fbb);
+    if let Some(x) = args.pubkey { builder.add_pubkey(x); }
+    if let Some(x) = args.kinds { builder.add_kinds(x); }
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> CounterPipeConfigT {
+    let kinds = {
+      let x = self.kinds();
+      x.into_iter().collect()
+    };
+    let pubkey = {
+      let x = self.pubkey();
+      x.to_string()
+    };
+    CounterPipeConfigT {
+      kinds,
+      pubkey,
+    }
+  }
+
+  #[inline]
+  pub fn kinds(&self) -> flatbuffers::Vector<'a, u16> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, u16>>>(CounterPipeConfig::VT_KINDS, None).unwrap()}
+  }
+  #[inline]
+  pub fn pubkey(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(CounterPipeConfig::VT_PUBKEY, None).unwrap()}
+  }
+}
+
+impl flatbuffers::Verifiable for CounterPipeConfig<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u16>>>("kinds", Self::VT_KINDS, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("pubkey", Self::VT_PUBKEY, true)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct CounterPipeConfigArgs<'a> {
+    pub kinds: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u16>>>,
+    pub pubkey: Option<flatbuffers::WIPOffset<&'a str>>,
+}
+impl<'a> Default for CounterPipeConfigArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    CounterPipeConfigArgs {
+      kinds: None, // required field
+      pubkey: None, // required field
+    }
+  }
+}
+
+pub struct CounterPipeConfigBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> CounterPipeConfigBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_kinds(&mut self, kinds: flatbuffers::WIPOffset<flatbuffers::Vector<'b , u16>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(CounterPipeConfig::VT_KINDS, kinds);
+  }
+  #[inline]
+  pub fn add_pubkey(&mut self, pubkey: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(CounterPipeConfig::VT_PUBKEY, pubkey);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> CounterPipeConfigBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    CounterPipeConfigBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<CounterPipeConfig<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, CounterPipeConfig::VT_KINDS,"kinds");
+    self.fbb_.required(o, CounterPipeConfig::VT_PUBKEY,"pubkey");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for CounterPipeConfig<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("CounterPipeConfig");
+      ds.field("kinds", &self.kinds());
+      ds.field("pubkey", &self.pubkey());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct CounterPipeConfigT {
+  pub kinds: Vec<u16>,
+  pub pubkey: String,
+}
+impl Default for CounterPipeConfigT {
+  fn default() -> Self {
+    Self {
+      kinds: Default::default(),
+      pubkey: "".to_string(),
+    }
+  }
+}
+impl CounterPipeConfigT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<CounterPipeConfig<'b>> {
+    let kinds = Some({
+      let x = &self.kinds;
+      _fbb.create_vector(x)
+    });
+    let pubkey = Some({
+      let x = &self.pubkey;
+      _fbb.create_string(x)
+    });
+    CounterPipeConfig::create(_fbb, &CounterPipeConfigArgs{
+      kinds,
+      pubkey,
+    })
+  }
+}
+pub enum NpubLimiterPipeConfigOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct NpubLimiterPipeConfig<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for NpubLimiterPipeConfig<'a> {
+  type Inner = NpubLimiterPipeConfig<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> NpubLimiterPipeConfig<'a> {
+  pub const VT_KIND: flatbuffers::VOffsetT = 4;
+  pub const VT_LIMIT_PER_NPUB: flatbuffers::VOffsetT = 6;
+  pub const VT_MAX_TOTAL_NPUBS: flatbuffers::VOffsetT = 8;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    NpubLimiterPipeConfig { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args NpubLimiterPipeConfigArgs
+  ) -> flatbuffers::WIPOffset<NpubLimiterPipeConfig<'bldr>> {
+    let mut builder = NpubLimiterPipeConfigBuilder::new(_fbb);
+    builder.add_max_total_npubs(args.max_total_npubs);
+    builder.add_limit_per_npub(args.limit_per_npub);
+    builder.add_kind(args.kind);
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> NpubLimiterPipeConfigT {
+    let kind = self.kind();
+    let limit_per_npub = self.limit_per_npub();
+    let max_total_npubs = self.max_total_npubs();
+    NpubLimiterPipeConfigT {
+      kind,
+      limit_per_npub,
+      max_total_npubs,
+    }
+  }
+
+  #[inline]
+  pub fn kind(&self) -> u16 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u16>(NpubLimiterPipeConfig::VT_KIND, Some(0)).unwrap()}
+  }
+  #[inline]
+  pub fn limit_per_npub(&self) -> u32 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u32>(NpubLimiterPipeConfig::VT_LIMIT_PER_NPUB, Some(0)).unwrap()}
+  }
+  #[inline]
+  pub fn max_total_npubs(&self) -> u32 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u32>(NpubLimiterPipeConfig::VT_MAX_TOTAL_NPUBS, Some(0)).unwrap()}
+  }
+}
+
+impl flatbuffers::Verifiable for NpubLimiterPipeConfig<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<u16>("kind", Self::VT_KIND, false)?
+     .visit_field::<u32>("limit_per_npub", Self::VT_LIMIT_PER_NPUB, false)?
+     .visit_field::<u32>("max_total_npubs", Self::VT_MAX_TOTAL_NPUBS, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct NpubLimiterPipeConfigArgs {
+    pub kind: u16,
+    pub limit_per_npub: u32,
+    pub max_total_npubs: u32,
+}
+impl<'a> Default for NpubLimiterPipeConfigArgs {
+  #[inline]
+  fn default() -> Self {
+    NpubLimiterPipeConfigArgs {
+      kind: 0,
+      limit_per_npub: 0,
+      max_total_npubs: 0,
+    }
+  }
+}
+
+pub struct NpubLimiterPipeConfigBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> NpubLimiterPipeConfigBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_kind(&mut self, kind: u16) {
+    self.fbb_.push_slot::<u16>(NpubLimiterPipeConfig::VT_KIND, kind, 0);
+  }
+  #[inline]
+  pub fn add_limit_per_npub(&mut self, limit_per_npub: u32) {
+    self.fbb_.push_slot::<u32>(NpubLimiterPipeConfig::VT_LIMIT_PER_NPUB, limit_per_npub, 0);
+  }
+  #[inline]
+  pub fn add_max_total_npubs(&mut self, max_total_npubs: u32) {
+    self.fbb_.push_slot::<u32>(NpubLimiterPipeConfig::VT_MAX_TOTAL_NPUBS, max_total_npubs, 0);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> NpubLimiterPipeConfigBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    NpubLimiterPipeConfigBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<NpubLimiterPipeConfig<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for NpubLimiterPipeConfig<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("NpubLimiterPipeConfig");
+      ds.field("kind", &self.kind());
+      ds.field("limit_per_npub", &self.limit_per_npub());
+      ds.field("max_total_npubs", &self.max_total_npubs());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct NpubLimiterPipeConfigT {
+  pub kind: u16,
+  pub limit_per_npub: u32,
+  pub max_total_npubs: u32,
+}
+impl Default for NpubLimiterPipeConfigT {
+  fn default() -> Self {
+    Self {
+      kind: 0,
+      limit_per_npub: 0,
+      max_total_npubs: 0,
+    }
+  }
+}
+impl NpubLimiterPipeConfigT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<NpubLimiterPipeConfig<'b>> {
+    let kind = self.kind;
+    let limit_per_npub = self.limit_per_npub;
+    let max_total_npubs = self.max_total_npubs;
+    NpubLimiterPipeConfig::create(_fbb, &NpubLimiterPipeConfigArgs{
+      kind,
+      limit_per_npub,
+      max_total_npubs,
+    })
+  }
+}
+pub enum SaveToDbPipeConfigOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct SaveToDbPipeConfig<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for SaveToDbPipeConfig<'a> {
+  type Inner = SaveToDbPipeConfig<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> SaveToDbPipeConfig<'a> {
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    SaveToDbPipeConfig { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    _args: &'args SaveToDbPipeConfigArgs
+  ) -> flatbuffers::WIPOffset<SaveToDbPipeConfig<'bldr>> {
+    let mut builder = SaveToDbPipeConfigBuilder::new(_fbb);
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> SaveToDbPipeConfigT {
+    SaveToDbPipeConfigT {
+    }
+  }
+}
+
+impl flatbuffers::Verifiable for SaveToDbPipeConfig<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct SaveToDbPipeConfigArgs {
+}
+impl<'a> Default for SaveToDbPipeConfigArgs {
+  #[inline]
+  fn default() -> Self {
+    SaveToDbPipeConfigArgs {
+    }
+  }
+}
+
+pub struct SaveToDbPipeConfigBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> SaveToDbPipeConfigBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> SaveToDbPipeConfigBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    SaveToDbPipeConfigBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<SaveToDbPipeConfig<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for SaveToDbPipeConfig<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("SaveToDbPipeConfig");
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct SaveToDbPipeConfigT {
+}
+impl Default for SaveToDbPipeConfigT {
+  fn default() -> Self {
+    Self {
+    }
+  }
+}
+impl SaveToDbPipeConfigT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<SaveToDbPipeConfig<'b>> {
+    SaveToDbPipeConfig::create(_fbb, &SaveToDbPipeConfigArgs{
+    })
+  }
+}
+pub enum SerializeEventsPipeConfigOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct SerializeEventsPipeConfig<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for SerializeEventsPipeConfig<'a> {
+  type Inner = SerializeEventsPipeConfig<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> SerializeEventsPipeConfig<'a> {
+  pub const VT_SUBSCRIPTION_ID: flatbuffers::VOffsetT = 4;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    SerializeEventsPipeConfig { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args SerializeEventsPipeConfigArgs<'args>
+  ) -> flatbuffers::WIPOffset<SerializeEventsPipeConfig<'bldr>> {
+    let mut builder = SerializeEventsPipeConfigBuilder::new(_fbb);
+    if let Some(x) = args.subscription_id { builder.add_subscription_id(x); }
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> SerializeEventsPipeConfigT {
+    let subscription_id = {
+      let x = self.subscription_id();
+      x.to_string()
+    };
+    SerializeEventsPipeConfigT {
+      subscription_id,
+    }
+  }
+
+  #[inline]
+  pub fn subscription_id(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(SerializeEventsPipeConfig::VT_SUBSCRIPTION_ID, None).unwrap()}
+  }
+}
+
+impl flatbuffers::Verifiable for SerializeEventsPipeConfig<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("subscription_id", Self::VT_SUBSCRIPTION_ID, true)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct SerializeEventsPipeConfigArgs<'a> {
+    pub subscription_id: Option<flatbuffers::WIPOffset<&'a str>>,
+}
+impl<'a> Default for SerializeEventsPipeConfigArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    SerializeEventsPipeConfigArgs {
+      subscription_id: None, // required field
+    }
+  }
+}
+
+pub struct SerializeEventsPipeConfigBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> SerializeEventsPipeConfigBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_subscription_id(&mut self, subscription_id: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(SerializeEventsPipeConfig::VT_SUBSCRIPTION_ID, subscription_id);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> SerializeEventsPipeConfigBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    SerializeEventsPipeConfigBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<SerializeEventsPipeConfig<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, SerializeEventsPipeConfig::VT_SUBSCRIPTION_ID,"subscription_id");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for SerializeEventsPipeConfig<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("SerializeEventsPipeConfig");
+      ds.field("subscription_id", &self.subscription_id());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct SerializeEventsPipeConfigT {
+  pub subscription_id: String,
+}
+impl Default for SerializeEventsPipeConfigT {
+  fn default() -> Self {
+    Self {
+      subscription_id: "".to_string(),
+    }
+  }
+}
+impl SerializeEventsPipeConfigT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<SerializeEventsPipeConfig<'b>> {
+    let subscription_id = Some({
+      let x = &self.subscription_id;
+      _fbb.create_string(x)
+    });
+    SerializeEventsPipeConfig::create(_fbb, &SerializeEventsPipeConfigArgs{
+      subscription_id,
+    })
+  }
+}
+pub enum ProofVerificationPipeConfigOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct ProofVerificationPipeConfig<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for ProofVerificationPipeConfig<'a> {
+  type Inner = ProofVerificationPipeConfig<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> ProofVerificationPipeConfig<'a> {
+  pub const VT_MAX_PROOFS: flatbuffers::VOffsetT = 4;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    ProofVerificationPipeConfig { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args ProofVerificationPipeConfigArgs
+  ) -> flatbuffers::WIPOffset<ProofVerificationPipeConfig<'bldr>> {
+    let mut builder = ProofVerificationPipeConfigBuilder::new(_fbb);
+    builder.add_max_proofs(args.max_proofs);
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> ProofVerificationPipeConfigT {
+    let max_proofs = self.max_proofs();
+    ProofVerificationPipeConfigT {
+      max_proofs,
+    }
+  }
+
+  #[inline]
+  pub fn max_proofs(&self) -> u32 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u32>(ProofVerificationPipeConfig::VT_MAX_PROOFS, Some(0)).unwrap()}
+  }
+}
+
+impl flatbuffers::Verifiable for ProofVerificationPipeConfig<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<u32>("max_proofs", Self::VT_MAX_PROOFS, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct ProofVerificationPipeConfigArgs {
+    pub max_proofs: u32,
+}
+impl<'a> Default for ProofVerificationPipeConfigArgs {
+  #[inline]
+  fn default() -> Self {
+    ProofVerificationPipeConfigArgs {
+      max_proofs: 0,
+    }
+  }
+}
+
+pub struct ProofVerificationPipeConfigBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> ProofVerificationPipeConfigBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_max_proofs(&mut self, max_proofs: u32) {
+    self.fbb_.push_slot::<u32>(ProofVerificationPipeConfig::VT_MAX_PROOFS, max_proofs, 0);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> ProofVerificationPipeConfigBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    ProofVerificationPipeConfigBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<ProofVerificationPipeConfig<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for ProofVerificationPipeConfig<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("ProofVerificationPipeConfig");
+      ds.field("max_proofs", &self.max_proofs());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProofVerificationPipeConfigT {
+  pub max_proofs: u32,
+}
+impl Default for ProofVerificationPipeConfigT {
+  fn default() -> Self {
+    Self {
+      max_proofs: 0,
+    }
+  }
+}
+impl ProofVerificationPipeConfigT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<ProofVerificationPipeConfig<'b>> {
+    let max_proofs = self.max_proofs;
+    ProofVerificationPipeConfig::create(_fbb, &ProofVerificationPipeConfigArgs{
+      max_proofs,
+    })
+  }
+}
+pub enum PipeOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct Pipe<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for Pipe<'a> {
+  type Inner = Pipe<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> Pipe<'a> {
+  pub const VT_CONFIG_TYPE: flatbuffers::VOffsetT = 4;
+  pub const VT_CONFIG: flatbuffers::VOffsetT = 6;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    Pipe { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args PipeArgs
+  ) -> flatbuffers::WIPOffset<Pipe<'bldr>> {
+    let mut builder = PipeBuilder::new(_fbb);
+    if let Some(x) = args.config { builder.add_config(x); }
+    builder.add_config_type(args.config_type);
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> PipeT {
+    let config = match self.config_type() {
+      PipeConfig::NONE => PipeConfigT::NONE,
+      PipeConfig::ParsePipeConfig => PipeConfigT::ParsePipeConfig(Box::new(
+        self.config_as_parse_pipe_config()
+            .expect("Invalid union table, expected `PipeConfig::ParsePipeConfig`.")
+            .unpack()
+      )),
+      PipeConfig::KindFilterPipeConfig => PipeConfigT::KindFilterPipeConfig(Box::new(
+        self.config_as_kind_filter_pipe_config()
+            .expect("Invalid union table, expected `PipeConfig::KindFilterPipeConfig`.")
+            .unpack()
+      )),
+      PipeConfig::CounterPipeConfig => PipeConfigT::CounterPipeConfig(Box::new(
+        self.config_as_counter_pipe_config()
+            .expect("Invalid union table, expected `PipeConfig::CounterPipeConfig`.")
+            .unpack()
+      )),
+      PipeConfig::NpubLimiterPipeConfig => PipeConfigT::NpubLimiterPipeConfig(Box::new(
+        self.config_as_npub_limiter_pipe_config()
+            .expect("Invalid union table, expected `PipeConfig::NpubLimiterPipeConfig`.")
+            .unpack()
+      )),
+      PipeConfig::SaveToDbPipeConfig => PipeConfigT::SaveToDbPipeConfig(Box::new(
+        self.config_as_save_to_db_pipe_config()
+            .expect("Invalid union table, expected `PipeConfig::SaveToDbPipeConfig`.")
+            .unpack()
+      )),
+      PipeConfig::SerializeEventsPipeConfig => PipeConfigT::SerializeEventsPipeConfig(Box::new(
+        self.config_as_serialize_events_pipe_config()
+            .expect("Invalid union table, expected `PipeConfig::SerializeEventsPipeConfig`.")
+            .unpack()
+      )),
+      PipeConfig::ProofVerificationPipeConfig => PipeConfigT::ProofVerificationPipeConfig(Box::new(
+        self.config_as_proof_verification_pipe_config()
+            .expect("Invalid union table, expected `PipeConfig::ProofVerificationPipeConfig`.")
+            .unpack()
+      )),
+      _ => PipeConfigT::NONE,
+    };
+    PipeT {
+      config,
+    }
+  }
+
+  #[inline]
+  pub fn config_type(&self) -> PipeConfig {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<PipeConfig>(Pipe::VT_CONFIG_TYPE, Some(PipeConfig::NONE)).unwrap()}
+  }
+  #[inline]
+  pub fn config(&self) -> flatbuffers::Table<'a> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Table<'a>>>(Pipe::VT_CONFIG, None).unwrap()}
+  }
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn config_as_parse_pipe_config(&self) -> Option<ParsePipeConfig<'a>> {
+    if self.config_type() == PipeConfig::ParsePipeConfig {
+      let u = self.config();
+      // Safety:
+      // Created from a valid Table for this object
+      // Which contains a valid union in this slot
+      Some(unsafe { ParsePipeConfig::init_from_table(u) })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn config_as_kind_filter_pipe_config(&self) -> Option<KindFilterPipeConfig<'a>> {
+    if self.config_type() == PipeConfig::KindFilterPipeConfig {
+      let u = self.config();
+      // Safety:
+      // Created from a valid Table for this object
+      // Which contains a valid union in this slot
+      Some(unsafe { KindFilterPipeConfig::init_from_table(u) })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn config_as_counter_pipe_config(&self) -> Option<CounterPipeConfig<'a>> {
+    if self.config_type() == PipeConfig::CounterPipeConfig {
+      let u = self.config();
+      // Safety:
+      // Created from a valid Table for this object
+      // Which contains a valid union in this slot
+      Some(unsafe { CounterPipeConfig::init_from_table(u) })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn config_as_npub_limiter_pipe_config(&self) -> Option<NpubLimiterPipeConfig<'a>> {
+    if self.config_type() == PipeConfig::NpubLimiterPipeConfig {
+      let u = self.config();
+      // Safety:
+      // Created from a valid Table for this object
+      // Which contains a valid union in this slot
+      Some(unsafe { NpubLimiterPipeConfig::init_from_table(u) })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn config_as_save_to_db_pipe_config(&self) -> Option<SaveToDbPipeConfig<'a>> {
+    if self.config_type() == PipeConfig::SaveToDbPipeConfig {
+      let u = self.config();
+      // Safety:
+      // Created from a valid Table for this object
+      // Which contains a valid union in this slot
+      Some(unsafe { SaveToDbPipeConfig::init_from_table(u) })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn config_as_serialize_events_pipe_config(&self) -> Option<SerializeEventsPipeConfig<'a>> {
+    if self.config_type() == PipeConfig::SerializeEventsPipeConfig {
+      let u = self.config();
+      // Safety:
+      // Created from a valid Table for this object
+      // Which contains a valid union in this slot
+      Some(unsafe { SerializeEventsPipeConfig::init_from_table(u) })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn config_as_proof_verification_pipe_config(&self) -> Option<ProofVerificationPipeConfig<'a>> {
+    if self.config_type() == PipeConfig::ProofVerificationPipeConfig {
+      let u = self.config();
+      // Safety:
+      // Created from a valid Table for this object
+      // Which contains a valid union in this slot
+      Some(unsafe { ProofVerificationPipeConfig::init_from_table(u) })
+    } else {
+      None
+    }
+  }
+
+}
+
+impl flatbuffers::Verifiable for Pipe<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_union::<PipeConfig, _>("config_type", Self::VT_CONFIG_TYPE, "config", Self::VT_CONFIG, true, |key, v, pos| {
+        match key {
+          PipeConfig::ParsePipeConfig => v.verify_union_variant::<flatbuffers::ForwardsUOffset<ParsePipeConfig>>("PipeConfig::ParsePipeConfig", pos),
+          PipeConfig::KindFilterPipeConfig => v.verify_union_variant::<flatbuffers::ForwardsUOffset<KindFilterPipeConfig>>("PipeConfig::KindFilterPipeConfig", pos),
+          PipeConfig::CounterPipeConfig => v.verify_union_variant::<flatbuffers::ForwardsUOffset<CounterPipeConfig>>("PipeConfig::CounterPipeConfig", pos),
+          PipeConfig::NpubLimiterPipeConfig => v.verify_union_variant::<flatbuffers::ForwardsUOffset<NpubLimiterPipeConfig>>("PipeConfig::NpubLimiterPipeConfig", pos),
+          PipeConfig::SaveToDbPipeConfig => v.verify_union_variant::<flatbuffers::ForwardsUOffset<SaveToDbPipeConfig>>("PipeConfig::SaveToDbPipeConfig", pos),
+          PipeConfig::SerializeEventsPipeConfig => v.verify_union_variant::<flatbuffers::ForwardsUOffset<SerializeEventsPipeConfig>>("PipeConfig::SerializeEventsPipeConfig", pos),
+          PipeConfig::ProofVerificationPipeConfig => v.verify_union_variant::<flatbuffers::ForwardsUOffset<ProofVerificationPipeConfig>>("PipeConfig::ProofVerificationPipeConfig", pos),
+          _ => Ok(()),
+        }
+     })?
+     .finish();
+    Ok(())
+  }
+}
+pub struct PipeArgs {
+    pub config_type: PipeConfig,
+    pub config: Option<flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>>,
+}
+impl<'a> Default for PipeArgs {
+  #[inline]
+  fn default() -> Self {
+    PipeArgs {
+      config_type: PipeConfig::NONE,
+      config: None, // required field
+    }
+  }
+}
+
+pub struct PipeBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> PipeBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_config_type(&mut self, config_type: PipeConfig) {
+    self.fbb_.push_slot::<PipeConfig>(Pipe::VT_CONFIG_TYPE, config_type, PipeConfig::NONE);
+  }
+  #[inline]
+  pub fn add_config(&mut self, config: flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Pipe::VT_CONFIG, config);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> PipeBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    PipeBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<Pipe<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, Pipe::VT_CONFIG,"config");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for Pipe<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("Pipe");
+      ds.field("config_type", &self.config_type());
+      match self.config_type() {
+        PipeConfig::ParsePipeConfig => {
+          if let Some(x) = self.config_as_parse_pipe_config() {
+            ds.field("config", &x)
+          } else {
+            ds.field("config", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        PipeConfig::KindFilterPipeConfig => {
+          if let Some(x) = self.config_as_kind_filter_pipe_config() {
+            ds.field("config", &x)
+          } else {
+            ds.field("config", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        PipeConfig::CounterPipeConfig => {
+          if let Some(x) = self.config_as_counter_pipe_config() {
+            ds.field("config", &x)
+          } else {
+            ds.field("config", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        PipeConfig::NpubLimiterPipeConfig => {
+          if let Some(x) = self.config_as_npub_limiter_pipe_config() {
+            ds.field("config", &x)
+          } else {
+            ds.field("config", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        PipeConfig::SaveToDbPipeConfig => {
+          if let Some(x) = self.config_as_save_to_db_pipe_config() {
+            ds.field("config", &x)
+          } else {
+            ds.field("config", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        PipeConfig::SerializeEventsPipeConfig => {
+          if let Some(x) = self.config_as_serialize_events_pipe_config() {
+            ds.field("config", &x)
+          } else {
+            ds.field("config", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        PipeConfig::ProofVerificationPipeConfig => {
+          if let Some(x) = self.config_as_proof_verification_pipe_config() {
+            ds.field("config", &x)
+          } else {
+            ds.field("config", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        _ => {
+          let x: Option<()> = None;
+          ds.field("config", &x)
+        },
+      };
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct PipeT {
+  pub config: PipeConfigT,
+}
+impl Default for PipeT {
+  fn default() -> Self {
+    Self {
+      config: PipeConfigT::NONE,
+    }
+  }
+}
+impl PipeT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<Pipe<'b>> {
+    let config_type = self.config.pipe_config_type();
+    let config = self.config.pack(_fbb);
+    Pipe::create(_fbb, &PipeArgs{
+      config_type,
+      config,
+    })
+  }
+}
+pub enum PipelineConfigOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct PipelineConfig<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for PipelineConfig<'a> {
+  type Inner = PipelineConfig<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> PipelineConfig<'a> {
+  pub const VT_PIPES: flatbuffers::VOffsetT = 4;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    PipelineConfig { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args PipelineConfigArgs<'args>
+  ) -> flatbuffers::WIPOffset<PipelineConfig<'bldr>> {
+    let mut builder = PipelineConfigBuilder::new(_fbb);
+    if let Some(x) = args.pipes { builder.add_pipes(x); }
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> PipelineConfigT {
+    let pipes = {
+      let x = self.pipes();
+      x.iter().map(|t| t.unpack()).collect()
+    };
+    PipelineConfigT {
+      pipes,
+    }
+  }
+
+  #[inline]
+  pub fn pipes(&self) -> flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Pipe<'a>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Pipe>>>>(PipelineConfig::VT_PIPES, None).unwrap()}
+  }
+}
+
+impl flatbuffers::Verifiable for PipelineConfig<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<Pipe>>>>("pipes", Self::VT_PIPES, true)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct PipelineConfigArgs<'a> {
+    pub pipes: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Pipe<'a>>>>>,
+}
+impl<'a> Default for PipelineConfigArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    PipelineConfigArgs {
+      pipes: None, // required field
+    }
+  }
+}
+
+pub struct PipelineConfigBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> PipelineConfigBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_pipes(&mut self, pipes: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<Pipe<'b >>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(PipelineConfig::VT_PIPES, pipes);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> PipelineConfigBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    PipelineConfigBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<PipelineConfig<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, PipelineConfig::VT_PIPES,"pipes");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for PipelineConfig<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("PipelineConfig");
+      ds.field("pipes", &self.pipes());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct PipelineConfigT {
+  pub pipes: Vec<PipeT>,
+}
+impl Default for PipelineConfigT {
+  fn default() -> Self {
+    Self {
+      pipes: Default::default(),
+    }
+  }
+}
+impl PipelineConfigT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<PipelineConfig<'b>> {
+    let pipes = Some({
+      let x = &self.pipes;
+      let w: Vec<_> = x.iter().map(|t| t.pack(_fbb)).collect();_fbb.create_vector(&w)
+    });
+    PipelineConfig::create(_fbb, &PipelineConfigArgs{
+      pipes,
+    })
+  }
+}
+pub enum TemplateOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct Template<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for Template<'a> {
+  type Inner = Template<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> Template<'a> {
+  pub const VT_KIND: flatbuffers::VOffsetT = 4;
+  pub const VT_CONTENT: flatbuffers::VOffsetT = 6;
+  pub const VT_TAGS: flatbuffers::VOffsetT = 8;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    Template { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args TemplateArgs<'args>
+  ) -> flatbuffers::WIPOffset<Template<'bldr>> {
+    let mut builder = TemplateBuilder::new(_fbb);
+    if let Some(x) = args.tags { builder.add_tags(x); }
+    if let Some(x) = args.content { builder.add_content(x); }
+    builder.add_kind(args.kind);
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> TemplateT {
+    let kind = self.kind();
+    let content = {
+      let x = self.content();
+      x.to_string()
+    };
+    let tags = {
+      let x = self.tags();
+      x.iter().map(|t| t.unpack()).collect()
+    };
+    TemplateT {
+      kind,
+      content,
+      tags,
+    }
+  }
+
+  #[inline]
+  pub fn kind(&self) -> u16 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u16>(Template::VT_KIND, Some(0)).unwrap()}
+  }
+  #[inline]
+  pub fn content(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Template::VT_CONTENT, None).unwrap()}
+  }
+  #[inline]
+  pub fn tags(&self) -> flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<StringVec<'a>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<StringVec>>>>(Template::VT_TAGS, None).unwrap()}
+  }
+}
+
+impl flatbuffers::Verifiable for Template<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<u16>("kind", Self::VT_KIND, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("content", Self::VT_CONTENT, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<StringVec>>>>("tags", Self::VT_TAGS, true)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct TemplateArgs<'a> {
+    pub kind: u16,
+    pub content: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub tags: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<StringVec<'a>>>>>,
+}
+impl<'a> Default for TemplateArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    TemplateArgs {
+      kind: 0,
+      content: None, // required field
+      tags: None, // required field
+    }
+  }
+}
+
+pub struct TemplateBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> TemplateBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_kind(&mut self, kind: u16) {
+    self.fbb_.push_slot::<u16>(Template::VT_KIND, kind, 0);
+  }
+  #[inline]
+  pub fn add_content(&mut self, content: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Template::VT_CONTENT, content);
+  }
+  #[inline]
+  pub fn add_tags(&mut self, tags: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<StringVec<'b >>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Template::VT_TAGS, tags);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> TemplateBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    TemplateBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<Template<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, Template::VT_CONTENT,"content");
+    self.fbb_.required(o, Template::VT_TAGS,"tags");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for Template<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("Template");
+      ds.field("kind", &self.kind());
+      ds.field("content", &self.content());
+      ds.field("tags", &self.tags());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct TemplateT {
+  pub kind: u16,
+  pub content: String,
+  pub tags: Vec<StringVecT>,
+}
+impl Default for TemplateT {
+  fn default() -> Self {
+    Self {
+      kind: 0,
+      content: "".to_string(),
+      tags: Default::default(),
+    }
+  }
+}
+impl TemplateT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<Template<'b>> {
+    let kind = self.kind;
+    let content = Some({
+      let x = &self.content;
+      _fbb.create_string(x)
+    });
+    let tags = Some({
+      let x = &self.tags;
+      let w: Vec<_> = x.iter().map(|t| t.pack(_fbb)).collect();_fbb.create_vector(&w)
+    });
+    Template::create(_fbb, &TemplateArgs{
+      kind,
+      content,
+      tags,
+    })
+  }
+}
+pub enum SubscriptionConfigOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct SubscriptionConfig<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for SubscriptionConfig<'a> {
+  type Inner = SubscriptionConfig<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> SubscriptionConfig<'a> {
+  pub const VT_PIPELINE: flatbuffers::VOffsetT = 4;
+  pub const VT_CLOSE_ON_EOSE: flatbuffers::VOffsetT = 6;
+  pub const VT_CACHE_FIRST: flatbuffers::VOffsetT = 8;
+  pub const VT_TIMEOUT_MS: flatbuffers::VOffsetT = 10;
+  pub const VT_MAX_EVENTS: flatbuffers::VOffsetT = 12;
+  pub const VT_SKIP_CACHE: flatbuffers::VOffsetT = 14;
+  pub const VT_FORCE: flatbuffers::VOffsetT = 16;
+  pub const VT_BYTES_PER_EVENT: flatbuffers::VOffsetT = 18;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    SubscriptionConfig { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args SubscriptionConfigArgs<'args>
+  ) -> flatbuffers::WIPOffset<SubscriptionConfig<'bldr>> {
+    let mut builder = SubscriptionConfigBuilder::new(_fbb);
+    builder.add_timeout_ms(args.timeout_ms);
+    builder.add_bytes_per_event(args.bytes_per_event);
+    builder.add_max_events(args.max_events);
+    if let Some(x) = args.pipeline { builder.add_pipeline(x); }
+    builder.add_force(args.force);
+    builder.add_skip_cache(args.skip_cache);
+    builder.add_cache_first(args.cache_first);
+    builder.add_close_on_eose(args.close_on_eose);
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> SubscriptionConfigT {
+    let pipeline = self.pipeline().map(|x| {
+      Box::new(x.unpack())
+    });
+    let close_on_eose = self.close_on_eose();
+    let cache_first = self.cache_first();
+    let timeout_ms = self.timeout_ms();
+    let max_events = self.max_events();
+    let skip_cache = self.skip_cache();
+    let force = self.force();
+    let bytes_per_event = self.bytes_per_event();
+    SubscriptionConfigT {
+      pipeline,
+      close_on_eose,
+      cache_first,
+      timeout_ms,
+      max_events,
+      skip_cache,
+      force,
+      bytes_per_event,
+    }
+  }
+
+  #[inline]
+  pub fn pipeline(&self) -> Option<PipelineConfig<'a>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<PipelineConfig>>(SubscriptionConfig::VT_PIPELINE, None)}
+  }
+  #[inline]
+  pub fn close_on_eose(&self) -> bool {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<bool>(SubscriptionConfig::VT_CLOSE_ON_EOSE, Some(false)).unwrap()}
+  }
+  #[inline]
+  pub fn cache_first(&self) -> bool {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<bool>(SubscriptionConfig::VT_CACHE_FIRST, Some(true)).unwrap()}
+  }
+  #[inline]
+  pub fn timeout_ms(&self) -> u64 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u64>(SubscriptionConfig::VT_TIMEOUT_MS, Some(0)).unwrap()}
+  }
+  #[inline]
+  pub fn max_events(&self) -> u32 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u32>(SubscriptionConfig::VT_MAX_EVENTS, Some(0)).unwrap()}
+  }
+  #[inline]
+  pub fn skip_cache(&self) -> bool {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<bool>(SubscriptionConfig::VT_SKIP_CACHE, Some(false)).unwrap()}
+  }
+  #[inline]
+  pub fn force(&self) -> bool {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<bool>(SubscriptionConfig::VT_FORCE, Some(false)).unwrap()}
+  }
+  #[inline]
+  pub fn bytes_per_event(&self) -> u32 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u32>(SubscriptionConfig::VT_BYTES_PER_EVENT, Some(0)).unwrap()}
+  }
+}
+
+impl flatbuffers::Verifiable for SubscriptionConfig<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<PipelineConfig>>("pipeline", Self::VT_PIPELINE, false)?
+     .visit_field::<bool>("close_on_eose", Self::VT_CLOSE_ON_EOSE, false)?
+     .visit_field::<bool>("cache_first", Self::VT_CACHE_FIRST, false)?
+     .visit_field::<u64>("timeout_ms", Self::VT_TIMEOUT_MS, false)?
+     .visit_field::<u32>("max_events", Self::VT_MAX_EVENTS, false)?
+     .visit_field::<bool>("skip_cache", Self::VT_SKIP_CACHE, false)?
+     .visit_field::<bool>("force", Self::VT_FORCE, false)?
+     .visit_field::<u32>("bytes_per_event", Self::VT_BYTES_PER_EVENT, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct SubscriptionConfigArgs<'a> {
+    pub pipeline: Option<flatbuffers::WIPOffset<PipelineConfig<'a>>>,
+    pub close_on_eose: bool,
+    pub cache_first: bool,
+    pub timeout_ms: u64,
+    pub max_events: u32,
+    pub skip_cache: bool,
+    pub force: bool,
+    pub bytes_per_event: u32,
+}
+impl<'a> Default for SubscriptionConfigArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    SubscriptionConfigArgs {
+      pipeline: None,
+      close_on_eose: false,
+      cache_first: true,
+      timeout_ms: 0,
+      max_events: 0,
+      skip_cache: false,
+      force: false,
+      bytes_per_event: 0,
+    }
+  }
+}
+
+pub struct SubscriptionConfigBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> SubscriptionConfigBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_pipeline(&mut self, pipeline: flatbuffers::WIPOffset<PipelineConfig<'b >>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<PipelineConfig>>(SubscriptionConfig::VT_PIPELINE, pipeline);
+  }
+  #[inline]
+  pub fn add_close_on_eose(&mut self, close_on_eose: bool) {
+    self.fbb_.push_slot::<bool>(SubscriptionConfig::VT_CLOSE_ON_EOSE, close_on_eose, false);
+  }
+  #[inline]
+  pub fn add_cache_first(&mut self, cache_first: bool) {
+    self.fbb_.push_slot::<bool>(SubscriptionConfig::VT_CACHE_FIRST, cache_first, true);
+  }
+  #[inline]
+  pub fn add_timeout_ms(&mut self, timeout_ms: u64) {
+    self.fbb_.push_slot::<u64>(SubscriptionConfig::VT_TIMEOUT_MS, timeout_ms, 0);
+  }
+  #[inline]
+  pub fn add_max_events(&mut self, max_events: u32) {
+    self.fbb_.push_slot::<u32>(SubscriptionConfig::VT_MAX_EVENTS, max_events, 0);
+  }
+  #[inline]
+  pub fn add_skip_cache(&mut self, skip_cache: bool) {
+    self.fbb_.push_slot::<bool>(SubscriptionConfig::VT_SKIP_CACHE, skip_cache, false);
+  }
+  #[inline]
+  pub fn add_force(&mut self, force: bool) {
+    self.fbb_.push_slot::<bool>(SubscriptionConfig::VT_FORCE, force, false);
+  }
+  #[inline]
+  pub fn add_bytes_per_event(&mut self, bytes_per_event: u32) {
+    self.fbb_.push_slot::<u32>(SubscriptionConfig::VT_BYTES_PER_EVENT, bytes_per_event, 0);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> SubscriptionConfigBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    SubscriptionConfigBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<SubscriptionConfig<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for SubscriptionConfig<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("SubscriptionConfig");
+      ds.field("pipeline", &self.pipeline());
+      ds.field("close_on_eose", &self.close_on_eose());
+      ds.field("cache_first", &self.cache_first());
+      ds.field("timeout_ms", &self.timeout_ms());
+      ds.field("max_events", &self.max_events());
+      ds.field("skip_cache", &self.skip_cache());
+      ds.field("force", &self.force());
+      ds.field("bytes_per_event", &self.bytes_per_event());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct SubscriptionConfigT {
+  pub pipeline: Option<Box<PipelineConfigT>>,
+  pub close_on_eose: bool,
+  pub cache_first: bool,
+  pub timeout_ms: u64,
+  pub max_events: u32,
+  pub skip_cache: bool,
+  pub force: bool,
+  pub bytes_per_event: u32,
+}
+impl Default for SubscriptionConfigT {
+  fn default() -> Self {
+    Self {
+      pipeline: None,
+      close_on_eose: false,
+      cache_first: true,
+      timeout_ms: 0,
+      max_events: 0,
+      skip_cache: false,
+      force: false,
+      bytes_per_event: 0,
+    }
+  }
+}
+impl SubscriptionConfigT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<SubscriptionConfig<'b>> {
+    let pipeline = self.pipeline.as_ref().map(|x|{
+      x.pack(_fbb)
+    });
+    let close_on_eose = self.close_on_eose;
+    let cache_first = self.cache_first;
+    let timeout_ms = self.timeout_ms;
+    let max_events = self.max_events;
+    let skip_cache = self.skip_cache;
+    let force = self.force;
+    let bytes_per_event = self.bytes_per_event;
+    SubscriptionConfig::create(_fbb, &SubscriptionConfigArgs{
+      pipeline,
+      close_on_eose,
+      cache_first,
+      timeout_ms,
+      max_events,
+      skip_cache,
+      force,
+      bytes_per_event,
+    })
+  }
+}
+pub enum SubscribeOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct Subscribe<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for Subscribe<'a> {
+  type Inner = Subscribe<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> Subscribe<'a> {
+  pub const VT_SUBSCRIPTION_ID: flatbuffers::VOffsetT = 4;
+  pub const VT_REQUESTS: flatbuffers::VOffsetT = 6;
+  pub const VT_CONFIG: flatbuffers::VOffsetT = 8;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    Subscribe { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args SubscribeArgs<'args>
+  ) -> flatbuffers::WIPOffset<Subscribe<'bldr>> {
+    let mut builder = SubscribeBuilder::new(_fbb);
+    if let Some(x) = args.config { builder.add_config(x); }
+    if let Some(x) = args.requests { builder.add_requests(x); }
+    if let Some(x) = args.subscription_id { builder.add_subscription_id(x); }
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> SubscribeT {
+    let subscription_id = {
+      let x = self.subscription_id();
+      x.to_string()
+    };
+    let requests = {
+      let x = self.requests();
+      x.iter().map(|t| t.unpack()).collect()
+    };
+    let config = {
+      let x = self.config();
+      Box::new(x.unpack())
+    };
+    SubscribeT {
+      subscription_id,
+      requests,
+      config,
+    }
+  }
+
+  #[inline]
+  pub fn subscription_id(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Subscribe::VT_SUBSCRIPTION_ID, None).unwrap()}
+  }
+  #[inline]
+  pub fn requests(&self) -> flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Request<'a>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Request>>>>(Subscribe::VT_REQUESTS, None).unwrap()}
+  }
+  #[inline]
+  pub fn config(&self) -> SubscriptionConfig<'a> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<SubscriptionConfig>>(Subscribe::VT_CONFIG, None).unwrap()}
+  }
+}
+
+impl flatbuffers::Verifiable for Subscribe<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("subscription_id", Self::VT_SUBSCRIPTION_ID, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<Request>>>>("requests", Self::VT_REQUESTS, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<SubscriptionConfig>>("config", Self::VT_CONFIG, true)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct SubscribeArgs<'a> {
+    pub subscription_id: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub requests: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Request<'a>>>>>,
+    pub config: Option<flatbuffers::WIPOffset<SubscriptionConfig<'a>>>,
+}
+impl<'a> Default for SubscribeArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    SubscribeArgs {
+      subscription_id: None, // required field
+      requests: None, // required field
+      config: None, // required field
+    }
+  }
+}
+
+pub struct SubscribeBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> SubscribeBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_subscription_id(&mut self, subscription_id: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Subscribe::VT_SUBSCRIPTION_ID, subscription_id);
+  }
+  #[inline]
+  pub fn add_requests(&mut self, requests: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<Request<'b >>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Subscribe::VT_REQUESTS, requests);
+  }
+  #[inline]
+  pub fn add_config(&mut self, config: flatbuffers::WIPOffset<SubscriptionConfig<'b >>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<SubscriptionConfig>>(Subscribe::VT_CONFIG, config);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> SubscribeBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    SubscribeBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<Subscribe<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, Subscribe::VT_SUBSCRIPTION_ID,"subscription_id");
+    self.fbb_.required(o, Subscribe::VT_REQUESTS,"requests");
+    self.fbb_.required(o, Subscribe::VT_CONFIG,"config");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for Subscribe<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("Subscribe");
+      ds.field("subscription_id", &self.subscription_id());
+      ds.field("requests", &self.requests());
+      ds.field("config", &self.config());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct SubscribeT {
+  pub subscription_id: String,
+  pub requests: Vec<RequestT>,
+  pub config: Box<SubscriptionConfigT>,
+}
+impl Default for SubscribeT {
+  fn default() -> Self {
+    Self {
+      subscription_id: "".to_string(),
+      requests: Default::default(),
+      config: Default::default(),
+    }
+  }
+}
+impl SubscribeT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<Subscribe<'b>> {
+    let subscription_id = Some({
+      let x = &self.subscription_id;
+      _fbb.create_string(x)
+    });
+    let requests = Some({
+      let x = &self.requests;
+      let w: Vec<_> = x.iter().map(|t| t.pack(_fbb)).collect();_fbb.create_vector(&w)
+    });
+    let config = Some({
+      let x = &self.config;
+      x.pack(_fbb)
+    });
+    Subscribe::create(_fbb, &SubscribeArgs{
+      subscription_id,
+      requests,
+      config,
+    })
+  }
+}
+pub enum UnsubscribeOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct Unsubscribe<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for Unsubscribe<'a> {
+  type Inner = Unsubscribe<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> Unsubscribe<'a> {
+  pub const VT_SUBSCRIPTION_ID: flatbuffers::VOffsetT = 4;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    Unsubscribe { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args UnsubscribeArgs<'args>
+  ) -> flatbuffers::WIPOffset<Unsubscribe<'bldr>> {
+    let mut builder = UnsubscribeBuilder::new(_fbb);
+    if let Some(x) = args.subscription_id { builder.add_subscription_id(x); }
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> UnsubscribeT {
+    let subscription_id = {
+      let x = self.subscription_id();
+      x.to_string()
+    };
+    UnsubscribeT {
+      subscription_id,
+    }
+  }
+
+  #[inline]
+  pub fn subscription_id(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Unsubscribe::VT_SUBSCRIPTION_ID, None).unwrap()}
+  }
+}
+
+impl flatbuffers::Verifiable for Unsubscribe<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("subscription_id", Self::VT_SUBSCRIPTION_ID, true)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct UnsubscribeArgs<'a> {
+    pub subscription_id: Option<flatbuffers::WIPOffset<&'a str>>,
+}
+impl<'a> Default for UnsubscribeArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    UnsubscribeArgs {
+      subscription_id: None, // required field
+    }
+  }
+}
+
+pub struct UnsubscribeBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> UnsubscribeBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_subscription_id(&mut self, subscription_id: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Unsubscribe::VT_SUBSCRIPTION_ID, subscription_id);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> UnsubscribeBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    UnsubscribeBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<Unsubscribe<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, Unsubscribe::VT_SUBSCRIPTION_ID,"subscription_id");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for Unsubscribe<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("Unsubscribe");
+      ds.field("subscription_id", &self.subscription_id());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct UnsubscribeT {
+  pub subscription_id: String,
+}
+impl Default for UnsubscribeT {
+  fn default() -> Self {
+    Self {
+      subscription_id: "".to_string(),
+    }
+  }
+}
+impl UnsubscribeT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<Unsubscribe<'b>> {
+    let subscription_id = Some({
+      let x = &self.subscription_id;
+      _fbb.create_string(x)
+    });
+    Unsubscribe::create(_fbb, &UnsubscribeArgs{
+      subscription_id,
+    })
+  }
+}
+pub enum PublishOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct Publish<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for Publish<'a> {
+  type Inner = Publish<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> Publish<'a> {
+  pub const VT_PUBLISH_ID: flatbuffers::VOffsetT = 4;
+  pub const VT_TEMPLATE: flatbuffers::VOffsetT = 6;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    Publish { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args PublishArgs<'args>
+  ) -> flatbuffers::WIPOffset<Publish<'bldr>> {
+    let mut builder = PublishBuilder::new(_fbb);
+    if let Some(x) = args.template { builder.add_template(x); }
+    if let Some(x) = args.publish_id { builder.add_publish_id(x); }
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> PublishT {
+    let publish_id = {
+      let x = self.publish_id();
+      x.to_string()
+    };
+    let template = {
+      let x = self.template();
+      Box::new(x.unpack())
+    };
+    PublishT {
+      publish_id,
+      template,
+    }
+  }
+
+  #[inline]
+  pub fn publish_id(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Publish::VT_PUBLISH_ID, None).unwrap()}
+  }
+  #[inline]
+  pub fn template(&self) -> Template<'a> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<Template>>(Publish::VT_TEMPLATE, None).unwrap()}
+  }
+}
+
+impl flatbuffers::Verifiable for Publish<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("publish_id", Self::VT_PUBLISH_ID, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<Template>>("template", Self::VT_TEMPLATE, true)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct PublishArgs<'a> {
+    pub publish_id: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub template: Option<flatbuffers::WIPOffset<Template<'a>>>,
+}
+impl<'a> Default for PublishArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    PublishArgs {
+      publish_id: None, // required field
+      template: None, // required field
+    }
+  }
+}
+
+pub struct PublishBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> PublishBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_publish_id(&mut self, publish_id: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Publish::VT_PUBLISH_ID, publish_id);
+  }
+  #[inline]
+  pub fn add_template(&mut self, template: flatbuffers::WIPOffset<Template<'b >>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<Template>>(Publish::VT_TEMPLATE, template);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> PublishBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    PublishBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<Publish<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, Publish::VT_PUBLISH_ID,"publish_id");
+    self.fbb_.required(o, Publish::VT_TEMPLATE,"template");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for Publish<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("Publish");
+      ds.field("publish_id", &self.publish_id());
+      ds.field("template", &self.template());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct PublishT {
+  pub publish_id: String,
+  pub template: Box<TemplateT>,
+}
+impl Default for PublishT {
+  fn default() -> Self {
+    Self {
+      publish_id: "".to_string(),
+      template: Default::default(),
+    }
+  }
+}
+impl PublishT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<Publish<'b>> {
+    let publish_id = Some({
+      let x = &self.publish_id;
+      _fbb.create_string(x)
+    });
+    let template = Some({
+      let x = &self.template;
+      x.pack(_fbb)
+    });
+    Publish::create(_fbb, &PublishArgs{
+      publish_id,
+      template,
+    })
+  }
+}
+pub enum SignEventOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct SignEvent<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for SignEvent<'a> {
+  type Inner = SignEvent<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> SignEvent<'a> {
+  pub const VT_TEMPLATE: flatbuffers::VOffsetT = 4;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    SignEvent { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args SignEventArgs<'args>
+  ) -> flatbuffers::WIPOffset<SignEvent<'bldr>> {
+    let mut builder = SignEventBuilder::new(_fbb);
+    if let Some(x) = args.template { builder.add_template(x); }
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> SignEventT {
+    let template = {
+      let x = self.template();
+      Box::new(x.unpack())
+    };
+    SignEventT {
+      template,
+    }
+  }
+
+  #[inline]
+  pub fn template(&self) -> Template<'a> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<Template>>(SignEvent::VT_TEMPLATE, None).unwrap()}
+  }
+}
+
+impl flatbuffers::Verifiable for SignEvent<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<Template>>("template", Self::VT_TEMPLATE, true)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct SignEventArgs<'a> {
+    pub template: Option<flatbuffers::WIPOffset<Template<'a>>>,
+}
+impl<'a> Default for SignEventArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    SignEventArgs {
+      template: None, // required field
+    }
+  }
+}
+
+pub struct SignEventBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> SignEventBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_template(&mut self, template: flatbuffers::WIPOffset<Template<'b >>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<Template>>(SignEvent::VT_TEMPLATE, template);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> SignEventBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    SignEventBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<SignEvent<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, SignEvent::VT_TEMPLATE,"template");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for SignEvent<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("SignEvent");
+      ds.field("template", &self.template());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct SignEventT {
+  pub template: Box<TemplateT>,
+}
+impl Default for SignEventT {
+  fn default() -> Self {
+    Self {
+      template: Default::default(),
+    }
+  }
+}
+impl SignEventT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<SignEvent<'b>> {
+    let template = Some({
+      let x = &self.template;
+      x.pack(_fbb)
+    });
+    SignEvent::create(_fbb, &SignEventArgs{
+      template,
+    })
+  }
+}
+pub enum SetSignerOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct SetSigner<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for SetSigner<'a> {
+  type Inner = SetSigner<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> SetSigner<'a> {
+  pub const VT_SIGNER_TYPE_TYPE: flatbuffers::VOffsetT = 4;
+  pub const VT_SIGNER_TYPE: flatbuffers::VOffsetT = 6;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    SetSigner { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args SetSignerArgs
+  ) -> flatbuffers::WIPOffset<SetSigner<'bldr>> {
+    let mut builder = SetSignerBuilder::new(_fbb);
+    if let Some(x) = args.signer_type { builder.add_signer_type(x); }
+    builder.add_signer_type_type(args.signer_type_type);
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> SetSignerT {
+    let signer_type = match self.signer_type_type() {
+      SignerType::NONE => SignerTypeT::NONE,
+      SignerType::PrivateKey => SignerTypeT::PrivateKey(Box::new(
+        self.signer_type_as_private_key()
+            .expect("Invalid union table, expected `SignerType::PrivateKey`.")
+            .unpack()
+      )),
+      _ => SignerTypeT::NONE,
+    };
+    SetSignerT {
+      signer_type,
+    }
+  }
+
+  #[inline]
+  pub fn signer_type_type(&self) -> SignerType {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<SignerType>(SetSigner::VT_SIGNER_TYPE_TYPE, Some(SignerType::NONE)).unwrap()}
+  }
+  #[inline]
+  pub fn signer_type(&self) -> flatbuffers::Table<'a> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Table<'a>>>(SetSigner::VT_SIGNER_TYPE, None).unwrap()}
+  }
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn signer_type_as_private_key(&self) -> Option<PrivateKey<'a>> {
+    if self.signer_type_type() == SignerType::PrivateKey {
+      let u = self.signer_type();
+      // Safety:
+      // Created from a valid Table for this object
+      // Which contains a valid union in this slot
+      Some(unsafe { PrivateKey::init_from_table(u) })
+    } else {
+      None
+    }
+  }
+
+}
+
+impl flatbuffers::Verifiable for SetSigner<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_union::<SignerType, _>("signer_type_type", Self::VT_SIGNER_TYPE_TYPE, "signer_type", Self::VT_SIGNER_TYPE, true, |key, v, pos| {
+        match key {
+          SignerType::PrivateKey => v.verify_union_variant::<flatbuffers::ForwardsUOffset<PrivateKey>>("SignerType::PrivateKey", pos),
+          _ => Ok(()),
+        }
+     })?
+     .finish();
+    Ok(())
+  }
+}
+pub struct SetSignerArgs {
+    pub signer_type_type: SignerType,
+    pub signer_type: Option<flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>>,
+}
+impl<'a> Default for SetSignerArgs {
+  #[inline]
+  fn default() -> Self {
+    SetSignerArgs {
+      signer_type_type: SignerType::NONE,
+      signer_type: None, // required field
+    }
+  }
+}
+
+pub struct SetSignerBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> SetSignerBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_signer_type_type(&mut self, signer_type_type: SignerType) {
+    self.fbb_.push_slot::<SignerType>(SetSigner::VT_SIGNER_TYPE_TYPE, signer_type_type, SignerType::NONE);
+  }
+  #[inline]
+  pub fn add_signer_type(&mut self, signer_type: flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(SetSigner::VT_SIGNER_TYPE, signer_type);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> SetSignerBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    SetSignerBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<SetSigner<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, SetSigner::VT_SIGNER_TYPE,"signer_type");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for SetSigner<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("SetSigner");
+      ds.field("signer_type_type", &self.signer_type_type());
+      match self.signer_type_type() {
+        SignerType::PrivateKey => {
+          if let Some(x) = self.signer_type_as_private_key() {
+            ds.field("signer_type", &x)
+          } else {
+            ds.field("signer_type", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        _ => {
+          let x: Option<()> = None;
+          ds.field("signer_type", &x)
+        },
+      };
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct SetSignerT {
+  pub signer_type: SignerTypeT,
+}
+impl Default for SetSignerT {
+  fn default() -> Self {
+    Self {
+      signer_type: SignerTypeT::NONE,
+    }
+  }
+}
+impl SetSignerT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<SetSigner<'b>> {
+    let signer_type_type = self.signer_type.signer_type_type();
+    let signer_type = self.signer_type.pack(_fbb);
+    SetSigner::create(_fbb, &SetSignerArgs{
+      signer_type_type,
+      signer_type,
+    })
+  }
+}
+pub enum GetPublicKeyOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct GetPublicKey<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for GetPublicKey<'a> {
+  type Inner = GetPublicKey<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> GetPublicKey<'a> {
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    GetPublicKey { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    _args: &'args GetPublicKeyArgs
+  ) -> flatbuffers::WIPOffset<GetPublicKey<'bldr>> {
+    let mut builder = GetPublicKeyBuilder::new(_fbb);
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> GetPublicKeyT {
+    GetPublicKeyT {
+    }
+  }
+}
+
+impl flatbuffers::Verifiable for GetPublicKey<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct GetPublicKeyArgs {
+}
+impl<'a> Default for GetPublicKeyArgs {
+  #[inline]
+  fn default() -> Self {
+    GetPublicKeyArgs {
+    }
+  }
+}
+
+pub struct GetPublicKeyBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> GetPublicKeyBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> GetPublicKeyBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    GetPublicKeyBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<GetPublicKey<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for GetPublicKey<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("GetPublicKey");
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct GetPublicKeyT {
+}
+impl Default for GetPublicKeyT {
+  fn default() -> Self {
+    Self {
+    }
+  }
+}
+impl GetPublicKeyT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<GetPublicKey<'b>> {
+    GetPublicKey::create(_fbb, &GetPublicKeyArgs{
+    })
+  }
+}
+pub enum MainMessageOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct MainMessage<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for MainMessage<'a> {
+  type Inner = MainMessage<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> MainMessage<'a> {
+  pub const VT_CONTENT_TYPE: flatbuffers::VOffsetT = 4;
+  pub const VT_CONTENT: flatbuffers::VOffsetT = 6;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    MainMessage { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args MainMessageArgs
+  ) -> flatbuffers::WIPOffset<MainMessage<'bldr>> {
+    let mut builder = MainMessageBuilder::new(_fbb);
+    if let Some(x) = args.content { builder.add_content(x); }
+    builder.add_content_type(args.content_type);
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> MainMessageT {
+    let content = match self.content_type() {
+      MainContent::NONE => MainContentT::NONE,
+      MainContent::Subscribe => MainContentT::Subscribe(Box::new(
+        self.content_as_subscribe()
+            .expect("Invalid union table, expected `MainContent::Subscribe`.")
+            .unpack()
+      )),
+      MainContent::Unsubscribe => MainContentT::Unsubscribe(Box::new(
+        self.content_as_unsubscribe()
+            .expect("Invalid union table, expected `MainContent::Unsubscribe`.")
+            .unpack()
+      )),
+      MainContent::Publish => MainContentT::Publish(Box::new(
+        self.content_as_publish()
+            .expect("Invalid union table, expected `MainContent::Publish`.")
+            .unpack()
+      )),
+      MainContent::SignEvent => MainContentT::SignEvent(Box::new(
+        self.content_as_sign_event()
+            .expect("Invalid union table, expected `MainContent::SignEvent`.")
+            .unpack()
+      )),
+      MainContent::SetSigner => MainContentT::SetSigner(Box::new(
+        self.content_as_set_signer()
+            .expect("Invalid union table, expected `MainContent::SetSigner`.")
+            .unpack()
+      )),
+      MainContent::GetPublicKey => MainContentT::GetPublicKey(Box::new(
+        self.content_as_get_public_key()
+            .expect("Invalid union table, expected `MainContent::GetPublicKey`.")
+            .unpack()
+      )),
+      _ => MainContentT::NONE,
+    };
+    MainMessageT {
+      content,
+    }
+  }
+
+  #[inline]
+  pub fn content_type(&self) -> MainContent {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<MainContent>(MainMessage::VT_CONTENT_TYPE, Some(MainContent::NONE)).unwrap()}
+  }
+  #[inline]
+  pub fn content(&self) -> flatbuffers::Table<'a> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Table<'a>>>(MainMessage::VT_CONTENT, None).unwrap()}
+  }
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn content_as_subscribe(&self) -> Option<Subscribe<'a>> {
+    if self.content_type() == MainContent::Subscribe {
+      let u = self.content();
+      // Safety:
+      // Created from a valid Table for this object
+      // Which contains a valid union in this slot
+      Some(unsafe { Subscribe::init_from_table(u) })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn content_as_unsubscribe(&self) -> Option<Unsubscribe<'a>> {
+    if self.content_type() == MainContent::Unsubscribe {
+      let u = self.content();
+      // Safety:
+      // Created from a valid Table for this object
+      // Which contains a valid union in this slot
+      Some(unsafe { Unsubscribe::init_from_table(u) })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn content_as_publish(&self) -> Option<Publish<'a>> {
+    if self.content_type() == MainContent::Publish {
+      let u = self.content();
+      // Safety:
+      // Created from a valid Table for this object
+      // Which contains a valid union in this slot
+      Some(unsafe { Publish::init_from_table(u) })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn content_as_sign_event(&self) -> Option<SignEvent<'a>> {
+    if self.content_type() == MainContent::SignEvent {
+      let u = self.content();
+      // Safety:
+      // Created from a valid Table for this object
+      // Which contains a valid union in this slot
+      Some(unsafe { SignEvent::init_from_table(u) })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn content_as_set_signer(&self) -> Option<SetSigner<'a>> {
+    if self.content_type() == MainContent::SetSigner {
+      let u = self.content();
+      // Safety:
+      // Created from a valid Table for this object
+      // Which contains a valid union in this slot
+      Some(unsafe { SetSigner::init_from_table(u) })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn content_as_get_public_key(&self) -> Option<GetPublicKey<'a>> {
+    if self.content_type() == MainContent::GetPublicKey {
+      let u = self.content();
+      // Safety:
+      // Created from a valid Table for this object
+      // Which contains a valid union in this slot
+      Some(unsafe { GetPublicKey::init_from_table(u) })
+    } else {
+      None
+    }
+  }
+
+}
+
+impl flatbuffers::Verifiable for MainMessage<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_union::<MainContent, _>("content_type", Self::VT_CONTENT_TYPE, "content", Self::VT_CONTENT, true, |key, v, pos| {
+        match key {
+          MainContent::Subscribe => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Subscribe>>("MainContent::Subscribe", pos),
+          MainContent::Unsubscribe => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Unsubscribe>>("MainContent::Unsubscribe", pos),
+          MainContent::Publish => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Publish>>("MainContent::Publish", pos),
+          MainContent::SignEvent => v.verify_union_variant::<flatbuffers::ForwardsUOffset<SignEvent>>("MainContent::SignEvent", pos),
+          MainContent::SetSigner => v.verify_union_variant::<flatbuffers::ForwardsUOffset<SetSigner>>("MainContent::SetSigner", pos),
+          MainContent::GetPublicKey => v.verify_union_variant::<flatbuffers::ForwardsUOffset<GetPublicKey>>("MainContent::GetPublicKey", pos),
+          _ => Ok(()),
+        }
+     })?
+     .finish();
+    Ok(())
+  }
+}
+pub struct MainMessageArgs {
+    pub content_type: MainContent,
+    pub content: Option<flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>>,
+}
+impl<'a> Default for MainMessageArgs {
+  #[inline]
+  fn default() -> Self {
+    MainMessageArgs {
+      content_type: MainContent::NONE,
+      content: None, // required field
+    }
+  }
+}
+
+pub struct MainMessageBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> MainMessageBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_content_type(&mut self, content_type: MainContent) {
+    self.fbb_.push_slot::<MainContent>(MainMessage::VT_CONTENT_TYPE, content_type, MainContent::NONE);
+  }
+  #[inline]
+  pub fn add_content(&mut self, content: flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(MainMessage::VT_CONTENT, content);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> MainMessageBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    MainMessageBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<MainMessage<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, MainMessage::VT_CONTENT,"content");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for MainMessage<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("MainMessage");
+      ds.field("content_type", &self.content_type());
+      match self.content_type() {
+        MainContent::Subscribe => {
+          if let Some(x) = self.content_as_subscribe() {
+            ds.field("content", &x)
+          } else {
+            ds.field("content", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        MainContent::Unsubscribe => {
+          if let Some(x) = self.content_as_unsubscribe() {
+            ds.field("content", &x)
+          } else {
+            ds.field("content", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        MainContent::Publish => {
+          if let Some(x) = self.content_as_publish() {
+            ds.field("content", &x)
+          } else {
+            ds.field("content", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        MainContent::SignEvent => {
+          if let Some(x) = self.content_as_sign_event() {
+            ds.field("content", &x)
+          } else {
+            ds.field("content", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        MainContent::SetSigner => {
+          if let Some(x) = self.content_as_set_signer() {
+            ds.field("content", &x)
+          } else {
+            ds.field("content", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        MainContent::GetPublicKey => {
+          if let Some(x) = self.content_as_get_public_key() {
+            ds.field("content", &x)
+          } else {
+            ds.field("content", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        _ => {
+          let x: Option<()> = None;
+          ds.field("content", &x)
+        },
+      };
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct MainMessageT {
+  pub content: MainContentT,
+}
+impl Default for MainMessageT {
+  fn default() -> Self {
+    Self {
+      content: MainContentT::NONE,
+    }
+  }
+}
+impl MainMessageT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<MainMessage<'b>> {
+    let content_type = self.content.main_content_type();
+    let content = self.content.pack(_fbb);
+    MainMessage::create(_fbb, &MainMessageArgs{
+      content_type,
+      content,
     })
   }
 }
@@ -12171,6 +16219,272 @@ impl MintProofsT {
     })
   }
 }
+pub enum PubkeyOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct Pubkey<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for Pubkey<'a> {
+  type Inner = Pubkey<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> Pubkey<'a> {
+  pub const VT_PUBKEY: flatbuffers::VOffsetT = 4;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    Pubkey { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args PubkeyArgs<'args>
+  ) -> flatbuffers::WIPOffset<Pubkey<'bldr>> {
+    let mut builder = PubkeyBuilder::new(_fbb);
+    if let Some(x) = args.pubkey { builder.add_pubkey(x); }
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> PubkeyT {
+    let pubkey = {
+      let x = self.pubkey();
+      x.to_string()
+    };
+    PubkeyT {
+      pubkey,
+    }
+  }
+
+  #[inline]
+  pub fn pubkey(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Pubkey::VT_PUBKEY, None).unwrap()}
+  }
+}
+
+impl flatbuffers::Verifiable for Pubkey<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("pubkey", Self::VT_PUBKEY, true)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct PubkeyArgs<'a> {
+    pub pubkey: Option<flatbuffers::WIPOffset<&'a str>>,
+}
+impl<'a> Default for PubkeyArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    PubkeyArgs {
+      pubkey: None, // required field
+    }
+  }
+}
+
+pub struct PubkeyBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> PubkeyBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_pubkey(&mut self, pubkey: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Pubkey::VT_PUBKEY, pubkey);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> PubkeyBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    PubkeyBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<Pubkey<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, Pubkey::VT_PUBKEY,"pubkey");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for Pubkey<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("Pubkey");
+      ds.field("pubkey", &self.pubkey());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct PubkeyT {
+  pub pubkey: String,
+}
+impl Default for PubkeyT {
+  fn default() -> Self {
+    Self {
+      pubkey: "".to_string(),
+    }
+  }
+}
+impl PubkeyT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<Pubkey<'b>> {
+    let pubkey = Some({
+      let x = &self.pubkey;
+      _fbb.create_string(x)
+    });
+    Pubkey::create(_fbb, &PubkeyArgs{
+      pubkey,
+    })
+  }
+}
+pub enum SignedEventOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct SignedEvent<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for SignedEvent<'a> {
+  type Inner = SignedEvent<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> SignedEvent<'a> {
+  pub const VT_EVENT: flatbuffers::VOffsetT = 4;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    SignedEvent { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args SignedEventArgs<'args>
+  ) -> flatbuffers::WIPOffset<SignedEvent<'bldr>> {
+    let mut builder = SignedEventBuilder::new(_fbb);
+    if let Some(x) = args.event { builder.add_event(x); }
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> SignedEventT {
+    let event = {
+      let x = self.event();
+      Box::new(x.unpack())
+    };
+    SignedEventT {
+      event,
+    }
+  }
+
+  #[inline]
+  pub fn event(&self) -> NostrEvent<'a> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<NostrEvent>>(SignedEvent::VT_EVENT, None).unwrap()}
+  }
+}
+
+impl flatbuffers::Verifiable for SignedEvent<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<NostrEvent>>("event", Self::VT_EVENT, true)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct SignedEventArgs<'a> {
+    pub event: Option<flatbuffers::WIPOffset<NostrEvent<'a>>>,
+}
+impl<'a> Default for SignedEventArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    SignedEventArgs {
+      event: None, // required field
+    }
+  }
+}
+
+pub struct SignedEventBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> SignedEventBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_event(&mut self, event: flatbuffers::WIPOffset<NostrEvent<'b >>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<NostrEvent>>(SignedEvent::VT_EVENT, event);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> SignedEventBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    SignedEventBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<SignedEvent<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, SignedEvent::VT_EVENT,"event");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for SignedEvent<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("SignedEvent");
+      ds.field("event", &self.event());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct SignedEventT {
+  pub event: Box<NostrEventT>,
+}
+impl Default for SignedEventT {
+  fn default() -> Self {
+    Self {
+      event: Default::default(),
+    }
+  }
+}
+impl SignedEventT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<SignedEvent<'b>> {
+    let event = Some({
+      let x = &self.event;
+      x.pack(_fbb)
+    });
+    SignedEvent::create(_fbb, &SignedEventArgs{
+      event,
+    })
+  }
+}
 pub enum WorkerMessageOffset {}
 #[derive(Copy, Clone, PartialEq)]
 
@@ -12239,6 +16553,16 @@ impl<'a> WorkerMessage<'a> {
       Message::ValidProofs => MessageT::ValidProofs(Box::new(
         self.content_as_valid_proofs()
             .expect("Invalid union table, expected `Message::ValidProofs`.")
+            .unpack()
+      )),
+      Message::SignedEvent => MessageT::SignedEvent(Box::new(
+        self.content_as_signed_event()
+            .expect("Invalid union table, expected `Message::SignedEvent`.")
+            .unpack()
+      )),
+      Message::Pubkey => MessageT::Pubkey(Box::new(
+        self.content_as_pubkey()
+            .expect("Invalid union table, expected `Message::Pubkey`.")
             .unpack()
       )),
       _ => MessageT::NONE,
@@ -12360,6 +16684,36 @@ impl<'a> WorkerMessage<'a> {
     }
   }
 
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn content_as_signed_event(&self) -> Option<SignedEvent<'a>> {
+    if self.content_type() == Message::SignedEvent {
+      self.content().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { SignedEvent::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn content_as_pubkey(&self) -> Option<Pubkey<'a>> {
+    if self.content_type() == Message::Pubkey {
+      self.content().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { Pubkey::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
 }
 
 impl flatbuffers::Verifiable for WorkerMessage<'_> {
@@ -12378,6 +16732,8 @@ impl flatbuffers::Verifiable for WorkerMessage<'_> {
           Message::Eoce => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Eoce>>("Message::Eoce", pos),
           Message::BufferFull => v.verify_union_variant::<flatbuffers::ForwardsUOffset<BufferFull>>("Message::BufferFull", pos),
           Message::ValidProofs => v.verify_union_variant::<flatbuffers::ForwardsUOffset<ValidProofs>>("Message::ValidProofs", pos),
+          Message::SignedEvent => v.verify_union_variant::<flatbuffers::ForwardsUOffset<SignedEvent>>("Message::SignedEvent", pos),
+          Message::Pubkey => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Pubkey>>("Message::Pubkey", pos),
           _ => Ok(()),
         }
      })?
@@ -12476,6 +16832,20 @@ impl core::fmt::Debug for WorkerMessage<'_> {
         },
         Message::ValidProofs => {
           if let Some(x) = self.content_as_valid_proofs() {
+            ds.field("content", &x)
+          } else {
+            ds.field("content", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        Message::SignedEvent => {
+          if let Some(x) = self.content_as_signed_event() {
+            ds.field("content", &x)
+          } else {
+            ds.field("content", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        Message::Pubkey => {
+          if let Some(x) = self.content_as_pubkey() {
             ds.field("content", &x)
           } else {
             ds.field("content", &"InvalidFlatbuffer: Union discriminant does not match value.")

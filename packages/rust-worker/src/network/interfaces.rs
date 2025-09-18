@@ -1,9 +1,11 @@
 use crate::{
     parsed_event::ParsedEvent,
     types::{network::Request, *},
+    NostrError,
 };
-use anyhow::Result;
 use futures::channel::mpsc;
+
+type Result<T> = std::result::Result<T, NostrError>;
 
 // No async_trait or Send + Sync needed for WASM
 pub trait EventDatabase {

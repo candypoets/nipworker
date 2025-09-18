@@ -1,0 +1,127 @@
+include "common.fbs";
+
+namespace nostr.fb;
+
+// ============= Pipe Configurations =============
+
+// Configuration for ParsePipe - no parameters needed
+table ParsePipeConfig {
+  // Empty - parse pipe doesn't need configuration
+}
+
+// Configuration for KindFilterPipe
+table KindFilterPipeConfig {
+  kinds: [ushort] (required); // List of kinds to filter
+}
+
+// Configuration for CounterPipe
+table CounterPipeConfig {
+  kinds: [ushort] (required); // Kinds to count
+  pubkey: string (required);  // User's pubkey for "you" detection
+}
+
+// Configuration for NpubLimiterPipe
+table NpubLimiterPipeConfig {
+  kind: ushort;               // Kind to limit
+  limit_per_npub: uint;       // Max events per npub
+  max_total_npubs: uint;      // Max total npubs to track
+}
+
+// Configuration for SaveToDbPipe - no parameters needed
+table SaveToDbPipeConfig {
+  // Empty - uses shared database instance
+}
+
+// Configuration for SerializeEventsPipe
+table SerializeEventsPipeConfig {
+  subscription_id: string (required); // Subscription ID for the events
+}
+
+// Configuration for ProofVerificationPipe
+table ProofVerificationPipeConfig {
+  max_proofs: uint;           // Maximum number of proofs to track
+}
+
+// Union of all pipe configurations
+union PipeConfig {
+  ParsePipeConfig,
+  KindFilterPipeConfig,
+  CounterPipeConfig,
+  NpubLimiterPipeConfig,
+  SaveToDbPipeConfig,
+  SerializeEventsPipeConfig,
+  ProofVerificationPipeConfig
+}
+
+// Wrapper for a pipe in the pipeline
+table Pipe {
+  config: PipeConfig (required);
+}
+
+// Configuration for the entire pipeline
+table PipelineConfig {
+  pipes: [Pipe] (required);
+}
+
+// ============= Other Types =============
+
+// Template for creating Nostr events
+table Template {
+  kind: ushort;
+  content: string (required);
+  tags: [StringVec] (required);
+}
+
+// Configuration for subscription behavior
+table SubscriptionConfig {
+  pipeline: PipelineConfig;
+  close_on_eose: bool = false;
+  cache_first: bool = true;
+  timeout_ms: ulong;
+  max_events: uint;
+  skip_cache: bool = false;
+  force: bool = false;
+  bytes_per_event: uint;
+}
+
+table Subscribe {
+  subscription_id: string (required);
+  requests: [Request] (required);
+  config: SubscriptionConfig (required);
+}
+
+table Unsubscribe {
+  subscription_id: string (required);
+}
+
+table Publish {
+  publish_id: string (required);
+  template: Template (required);
+}
+
+table SignEvent {
+  template: Template (required);
+}
+
+table SetSigner {
+  signer_type: SignerType (required);
+}
+
+table GetPublicKey {
+  // Empty message, no fields needed
+}
+
+// Union for main to worker messages
+union MainContent {
+  Subscribe,
+  Unsubscribe,
+  Publish,
+  SignEvent,
+  SetSigner,
+  GetPublicKey
+}
+
+// Wrapper for main to worker messages
+table MainMessage {
+  content: MainContent (required);
+}

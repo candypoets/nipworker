@@ -9,11 +9,11 @@ use crate::parsed_event::ParsedEvent;
 use crate::types::network::Request;
 use crate::utils::relay::RelayUtils;
 use crate::{METADATA, RELAY_LIST};
-use anyhow::Result;
 use rustc_hash::{FxHashMap, FxHashSet};
 
+type Result<T> = std::result::Result<T, DatabaseError>;
+
 use crate::types::nostr::{Event, EventId, Filter, PublicKey};
-use instant::Instant;
 use std::sync::{Arc, RwLock};
 use tracing::{debug, error, info, warn};
 use tracing_subscriber::registry::Data;
@@ -73,7 +73,7 @@ impl NostrDB<RingBufferStorage> {
 
 impl<S: EventStorage> NostrDB<S> {
     /// Initialize the database by loading events from persistent storage
-    pub async fn initialize(&self) -> Result<(), DatabaseError> {
+    pub async fn initialize(&self) -> Result<()> {
         info!("Initializing NostrDB...");
 
         let mut is_init = self
@@ -117,7 +117,7 @@ impl<S: EventStorage> NostrDB<S> {
     }
 
     /// Build indexes from a collection of events
-    fn build_indexes_from_events(&self, events_offset: Vec<u64>) -> Result<(), DatabaseError> {
+    fn build_indexes_from_events(&self, events_offset: Vec<u64>) -> Result<()> {
         // Pre-allocate maps based on event count for better performance
         let event_count = events_offset.len();
         let mut pubkey_frequency = FxHashMap::default();
@@ -277,8 +277,8 @@ impl<S: EventStorage> NostrDB<S> {
     }
 
     /// Query events using the internal filter format
-    pub fn query_events_internal(&self, filter: QueryFilter) -> Result<QueryResult, DatabaseError> {
-        let start_time = Instant::now();
+    pub fn query_events_internal(&self, filter: QueryFilter) -> Result<QueryResult> {
+        let start_time = js_sys::Date::now();
 
         // Start with candidate sets from indexed fields
         let mut candidate_sets = Vec::new();
@@ -438,7 +438,7 @@ impl<S: EventStorage> NostrDB<S> {
             false
         };
 
-        let query_time = start_time.elapsed();
+        let query_time = js_sys::Date::now() - start_time;
 
         if self.config.debug_logging {
             debug!(
@@ -453,7 +453,7 @@ impl<S: EventStorage> NostrDB<S> {
             events: results,
             total_found,
             has_more,
-            query_time_ms: query_time.as_millis() as u64,
+            query_time_ms: query_time as u64,
         })
     }
 
@@ -667,14 +667,19 @@ impl<S: EventStorage> NostrDB<S> {
     /// Process a single event (the actual indexing logic)
     async fn process_single_event(&self, event: &ParsedEvent) -> Result<()> {
         if event.event.id.to_hex().is_empty() {
-            return Err(anyhow::anyhow!("Event ID cannot be empty"));
+            return Err(DatabaseError::StorageError(
+                "Event ID cannot be empty".to_string(),
+            ));
         }
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
         let fb_parsed_event = match event.build_flatbuffer(&mut fbb) {
             Ok(parsed_event) => parsed_event,
             Err(e) => {
                 warn!("Failed to build flatbuffer for event: {:?}", e);
-                return Err(e);
+                return Err(DatabaseError::StorageError(format!(
+                    "Failed to build flatbuffer for event: {:?}",
+                    e
+                )));
             }
         };
 
@@ -700,13 +705,15 @@ impl<S: EventStorage> NostrDB<S> {
                 self.index_event(parsed_event, offset);
             } else {
                 warn!("Failed to get parsed event from worker message");
-                return Err(anyhow::anyhow!(
-                    "Failed to get parsed event from worker message"
+                return Err(DatabaseError::StorageError(
+                    "Failed to get parsed event from worker message".to_string(),
                 ));
             }
         } else {
             warn!("Failed to parse flatbuffer data for indexing");
-            return Err(anyhow::anyhow!("Failed to parse flatbuffer data"));
+            return Err(DatabaseError::StorageError(
+                "Failed to parse flatbuffer data".to_string(),
+            ));
         }
 
         if self.config.debug_logging {
@@ -722,7 +729,7 @@ impl<S: EventStorage> EventDatabase for NostrDB<S> {
         &self,
         requests: Vec<Request>,
         cache_only: bool,
-    ) -> Result<(Vec<Request>, Vec<Vec<u8>>)> {
+    ) -> std::result::Result<(Vec<Request>, Vec<Vec<u8>>), crate::NostrError> {
         if requests.is_empty() {
             return Ok((Vec::new(), Vec::new()));
         }
@@ -736,7 +743,7 @@ impl<S: EventStorage> EventDatabase for NostrDB<S> {
                     let filter = QueryFilter::from_nostr_filter(&nostr_filter);
                     let result = self
                         .query_events_internal(filter)
-                        .map_err(|e| anyhow::anyhow!("Database query error: {}", e))?;
+                        .map_err(|e| crate::NostrError::from(e))?;
 
                     all_events.extend(result.events);
 
@@ -768,7 +775,10 @@ impl<S: EventStorage> EventDatabase for NostrDB<S> {
         Ok((remaining_requests, all_events))
     }
 
-    async fn query_events(&self, filter: Filter) -> Result<Vec<Vec<u8>>> {
+    async fn query_events(
+        &self,
+        filter: Filter,
+    ) -> std::result::Result<Vec<Vec<u8>>, crate::NostrError> {
         let query_filter = QueryFilter::from_nostr_filter(&filter);
         debug!(
                 "Query filter: kinds={:?}, authors={:?}, ids={:?}, e_tags={:?}, p_tags={:?}, since={:?}, until={:?}, limit={:?}",
@@ -783,14 +793,16 @@ impl<S: EventStorage> EventDatabase for NostrDB<S> {
             );
         let result = self
             .query_events_internal(query_filter)
-            .map_err(|e| anyhow::anyhow!("Database query error: {}", e))?;
+            .map_err(|e| crate::NostrError::from(e))?;
         Ok(result.events)
     }
 
-    async fn add_event(&self, event: &ParsedEvent) -> Result<()> {
+    async fn add_event(&self, event: &ParsedEvent) -> std::result::Result<(), crate::NostrError> {
         // Validate event ID early
         if event.event.id.to_hex().is_empty() {
-            return Err(anyhow::anyhow!("Event ID cannot be empty"));
+            return Err(crate::NostrError::from(DatabaseError::StorageError(
+                "Event ID cannot be empty".to_string(),
+            )));
         }
 
         self.process_single_event(event).await.ok();

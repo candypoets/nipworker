@@ -3,12 +3,14 @@ use crate::nostr::Template;
 use crate::parser::Parser;
 use crate::relays::ConnectionRegistry;
 use crate::types::nostr::Event;
+use crate::NostrError;
 use crate::CONTACT_LIST;
-use anyhow::Result;
 use futures::future::join_all;
 use js_sys::SharedArrayBuffer;
 use rustc_hash::FxHashSet;
 use std::sync::Arc;
+
+type Result<T> = std::result::Result<T, NostrError>;
 use tracing::{debug, info, warn};
 
 #[derive(Clone)]
@@ -44,7 +46,7 @@ impl PublishManager {
         // Prepare the event using parser
         let event = match self.parser.prepare(template) {
             Ok(parsed) => parsed,
-            Err(e) => return Err(anyhow::anyhow!("failed to prepare event: {}", e)),
+            Err(e) => return Err(NostrError::Other(format!("failed to prepare event: {}", e))),
         };
 
         // Determine target relays for the event

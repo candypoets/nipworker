@@ -35,10 +35,13 @@ impl ParsedData {
     pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
         &self,
         builder: &mut flatbuffers::FlatBufferBuilder<'a, A>,
-    ) -> anyhow::Result<(
-        crate::generated::nostr::fb::ParsedData,
-        flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>,
-    )> {
+    ) -> Result<
+        (
+            crate::generated::nostr::fb::ParsedData,
+            flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>,
+        ),
+        crate::types::TypesError,
+    > {
         use crate::generated::nostr::fb;
 
         match self {
@@ -149,11 +152,10 @@ impl ParsedEvent {
     pub fn build_flatbuffer<'a>(
         &self,
         fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
-    ) -> anyhow::Result<flatbuffers::WIPOffset<fb::ParsedEvent<'a>>> {
-        let parsed_data = self
-            .parsed
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("No parsed data available"))?;
+    ) -> Result<flatbuffers::WIPOffset<fb::ParsedEvent<'a>>, crate::types::TypesError> {
+        let parsed_data = self.parsed.as_ref().ok_or_else(|| {
+            crate::types::TypesError::MissingField("No parsed data available".to_string())
+        })?;
 
         // Build the ParsedData union directly in our builder
         let (parsed_type, parsed_union_offset) = parsed_data.build_flatbuffer(fbb)?;

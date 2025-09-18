@@ -12,6 +12,8 @@ import { Eoce, EoceT } from '../../nostr/fb/eoce.js';
 import { Message, unionToMessage, unionListToMessage } from '../../nostr/fb/message.js';
 import { MessageType } from '../../nostr/fb/message-type.js';
 import { ParsedEvent, ParsedEventT } from '../../nostr/fb/parsed-event.js';
+import { Pubkey, PubkeyT } from '../../nostr/fb/pubkey.js';
+import { SignedEvent, SignedEventT } from '../../nostr/fb/signed-event.js';
 import { ValidProofs, ValidProofsT } from '../../nostr/fb/valid-proofs.js';
 
 
@@ -113,7 +115,7 @@ export class WorkerMessageT implements flatbuffers.IGeneratedObject {
 constructor(
   public type: MessageType = MessageType.ParsedNostrEvent,
   public contentType: Message = Message.NONE,
-  public content: BufferFullT|ConnectionStatusT|CountResponseT|EoceT|ParsedEventT|ValidProofsT|null = null
+  public content: BufferFullT|ConnectionStatusT|CountResponseT|EoceT|ParsedEventT|PubkeyT|SignedEventT|ValidProofsT|null = null
 ){}
 
 

@@ -3,9 +3,11 @@ use crate::network::interfaces::{CacheProcessor as CacheProcessorTrait, EventDat
 use crate::parsed_event::ParsedEvent;
 use crate::parser::Parser;
 use crate::types::network::Request;
-use anyhow::Result;
+use crate::NostrError;
 use std::sync::Arc;
 use tracing::{debug, warn};
+
+type Result<T> = std::result::Result<T, NostrError>;
 
 pub struct CacheProcessor {
     database: Arc<NostrDB>,

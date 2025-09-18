@@ -93,14 +93,15 @@ impl ConnectionRegistry {
                 tracing::debug!(subscription_id = %id, relay_url = %relay_url, "Received EOSE");
                 SharedBufferManager::send_connection_status(&buffer, relay_url, kind, message)
                     .await;
+                post_worker_message(&JsValue::from_str(&id));
                 if close_on_eose {
                     let _ = self.close_subscription(&id).await;
                 }
             }
             _ => {
                 tracing::info!(kind = %kind, relay_url = %relay_url, "Received relay message");
-                SharedBufferManager::send_connection_status(&buffer, relay_url, kind, message)
-                    .await;
+                // SharedBufferManager::send_connection_status(&buffer, relay_url, kind, message)
+                //     .await;
             }
         }
     }
@@ -140,6 +141,7 @@ impl ConnectionRegistry {
                             &e.to_string(),
                         )
                         .await;
+                        post_worker_message(&JsValue::from_str(&subscription_id));
                         return;
                     }
                 };
@@ -159,6 +161,7 @@ impl ConnectionRegistry {
                         &e.to_string(),
                     )
                     .await;
+                    post_worker_message(&JsValue::from_str(&subscription_id));
                 } else {
                     SharedBufferManager::send_connection_status(
                         &buffer_clone,
@@ -167,6 +170,7 @@ impl ConnectionRegistry {
                         "",
                     )
                     .await;
+                    post_worker_message(&JsValue::from_str(&subscription_id));
                 }
             });
         }

@@ -1,13 +1,13 @@
 use crate::nostr::Template;
 use crate::parser::Parser;
+use crate::parser::{ParserError, Result};
+use crate::signer::interface::SignerManagerInterface;
 use crate::types::network::Request;
-use crate::types::nostr::{Event, UnsignedEvent};
+use crate::types::nostr::Event;
 use crate::types::proof::Proof;
 use crate::utils::request_deduplication::RequestDeduplicator;
-use anyhow::{anyhow, Result};
 use rustc_hash::FxHashMap;
-use serde_json::Value;
-use tracing::{debug, error};
+use tracing::{debug, error, info, warn};
 
 // NEW: Imports for FlatBuffers
 use crate::generated::nostr::*;
@@ -27,7 +27,7 @@ pub struct Kind9321Parsed {
 impl Parser {
     pub fn parse_kind_9321(&self, event: &Event) -> Result<(Kind9321Parsed, Option<Vec<Request>>)> {
         if event.kind != 9321 {
-            return Err(anyhow!("event is not kind 9321"));
+            return Err(ParserError::Other("event is not kind 9321".to_string()));
         }
 
         let mut requests = Vec::new();
@@ -102,10 +102,18 @@ impl Parser {
                 }
             }
         }
+        // Log parsed tag information
+        tracing::info!(
+            "Parsed kind 9321 tags - proofs: {}, mint: {:?}, recipient: {:?}, event: {:?}",
+            proof_tags.len(),
+            mint_tag.as_ref().map(|t| &t[1]),
+            recipient_tag.as_ref().map(|t| &t[1]),
+            event_tag.as_ref().map(|t| &t[1])
+        );
 
         // Validate essential tags are present
         if proof_tags.is_empty() || mint_tag.is_none() || recipient_tag.is_none() {
-            return Err(anyhow!("missing required tags"));
+            return Err(ParserError::Other("missing required tags".to_string()));
         }
 
         let mint_url = mint_tag.as_ref().unwrap()[1].clone();
@@ -118,38 +126,30 @@ impl Parser {
         let mut p2pk_pubkey: Option<String> = None;
 
         for proof_tag in proof_tags {
-            // Try to extract proof from the tag
-            if let Ok(proof_data) = serde_json::from_str::<Value>(&proof_tag[1]) {
-                // Basic amount extraction - would need proper cashu types
-                if let Some(amount) = proof_data.get("amount").and_then(|a| a.as_i64()) {
-                    total += amount as i32;
-                }
+            match Proof::from_json(&proof_tag[1]) {
+                Ok(proof) => {
+                    total += proof.amount as i32;
 
-                // Check for P2PK locking
-                if let Some(secret) = proof_data.get("secret").and_then(|s| s.as_str()) {
-                    if secret.contains("P2PK") {
+                    // Check for P2PK locking in the secret field
+                    if proof.secret.contains("P2PK") {
                         is_p2pk_locked = true;
-                        // Try to extract pubkey from P2PK secret
-                        if let Ok(secret_data) = serde_json::from_str::<Value>(secret) {
-                            if let Some(array) = secret_data.as_array() {
-                                if array.len() >= 2 && array[0].as_str() == Some("P2PK") {
-                                    if let Some(data_obj) = array[1].as_object() {
-                                        if let Some(pubkey_str) =
-                                            data_obj.get("data").and_then(|d| d.as_str())
-                                        {
-                                            if p2pk_pubkey.is_none() {
-                                                p2pk_pubkey = Some(pubkey_str.to_string());
-                                            }
-                                        }
-                                    }
-                                }
+                        if let Some(pubkey) = parse_p2pk_pubkey(&proof.secret) {
+                            if p2pk_pubkey.is_none() {
+                                p2pk_pubkey = Some(pubkey);
                             }
                         }
                     }
+                    info!(
+                        "Parsed proof - amount: {}, secret: {}",
+                        proof.amount, proof.secret
+                    );
+                    proofs.push(proof);
                 }
-
-                if let Ok(proof_union) = serde_json::from_value::<Proof>(proof_data) {
-                    proofs.push(proof_union);
+                Err(e) => {
+                    warn!(
+                        "Failed to parse proof from tag: {} - Error: {}",
+                        proof_tag[1], e
+                    );
                 }
             }
         }
@@ -171,14 +171,14 @@ impl Parser {
         };
 
         // Deduplicate requests using the utility
-        let deduplicated_requests = RequestDeduplicator::deduplicate_requests(requests);
+        let deduplicated_requests = RequestDeduplicator::deduplicate_requests(&requests);
 
         Ok((result, Some(deduplicated_requests)))
     }
 
     pub fn prepare_kind_9321(&self, template: &Template) -> Result<Event> {
         if template.kind != 9321 {
-            return Err(anyhow!("event is not kind 9321"));
+            return Err(ParserError::Other("event is not kind 9321".to_string()));
         }
 
         // Validate required tags
@@ -198,21 +198,96 @@ impl Parser {
         }
 
         if !has_proof {
-            return Err(anyhow!("kind 9321 must include at least one proof tag"));
+            return Err(ParserError::Other(
+                "kind 9321 must include at least one proof tag".to_string(),
+            ));
         }
 
         if !has_mint {
-            return Err(anyhow!("kind 9321 must include a u tag with mint URL"));
+            return Err(ParserError::Other(
+                "kind 9321 must include a u tag with mint URL".to_string(),
+            ));
         }
 
         if !has_recipient {
-            return Err(anyhow!("kind 9321 must include a p tag with recipient"));
+            return Err(ParserError::Other(
+                "kind 9321 must include a p tag with recipient".to_string(),
+            ));
         }
 
         self.signer_manager
             .sign_event(template)
-            .map_err(|e| anyhow!("failed to sign event: {}", e))
+            .map_err(|e| ParserError::Other(format!("failed to sign event: {}", e)))
     }
+}
+
+fn parse_p2pk_pubkey(secret: &str) -> Option<String> {
+    let bytes = secret.as_bytes();
+    if bytes.first()? != &b'[' {
+        return None;
+    }
+
+    let mut pos = 1; // skip '['
+
+    // Skip whitespace
+    while pos < bytes.len() && bytes[pos].is_ascii_whitespace() {
+        pos += 1;
+    }
+
+    // Parse first string "P2PK"
+    if pos >= bytes.len() || bytes[pos] != b'"' {
+        return None;
+    }
+    pos += 1; // skip '"'
+    let start = pos;
+    while pos < bytes.len() && bytes[pos] != b'"' {
+        if bytes[pos] == b'\\' {
+            pos += 1; // skip escape
+        }
+        pos += 1;
+    }
+    if pos >= bytes.len() || std::str::from_utf8(&bytes[start..pos]).ok()? != "P2PK" {
+        return None;
+    }
+    pos += 1; // skip closing '"'
+
+    // Skip whitespace and comma
+    while pos < bytes.len() && (bytes[pos].is_ascii_whitespace() || bytes[pos] == b',') {
+        pos += 1;
+    }
+
+    // Parse second element as object
+    if pos >= bytes.len() || bytes[pos] != b'{' {
+        return None;
+    }
+
+    // Find "data" field
+    let remaining = std::str::from_utf8(&bytes[pos..]).ok()?;
+    if let Some(data_start) = remaining.find(r#""data""#) {
+        let data_pos = pos + data_start + 7; // "data": (7 chars including quotes and colon)
+                                             // Skip whitespace after colon
+        let mut data_pos = data_pos;
+        while data_pos < bytes.len() && bytes[data_pos].is_ascii_whitespace() {
+            data_pos += 1;
+        }
+        if data_pos < bytes.len() && bytes[data_pos] == b'"' {
+            data_pos += 1; // skip opening '"'
+            let value_start = data_pos;
+            while data_pos < bytes.len() && bytes[data_pos] != b'"' {
+                if bytes[data_pos] == b'\\' {
+                    data_pos += 1; // skip escape
+                }
+                data_pos += 1;
+            }
+            if data_pos < bytes.len() {
+                return std::str::from_utf8(&bytes[value_start..data_pos])
+                    .ok()
+                    .map(|s| s.to_string());
+            }
+        }
+    }
+
+    None
 }
 
 // NEW: Build the FlatBuffer for Kind9321Parsed

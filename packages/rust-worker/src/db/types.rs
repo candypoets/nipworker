@@ -1,12 +1,11 @@
 use crate::types::nostr::{EventId, Kind, PublicKey, Timestamp};
 use crate::Filter;
 use rustc_hash::{FxHashMap, FxHashSet};
-use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::rc::Rc;
 
 /// Database configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct DatabaseConfig {
     /// Maximum number of events to keep in IndexedDB
     pub max_events_in_storage: usize,
@@ -27,7 +26,7 @@ impl Default for DatabaseConfig {
 }
 
 /// Statistics about the database
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct DatabaseStats {
     /// Total number of events in memory
     pub total_events: usize,
@@ -128,8 +127,6 @@ pub enum DatabaseError {
     InvalidEventId(String),
     #[error("Invalid pubkey: {0}")]
     InvalidPubkey(String),
-    #[error("Serialization error: {0}")]
-    SerializationError(#[from] serde_json::Error),
     #[error("Storage error: {0}")]
     StorageError(String),
     #[error("Filter error: {0}")]

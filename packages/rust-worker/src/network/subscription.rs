@@ -1,5 +1,6 @@
 use super::*;
 use crate::db::NostrDB;
+use crate::generated::nostr::fb;
 use crate::network::cache_processor::CacheProcessor;
 use crate::network::interfaces::CacheProcessor as CacheProcessorTrait;
 use crate::parser::Parser;
@@ -7,14 +8,15 @@ use crate::pipeline::pipes::*;
 use crate::pipeline::{PipeType, Pipeline};
 use crate::relays::utils::{normalize_relay_url, validate_relay_url};
 use crate::types::network::Request;
-use crate::types::thread::{PipelineConfig, SubscriptionConfig};
 use crate::types::*;
 use crate::utils::buffer::SharedBufferManager;
 use crate::utils::js_interop::post_worker_message;
-use anyhow::Result;
+use crate::NostrError;
 use futures::lock::Mutex;
 use js_sys::SharedArrayBuffer;
 use rustc_hash::FxHashMap;
+
+type Result<T> = std::result::Result<T, NostrError>;
 use std::rc::Rc;
 use std::sync::{Arc, RwLock};
 use tracing::{debug, error, info, warn};
@@ -25,41 +27,43 @@ pub struct SubscriptionManager {
     parser: Arc<Parser>,
     subscriptions: Arc<RwLock<FxHashMap<String, SharedArrayBuffer>>>,
     cache_processor: Arc<CacheProcessor>,
-    connection_registry: ConnectionRegistry,
+    connection_registry: Arc<ConnectionRegistry>,
     relay_hints: FxHashMap<String, Vec<String>>,
 }
 
 impl SubscriptionManager {
-    pub fn new(database: Arc<NostrDB>, parser: Arc<Parser>) -> Self {
+    pub fn new(
+        database: Arc<NostrDB>,
+        connection_registry: Arc<ConnectionRegistry>,
+        parser: Arc<Parser>,
+    ) -> Self {
         let cache_processor = Arc::new(CacheProcessor::new(database.clone(), parser.clone()));
 
         Self {
             database: database.clone(),
+            connection_registry,
             parser,
             subscriptions: Arc::new(RwLock::new(FxHashMap::default())),
             relay_hints: FxHashMap::default(),
             cache_processor,
-            connection_registry: ConnectionRegistry::new(),
         }
     }
 
     pub async fn open_subscription(
         &self,
         subscription_id: String,
-        requests: Vec<Request>,
         shared_buffer: SharedArrayBuffer,
-        config: Option<SubscriptionConfig>,
+        requests: &Vec<fb::Request<'_>>,
+        config: &fb::SubscriptionConfig<'_>,
     ) -> Result<()> {
-        let config = config.unwrap_or_default();
-
         info!(
             "Opening subscription: {} with {} requests (closeOnEOSE: {}, cacheFirst: {}){}",
             subscription_id,
             requests.len(),
-            config.close_on_eose,
-            config.cache_first,
+            config.close_on_eose(),
+            config.cache_first(),
             if requests.len() == 1 {
-                format!(" with filter: {:?}", requests[0].tags)
+                format!(" with filter: {:?}", requests[0].tags())
             } else {
                 String::new()
             }
@@ -80,9 +84,19 @@ impl SubscriptionManager {
             .unwrap()
             .insert(subscription_id.clone(), shared_buffer.clone());
 
+        let parsed_requests: Vec<Request> = requests
+            .iter()
+            .map(|request| Request::from_flatbuffer(request))
+            .collect();
+
         // Spawn subscription processing task
-        self.process_subscription(&subscription_id, requests, shared_buffer.clone(), config)
-            .await?;
+        self.process_subscription(
+            shared_buffer.clone(),
+            &subscription_id,
+            parsed_requests,
+            config,
+        )
+        .await?;
 
         debug!("Subscription {} opened successfully", subscription_id);
         Ok(())
@@ -112,15 +126,15 @@ impl SubscriptionManager {
 
     async fn process_subscription(
         &self,
+        shared_buffer: SharedArrayBuffer,
         subscription_id: &String,
         _requests: Vec<Request>,
-        shared_buffer: SharedArrayBuffer,
-        config: SubscriptionConfig,
+        config: &fb::SubscriptionConfig<'_>,
     ) -> Result<()> {
         debug!("Processing subscription: {}", subscription_id);
 
         // Create pipeline based on config
-        let mut pipeline = self.build_pipeline(config.pipeline.clone(), subscription_id.clone())?;
+        let mut pipeline = self.build_pipeline(config.pipeline(), subscription_id.clone())?;
 
         let (network_requests, events) = match self
             .cache_processor
@@ -133,7 +147,10 @@ impl SubscriptionManager {
                     "Failed to process local requests for subscription {}: {}",
                     subscription_id, e
                 );
-                return Err(anyhow::anyhow!("Failed to process local requests: {}", e));
+                return Err(NostrError::Other(format!(
+                    "Failed to process local requests: {}",
+                    e
+                )));
             }
         };
 
@@ -154,7 +171,8 @@ impl SubscriptionManager {
 
         // Only process network requests if there are any
         if !network_requests.is_empty() {
-            let relay_filters = self.group_requests_by_relay(network_requests.clone())?;
+            let relay_filters = self.group_requests_by_relay(&network_requests)?;
+
             // Kick off direct subscription setup — writes to SAB inside connection loop
             self.connection_registry
                 .subscribe(
@@ -162,7 +180,7 @@ impl SubscriptionManager {
                     relay_filters,
                     Rc::new(Mutex::new(pipeline)),
                     Rc::new(shared_buffer.clone()),
-                    config.close_on_eose,
+                    config.close_on_eose(),
                 )
                 .await?;
         }
@@ -180,17 +198,17 @@ impl SubscriptionManager {
 
     fn group_requests_by_relay(
         &self,
-        requests: Vec<Request>,
-    ) -> Result<FxHashMap<String, Vec<Filter>>, anyhow::Error> {
+        requests: &Vec<Request>,
+    ) -> Result<FxHashMap<String, Vec<Filter>>> {
         let mut relay_filters_map: FxHashMap<String, Vec<Filter>> = FxHashMap::default();
 
-        for mut request in requests {
-            request = self.set_request_relay(request)?;
+        for request in requests {
+            let relays = self.get_request_relays(request)?;
             // Convert the request to a filter
             let filter = request.to_filter()?;
 
             // Add the filter to each relay in the request
-            for relay_url in request.relays {
+            for relay_url in relays {
                 if let Err(e) = validate_relay_url(&relay_url) {
                     warn!("Invalid relay URL {}: {}, skipping", relay_url, e);
                     continue;
@@ -205,7 +223,7 @@ impl SubscriptionManager {
         Ok(relay_filters_map)
     }
 
-    fn set_request_relay(&self, mut request: Request) -> Result<Request> {
+    fn get_request_relays(&self, request: &Request) -> Result<Vec<String>> {
         let filter = request.to_filter()?;
         if request.relays.is_empty() {
             let pubkey = match filter.authors.as_ref() {
@@ -240,107 +258,78 @@ impl SubscriptionManager {
             // Limit to maximum of 8 relays
             let relays_to_add: Vec<String> = relays.into_iter().take(8).collect();
 
-            request.relays.extend(relays_to_add);
+            return Ok(relays_to_add);
         }
 
-        Ok(request)
+        Ok(request.relays.clone())
     }
 
     fn build_pipeline(
         &self,
-        pipeline_config: Option<PipelineConfig>,
+        pipeline_config: Option<fb::PipelineConfig<'_>>,
         subscription_id: String,
     ) -> Result<Pipeline> {
         match pipeline_config {
             Some(config) => {
                 let mut pipes: Vec<PipeType> = Vec::new();
-
-                for pipe_config in config.pipes {
-                    let pipe = match pipe_config.name.as_str() {
-                        "parse" => PipeType::Parse(ParsePipe::new(self.parser.clone())),
-                        "saveToDb" | "save_to_db" => {
+                for pipe_config in config.pipes() {
+                    let config_type = pipe_config.config_type();
+                    let pipe = match config_type {
+                        fb::PipeConfig::ParsePipeConfig => {
+                            PipeType::Parse(ParsePipe::new(self.parser.clone()))
+                        }
+                        fb::PipeConfig::SaveToDbPipeConfig => {
                             PipeType::SaveToDb(SaveToDbPipe::new(self.database.clone()))
                         }
-                        "serializeEvents" | "serialize_events" => PipeType::SerializeEvents(
+                        fb::PipeConfig::SerializeEventsPipeConfig => PipeType::SerializeEvents(
                             SerializeEventsPipe::new(subscription_id.clone()),
                         ),
-                        "proofVerification" => {
-                            let params = pipe_config.params.as_ref();
+                        fb::PipeConfig::ProofVerificationPipeConfig => {
+                            let config = pipe_config
+                                .config_as_proof_verification_pipe_config()
+                                .unwrap();
                             // max_proofs: usize, check_interval_secs: u64
-                            let max_proofs = params
-                                .and_then(|p| p.get("maxProofs"))
-                                .and_then(|v| v.as_u64())
-                                .unwrap_or(100)
-                                as usize;
-                            let check_interval = params
-                                .and_then(|p| p.get("checkIntervalSecs"))
-                                .and_then(|v| v.as_u64())
-                                .unwrap_or(1);
-
-                            info!("Creating ProofVerificationPipe with max_proofs: {}, check_interval: {}s", max_proofs, check_interval);
+                            let max_proofs = config.max_proofs() as usize;
 
                             PipeType::ProofVerification(ProofVerificationPipe::new(max_proofs))
                         }
-                        "counter" => {
-                            let params = pipe_config.params.as_ref();
-                            let kinds = params
-                                .and_then(|p| p.get("kinds"))
-                                .and_then(|v| v.as_array())
-                                .map(|arr| {
-                                    arr.iter()
-                                        .filter_map(|v| v.as_u64())
-                                        .map(|v| v as u16)
-                                        .collect()
-                                })
-                                .unwrap_or_else(|| vec![1]); // Default to kind 1 (text notes)
+                        fb::PipeConfig::CounterPipeConfig => {
+                            let config = pipe_config.config_as_counter_pipe_config().unwrap();
 
-                            let pubkey = params
-                                .and_then(|p| p.get("pubkey"))
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("")
-                                .to_string();
+                            let kinds: Vec<u16> = config.kinds().iter().map(|k| k as u16).collect();
+
+                            let pubkey = config.pubkey();
+
+                            let pubkey = config.pubkey().to_string();
 
                             PipeType::Counter(CounterPipe::new(kinds, pubkey))
                         }
-                        "kindFilter" | "kind_filter" => {
-                            let kinds = pipe_config
-                                .params
-                                .as_ref()
-                                .and_then(|p| p.get("kinds"))
-                                .and_then(|v| v.as_array())
-                                .map(|arr| arr.iter().filter_map(|v| v.as_u64()).collect())
-                                .unwrap_or_default();
+                        fb::PipeConfig::KindFilterPipeConfig => {
+                            let config = pipe_config.config_as_kind_filter_pipe_config().unwrap();
+                            let kinds: Vec<u16> = config.kinds().iter().map(|k| k as u16).collect();
                             PipeType::KindFilter(KindFilterPipe::new(kinds))
                         }
-                        "npubLimiter" | "npub_limiter" => {
-                            let params = pipe_config.params.as_ref();
-                            let kind = params
-                                .and_then(|p| p.get("kind"))
-                                .and_then(|v| v.as_u64())
-                                .map(|v| v as u16)
-                                .unwrap_or(1); // Default to kind 1 (text notes)
-                            let limit_per_npub = params
-                                .and_then(|p| p.get("limitPerNpub"))
-                                .and_then(|v| v.as_u64())
-                                .unwrap_or(5)
-                                as usize;
-                            let max_total_npubs = params
-                                .and_then(|p| p.get("maxTotalNpubs"))
-                                .and_then(|v| v.as_u64())
-                                .unwrap_or(100)
-                                as usize;
-                            PipeType::NpubLimiter(NpubLimiterPipe::new(
-                                kind,
-                                limit_per_npub,
-                                max_total_npubs,
-                            ))
+                        fb::PipeConfig::NpubLimiterPipeConfig => {
+                            let config = pipe_config.config_as_npub_limiter_pipe_config().unwrap();
+                            let kind = config.kind();
+                            let limit_per_npub = config.limit_per_npub();
+                            let max_total_npubs = config.max_total_npubs();
+                            PipeType::NpubLimiter(NpubLimiterPipe::new(kind, limit_per_npub))
                         }
-                        _ => return Err(anyhow::anyhow!("Unknown pipe: {}", pipe_config.name)),
+                        _ => {
+                            return Err(NostrError::Other(format!(
+                                "Unknown pipe config type: {:?}",
+                                config_type
+                            )))
+                        }
                     };
                     pipes.push(pipe);
                 }
-
-                Pipeline::new(pipes, subscription_id)
+                if pipes.is_empty() {
+                    Pipeline::default(self.parser.clone(), self.database.clone(), subscription_id)
+                } else {
+                    Pipeline::new(pipes, subscription_id)
+                }
             }
             None => {
                 // Use default pipeline

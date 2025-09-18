@@ -1,3 +1,5 @@
+import { CounterPipeConfig, CounterPipeConfigT, KindFilterPipeConfig, KindFilterPipeConfigT, NpubLimiterPipeConfig, NpubLimiterPipeConfigT, ParsePipeConfig, ParsePipeConfigT, Pipe, PipeConfig, PipelineConfigT, PipeT, SaveToDbPipeConfig, SaveToDbPipeConfigT, SerializeEventsPipeConfig, SerializeEventsPipeConfigT } from "../generated/nostr/fb";
+
 export * from "../generated/nostr/fb";
 
 
@@ -18,14 +20,10 @@ export type RequestObject = {
   noContext?: boolean;
 };
 
-export type PipeConfig = {
-  name: string;
-  params?: Record<string, any>;
-};
-
-export type PipelineConfig = {
-  pipes: PipeConfig[];
-};
+// export type PipeConfig = {
+//   name: string;
+//   params?: Record<string, any>;
+// };
 
 export type EventTemplate = {
   kind: number;
@@ -34,18 +32,11 @@ export type EventTemplate = {
 };
 
 
-export type MainToWorkerMessage =
-  | { Subscribe: { subscription_id: string; requests: RequestObject[]; config?: SubscriptionConfig } }
-  | { Unsubscribe: { subscription_id: string } }
-  | { Publish: { publish_id: string; template: EventTemplate } }
-  | { SignEvent: { template: EventTemplate } }
-  | { GetPublicKey: {} }
-  | { SetSigner: { signer_type: string; private_key: string } }
-  | { Initialize: { buffer_key: string } };
+
 
 
 export type SubscriptionConfig = {
-  pipeline?: PipelineConfig;
+  pipeline?: PipeT[];
   closeOnEose?: boolean;
   cacheFirst?: boolean;
   timeoutMs?: number;

@@ -112,10 +112,7 @@ impl RingBufferStorage {
         drop(buffer); // release borrow before await
 
         // Throttle persistence: at most once every 20s, only when new events arrive.
-        let now_ms = web_sys::window()
-            .and_then(|w| w.performance())
-            .map(|p| p.now())
-            .unwrap_or_else(|| Date::now());
+        let now_ms = Date::now();
 
         match self.first_event_since_last_persist_ms.get() {
             None => {

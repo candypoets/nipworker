@@ -5,19 +5,16 @@
 
 use crate::relays::connection_registry::EventCallback;
 use crate::relays::types::{
-    ClientMessage, ConnectionStats, ConnectionStatus, RelayConfig, RelayError, RelayMessage,
-    RelayResponse,
+    ClientMessage, ConnectionStats, ConnectionStatus, RelayConfig, RelayError, RelayResponse,
 };
 use crate::utils::json::extract_first_three;
 use futures::channel::mpsc;
-use futures::future::{AbortHandle, Abortable};
+use futures::future::AbortHandle;
 use futures::lock::Mutex;
 use futures::stream::SplitSink;
 use futures::{SinkExt, StreamExt};
 use gloo_net::websocket::{futures::WebSocket, Message};
-use std::cell::RefCell;
 use std::collections::HashMap;
-use std::os::raw;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::RwLock;
@@ -49,8 +46,8 @@ pub struct RelayConnection {
     active_publishes: Arc<RwLock<HashMap<String, String>>>,
     /// Connection abort handle
     connection_abort: Arc<RwLock<Option<AbortHandle>>>,
-    /// Last activity timestamp
-    last_activity: Arc<RwLock<instant::Instant>>,
+    /// Last activity timestamp (milliseconds since epoch)
+    last_activity: Arc<RwLock<f64>>,
 }
 
 impl RelayConnection {
@@ -71,7 +68,7 @@ impl RelayConnection {
             active_subscriptions: Arc::new(RwLock::new(HashMap::new())),
             active_publishes: Arc::new(RwLock::new(HashMap::new())),
             connection_abort: Arc::new(RwLock::new(None)),
-            last_activity: Arc::new(RwLock::new(instant::Instant::now())),
+            last_activity: Arc::new(RwLock::new(js_sys::Date::now())),
         }
     }
 
@@ -156,11 +153,11 @@ impl RelayConnection {
     /// Update last activity timestamp
     async fn update_activity(&self) {
         let mut activity = self.last_activity.write().unwrap();
-        *activity = instant::Instant::now();
+        *activity = js_sys::Date::now();
     }
 
-    /// Get last activity timestamp
-    pub async fn last_activity(&self) -> instant::Instant {
+    /// Get last activity timestamp (milliseconds since epoch)
+    pub async fn last_activity(&self) -> f64 {
         *self.last_activity.read().unwrap()
     }
 
@@ -213,7 +210,7 @@ impl RelayConnection {
         }
         {
             let mut stats = self.stats.write().unwrap();
-            stats.connected_at = Some(instant::Instant::now());
+            stats.connected_at = Some(js_sys::Date::now() as u64);
         }
 
         self.update_activity().await;
@@ -441,7 +438,8 @@ impl RelayConnection {
         // Check if connection has been idle for too long
         let idle_timeout = self.config.keepalive_timeout;
         let last_activity = self.last_activity().await;
-        last_activity.elapsed() > idle_timeout
+        let now = js_sys::Date::now();
+        (now - last_activity) > (idle_timeout.as_secs() as f64 * 1000.0)
     }
 
     /// Close the connection

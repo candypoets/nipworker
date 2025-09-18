@@ -1,18 +1,18 @@
 use crate::db::NostrDB;
-use crate::generated::nostr::fb::{self, WorkerMessage};
+use crate::generated::nostr::fb::{self};
 use crate::parsed_event::ParsedEvent;
 use crate::parser::Parser;
 use crate::types::*;
 use crate::utils::json::extract_event_id;
-use anyhow::Result;
+use crate::NostrError;
 
-use hex::decode_to_slice;
+type Result<T> = std::result::Result<T, NostrError>;
+
 use crate::types::nostr::Event as NostrEvent;
+use hex::decode_to_slice;
 use rustc_hash::FxHashSet;
-use serde_wasm_bindgen::from_value;
 use std::cell::RefCell;
 use std::sync::Arc;
-use tracing::debug;
 use wasm_bindgen::prelude::*;
 
 pub mod pipes;
@@ -188,10 +188,10 @@ impl Pipeline {
         for (i, pipe) in pipes.iter().enumerate() {
             let is_last = i == pipes.len() - 1;
             if pipe.can_direct_output() && !is_last {
-                return Err(anyhow::anyhow!(
+                return Err(NostrError::Other(format!(
                     "Pipe '{}' can produce DirectOutput but is not the last pipe in pipeline",
                     pipe.name()
-                ));
+                )));
             }
         }
 
@@ -215,7 +215,7 @@ impl Pipeline {
         Self::new(
             vec![
                 PipeType::Parse(ParsePipe::new(parser)),
-                PipeType::SaveToDb(SaveToDbPipe::new(database)),
+                // PipeType::SaveToDb(SaveToDbPipe::new(database)),
                 PipeType::SerializeEvents(SerializeEventsPipe::new(subscription_id.clone())),
             ],
             subscription_id,
@@ -268,7 +268,7 @@ impl Pipeline {
         }
 
         // 4️⃣ Parse full crate::types::nostr::Event
-        let nostr_event: crate::types::nostr::Event = match from_value(parse(raw_event_json)) {
+        let nostr_event = match Event::from_json(raw_event_json) {
             Ok(ev) => ev,
             Err(e) => {
                 tracing::debug!("Failed to parse crate::types::nostr::Event: {}", e);
@@ -280,6 +280,7 @@ impl Pipeline {
 
         // 5️⃣ Run through pipes
         let pipes_len = self.pipes.len();
+
         for (i, pipe) in self.pipes.iter_mut().enumerate() {
             let is_last = i == pipes_len - 1;
             match pipe.process(event).await? {
@@ -287,10 +288,10 @@ impl Pipeline {
                 PipeOutput::Drop => return Ok(None),
                 PipeOutput::DirectOutput(data) => {
                     if !is_last {
-                        return Err(anyhow::anyhow!(
+                        return Err(NostrError::Other(format!(
                             "Non-terminal pipe '{}' produced DirectOutput",
                             pipe.name()
-                        ));
+                        )));
                     }
                     return Ok(Some(data));
                 }
