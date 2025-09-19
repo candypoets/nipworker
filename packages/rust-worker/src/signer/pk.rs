@@ -133,15 +133,10 @@ impl SignerInterface for PrivateKeySigner {
             .secret_key()
             .map_err(|e| SignerError::Other(format!("Failed to get secret key: {}", e)))?;
 
-        debug!(
-            "Encrypting message using NIP-04 for recipient: {}",
-            recipient_pubkey
-        );
+        // Use the real NIP-04 encryption
+        let encrypted = super::nip04::encrypt(&secret_key, &recipient_pk, plaintext)
+            .map_err(|e| SignerError::CryptoError(format!("NIP-04 encryption failed: {}", e)))?;
 
-        // TODO: Implement NIP-04 encryption
-        let encrypted = format!("nip04_encrypted_{}", plaintext);
-
-        debug!("Successfully encrypted message using NIP-04");
         Ok(encrypted)
     }
 
@@ -154,15 +149,10 @@ impl SignerInterface for PrivateKeySigner {
             .secret_key()
             .map_err(|e| SignerError::Other(format!("Failed to get secret key: {}", e)))?;
 
-        debug!(
-            "Decrypting message using NIP-04 from sender: {}",
-            sender_pubkey
-        );
+        // Use the real NIP-04 decryption
+        let decrypted = super::nip04::decrypt(&secret_key, &sender_pk, ciphertext)
+            .map_err(|e| SignerError::CryptoError(format!("NIP-04 decryption failed: {}", e)))?;
 
-        // TODO: Implement NIP-04 decryption
-        let decrypted = ciphertext.replace("nip04_encrypted_", "");
-
-        debug!("Successfully decrypted message using NIP-04");
         Ok(decrypted)
     }
 
@@ -175,18 +165,12 @@ impl SignerInterface for PrivateKeySigner {
             .secret_key()
             .map_err(|e| SignerError::Other(format!("Failed to get secret key: {}", e)))?;
 
-        debug!(
-            "Encrypting message using NIP-44 for recipient: {}",
-            recipient_pubkey
-        );
-
         // Derive conversation key from our secret key and recipient's public key
         let conversation_key = ConversationKey::derive(&secret_key, &recipient_pk)?;
 
         // Encrypt the plaintext using NIP-44
         let encrypted = encrypt(plaintext, &conversation_key)?;
 
-        debug!("Successfully encrypted message using NIP-44");
         Ok(encrypted)
     }
 
@@ -199,18 +183,12 @@ impl SignerInterface for PrivateKeySigner {
             .secret_key()
             .map_err(|e| SignerError::Other(format!("Failed to get secret key: {}", e)))?;
 
-        debug!(
-            "Decrypting message using NIP-44 from sender: {}",
-            sender_pubkey
-        );
-
         // Derive conversation key from secret key and sender's public key
         let conversation_key = ConversationKey::derive(&secret_key, &sender_pk)?;
 
         // Decrypt the ciphertext using NIP-44
         let decrypted = decrypt(ciphertext, &conversation_key)?;
 
-        debug!("Successfully decrypted message using NIP-44");
         Ok(decrypted)
     }
 }

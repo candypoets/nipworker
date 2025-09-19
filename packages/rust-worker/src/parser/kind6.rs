@@ -61,10 +61,6 @@ impl Parser {
         let reposted_event: Option<Event> = None;
 
         if !event.content.is_empty() {
-            debug!(
-                "Attempting to parse reposted event from content: {}",
-                event.content
-            );
             match Event::from_json(&event.content) {
                 Ok(parsed_event)
                     if !parsed_event.id.to_string().is_empty()
@@ -93,7 +89,6 @@ impl Parser {
                     }
                 }
                 _ => {
-                    debug!("Failed to parse reposted event content: {}", event.content);
                     // Try to parse as a different format or structure if needed
                 }
             }

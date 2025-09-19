@@ -75,7 +75,6 @@ impl SubscriptionManager {
             .unwrap()
             .contains_key(&subscription_id)
         {
-            debug!("Subscription {} already exists", subscription_id);
             return Ok(());
         }
 
@@ -98,7 +97,6 @@ impl SubscriptionManager {
         )
         .await?;
 
-        debug!("Subscription {} opened successfully", subscription_id);
         Ok(())
     }
 
@@ -111,11 +109,6 @@ impl SubscriptionManager {
 
         // drop the reference to the sharedBuffer
         self.subscriptions.write().unwrap().remove(subscription_id);
-
-        debug!(
-            "Subscription {} closed (SharedArrayBuffer retained)",
-            subscription_id
-        );
 
         Ok(())
     }
@@ -131,8 +124,6 @@ impl SubscriptionManager {
         _requests: Vec<Request>,
         config: &fb::SubscriptionConfig<'_>,
     ) -> Result<()> {
-        debug!("Processing subscription: {}", subscription_id);
-
         // Create pipeline based on config
         let mut pipeline = self.build_pipeline(config.pipeline(), subscription_id.clone())?;
 
@@ -249,11 +240,6 @@ impl SubscriptionManager {
             };
 
             let relays = self.database.find_relay_candidates(kind, &pubkey, &false);
-
-            debug!(
-                "No relays specified, found {} relay candidates",
-                relays.len()
-            );
 
             // Limit to maximum of 8 relays
             let relays_to_add: Vec<String> = relays.into_iter().take(8).collect();

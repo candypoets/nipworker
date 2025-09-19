@@ -11,8 +11,6 @@ pub struct DatabaseConfig {
     pub max_events_in_storage: usize,
     /// Batch size for database operations
     pub batch_size: usize,
-    /// Whether to enable debug logging
-    pub debug_logging: bool,
 }
 
 impl Default for DatabaseConfig {
@@ -20,7 +18,6 @@ impl Default for DatabaseConfig {
         Self {
             max_events_in_storage: 25_000,
             batch_size: 1000,
-            debug_logging: false,
         }
     }
 }

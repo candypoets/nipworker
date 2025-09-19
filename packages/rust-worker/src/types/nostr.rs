@@ -1018,7 +1018,7 @@ pub mod nips {
                 fn parse_tlv(
                     mut data: Vec<u8>,
                 ) -> Result<(
-                    Option<[u8; 32]>, // Special field (pubkey or event_id)
+                    Option<Vec<u8>>,  // Special field (can be pubkey, event_id, or identifier)
                     Option<[u8; 32]>, // Author field
                     Option<u16>,      // Kind field
                     Vec<String>,      // Relays
@@ -1044,11 +1044,9 @@ pub mod nips {
 
                         match t {
                             0 => {
-                                // Special field
-                                if l == 32 && special.is_none() {
-                                    let mut arr = [0u8; 32];
-                                    arr.copy_from_slice(value);
-                                    special = Some(arr);
+                                // Special field (can be 32 bytes or variable length for identifier)
+                                if special.is_none() {
+                                    special = Some(value.to_vec());
                                 }
                             }
                             1 => {
@@ -1155,9 +1153,18 @@ pub mod nips {
                     "nprofile" => {
                         let (special, _, _, relays) = parse_tlv(bytes)?;
 
-                        let public_key = special.ok_or_else(|| {
+                        let special_bytes = special.ok_or_else(|| {
                             TypesError::InvalidFormat("Missing public key in nprofile".to_string())
                         })?;
+
+                        if special_bytes.len() != 32 {
+                            return Err(TypesError::InvalidFormat(
+                                "Invalid public key length in nprofile".to_string(),
+                            ));
+                        }
+
+                        let mut public_key = [0u8; 32];
+                        public_key.copy_from_slice(&special_bytes);
 
                         Ok(Nip19::Profile(Nip19Profile {
                             public_key: PublicKey(public_key),
@@ -1167,13 +1174,52 @@ pub mod nips {
                     "nevent" => {
                         let (special, author, _kind, relays) = parse_tlv(bytes)?;
 
-                        let event_id = special.ok_or_else(|| {
+                        let special_bytes = special.ok_or_else(|| {
                             TypesError::InvalidFormat("Missing event ID in nevent".to_string())
                         })?;
+
+                        if special_bytes.len() != 32 {
+                            return Err(TypesError::InvalidFormat(
+                                "Invalid event ID length in nevent".to_string(),
+                            ));
+                        }
+
+                        let mut event_id = [0u8; 32];
+                        event_id.copy_from_slice(&special_bytes);
 
                         Ok(Nip19::Event(Nip19Event {
                             event_id: EventId(event_id),
                             author: author.map(PublicKey),
+                            relays,
+                        }))
+                    }
+                    "naddr" => {
+                        let (special, author, kind, relays) = parse_tlv(bytes)?;
+
+                        let identifier = special
+                            .ok_or_else(|| {
+                                TypesError::InvalidFormat("Missing identifier in naddr".to_string())
+                            })
+                            .and_then(|bytes| {
+                                String::from_utf8(bytes).map_err(|_| {
+                                    TypesError::InvalidFormat(
+                                        "Invalid identifier in naddr".to_string(),
+                                    )
+                                })
+                            })?;
+
+                        let public_key = author.ok_or_else(|| {
+                            TypesError::InvalidFormat("Missing public key in naddr".to_string())
+                        })?;
+
+                        let kind = kind.ok_or_else(|| {
+                            TypesError::InvalidFormat("Missing kind in naddr".to_string())
+                        })?;
+
+                        Ok(Nip19::Coordinate(Nip19Coordinate {
+                            identifier,
+                            public_key: PublicKey(public_key),
+                            kind,
                             relays,
                         }))
                     }

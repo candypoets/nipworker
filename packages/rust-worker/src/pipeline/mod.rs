@@ -271,7 +271,6 @@ impl Pipeline {
         let nostr_event = match Event::from_json(raw_event_json) {
             Ok(ev) => ev,
             Err(e) => {
-                tracing::debug!("Failed to parse crate::types::nostr::Event: {}", e);
                 return Ok(None);
             }
         };

@@ -237,9 +237,8 @@ fn sats_from_bolt11_hrp(invoice: &str) -> Option<i64> {
     // Use wide integers to avoid overflow during conversions
     let value = digits_str.parse::<u128>().ok()?;
 
-    // Convert to msats first, then to sats to avoid rounding issues
     let msat: u128 = match unit_opt {
-        None => value.saturating_mul(100_000_000_000),  // BTC
+        None => value.saturating_mul(1000),             // sats
         Some('m') => value.saturating_mul(100_000_000), // milli-BTC
         Some('u') => value.saturating_mul(100_000),     // micro-BTC
         Some('n') => value.saturating_mul(100),         // nano-BTC

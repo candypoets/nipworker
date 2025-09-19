@@ -202,13 +202,6 @@ impl RingBufferStorage {
         self.head_offset
             .set(self.head_offset.get() + total_size as u64);
 
-        debug!(
-            "Removed first event from ring buffer '{}': freed {} bytes, remaining {} bytes",
-            self.buffer_key,
-            total_size,
-            buffer.len()
-        );
-
         true
     }
 
@@ -247,13 +240,6 @@ impl RingBufferStorage {
 
             // bump head_offset once
             self.head_offset.set(self.head_offset.get() + p as u64);
-
-            debug!(
-                "Evicted {} bytes to fit {}; remaining buffer={}",
-                p,
-                needed,
-                buffer.len()
-            );
         }
     }
 

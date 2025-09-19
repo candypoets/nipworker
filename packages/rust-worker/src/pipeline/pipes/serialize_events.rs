@@ -25,8 +25,6 @@ impl Pipe for SerializeEventsPipe {
 
             let parsed_event_offset = parsed_event.build_flatbuffer(&mut builder)?;
 
-            tracing::debug!("Created ParsedEvent offset successfully");
-
             // Build root WorkerMessage
             let union_value = parsed_event_offset.as_union_value();
 

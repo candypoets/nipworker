@@ -140,29 +140,6 @@ impl SharedBufferManager {
     }
 
     pub async fn write_to_buffer(shared_buffer: &SharedArrayBuffer, data: &[u8]) {
-        // Debug what we're about to write
-        debug!(
-            "SharedBufferManager: Writing {} bytes to buffer",
-            data.len()
-        );
-
-        // Try to decode what we're writing to verify it's correct
-        match fb::root_as_worker_message(data) {
-            Ok(decoded_msg) => {
-                debug!(
-                    "SharedBufferManager: Writing message type: {:?}, content type: {:?}",
-                    decoded_msg.type_(),
-                    decoded_msg.content_type()
-                );
-            }
-            Err(e) => {
-                error!(
-                    "SharedBufferManager: Failed to decode message being written!: {}",
-                    e
-                );
-            }
-        }
-
         // Add safety checks for data size
         if data.len() > 1024 * 1024 {
             // 1MB limit
@@ -262,12 +239,5 @@ impl SharedBufferManager {
         let new_header = (new_write_pos as u32).to_le_bytes();
         let new_header_uint8 = Uint8Array::from(&new_header[..]);
         buffer_uint8.set(&new_header_uint8, 0);
-
-        debug!(
-            "Wrote {} bytes (+ 4 byte length prefix) to SharedArrayBuffer (pos: {} -> {}) and notified waiters",
-            data.len(),
-            current_write_pos,
-            new_write_pos
-        );
     }
 }

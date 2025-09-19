@@ -90,7 +90,6 @@ impl ConnectionRegistry {
                 }
             }
             "EOSE" => {
-                tracing::debug!(subscription_id = %id, relay_url = %relay_url, "Received EOSE");
                 SharedBufferManager::send_connection_status(&buffer, relay_url, kind, message)
                     .await;
                 post_worker_message(&JsValue::from_str(&id));
@@ -421,7 +420,6 @@ impl ConnectionRegistry {
         }
 
         for url in idle_connections {
-            tracing::debug!(relay = %url, "Closing idle connection");
             if let Err(e) = self.disconnect(&url).await {
                 tracing::error!(relay = %url, error = %e, "Failed to disconnect idle connection");
             }

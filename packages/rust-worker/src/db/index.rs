@@ -16,7 +16,6 @@ type Result<T> = std::result::Result<T, DatabaseError>;
 use crate::types::nostr::{Event, EventId, Filter, PublicKey};
 use std::sync::{Arc, RwLock};
 use tracing::{debug, error, info, warn};
-use tracing_subscriber::registry::Data;
 
 /// Constants for event processing
 const MAX_EVENTS_PER_PROCESS: usize = 10; // Process max 10 events per add_event call
@@ -81,7 +80,6 @@ impl<S: EventStorage> NostrDB<S> {
             .write()
             .map_err(|_| DatabaseError::LockError)?;
         if *is_init {
-            debug!("Database already initialized");
             return Ok(());
         }
 
@@ -440,15 +438,6 @@ impl<S: EventStorage> NostrDB<S> {
 
         let query_time = js_sys::Date::now() - start_time;
 
-        if self.config.debug_logging {
-            debug!(
-                "Query completed: found {} events, returned {} events in {:?}",
-                total_found,
-                results.len(),
-                query_time
-            );
-        }
-
         Ok(QueryResult {
             events: results,
             total_found,
@@ -716,10 +705,6 @@ impl<S: EventStorage> NostrDB<S> {
             ));
         }
 
-        if self.config.debug_logging {
-            debug!("Processed event {} from queue", event.event.id.to_hex());
-        }
-
         Ok(())
     }
 }
@@ -780,17 +765,6 @@ impl<S: EventStorage> EventDatabase for NostrDB<S> {
         filter: Filter,
     ) -> std::result::Result<Vec<Vec<u8>>, crate::NostrError> {
         let query_filter = QueryFilter::from_nostr_filter(&filter);
-        debug!(
-                "Query filter: kinds={:?}, authors={:?}, ids={:?}, e_tags={:?}, p_tags={:?}, since={:?}, until={:?}, limit={:?}",
-                query_filter.kinds.as_ref().map(|k| k.len()),
-                query_filter.authors.as_ref().map(|a| a.len()),
-                query_filter.ids.as_ref().map(|i| i.len()),
-                query_filter.e_tags.as_ref().map(|e| e.len()),
-                query_filter.p_tags.as_ref().map(|p| p.len()),
-                query_filter.since,
-                query_filter.until,
-                query_filter.limit
-            );
         let result = self
             .query_events_internal(query_filter)
             .map_err(|e| crate::NostrError::from(e))?;

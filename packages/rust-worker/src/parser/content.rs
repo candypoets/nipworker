@@ -647,7 +647,7 @@ fn process_nostr(text: &str, _caps: &regex::Captures) -> Result<ContentBlock> {
                     "naddr",
                     coord.relays.into_iter().map(|r| r.to_string()).collect(),
                     Some(coord.public_key.to_string()),
-                    Some(coord.kind.as_u64()),
+                    Some(coord.kind as u64),
                     coord.identifier,
                 ),
             };

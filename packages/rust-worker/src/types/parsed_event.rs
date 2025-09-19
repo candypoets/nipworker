@@ -159,8 +159,6 @@ impl ParsedEvent {
 
         // Build the ParsedData union directly in our builder
         let (parsed_type, parsed_union_offset) = parsed_data.build_flatbuffer(fbb)?;
-        tracing::debug!("ParsedData union built - type: {:?}", parsed_type);
-        tracing::debug!("Parsed union offset created successfully");
 
         // Build the NostrEvent from parsed_event.event
         let id_offset = fbb.create_string(&self.event.id.to_hex());
@@ -208,7 +206,6 @@ impl ParsedEvent {
         let tags_offset = fbb.create_vector(&string_vec_offsets);
 
         // Build ParsedEvent with the union
-        tracing::debug!("Building ParsedEvent with parsed_union_offset");
         let parsed_event_args = fb::ParsedEventArgs {
             id: Some(id_offset),
             pubkey: Some(pubkey_offset),

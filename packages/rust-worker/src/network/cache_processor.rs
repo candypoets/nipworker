@@ -26,12 +26,6 @@ impl CacheProcessorTrait for CacheProcessor {
         requests: Vec<Request>,
         max_depth: usize,
     ) -> Result<(Vec<Request>, Vec<Vec<Vec<u8>>>)> {
-        debug!(
-            "Processing {} local requests with max depth {}",
-            requests.len(),
-            max_depth
-        );
-
         let mut remaining_requests = Vec::new();
         let mut cached_events_batches = Vec::new();
 
@@ -42,13 +36,10 @@ impl CacheProcessorTrait for CacheProcessor {
                     match EventDatabase::query_events(&*self.database, filter).await {
                         Ok(events) => {
                             if events.is_empty() {
-                                debug!("No cached events found for request");
                                 // No cached events, add to remaining requests
                                 remaining_requests.push(request);
                                 // cached_events_batches.push(Vec::new());
                             } else {
-                                debug!("Found {} cached events for request", events.len());
-
                                 cached_events_batches.push(events);
 
                                 // Check if we need to fetch more from network
@@ -71,12 +62,6 @@ impl CacheProcessorTrait for CacheProcessor {
                 }
             }
         }
-
-        debug!(
-            "Found {} cached event batches, {} remaining requests",
-            cached_events_batches.len(),
-            remaining_requests.len()
-        );
 
         Ok((remaining_requests, cached_events_batches))
     }

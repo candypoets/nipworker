@@ -295,11 +295,6 @@ pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
     parsed: &Kind9321Parsed,
     builder: &mut flatbuffers::FlatBufferBuilder<'a, A>,
 ) -> Result<flatbuffers::WIPOffset<fb::Kind9321Parsed<'a>>> {
-    debug!(
-        "Building FlatBuffer for Kind9321Parsed with {} proofs",
-        parsed.proofs.len()
-    );
-
     let recipient = builder.create_string(&parsed.recipient);
     let event_id = parsed.event_id.as_ref().map(|id| builder.create_string(id));
     let mint_url = builder.create_string(&parsed.mint_url);
@@ -308,14 +303,6 @@ pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
         .p2pk_pubkey
         .as_ref()
         .map(|p| builder.create_string(p));
-
-    // Debug required fields
-    debug!(
-        "Kind9321 required fields - recipient: '{}', mint_url: '{}', proofs count: {}",
-        parsed.recipient,
-        parsed.mint_url,
-        parsed.proofs.len()
-    );
 
     // Build proofs vector
     let mut proofs_offsets = Vec::new();
@@ -345,6 +332,5 @@ pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
 
     let offset = fb::Kind9321Parsed::create(builder, &args);
 
-    debug!("Successfully built Kind9321Parsed FlatBuffer offset");
     Ok(offset)
 }

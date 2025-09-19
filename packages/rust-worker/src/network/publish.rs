@@ -52,10 +52,7 @@ impl PublishManager {
         // Determine target relays for the event
         let relays = match self.determine_target_relays(&event).await {
             Ok(relays) if !relays.is_empty() => relays,
-            Ok(_) => {
-                debug!("No specific relays determined for publish ID {}, falling back to default relays", publish_id);
-                self.database.default_relays.clone()
-            }
+            Ok(_) => self.database.default_relays.clone(),
             Err(e) => {
                 warn!(
                     "Failed to determine target relays for publish ID {}: {}, using defaults",

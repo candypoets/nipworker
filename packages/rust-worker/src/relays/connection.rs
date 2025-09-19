@@ -215,7 +215,6 @@ impl RelayConnection {
 
         self.update_activity().await;
 
-        tracing::debug!(relay = %self.url, "Connected to relay");
         Ok(())
     }
 
@@ -377,8 +376,6 @@ impl RelayConnection {
 
     /// Reconnect to the relay
     pub async fn reconnect(&self, cb: EventCallback) -> Result<(), RelayError> {
-        tracing::debug!(relay = %self.url, "Reconnecting to relay");
-
         // Close existing connection
         self.close().await?;
 
@@ -444,8 +441,6 @@ impl RelayConnection {
 
     /// Close the connection
     pub async fn close(&self) -> Result<(), RelayError> {
-        tracing::debug!(relay = %self.url, "Closing connection");
-
         // Update status
         {
             let mut status = self.status.write().unwrap();
@@ -488,8 +483,6 @@ impl Drop for RelayConnection {
         let url = self.url.clone();
 
         spawn_local(async move {
-            tracing::debug!(relay = %url, "Dropping connection");
-
             // Update status
             {
                 let mut status = status.write().unwrap();

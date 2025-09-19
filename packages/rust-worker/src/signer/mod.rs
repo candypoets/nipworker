@@ -6,6 +6,7 @@
 
 pub mod interface;
 pub mod manager;
+pub mod nip04;
 pub mod nip44;
 pub mod pk;
 

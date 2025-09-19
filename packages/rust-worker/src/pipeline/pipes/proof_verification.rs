@@ -224,11 +224,6 @@ impl ProofVerificationPipe {
             let secret = proof.secret.clone();
             // Skip if we've already seen this proof
             if self.seen_proofs.contains(&secret) {
-                debug!(
-                    "{}: Skipping duplicate proof with secret {}",
-                    self.name,
-                    &secret[..8.min(secret.len())]
-                );
                 continue;
             }
 
@@ -245,12 +240,6 @@ impl ProofVerificationPipe {
                     }
                 }
             }
-
-            debug!(
-                "Adding new proof to verification queue: secret={}, mint={}",
-                &secret[..8.min(secret.len())],
-                mint_url
-            );
 
             // Compute Y point and add to pending verifications
             let y_point = self.compute_y_point(&secret);
@@ -321,11 +310,6 @@ impl ProofVerificationPipe {
                             if let Some(secret) = found_secret {
                                 match state.state.as_str() {
                                     "SPENT" => {
-                                        debug!(
-                                            "Proof {} is SPENT, dropping from mint {}",
-                                            &secret[..8.min(secret.len())],
-                                            mint_url
-                                        );
                                         self.pending_verifications.remove(&secret);
                                         // Remove from pending proofs
                                         if let Some(mint_proofs) =
@@ -336,11 +320,6 @@ impl ProofVerificationPipe {
                                         made_progress = true;
                                     }
                                     "UNSPENT" => {
-                                        debug!(
-                                            "Proof {} is UNSPENT, collecting for output from mint {}",
-                                            &secret[..8.min(secret.len())],
-                                            mint_url
-                                        );
                                         // Collect this valid proof
                                         if let Some(proof) = mint_proofs.get(&secret) {
                                             valid_proofs
@@ -359,10 +338,6 @@ impl ProofVerificationPipe {
                                         made_progress = true;
                                     }
                                     "PENDING" => {
-                                        debug!(
-                                            "Proof {} is PENDING, keeping for later check",
-                                            &secret[..8.min(secret.len())]
-                                        );
                                         // Keep in all tracking for next check
                                     }
                                     unknown => {
@@ -446,7 +421,6 @@ impl ProofVerificationPipe {
 
         let result_bytes = builder.finished_data().to_vec();
 
-        debug!("Total serialized bytes: {}", result_bytes.len());
         Ok(result_bytes)
     }
 
@@ -456,12 +430,6 @@ impl ProofVerificationPipe {
         mint_url: &str,
         y_points: &[String],
     ) -> Result<Vec<ProofState>> {
-        debug!(
-            "{}: Checking {} proofs with mint: {}",
-            self.name,
-            y_points.len(),
-            mint_url
-        );
         let url = format!("{}/v1/checkstate", mint_url.trim_end_matches('/'));
 
         let request = CheckStateRequest::new(y_points.to_vec());
@@ -505,21 +473,14 @@ impl Pipe for ProofVerificationPipe {
             // Extract proofs from Kind 9321 or 7375
             let (proofs, mint_url) = match kind {
                 9321 => {
-                    debug!("Attempting to parse Kind 9321 event data");
                     if let Some(parsed_data) = &parsed_event.parsed {
                         // Check if parsed_data is Kind9321Parsed variant
                         if let ParsedData::Kind9321(kind9321) = parsed_data {
                             let mint_url = kind9321.mint_url.clone();
 
-                            debug!("Kind 9321 event - mint_url: {}", mint_url);
-
                             // Extract proofs directly from the Kind9321Parsed struct
                             let proofs = kind9321.proofs.clone();
 
-                            debug!(
-                                "Successfully extracted {} proofs from Kind 9321 event",
-                                proofs.len()
-                            );
                             (proofs, mint_url)
                         } else {
                             error!("parsed_data is not Kind9321Parsed variant");
@@ -531,23 +492,13 @@ impl Pipe for ProofVerificationPipe {
                     }
                 }
                 7375 => {
-                    debug!("Attempting to parse Kind 7375 event data");
                     if let Some(parsed_data) = &parsed_event.parsed {
                         // Check if parsed_data is Kind7375Parsed variant
                         if let ParsedData::Kind7375(kind7375) = parsed_data {
                             let mint_url = kind7375.mint_url.clone();
                             let decrypted = kind7375.decrypted;
 
-                            debug!(
-                                "Kind 7375 event - mint_url: {}, decrypted: {}",
-                                mint_url, decrypted
-                            );
-
                             if decrypted {
-                                debug!(
-                                    "Successfully extracted {} proofs from Kind 7375 event",
-                                    kind7375.proofs.len()
-                                );
                                 let proofs = kind7375.proofs.clone();
                                 (proofs, mint_url)
                             } else {
@@ -575,11 +526,6 @@ impl Pipe for ProofVerificationPipe {
             match self.verify_pending_proofs().await {
                 Ok(bytes) => {
                     if !bytes.is_empty() {
-                        debug!(
-                            "{}: Returning valid proofs as output: {} bytes",
-                            self.name,
-                            bytes.len()
-                        );
                         // Return serialized valid proofs as direct output
                         return Ok(PipeOutput::DirectOutput(bytes));
                     }
@@ -645,11 +591,6 @@ impl Pipe for ProofVerificationPipe {
             match self.verify_pending_proofs().await {
                 Ok(bytes) => {
                     if !bytes.is_empty() {
-                        debug!(
-                            "{}: Returning valid proofs from batch: {} bytes",
-                            self.name,
-                            bytes.len()
-                        );
                         return Ok(vec![bytes]);
                     }
                 }
