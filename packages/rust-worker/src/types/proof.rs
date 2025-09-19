@@ -347,43 +347,70 @@ impl TokenContent {
 }
 
 // Specific parsers that use the base parser
-struct DleqProofParser<'a>(BaseJsonParser<'a>);
+enum DleqProofParserData<'a> {
+    Borrowed(&'a [u8]),
+    Owned(Vec<u8>),
+}
+
+struct DleqProofParser<'a> {
+    data: DleqProofParserData<'a>,
+}
 
 impl<'a> DleqProofParser<'a> {
     #[inline(always)]
     fn new(bytes: &'a [u8]) -> Self {
-        Self(BaseJsonParser::new(bytes))
+        Self {
+            data: DleqProofParserData::Borrowed(bytes),
+        }
     }
 
     #[inline(always)]
     fn parse(mut self) -> Result<DleqProof> {
-        self.0.skip_whitespace();
-        self.0.expect_byte(b'{')?;
+        // Get the bytes to parse
+        let bytes = match &self.data {
+            DleqProofParserData::Borrowed(b) => *b,
+            DleqProofParserData::Owned(v) => v.as_slice(),
+        };
+
+        // Handle escaped JSON if needed
+        let mut parser = if let Some(unescaped) = BaseJsonParser::unescape_if_needed(bytes)? {
+            // Use the unescaped data
+            self.data = DleqProofParserData::Owned(unescaped);
+            match &self.data {
+                DleqProofParserData::Owned(v) => BaseJsonParser::new(v.as_slice()),
+                _ => unreachable!(),
+            }
+        } else {
+            BaseJsonParser::new(bytes)
+        };
+
+        parser.skip_whitespace();
+        parser.expect_byte(b'{')?;
 
         let mut e = String::new();
         let mut s = String::new();
         let mut r = None;
 
-        while self.0.pos < self.0.bytes.len() {
-            self.0.skip_whitespace();
-            if self.0.peek() == b'}' {
-                self.0.pos += 1;
+        while parser.pos < parser.bytes.len() {
+            parser.skip_whitespace();
+            if parser.peek() == b'}' {
+                parser.pos += 1;
                 break;
             }
 
-            let key = self.0.parse_string()?;
-            self.0.skip_whitespace();
-            self.0.expect_byte(b':')?;
-            self.0.skip_whitespace();
+            let key = parser.parse_string()?;
+            parser.skip_whitespace();
+            parser.expect_byte(b':')?;
+            parser.skip_whitespace();
 
             match key {
-                "e" => e = self.0.parse_string()?.to_string(),
-                "s" => s = self.0.parse_string()?.to_string(),
-                "r" => r = Some(self.0.parse_string()?.to_string()),
-                _ => self.0.skip_value()?,
+                "e" => e = parser.parse_string_unescaped()?,
+                "s" => s = parser.parse_string_unescaped()?,
+                "r" => r = Some(parser.parse_string_unescaped()?),
+                _ => parser.skip_value()?,
             }
 
-            self.0.skip_comma_or_end()?;
+            parser.skip_comma_or_end()?;
         }
 
         if e.is_empty() || s.is_empty() {
@@ -396,18 +423,45 @@ impl<'a> DleqProofParser<'a> {
     }
 }
 
-struct ProofParser<'a>(BaseJsonParser<'a>);
+enum ProofParserData<'a> {
+    Borrowed(&'a [u8]),
+    Owned(Vec<u8>),
+}
+
+struct ProofParser<'a> {
+    data: ProofParserData<'a>,
+}
 
 impl<'a> ProofParser<'a> {
     #[inline(always)]
     fn new(bytes: &'a [u8]) -> Self {
-        Self(BaseJsonParser::new(bytes))
+        Self {
+            data: ProofParserData::Borrowed(bytes),
+        }
     }
 
     #[inline(always)]
     fn parse(mut self) -> Result<Proof> {
-        self.0.skip_whitespace();
-        self.0.expect_byte(b'{')?;
+        // Get the bytes to parse
+        let bytes = match &self.data {
+            ProofParserData::Borrowed(b) => *b,
+            ProofParserData::Owned(v) => v.as_slice(),
+        };
+
+        // Handle escaped JSON if needed
+        let mut parser = if let Some(unescaped) = BaseJsonParser::unescape_if_needed(bytes)? {
+            // Use the unescaped data
+            self.data = ProofParserData::Owned(unescaped);
+            match &self.data {
+                ProofParserData::Owned(v) => BaseJsonParser::new(v.as_slice()),
+                _ => unreachable!(),
+            }
+        } else {
+            BaseJsonParser::new(bytes)
+        };
+
+        parser.skip_whitespace();
+        parser.expect_byte(b'{')?;
 
         let mut amount = 0u64;
         let mut secret = String::new();
@@ -416,29 +470,29 @@ impl<'a> ProofParser<'a> {
         let mut version = None;
         let mut dleq = None;
 
-        while self.0.pos < self.0.bytes.len() {
-            self.0.skip_whitespace();
-            if self.0.peek() == b'}' {
-                self.0.pos += 1;
+        while parser.pos < parser.bytes.len() {
+            parser.skip_whitespace();
+            if parser.peek() == b'}' {
+                parser.pos += 1;
                 break;
             }
 
-            let key = self.0.parse_string()?;
-            self.0.skip_whitespace();
-            self.0.expect_byte(b':')?;
-            self.0.skip_whitespace();
+            let key = parser.parse_string()?;
+            parser.skip_whitespace();
+            parser.expect_byte(b':')?;
+            parser.skip_whitespace();
 
             match key {
-                "amount" => amount = self.0.parse_u64()?,
-                "secret" => secret = self.0.parse_string()?.to_string(),
-                "C" => c = self.0.parse_string()?.to_string(),
-                "id" => id = Some(self.0.parse_string()?.to_string()),
-                "version" => version = Some(self.0.parse_i32()?),
-                "dleq" => dleq = Some(DleqProof::from_json(self.0.parse_raw_json_value()?)?),
-                _ => self.0.skip_value()?,
+                "amount" => amount = parser.parse_u64()?,
+                "secret" => secret = parser.parse_string_unescaped()?,
+                "C" => c = parser.parse_string_unescaped()?,
+                "id" => id = Some(parser.parse_string_unescaped()?),
+                "version" => version = Some(parser.parse_i32()?),
+                "dleq" => dleq = Some(DleqProof::from_json(parser.parse_raw_json_value()?)?),
+                _ => parser.skip_value()?,
             }
 
-            self.0.skip_comma_or_end()?;
+            parser.skip_comma_or_end()?;
         }
 
         if secret.is_empty() || c.is_empty() {
@@ -458,52 +512,78 @@ impl<'a> ProofParser<'a> {
     }
 }
 
-struct TokenContentParser<'a>(BaseJsonParser<'a>);
+enum TokenContentParserData<'a> {
+    Borrowed(&'a [u8]),
+    Owned(Vec<u8>),
+}
+
+struct TokenContentParser<'a> {
+    data: TokenContentParserData<'a>,
+}
 
 impl<'a> TokenContentParser<'a> {
     #[inline(always)]
     fn new(bytes: &'a [u8]) -> Self {
-        Self(BaseJsonParser::new(bytes))
+        Self {
+            data: TokenContentParserData::Borrowed(bytes),
+        }
     }
 
     #[inline(always)]
     fn parse(mut self) -> Result<TokenContent> {
-        self.0.skip_whitespace();
-        self.0.expect_byte(b'{')?;
+        // Get the bytes to parse
+        let bytes = match &self.data {
+            TokenContentParserData::Borrowed(b) => *b,
+            TokenContentParserData::Owned(v) => v.as_slice(),
+        };
+
+        // Handle escaped JSON if needed
+        let mut parser = if let Some(unescaped) = BaseJsonParser::unescape_if_needed(bytes)? {
+            // Use the unescaped data
+            self.data = TokenContentParserData::Owned(unescaped);
+            match &self.data {
+                TokenContentParserData::Owned(v) => BaseJsonParser::new(v.as_slice()),
+                _ => unreachable!(),
+            }
+        } else {
+            BaseJsonParser::new(bytes)
+        };
+
+        parser.skip_whitespace();
+        parser.expect_byte(b'{')?;
 
         let mut mint = String::new();
         let mut proofs = Vec::new();
         let mut del = None;
 
-        while self.0.pos < self.0.bytes.len() {
-            self.0.skip_whitespace();
-            if self.0.peek() == b'}' {
-                self.0.pos += 1;
+        while parser.pos < parser.bytes.len() {
+            parser.skip_whitespace();
+            if parser.peek() == b'}' {
+                parser.pos += 1;
                 break;
             }
 
-            let key = self.0.parse_string()?;
-            self.0.skip_whitespace();
-            self.0.expect_byte(b':')?;
-            self.0.skip_whitespace();
+            let key = parser.parse_string()?;
+            parser.skip_whitespace();
+            parser.expect_byte(b':')?;
+            parser.skip_whitespace();
 
             match key {
                 "mint" => {
-                    let mint_str = self.0.parse_string()?;
-                    mint = mint_str.to_string();
+                    mint = parser.parse_string_unescaped()?;
                 }
                 "proofs" => {
-                    proofs = self.parse_proofs()?;
+                    proofs = self.parse_proofs(&mut parser)?;
                 }
                 "del" => {
-                    del = Some(self.parse_string_array()?);
+                    del = Some(self.parse_string_array(&mut parser)?);
                 }
                 _ => {
-                    self.0.skip_value()?;
+                    parser.skip_value()?;
                 }
             }
 
-            self.0.skip_comma_or_end()?;
+            parser.skip_comma_or_end()?;
         }
 
         if mint.is_empty() {
@@ -514,40 +594,40 @@ impl<'a> TokenContentParser<'a> {
     }
 
     #[inline(always)]
-    fn parse_proofs(&mut self) -> Result<Vec<Proof>> {
-        self.0.expect_byte(b'[')?;
+    fn parse_proofs(&self, parser: &mut BaseJsonParser) -> Result<Vec<Proof>> {
+        parser.expect_byte(b'[')?;
         let mut proofs = Vec::new();
 
-        while self.0.pos < self.0.bytes.len() {
-            self.0.skip_whitespace();
-            if self.0.peek() == b']' {
-                self.0.pos += 1;
+        while parser.pos < parser.bytes.len() {
+            parser.skip_whitespace();
+            if parser.peek() == b']' {
+                parser.pos += 1;
                 break;
             }
 
-            let proof_json = self.0.parse_raw_json_value()?;
+            let proof_json = parser.parse_raw_json_value()?;
             proofs.push(Proof::from_json(proof_json)?);
-            self.0.skip_comma_or_end()?;
+            parser.skip_comma_or_end()?;
         }
 
         Ok(proofs)
     }
 
     #[inline(always)]
-    fn parse_string_array(&mut self) -> Result<Vec<String>> {
-        self.0.expect_byte(b'[')?;
+    fn parse_string_array(&self, parser: &mut BaseJsonParser) -> Result<Vec<String>> {
+        parser.expect_byte(b'[')?;
         let mut array = Vec::new();
 
-        while self.0.pos < self.0.bytes.len() {
-            self.0.skip_whitespace();
-            if self.0.peek() == b']' {
-                self.0.pos += 1;
+        while parser.pos < parser.bytes.len() {
+            parser.skip_whitespace();
+            if parser.peek() == b']' {
+                parser.pos += 1;
                 break;
             }
 
-            let value = self.0.parse_string()?.to_string();
+            let value = parser.parse_string()?.to_string();
             array.push(value);
-            self.0.skip_comma_or_end()?;
+            parser.skip_comma_or_end()?;
         }
 
         Ok(array)

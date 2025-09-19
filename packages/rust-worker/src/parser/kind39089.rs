@@ -240,18 +240,45 @@ pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
 }
 
 // Custom JSON parser for Kind39089Parsed
-struct Kind39089ParsedParser<'a>(BaseJsonParser<'a>);
+enum Kind39089ParsedParserData<'a> {
+    Borrowed(&'a [u8]),
+    Owned(Vec<u8>),
+}
+
+struct Kind39089ParsedParser<'a> {
+    data: Kind39089ParsedParserData<'a>,
+}
 
 impl<'a> Kind39089ParsedParser<'a> {
     #[inline(always)]
     fn new(bytes: &'a [u8]) -> Self {
-        Self(BaseJsonParser::new(bytes))
+        Self {
+            data: Kind39089ParsedParserData::Borrowed(bytes),
+        }
     }
 
     #[inline(always)]
     fn parse(mut self) -> Result<Kind39089Parsed> {
-        self.0.skip_whitespace();
-        self.0.expect_byte(b'{')?;
+        // Get the bytes to parse
+        let bytes = match &self.data {
+            Kind39089ParsedParserData::Borrowed(b) => *b,
+            Kind39089ParsedParserData::Owned(v) => v.as_slice(),
+        };
+
+        // Handle escaped JSON if needed
+        let mut parser = if let Some(unescaped) = BaseJsonParser::unescape_if_needed(bytes)? {
+            // Use the unescaped data
+            self.data = Kind39089ParsedParserData::Owned(unescaped);
+            match &self.data {
+                Kind39089ParsedParserData::Owned(v) => BaseJsonParser::new(v.as_slice()),
+                _ => unreachable!(),
+            }
+        } else {
+            BaseJsonParser::new(bytes)
+        };
+
+        parser.skip_whitespace();
+        parser.expect_byte(b'{')?;
 
         let mut list_identifier = String::new();
         let mut people = Vec::new();
@@ -259,28 +286,28 @@ impl<'a> Kind39089ParsedParser<'a> {
         let mut description = None;
         let mut image = None;
 
-        while self.0.pos < self.0.bytes.len() {
-            self.0.skip_whitespace();
-            if self.0.peek() == b'}' {
-                self.0.pos += 1;
+        while parser.pos < parser.bytes.len() {
+            parser.skip_whitespace();
+            if parser.peek() == b'}' {
+                parser.pos += 1;
                 break;
             }
 
-            let key = self.0.parse_string()?;
-            self.0.skip_whitespace();
-            self.0.expect_byte(b':')?;
-            self.0.skip_whitespace();
+            let key = parser.parse_string()?;
+            parser.skip_whitespace();
+            parser.expect_byte(b':')?;
+            parser.skip_whitespace();
 
             match key {
-                "list_identifier" => list_identifier = self.0.parse_string()?.to_string(),
-                "people" => people = self.parse_string_array()?,
-                "title" => title = Some(self.0.parse_string()?.to_string()),
-                "description" => description = Some(self.0.parse_string()?.to_string()),
-                "image" => image = Some(self.0.parse_string()?.to_string()),
-                _ => self.0.skip_value()?,
+                "list_identifier" => list_identifier = parser.parse_string_unescaped()?,
+                "people" => people = self.parse_string_array(&mut parser)?,
+                "title" => title = Some(parser.parse_string_unescaped()?),
+                "description" => description = Some(parser.parse_string_unescaped()?),
+                "image" => image = Some(parser.parse_string_unescaped()?),
+                _ => parser.skip_value()?,
             }
 
-            self.0.skip_comma_or_end()?;
+            parser.skip_comma_or_end()?;
         }
 
         if list_identifier.is_empty() {
@@ -299,20 +326,20 @@ impl<'a> Kind39089ParsedParser<'a> {
     }
 
     #[inline(always)]
-    fn parse_string_array(&mut self) -> Result<Vec<String>> {
-        self.0.expect_byte(b'[')?;
+    fn parse_string_array(&self, parser: &mut BaseJsonParser) -> Result<Vec<String>> {
+        parser.expect_byte(b'[')?;
         let mut array = Vec::new();
 
-        while self.0.pos < self.0.bytes.len() {
-            self.0.skip_whitespace();
-            if self.0.peek() == b']' {
-                self.0.pos += 1;
+        while parser.pos < parser.bytes.len() {
+            parser.skip_whitespace();
+            if parser.peek() == b']' {
+                parser.pos += 1;
                 break;
             }
 
-            let value = self.0.parse_string()?.to_string();
+            let value = parser.parse_string_unescaped()?;
             array.push(value);
-            self.0.skip_comma_or_end()?;
+            parser.skip_comma_or_end()?;
         }
 
         Ok(array)

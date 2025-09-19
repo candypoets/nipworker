@@ -10,7 +10,7 @@ use k256::{elliptic_curve::sec1::ToEncodedPoint, PublicKey};
 use rustc_hash::{FxHashMap, FxHashSet};
 use sha2::{Digest, Sha256};
 use std::fmt::Write;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 
 #[derive(Debug, Clone)]
 struct CheckStateRequest {
@@ -135,7 +135,7 @@ struct CheckStateResponse {
 
 impl CheckStateResponse {
     pub fn from_json(json: &str) -> Result<Self> {
-        let mut parser = CheckStateResponseParser::new(json.as_bytes());
+        let parser = CheckStateResponseParser::new(json.as_bytes());
         parser.parse()
     }
 
@@ -488,6 +488,8 @@ impl ProofVerificationPipe {
             .await
             .map_err(|e| NostrError::Other(format!("Failed to read response: {:?}", e)))?;
 
+        info!("Raw mint response: {}", response_text);
+
         // ✅ UPDATED: Use custom JSON parsing instead of serde_json
         let check_response: CheckStateResponse = CheckStateResponse::from_json(&response_text)?;
         Ok(check_response.states)
@@ -670,43 +672,104 @@ impl Pipe for ProofVerificationPipe {
 }
 
 // Custom JSON parsers for the structs
-struct ProofStateParser<'a>(BaseJsonParser<'a>);
+enum ProofStateParserData<'a> {
+    Borrowed(&'a [u8]),
+    Owned(Vec<u8>),
+}
+
+struct ProofStateParser<'a> {
+    data: ProofStateParserData<'a>,
+}
 
 impl<'a> ProofStateParser<'a> {
     #[inline(always)]
     fn new(bytes: &'a [u8]) -> Self {
-        Self(BaseJsonParser::new(bytes))
+        Self {
+            data: ProofStateParserData::Borrowed(bytes),
+        }
     }
 
     #[inline(always)]
     fn parse(mut self) -> Result<ProofState> {
-        self.0.skip_whitespace();
-        self.0.expect_byte(b'{')?;
+        // Get the bytes to parse
+        let bytes = match &self.data {
+            ProofStateParserData::Borrowed(b) => *b,
+            ProofStateParserData::Owned(v) => v.as_slice(),
+        };
+
+        // Handle escaped JSON if needed
+        let mut parser = if let Some(unescaped) = BaseJsonParser::unescape_if_needed(bytes)
+            .map_err(|e| NostrError::Other(format!("Failed to unescape JSON: {:?}", e)))?
+        {
+            // Use the unescaped data
+            self.data = ProofStateParserData::Owned(unescaped);
+            match &self.data {
+                ProofStateParserData::Owned(v) => BaseJsonParser::new(v.as_slice()),
+                _ => unreachable!(),
+            }
+        } else {
+            BaseJsonParser::new(bytes)
+        };
+
+        parser.skip_whitespace();
+        parser.expect_byte(b'{')?;
 
         let mut y = String::new();
         let mut state = String::new();
         let mut witness = None;
 
-        while self.0.pos < self.0.bytes.len() {
-            self.0.skip_whitespace();
-            if self.0.peek() == b'}' {
-                self.0.pos += 1;
+        while parser.pos < parser.bytes.len() {
+            parser.skip_whitespace();
+            if parser.peek() == b'}' {
+                parser.pos += 1;
                 break;
             }
 
-            let key = self.0.parse_string()?;
-            self.0.skip_whitespace();
-            self.0.expect_byte(b':')?;
-            self.0.skip_whitespace();
+            let key = parser.parse_string()?;
+            parser.skip_whitespace();
+            parser.expect_byte(b':')?;
+            parser.skip_whitespace();
 
             match key {
-                "Y" => y = self.0.parse_string()?.to_string(),
-                "state" => state = self.0.parse_string()?.to_string(),
-                "witness" => witness = Some(self.0.parse_string()?.to_string()),
-                _ => self.0.skip_value()?,
+                "Y" => {
+                    y = parser
+                        .parse_string_unescaped()
+                        .map_err(|e| NostrError::Other(format!("Failed to parse Y: {:?}", e)))?
+                }
+                "state" => {
+                    state = parser
+                        .parse_string_unescaped()
+                        .map_err(|e| NostrError::Other(format!("Failed to parse state: {:?}", e)))?
+                }
+                "witness" => {
+                    parser.skip_whitespace();
+                    match parser.peek() {
+                        b'"' => {
+                            // It's a string: parse and unescape
+                            witness = Some(parser.parse_string_unescaped().map_err(|e| {
+                                NostrError::Other(format!(
+                                    "Failed to parse witness string: {:?}",
+                                    e
+                                ))
+                            })?);
+                        }
+                        b'n' => {
+                            // Handle null
+                            parser.skip_null()?;
+                            witness = None;
+                        }
+                        _ => {
+                            // Skip other types (e.g., objects, arrays, numbers, booleans)
+                            parser.skip_value()?;
+                            witness = None;
+                            warn!("Witness field is not a string or null, skipping: unexpected byte '{}'", parser.peek() as char);
+                        }
+                    }
+                }
+                _ => parser.skip_value()?,
             }
 
-            self.0.skip_comma_or_end()?;
+            parser.skip_comma_or_end()?;
         }
 
         if y.is_empty() || state.is_empty() {
@@ -719,52 +782,81 @@ impl<'a> ProofStateParser<'a> {
     }
 }
 
-struct CheckStateResponseParser<'a>(BaseJsonParser<'a>);
+enum CheckStateResponseParserData<'a> {
+    Borrowed(&'a [u8]),
+    Owned(Vec<u8>),
+}
+
+struct CheckStateResponseParser<'a> {
+    data: CheckStateResponseParserData<'a>,
+}
 
 impl<'a> CheckStateResponseParser<'a> {
     #[inline(always)]
     fn new(bytes: &'a [u8]) -> Self {
-        Self(BaseJsonParser::new(bytes))
+        Self {
+            data: CheckStateResponseParserData::Borrowed(bytes),
+        }
     }
 
     #[inline(always)]
     fn parse(mut self) -> Result<CheckStateResponse> {
-        self.0.skip_whitespace();
-        self.0.expect_byte(b'{')?;
+        // Get the bytes to parse
+        let bytes = match &self.data {
+            CheckStateResponseParserData::Borrowed(b) => *b,
+            CheckStateResponseParserData::Owned(v) => v.as_slice(),
+        };
+
+        // Handle escaped JSON if needed
+        let mut parser = if let Some(unescaped) = BaseJsonParser::unescape_if_needed(bytes)
+            .map_err(|e| NostrError::Other(format!("Failed to unescape JSON: {:?}", e)))?
+        {
+            // Use the unescaped data
+            self.data = CheckStateResponseParserData::Owned(unescaped);
+            match &self.data {
+                CheckStateResponseParserData::Owned(v) => BaseJsonParser::new(v.as_slice()),
+                _ => unreachable!(),
+            }
+        } else {
+            BaseJsonParser::new(bytes)
+        };
+
+        parser.skip_whitespace();
+        parser.expect_byte(b'{')?;
 
         let mut states = Vec::new();
 
-        while self.0.pos < self.0.bytes.len() {
-            self.0.skip_whitespace();
-            if self.0.peek() == b'}' {
-                self.0.pos += 1;
+        while parser.pos < parser.bytes.len() {
+            parser.skip_whitespace();
+            if parser.peek() == b'}' {
+                parser.pos += 1;
                 break;
             }
 
-            let key = self.0.parse_string()?;
-            self.0.skip_whitespace();
-            self.0.expect_byte(b':')?;
-            self.0.skip_whitespace();
+            let key = parser.parse_string()?;
+            parser.skip_whitespace();
+            parser.expect_byte(b':')?;
+            parser.skip_whitespace();
 
             match key {
                 "states" => {
-                    self.0.expect_byte(b'[')?;
-                    while self.0.pos < self.0.bytes.len() {
-                        self.0.skip_whitespace();
-                        if self.0.peek() == b']' {
-                            self.0.pos += 1;
+                    parser.expect_byte(b'[')?;
+                    while parser.pos < parser.bytes.len() {
+                        parser.skip_whitespace();
+                        if parser.peek() == b']' {
+                            parser.pos += 1;
                             break;
                         }
 
-                        let state_json = self.0.parse_raw_json_value()?;
+                        let state_json = parser.parse_raw_json_value()?;
                         states.push(ProofState::from_json(state_json)?);
-                        self.0.skip_comma_or_end()?;
+                        parser.skip_comma_or_end()?;
                     }
                 }
-                _ => self.0.skip_value()?,
+                _ => parser.skip_value()?,
             }
 
-            self.0.skip_comma_or_end()?;
+            parser.skip_comma_or_end()?;
         }
 
         Ok(CheckStateResponse { states })

@@ -1,6 +1,7 @@
 use crate::parser::{ParserError, Result};
 use crate::types::nostr::nips::nip19::{self, Nip19};
 use regex::Regex;
+use tracing::info;
 
 use crate::generated::nostr::fb;
 
@@ -593,6 +594,7 @@ fn process_video(text: &str, _caps: &regex::Captures) -> Result<ContentBlock> {
 }
 
 fn process_nostr(text: &str, _caps: &regex::Captures) -> Result<ContentBlock> {
+    info!("process_nostr: text={:?}", text);
     let entity = if text.to_lowercase().starts_with("nostr:") {
         // Extract the identifier after nostr:
         &text[6..]
@@ -641,13 +643,13 @@ fn process_nostr(text: &str, _caps: &regex::Captures) -> Result<ContentBlock> {
                     None,
                     event.event_id.to_string(),
                 ),
-                // Nip19::Coordinate(coord) => (
-                //     "naddr",
-                //     coord.relays.into_iter().map(|r| r.to_string()).collect(),
-                //     Some(coord.public_key.to_string()),
-                //     Some(coord.kind.as_u64()),
-                //     coord.identifier,
-                // ),
+                Nip19::Coordinate(coord) => (
+                    "naddr",
+                    coord.relays.into_iter().map(|r| r.to_string()).collect(),
+                    Some(coord.public_key.to_string()),
+                    Some(coord.kind.as_u64()),
+                    coord.identifier,
+                ),
             };
 
             Ok(

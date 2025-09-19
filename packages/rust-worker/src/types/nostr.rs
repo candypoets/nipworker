@@ -950,6 +950,7 @@ pub mod nips {
             EventId(EventId),
             Profile(Nip19Profile),
             Event(Nip19Event),
+            Coordinate(Nip19Coordinate),
         }
 
         pub struct Nip19Profile {
@@ -963,6 +964,13 @@ pub mod nips {
             pub relays: Vec<String>,
         }
 
+        pub struct Nip19Coordinate {
+            pub identifier: String,
+            pub public_key: PublicKey,
+            pub kind: u16,
+            pub relays: Vec<String>,
+        }
+
         pub trait FromBech32 {
             fn from_bech32(s: &str) -> Result<Self>
             where
@@ -970,11 +978,210 @@ pub mod nips {
         }
 
         impl FromBech32 for Nip19 {
-            fn from_bech32(_s: &str) -> Result<Self> {
-                // Stub implementation - add bech32 crate if needed
-                Err(TypesError::InvalidFormat(
-                    "Bech32 decoding not implemented".to_string(),
-                ))
+            fn from_bech32(s: &str) -> Result<Self> {
+                // Bech32 character set
+                const CHARSET: &[u8] = b"qpzry9x8gf2tvdw0s3jn54khce6mua7l";
+
+                // Convert bech32 character to value
+                fn decode_char(c: u8) -> Option<u8> {
+                    CHARSET.iter().position(|&x| x == c).map(|p| p as u8)
+                }
+
+                // Convert between bit groups
+                fn convert_bits(data: &[u8], from_bits: u32, to_bits: u32) -> Option<Vec<u8>> {
+                    let mut acc = 0u32;
+                    let mut bits = 0u32;
+                    let mut ret = Vec::new();
+                    let maxv = (1 << to_bits) - 1;
+
+                    for &value in data {
+                        if (value as u32) >> from_bits != 0 {
+                            return None;
+                        }
+                        acc = (acc << from_bits) | (value as u32);
+                        bits += from_bits;
+
+                        while bits >= to_bits {
+                            bits -= to_bits;
+                            ret.push(((acc >> bits) & maxv) as u8);
+                        }
+                    }
+
+                    if bits >= from_bits || ((acc << (to_bits - bits)) & maxv) != 0 {
+                        return None;
+                    }
+
+                    Some(ret)
+                }
+
+                // Parse TLV data for nprofile and nevent
+                fn parse_tlv(
+                    mut data: Vec<u8>,
+                ) -> Result<(
+                    Option<[u8; 32]>, // Special field (pubkey or event_id)
+                    Option<[u8; 32]>, // Author field
+                    Option<u16>,      // Kind field
+                    Vec<String>,      // Relays
+                )> {
+                    let mut special = None;
+                    let mut author = None;
+                    let mut kind = None;
+                    let mut relays = Vec::new();
+
+                    while !data.is_empty() {
+                        if data.len() < 2 {
+                            break;
+                        }
+
+                        let t = data[0];
+                        let l = data[1] as usize;
+
+                        if data.len() < 2 + l {
+                            return Err(TypesError::InvalidFormat("Invalid TLV data".to_string()));
+                        }
+
+                        let value = &data[2..2 + l];
+
+                        match t {
+                            0 => {
+                                // Special field
+                                if l == 32 && special.is_none() {
+                                    let mut arr = [0u8; 32];
+                                    arr.copy_from_slice(value);
+                                    special = Some(arr);
+                                }
+                            }
+                            1 => {
+                                // Relay
+                                if let Ok(relay) = String::from_utf8(value.to_vec()) {
+                                    relays.push(relay);
+                                }
+                            }
+                            2 => {
+                                // Author
+                                if l == 32 && author.is_none() {
+                                    let mut arr = [0u8; 32];
+                                    arr.copy_from_slice(value);
+                                    author = Some(arr);
+                                }
+                            }
+                            3 => {
+                                // Kind
+                                if l == 4 && kind.is_none() {
+                                    let bytes: [u8; 4] = value.try_into().map_err(|_| {
+                                        TypesError::InvalidFormat("Invalid kind".to_string())
+                                    })?;
+                                    kind = Some(u32::from_be_bytes(bytes) as u16);
+                                }
+                            }
+                            _ => {} // Skip unknown TLV types
+                        }
+
+                        data.drain(..2 + l);
+                    }
+
+                    Ok((special, author, kind, relays))
+                }
+
+                // Convert to lowercase
+                let s = s.to_lowercase();
+
+                // Find separator '1'
+                let sep_pos = s.rfind('1').ok_or_else(|| {
+                    TypesError::InvalidFormat("Missing separator '1'".to_string())
+                })?;
+
+                if sep_pos == 0 || sep_pos == s.len() - 1 {
+                    return Err(TypesError::InvalidFormat(
+                        "Invalid bech32 format".to_string(),
+                    ));
+                }
+
+                // Split HRP and data
+                let hrp = &s[..sep_pos];
+                let data_str = &s[sep_pos + 1..];
+
+                // Decode data characters
+                let mut data = Vec::new();
+                for c in data_str.bytes() {
+                    match decode_char(c) {
+                        Some(val) => data.push(val),
+                        None => {
+                            return Err(TypesError::InvalidFormat(format!(
+                                "Invalid bech32 character: {}",
+                                c as char
+                            )))
+                        }
+                    }
+                }
+
+                // Verify minimum length for checksum
+                if data.len() < 6 {
+                    return Err(TypesError::InvalidFormat("Data too short".to_string()));
+                }
+
+                // Remove checksum (last 6 characters) - simplified, not verifying
+                data.truncate(data.len() - 6);
+
+                // Convert 5-bit groups to 8-bit bytes
+                let bytes = convert_bits(&data, 5, 8).ok_or_else(|| {
+                    TypesError::InvalidFormat("Failed to convert bits".to_string())
+                })?;
+
+                // Parse based on HRP
+                match hrp {
+                    "npub" => {
+                        if bytes.len() != 32 {
+                            return Err(TypesError::InvalidFormat(format!(
+                                "Invalid npub length: {}",
+                                bytes.len()
+                            )));
+                        }
+                        let mut arr = [0u8; 32];
+                        arr.copy_from_slice(&bytes);
+                        Ok(Nip19::Pubkey(PublicKey(arr)))
+                    }
+                    "note" => {
+                        if bytes.len() != 32 {
+                            return Err(TypesError::InvalidFormat(format!(
+                                "Invalid note length: {}",
+                                bytes.len()
+                            )));
+                        }
+                        let mut arr = [0u8; 32];
+                        arr.copy_from_slice(&bytes);
+                        Ok(Nip19::EventId(EventId(arr)))
+                    }
+                    "nprofile" => {
+                        let (special, _, _, relays) = parse_tlv(bytes)?;
+
+                        let public_key = special.ok_or_else(|| {
+                            TypesError::InvalidFormat("Missing public key in nprofile".to_string())
+                        })?;
+
+                        Ok(Nip19::Profile(Nip19Profile {
+                            public_key: PublicKey(public_key),
+                            relays,
+                        }))
+                    }
+                    "nevent" => {
+                        let (special, author, _kind, relays) = parse_tlv(bytes)?;
+
+                        let event_id = special.ok_or_else(|| {
+                            TypesError::InvalidFormat("Missing event ID in nevent".to_string())
+                        })?;
+
+                        Ok(Nip19::Event(Nip19Event {
+                            event_id: EventId(event_id),
+                            author: author.map(PublicKey),
+                            relays,
+                        }))
+                    }
+                    _ => Err(TypesError::InvalidFormat(format!(
+                        "Unknown bech32 prefix: {}",
+                        hrp
+                    ))),
+                }
             }
         }
     }
@@ -1026,51 +1233,78 @@ pub mod nips {
     }
 }
 
-struct NostrTagsParser<'a>(BaseJsonParser<'a>);
+enum NostrTagsParserData<'a> {
+    Borrowed(&'a [u8]),
+    Owned(Vec<u8>),
+}
+
+struct NostrTagsParser<'a> {
+    data: NostrTagsParserData<'a>,
+}
 
 impl<'a> NostrTagsParser<'a> {
     #[inline(always)]
     fn new(bytes: &'a [u8]) -> Self {
-        Self(BaseJsonParser::new(bytes))
+        Self {
+            data: NostrTagsParserData::Borrowed(bytes),
+        }
     }
 
     #[inline(always)]
     fn parse(mut self) -> Result<NostrTags> {
-        self.0.skip_whitespace();
-        self.0.expect_byte(b'[')?;
+        // Get the bytes to parse
+        let bytes = match &self.data {
+            NostrTagsParserData::Borrowed(b) => *b,
+            NostrTagsParserData::Owned(v) => v.as_slice(),
+        };
+
+        // Handle escaped JSON if needed
+        let mut parser = if let Some(unescaped) = BaseJsonParser::unescape_if_needed(bytes)? {
+            // Use the unescaped data
+            self.data = NostrTagsParserData::Owned(unescaped);
+            match &self.data {
+                NostrTagsParserData::Owned(v) => BaseJsonParser::new(v.as_slice()),
+                _ => unreachable!(),
+            }
+        } else {
+            BaseJsonParser::new(bytes)
+        };
+
+        parser.skip_whitespace();
+        parser.expect_byte(b'[')?;
 
         let mut tags = Vec::new();
 
-        while self.0.pos < self.0.bytes.len() {
-            self.0.skip_whitespace();
-            if self.0.peek() == b']' {
-                self.0.pos += 1;
+        while parser.pos < parser.bytes.len() {
+            parser.skip_whitespace();
+            if parser.peek() == b']' {
+                parser.pos += 1;
                 break;
             }
 
-            let tag = self.parse_tag()?;
+            let tag = self.parse_tag(&mut parser)?;
             tags.push(tag);
-            self.0.skip_comma_or_end()?;
+            parser.skip_comma_or_end()?;
         }
 
         Ok(NostrTags(tags))
     }
 
     #[inline(always)]
-    fn parse_tag(&mut self) -> Result<Vec<String>> {
-        self.0.expect_byte(b'[')?;
+    fn parse_tag(&self, parser: &mut BaseJsonParser) -> Result<Vec<String>> {
+        parser.expect_byte(b'[')?;
         let mut tag = Vec::new();
 
-        while self.0.pos < self.0.bytes.len() {
-            self.0.skip_whitespace();
-            if self.0.peek() == b']' {
-                self.0.pos += 1;
+        while parser.pos < parser.bytes.len() {
+            parser.skip_whitespace();
+            if parser.peek() == b']' {
+                parser.pos += 1;
                 break;
             }
 
-            let value = self.0.parse_string()?.to_string();
+            let value = parser.parse_string_unescaped()?;
             tag.push(value);
-            self.0.skip_comma_or_end()?;
+            parser.skip_comma_or_end()?;
         }
 
         Ok(tag)

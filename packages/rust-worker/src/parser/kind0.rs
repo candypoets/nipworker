@@ -1,5 +1,6 @@
 use crate::parser::{ParserError, Result};
 use crate::types::nostr::Event;
+use crate::utils::json::BaseJsonParser;
 use crate::{generated::nostr::*, parser::Parser, types::network::Request};
 use rustc_hash::FxHashMap;
 
@@ -31,57 +32,62 @@ pub struct Kind0Parsed {
 impl Kind0Parsed {
     #[inline(always)]
     fn parse_profile_json(json_str: &str) -> Result<Kind0Parsed> {
-        // Unescape the entire JSON string first
-        let unescaped = Self::unescape_json(json_str);
-        let parser = ProfileJsonParser::new(unescaped.as_bytes());
-        parser.parse()
-    }
+        let trimmed = json_str.trim();
 
-    #[inline(always)]
-    fn unescape_json(input: &str) -> String {
-        let mut result = String::with_capacity(input.len());
-        let mut chars = input.chars().peekable();
-
-        while let Some(ch) = chars.next() {
-            if ch == '\\' {
-                if let Some(&next_ch) = chars.peek() {
-                    match next_ch {
-                        '"' | '\\' | '/' | '{' | '}' | '[' | ']' => {
-                            chars.next(); // consume the escaped char
-                            result.push(next_ch);
-                        }
-                        _ => {
-                            // Keep the backslash for other escape sequences that will be handled during parsing
-                            result.push(ch);
-                        }
-                    }
-                } else {
-                    result.push(ch);
-                }
-            } else {
-                result.push(ch);
-            }
+        // Check if the entire JSON is wrapped in quotes (stringified JSON)
+        if trimmed.starts_with('"') && trimmed.ends_with('"') {
+            // Parse the outer string to get the inner JSON
+            let mut parser = BaseJsonParser::new(trimmed.as_bytes());
+            let inner_json = parser.parse_string_unescaped()?;
+            // Now parse the inner JSON
+            let inner_parser = ProfileJsonParser::new(inner_json.as_bytes());
+            inner_parser.parse()
+        } else {
+            let parser = ProfileJsonParser::new(json_str.as_bytes());
+            parser.parse()
         }
-
-        result
     }
 }
 
+enum ProfileJsonParserData<'a> {
+    Borrowed(&'a [u8]),
+    Owned(Vec<u8>),
+}
+
 struct ProfileJsonParser<'a> {
-    bytes: &'a [u8],
-    pos: usize,
+    data: ProfileJsonParserData<'a>,
 }
 
 impl<'a> ProfileJsonParser<'a> {
     #[inline(always)]
     fn new(bytes: &'a [u8]) -> Self {
-        Self { bytes, pos: 0 }
+        Self {
+            data: ProfileJsonParserData::Borrowed(bytes),
+        }
     }
 
     #[inline(always)]
     fn parse(mut self) -> Result<Kind0Parsed> {
-        self.skip_whitespace();
-        self.expect_byte(b'{')?;
+        // Get the bytes to parse
+        let bytes = match &self.data {
+            ProfileJsonParserData::Borrowed(b) => *b,
+            ProfileJsonParserData::Owned(v) => v.as_slice(),
+        };
+
+        // Handle escaped JSON if needed
+        let mut parser = if let Some(unescaped) = BaseJsonParser::unescape_if_needed(bytes)? {
+            // Use the unescaped data
+            self.data = ProfileJsonParserData::Owned(unescaped);
+            match &self.data {
+                ProfileJsonParserData::Owned(v) => BaseJsonParser::new(v.as_slice()),
+                _ => unreachable!(),
+            }
+        } else {
+            BaseJsonParser::new(bytes)
+        };
+
+        parser.skip_whitespace();
+        parser.expect_byte(b'{')?;
 
         let mut profile = Kind0Parsed {
             pubkey: "".to_string(),
@@ -106,23 +112,64 @@ impl<'a> ProfileJsonParser<'a> {
             background: None,
         };
 
-        while self.pos < self.bytes.len() {
-            self.skip_whitespace();
-            if self.peek() == b'}' {
-                self.pos += 1;
+        while parser.pos < parser.bytes.len() {
+            parser.skip_whitespace();
+            if parser.peek() == b'}' {
+                parser.pos += 1;
                 break;
             }
 
-            let key = self.parse_string()?;
-            self.skip_whitespace();
-            self.expect_byte(b':')?;
-            self.skip_whitespace();
+            let key = parser.parse_string()?;
+            parser.skip_whitespace();
+            parser.expect_byte(b':')?;
+            parser.skip_whitespace();
 
-            let value = self.parse_string()?;
-            let str_value = if value.is_empty() {
-                None
-            } else {
-                Some(value.to_string())
+            // Parse the value based on its type
+            let str_value = match parser.peek() {
+                b'"' => {
+                    let value = parser.parse_string_unescaped()?;
+                    if value.is_empty() {
+                        None
+                    } else {
+                        Some(value)
+                    }
+                }
+                b'{' | b'[' => {
+                    // Skip complex objects and arrays - we don't need them for profile fields
+                    parser.skip_value()?;
+                    None
+                }
+                b'n' => {
+                    // Handle null values
+                    parser.skip_null()?;
+                    None
+                }
+                b't' | b'f' => {
+                    // Handle boolean values - convert to string
+                    if parser.bytes[parser.pos..].starts_with(b"true") {
+                        parser.pos += 4;
+                        Some("true".to_string())
+                    } else if parser.bytes[parser.pos..].starts_with(b"false") {
+                        parser.pos += 5;
+                        Some("false".to_string())
+                    } else {
+                        parser.skip_value()?;
+                        None
+                    }
+                }
+                b'0'..=b'9' | b'-' => {
+                    // Handle numbers - convert to string
+                    let start = parser.pos;
+                    parser.skip_number()?;
+                    let num_str =
+                        unsafe { std::str::from_utf8_unchecked(&parser.bytes[start..parser.pos]) };
+                    Some(num_str.to_string())
+                }
+                _ => {
+                    // Unknown value type, skip it
+                    parser.skip_value()?;
+                    None
+                }
             };
 
             // Match field names to profile fields
@@ -146,76 +193,14 @@ impl<'a> ProfileJsonParser<'a> {
                 "twitter" => profile.twitter = str_value,
                 "mastodon" => profile.mastodon = str_value,
                 "nostr" => profile.nostr = str_value,
-                _ => {} // Ignore unknown fields
+                // Skip any unknown fields including nested objects like "profileEvent"
+                _ => {}
             }
 
-            self.skip_comma_or_end()?;
+            parser.skip_comma_or_end()?;
         }
 
         Ok(profile)
-    }
-
-    #[inline(always)]
-    fn peek(&self) -> u8 {
-        self.bytes[self.pos]
-    }
-
-    #[inline(always)]
-    fn skip_whitespace(&mut self) {
-        while self.pos < self.bytes.len() && self.bytes[self.pos].is_ascii_whitespace() {
-            self.pos += 1;
-        }
-    }
-
-    #[inline(always)]
-    fn expect_byte(&mut self, expected: u8) -> Result<()> {
-        if self.pos >= self.bytes.len() || self.bytes[self.pos] != expected {
-            return Err(ParserError::InvalidFormat(
-                "Unexpected byte in profile JSON".to_string(),
-            ));
-        }
-        self.pos += 1;
-        Ok(())
-    }
-
-    #[inline(always)]
-    fn parse_string(&mut self) -> Result<&'a str> {
-        self.expect_byte(b'"')?;
-        let start = self.pos;
-
-        // Find the end quote, handling escaped quotes
-        while self.pos < self.bytes.len() {
-            match self.bytes[self.pos] {
-                b'"' => {
-                    let result =
-                        unsafe { std::str::from_utf8_unchecked(&self.bytes[start..self.pos]) };
-                    self.pos += 1;
-                    return Ok(result);
-                }
-                b'\\' => {
-                    // Skip escaped character (simple handling for common escapes)
-                    if self.pos + 1 < self.bytes.len() {
-                        self.pos += 2; // Skip \ and next char
-                    } else {
-                        self.pos += 1;
-                    }
-                }
-                _ => self.pos += 1,
-            }
-        }
-
-        Err(ParserError::InvalidFormat(
-            "Unterminated string in profile JSON".to_string(),
-        ))
-    }
-
-    #[inline(always)]
-    fn skip_comma_or_end(&mut self) -> Result<()> {
-        self.skip_whitespace();
-        if self.pos < self.bytes.len() && self.bytes[self.pos] == b',' {
-            self.pos += 1;
-        }
-        Ok(())
     }
 }
 

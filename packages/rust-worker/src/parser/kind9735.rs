@@ -98,18 +98,45 @@ impl ZapRequest {
     }
 }
 
-struct ZapRequestParser<'a>(BaseJsonParser<'a>);
+enum ZapRequestParserData<'a> {
+    Borrowed(&'a [u8]),
+    Owned(Vec<u8>),
+}
+
+struct ZapRequestParser<'a> {
+    data: ZapRequestParserData<'a>,
+}
 
 impl<'a> ZapRequestParser<'a> {
     #[inline(always)]
     fn new(bytes: &'a [u8]) -> Self {
-        Self(BaseJsonParser::new(bytes))
+        Self {
+            data: ZapRequestParserData::Borrowed(bytes),
+        }
     }
 
     #[inline(always)]
     fn parse(mut self) -> Result<ZapRequest> {
-        self.0.skip_whitespace();
-        self.0.expect_byte(b'{')?;
+        // Get the bytes to parse
+        let bytes = match &self.data {
+            ZapRequestParserData::Borrowed(b) => *b,
+            ZapRequestParserData::Owned(v) => v.as_slice(),
+        };
+
+        // Handle escaped JSON if needed
+        let mut parser = if let Some(unescaped) = BaseJsonParser::unescape_if_needed(bytes)? {
+            // Use the unescaped data
+            self.data = ZapRequestParserData::Owned(unescaped);
+            match &self.data {
+                ZapRequestParserData::Owned(v) => BaseJsonParser::new(v.as_slice()),
+                _ => unreachable!(),
+            }
+        } else {
+            BaseJsonParser::new(bytes)
+        };
+
+        parser.skip_whitespace();
+        parser.expect_byte(b'{')?;
 
         let mut kind = 0u16;
         let mut pubkey = String::new();
@@ -117,28 +144,28 @@ impl<'a> ZapRequestParser<'a> {
         let mut tags = NostrTags(Vec::new());
         let mut signature = None;
 
-        while self.0.pos < self.0.bytes.len() {
-            self.0.skip_whitespace();
-            if self.0.peek() == b'}' {
-                self.0.pos += 1;
+        while parser.pos < parser.bytes.len() {
+            parser.skip_whitespace();
+            if parser.peek() == b'}' {
+                parser.pos += 1;
                 break;
             }
 
-            let key = self.0.parse_string()?;
-            self.0.skip_whitespace();
-            self.0.expect_byte(b':')?;
-            self.0.skip_whitespace();
+            let key = parser.parse_string()?;
+            parser.skip_whitespace();
+            parser.expect_byte(b':')?;
+            parser.skip_whitespace();
 
             match key {
-                "kind" => kind = self.0.parse_u64()? as u16,
-                "pubkey" => pubkey = self.0.parse_string()?.to_string(),
-                "content" => content = self.0.parse_string()?.to_string(),
-                "tags" => tags = NostrTags::from_json(self.0.parse_raw_json_value()?)?,
-                "signature" => signature = Some(self.0.parse_string()?.to_string()),
-                _ => self.0.skip_value()?,
+                "kind" => kind = parser.parse_u64()? as u16,
+                "pubkey" => pubkey = parser.parse_string_unescaped()?,
+                "content" => content = parser.parse_string_unescaped()?,
+                "tags" => tags = NostrTags::from_json(parser.parse_raw_json_value()?)?,
+                "signature" => signature = Some(parser.parse_string_unescaped()?),
+                _ => parser.skip_value()?,
             }
 
-            self.0.skip_comma_or_end()?;
+            parser.skip_comma_or_end()?;
         }
 
         if pubkey.is_empty() || content.is_empty() {

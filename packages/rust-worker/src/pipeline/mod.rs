@@ -215,7 +215,7 @@ impl Pipeline {
         Self::new(
             vec![
                 PipeType::Parse(ParsePipe::new(parser)),
-                // PipeType::SaveToDb(SaveToDbPipe::new(database)),
+                PipeType::SaveToDb(SaveToDbPipe::new(database)),
                 PipeType::SerializeEvents(SerializeEventsPipe::new(subscription_id.clone())),
             ],
             subscription_id,

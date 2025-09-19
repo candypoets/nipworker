@@ -138,6 +138,144 @@ impl<'a> BaseJsonParser<'a> {
         Self { bytes, pos: 0 }
     }
 
+    /// Check if input needs unescaping and return unescaped bytes if needed
+    /// Returns None if no unescaping was needed, Some(unescaped) if unescaping occurred
+    #[inline(always)]
+    pub fn unescape_if_needed(bytes: &[u8]) -> Result<Option<Vec<u8>>> {
+        let s = std::str::from_utf8(bytes)
+            .map_err(|_| ParserError::InvalidFormat("Invalid UTF-8".to_string()))?;
+
+        let trimmed = s.trim();
+        if trimmed.is_empty() {
+            return Ok(None);
+        }
+
+        // Existing checks for starts with literal \{ or \"
+        if trimmed.starts_with("\\{") || trimmed.starts_with("\\\"") {
+            // This is escaped JSON, unescape it
+            let unescaped = Self::unescape_json_fully(trimmed);
+            return Ok(Some(unescaped.into_bytes()));
+        }
+
+        // NEW: Check for normal { followed by escaped quote (e.g., {\\"key\\":...})
+        // This handles the cases in your logs without scanning the whole string.
+        if trimmed.starts_with('{') {
+            let trimmed_bytes = trimmed.as_bytes();
+            let mut i = 1; // Start after the opening '{'
+                           // Skip whitespace after {
+            while i < trimmed_bytes.len() && trimmed_bytes[i].is_ascii_whitespace() {
+                i += 1;
+            }
+            // If the next byte is '\', and the one after is '"', it's likely an escaped key quote
+            if i + 1 < trimmed_bytes.len()
+                && trimmed_bytes[i] == b'\\'
+                && trimmed_bytes[i + 1] == b'"'
+            {
+                // Unescape the whole thing
+                let unescaped = Self::unescape_json_fully(trimmed);
+                // tracing::debug!("Detected and unescaped inline-escaped JSON starting with {\\\"");
+                return Ok(Some(unescaped.into_bytes()));
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Fully unescape a JSON string (handles \", \\, \/, \n, \r, \t, etc.)
+    #[inline(always)]
+    pub fn unescape_json_fully(input: &str) -> String {
+        let mut result = String::with_capacity(input.len());
+        let mut chars = input.chars();
+
+        while let Some(ch) = chars.next() {
+            if ch == '\\' {
+                if let Some(next_ch) = chars.next() {
+                    match next_ch {
+                        '"' => result.push('"'),
+                        '\\' => result.push('\\'),
+                        '/' => result.push('/'),
+                        'n' => result.push('\n'),
+                        'r' => result.push('\r'),
+                        't' => result.push('\t'),
+                        'b' => result.push('\x08'),
+                        'f' => result.push('\x0c'),
+                        '{' | '}' | '[' | ']' => result.push(next_ch),
+                        'u' => {
+                            // Handle Unicode escape \uXXXX
+                            let mut hex = String::new();
+                            for _ in 0..4 {
+                                if let Some(hex_ch) = chars.next() {
+                                    hex.push(hex_ch);
+                                } else {
+                                    break;
+                                }
+                            }
+                            if let Ok(code_point) = u32::from_str_radix(&hex, 16) {
+                                if let Some(unicode_char) = char::from_u32(code_point) {
+                                    result.push(unicode_char);
+                                } else {
+                                    // Invalid code point, keep original
+                                    result.push('\\');
+                                    result.push('u');
+                                    result.push_str(&hex);
+                                }
+                            } else {
+                                // Invalid hex, keep original
+                                result.push('\\');
+                                result.push('u');
+                                result.push_str(&hex);
+                            }
+                        }
+                        _ => {
+                            result.push('\\');
+                            result.push(next_ch);
+                        }
+                    }
+                } else {
+                    result.push(ch);
+                }
+            } else {
+                result.push(ch);
+            }
+        }
+
+        result
+    }
+
+    /// Unescape a simple string value (less aggressive than full JSON unescaping)
+    #[inline(always)]
+    pub fn unescape_string(input: &str) -> String {
+        let mut result = String::with_capacity(input.len());
+        let mut chars = input.chars();
+
+        while let Some(ch) = chars.next() {
+            if ch == '\\' {
+                if let Some(next_ch) = chars.next() {
+                    match next_ch {
+                        '"' => result.push('"'),
+                        '\\' => result.push('\\'),
+                        '/' => result.push('/'),
+                        'n' => result.push('\n'),
+                        'r' => result.push('\r'),
+                        't' => result.push('\t'),
+                        'b' => result.push('\x08'),
+                        'f' => result.push('\x0c'),
+                        _ => {
+                            result.push(ch);
+                            result.push(next_ch);
+                        }
+                    }
+                } else {
+                    result.push(ch);
+                }
+            } else {
+                result.push(ch);
+            }
+        }
+
+        result
+    }
+
     #[inline(always)]
     pub fn peek(&self) -> u8 {
         self.bytes[self.pos]
@@ -190,6 +328,13 @@ impl<'a> BaseJsonParser<'a> {
         Err(ParserError::InvalidFormat(
             "Unterminated string".to_string(),
         ))
+    }
+
+    /// Parse a string and return it unescaped
+    #[inline(always)]
+    pub fn parse_string_unescaped(&mut self) -> Result<String> {
+        let raw = self.parse_string()?;
+        Ok(Self::unescape_string(raw))
     }
 
     #[inline(always)]
