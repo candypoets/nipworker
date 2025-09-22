@@ -134,9 +134,7 @@ self.onmessage = async (event) => {
       console.log("Worker init started - messages will await client promise");
     } else {
       // All non-init messages: await the client promise, then process
-      console.log("Worker received message:", event.data.type || "unknown");
       client.then((c) => {
-        console.log("Worker processing message via client");
         c.handle_message(event.data);
       }).catch((error) => {
         console.error("Worker message processing error (client failed):", error);
