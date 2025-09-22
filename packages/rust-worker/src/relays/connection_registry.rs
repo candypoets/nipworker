@@ -5,6 +5,7 @@
 //! subscriptions and publishes per connection.
 
 use crate::types::nostr::{Event, Filter};
+use crate::utils::relay::RelayUtils;
 use crate::{
     pipeline::Pipeline,
     relays::{
@@ -128,14 +129,15 @@ impl ConnectionRegistry {
             let subscription_id = subscription_id.clone();
             let buffer_clone = buffer.clone();
             let self_clone = self.clone();
+            let normalized_url = RelayUtils::normalize_url(url.as_str());
             spawn_local(async move {
-                let conn = match self_clone.ensure_connection(&url).await {
+                let conn = match self_clone.ensure_connection(&normalized_url).await {
                     Ok(conn) => conn,
                     Err(e) => {
-                        tracing::warn!(relay = %url, error = %e, "Failed to ensure connection, skipping");
+                        tracing::warn!(relay = %normalized_url, error = %e, "Failed to ensure connection, skipping");
                         SharedBufferManager::send_connection_status(
                             &buffer_clone,
-                            &url,
+                            &normalized_url,
                             "FAILED",
                             &e.to_string(),
                         )
@@ -152,10 +154,10 @@ impl ConnectionRegistry {
                 // Send the REQ for this subscription to this relay
                 let req_message = ClientMessage::req(subscription_id.clone(), filters);
                 if let Err(e) = conn.send_message(req_message).await {
-                    tracing::error!(relay = %url, error = %e, "Failed to send REQ message");
+                    tracing::error!(relay = %normalized_url, error = %e, "Failed to send REQ message");
                     SharedBufferManager::send_connection_status(
                         &buffer_clone,
-                        &url,
+                        &normalized_url,
                         "FAILED",
                         &e.to_string(),
                     )
@@ -164,7 +166,7 @@ impl ConnectionRegistry {
                 } else {
                     SharedBufferManager::send_connection_status(
                         &buffer_clone,
-                        &url,
+                        &normalized_url,
                         "SUBSCRIBED",
                         "",
                     )
@@ -198,7 +200,7 @@ impl ConnectionRegistry {
                 tracing::warn!("Invalid relay URL {}: {}, skipping", url, e);
                 continue;
             }
-            normalized_urls.push(normalize_relay_url(&url));
+            normalized_urls.push(RelayUtils::normalize_url(&url));
         }
 
         self.active_subscriptions.lock().await.insert(

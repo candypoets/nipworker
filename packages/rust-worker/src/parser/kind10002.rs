@@ -1,10 +1,11 @@
 use crate::parser::Parser;
+use crate::parser::{ParserError, Result};
 use crate::types::network::Request;
 use crate::types::nostr::Event;
-use crate::parser::{ParserError, Result};
 
 // NEW: Imports for FlatBuffers
 use crate::generated::nostr::*;
+use crate::utils::relay::RelayUtils;
 use flatbuffers::FlatBufferBuilder;
 
 pub struct RelayInfo {
@@ -29,7 +30,7 @@ impl Parser {
         // Extract relay info from the r tags
         for tag in &event.tags {
             if tag.len() >= 2 && tag[0] == "r" && !tag[1].is_empty() {
-                let url = normalize_relay_url(&tag[1]);
+                let url = RelayUtils::normalize_url(&tag[1]);
                 if url.is_empty() {
                     continue;
                 }
@@ -43,7 +44,7 @@ impl Parser {
                 // If no marker is provided, the relay is used for both read and write
                 // If a marker is provided, it should be either "read", "write", or both
                 let relay = RelayInfo {
-                    url: url.clone(),
+                    url: url,
                     read: marker.is_empty() || marker == "read",
                     write: marker.is_empty() || marker == "write",
                 };

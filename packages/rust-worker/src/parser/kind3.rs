@@ -1,10 +1,11 @@
 use crate::parser::Parser;
+use crate::parser::{ParserError, Result};
 use crate::types::network::Request;
 use crate::types::nostr::Event;
-use crate::parser::{ParserError, Result};
 
 // NEW: Imports for FlatBuffers
 use crate::generated::nostr::*;
+use crate::utils::relay::RelayUtils;
 
 pub struct Contact {
     pub pubkey: String,
@@ -33,7 +34,8 @@ impl Parser {
 
                 // Add relay if present (position 2)
                 if tag.len() >= 3 && !tag[2].is_empty() {
-                    contact.relays = vec![tag[2].clone()];
+                    let relay = RelayUtils::normalize_url(tag[2].as_str());
+                    contact.relays = vec![relay];
                 }
 
                 // Add petname if present (position 3)

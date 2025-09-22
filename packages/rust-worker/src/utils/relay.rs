@@ -29,12 +29,19 @@ impl RelayUtils {
         }
 
         // Basic URL normalization
-        if url.starts_with("wss://") || url.starts_with("ws://") {
+        let normalized = if url.starts_with("wss://") || url.starts_with("ws://") {
             url.to_string()
         } else if url.starts_with("//") {
             format!("wss:{}", url)
         } else {
             format!("wss://{}", url)
+        };
+
+        // Remove trailing slash if present
+        if normalized.ends_with('/') {
+            normalized[..normalized.len() - 1].to_string()
+        } else {
+            normalized
         }
     }
 }
