@@ -1,5 +1,5 @@
 import {  NostrEvent } from "nostr-tools";
-import { nostrManager, RequestObject, type SubscriptionConfig, type NostrManager } from ".";
+import { RequestObject, type SubscriptionConfig, type NostrManager, nostrManager } from ".";
 import { SharedBufferReader } from "src/lib/SharedBuffer";
 import { WorkerMessage } from "./generated/nostr/fb";
 
@@ -29,9 +29,12 @@ export function useSubscription(
     }
   };
   subId = manager.createShortId(subId);
-  buffer = manager.subscribe(subId, requests, options);
 
-  hasSubscribed = true;
+  manager.ready.then(() => {
+    buffer = manager.subscribe(subId, requests, options)
+    hasSubscribed = true;
+  });
+
 
   const processEvents = (): void => {
     if (!running || !buffer) return;
@@ -57,7 +60,8 @@ export function usePublish(
   pubId: string,
   event: NostrEvent,
   callback: (message: WorkerMessage) => void = () => {},
-  options: { trackStatus?: boolean } = { trackStatus: true }
+  options: { trackStatus?: boolean } = { trackStatus: true },
+  manager: NostrManager = nostrManager
 ): () => void {
   if (!pubId) {
     console.warn("usePublish: No publish ID provided");
@@ -70,10 +74,12 @@ export function usePublish(
 
   const unsubscribe = (): void => {
     running = false;
-    nostrManager.removeEventListener(`publish:${pubId}`, processEvents);
+    manager.removeEventListener(`publish:${pubId}`, processEvents);
   };
 
-  buffer = nostrManager.publish(pubId, event);
+  manager.ready.then(() => {
+    buffer = manager.publish(pubId, event);
+  });
 
   const processEvents = (): void => {
     if (!running || !buffer) {
@@ -90,7 +96,7 @@ export function usePublish(
   };
 
   if (options.trackStatus) {
-      nostrManager.addEventListener(`publish:${pubId}`, processEvents);
+      manager.addEventListener(`publish:${pubId}`, processEvents);
       queueMicrotask(processEvents);
     }
 

@@ -5,8 +5,10 @@ import type { NostrEvent } from "nostr-tools";
 
 import RustWorker from "@candypoets/rust-worker/worker.js?worker";
 import * as flatbuffers from "flatbuffers";
-import { pipeConfigMap, Request, RequestObject, SubscriptionConfig } from "src/types";
-import { GetPublicKeyT, MainContent, MainMessage, MainMessageT, PipeConfig, PipelineConfigT, PipeT, PrivateKeyT, PublishT, RequestT, SetSignerT, SignerType, SignEventT, StringVecT, SubscribeT, SubscriptionConfigT, TemplateT, UnsubscribeT } from "./generated/nostr/fb";
+import { RequestObject, SubscriptionConfig } from "src/types";
+import { GetPublicKeyT, MainContent, MainMessageT, PipelineConfigT, PrivateKeyT, PublishT, RequestT, SetSignerT, SignerType, SignEventT, StringVecT, SubscribeT, SubscriptionConfigT, TemplateT, UnsubscribeT } from "./generated/nostr/fb";
+
+import wasmAsset from "@candypoets/rust-worker/rust_worker_bg.wasm?url";
 
 /**
  * Configuration for the Nostr Manager
@@ -16,13 +18,46 @@ export interface NostrManagerConfig {
   maxBufferSize: number;
 }
 
-// const wasmReady = init(mainWasmUrl);
+// Globals for single fetch + per-worker copies
+let originalWasmBuffer: ArrayBuffer | null = null;
+let fetchPromise: Promise<void> | null = null;
+
+async function ensureOriginalBuffer(): Promise<void> {
+  if (fetchPromise) {
+    return fetchPromise;
+  }
+
+  fetchPromise = fetch(wasmAsset).then((res) => {
+    if (!res.ok) {
+      throw new Error(`Failed to fetch WASM: ${res.status} ${res.statusText}`);
+    }
+    return res.arrayBuffer();
+  }).then((buffer) => {
+    originalWasmBuffer = buffer; // Cache the original (never transfer this one)
+  }).catch((error) => {
+    console.error("WASM fetch failed:", error);
+    throw error;
+  });
+
+  return fetchPromise;
+}
+
+async function getWasmBuffer(): Promise<ArrayBuffer> {
+  await ensureOriginalBuffer();
+  if (!originalWasmBuffer) {
+    throw new Error("Original WASM buffer not loaded");
+  }
+  // Create a fresh copy for this worker (transferable, doesn't detach original)
+  console.log("WASM buffer fetched and sending");
+  return originalWasmBuffer.slice(0);
+}
 
 /**
  * Pure TypeScript NostrClient that manages worker communication and state.
  * Uses WASM utilities for heavy lifting (encoding, decoding, crypto).
  */
 export class NostrManager {
+
   private worker: Worker;
   private textEncoder = new TextEncoder();
   private subscriptions = new Map<
@@ -40,13 +75,23 @@ export class NostrManager {
 
   public PERPETUAL_SUBSCRIPTIONS = ["notifications", "starterpack"];
 
-
-
+  public ready: Promise<void>;
 
   constructor(config: NostrManagerConfig = {bufferKey: "general", maxBufferSize: 5_000_000}) {
+
     this.worker = this.createWorker();
-    this.worker.postMessage({ type: "init", payload: config });
+
     this.setupWorkerListener();
+
+    this.ready = getWasmBuffer().then((wasmBuffer) => {
+      this.worker.postMessage(
+        { type: "init", payload: { bufferKey: config.bufferKey, maxBufferSize: config.maxBufferSize, wasmBuffer } },
+        [wasmBuffer] // Transfer the copy (zero-copy to this worker)
+      );
+    }).catch((error) => {
+      console.error("Failed to initialize worker with WASM:", error);
+      // Optionally terminate: this.worker.terminate();
+    });
   }
 
   private createWorker(): Worker {
@@ -260,6 +305,7 @@ export class NostrManager {
   }
 
   setSigner(name: string, secretKeyHex: string): void {
+    this.ready.then(() => {
       console.log('setSigner', name, secretKeyHex);
 
       // Create the PrivateKeyT object
@@ -279,6 +325,7 @@ export class NostrManager {
 
       this.worker.postMessage(serializedMessage);
       this.signers.set(name, secretKeyHex);
+    })
   }
 
   signEvent(event: NostrEvent) {
@@ -334,6 +381,8 @@ export class NostrManager {
   }
 }
 
+export const nostrManager = new NostrManager();
+
 /**
  * Factory function to create a new NostrManager instance.
  * @param config - Configuration for the NostrManager.
@@ -343,16 +392,6 @@ export function createNostrManager(
   config: NostrManagerConfig,
 ): NostrManager {
   return new NostrManager(config);
-}
-
-/**
- * Default singleton instance of the NostrManager.
- * Useful for applications that only need one instance.
- */
-export const nostrManager = new NostrManager();
-
-export function cleanup(): void {
-  nostrManager.cleanup();
 }
 
 export * from "./types";

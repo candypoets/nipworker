@@ -15,7 +15,10 @@
     },
     "./worker.js": {
       "import": "./dist/worker.js"
-    }
+    },
+    "./rust_worker_bg.wasm": {
+       "default": "./dist/rust_worker_bg.wasm"
+     }
   },
   "sideEffects": [
     "./snippets/*"

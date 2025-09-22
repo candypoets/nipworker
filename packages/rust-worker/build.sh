@@ -98,33 +98,53 @@ echo "Creating worker.js..."
 cat > pkg/worker.js << 'EOF'
 import init, { init_nostr_client } from "./rust_worker.js";
 
+let client;
+
 // Pre-initialize for faster first message handling
 const initPromise = async (config) => {
   try {
     console.log("Initializing WASM worker module...");
-    await init();
-    const client = await init_nostr_client(config.bufferKey, config.maxBufferSize);
+    if (config.wasmBuffer) {
+      // Use provided buffer (passed from main thread) - create synthetic Response for init
+      const wasmResponse = new Response(config.wasmBuffer, {
+        headers: { "Content-Type": "application/wasm" }
+      });
+      console.log("init using wasmResponse");
+      // Modern init call to suppress deprecated warning: pass { module: response }
+      await init({ module_or_path: wasmResponse });
+    } else {
+      // Fallback to default fetch (for standalone testing)
+      await init();
+    }
+    const clientInstance = await init_nostr_client(config.bufferKey, config.maxBufferSize);
     console.log("WASM worker module initialized successfully");
-    return client;
+    return clientInstance;
   } catch (error) {
     console.error("Failed to initialize WASM worker module:", error);
     throw error;
   }
 };
 
-let client;
-
 // Handle messages
 self.onmessage = async (event) => {
   try {
-    if(event.data.type === "init") {
+    if (event.data.type === "init") {
       const config = event.data.payload;
-      client = initPromise(config);
+      client = initPromise(config); // client is now the promise
+      console.log("Worker init started - messages will await client promise");
     } else {
-      if(client) {
-        const c = await client;
+      // All non-init messages: await the client promise, then process
+      console.log("Worker received message:", event.data.type || "unknown");
+      client.then((c) => {
+        console.log("Worker processing message via client");
         c.handle_message(event.data);
-      }
+      }).catch((error) => {
+        console.error("Worker message processing error (client failed):", error);
+        self.postMessage({
+          type: "error",
+          error: error.toString()
+        });
+      });
     }
   } catch (error) {
     console.error("Worker message handling error:", error);
