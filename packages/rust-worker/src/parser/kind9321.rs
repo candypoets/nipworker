@@ -102,14 +102,6 @@ impl Parser {
                 }
             }
         }
-        // Log parsed tag information
-        tracing::info!(
-            "Parsed kind 9321 tags - proofs: {}, mint: {:?}, recipient: {:?}, event: {:?}",
-            proof_tags.len(),
-            mint_tag.as_ref().map(|t| &t[1]),
-            recipient_tag.as_ref().map(|t| &t[1]),
-            event_tag.as_ref().map(|t| &t[1])
-        );
 
         // Validate essential tags are present
         if proof_tags.is_empty() || mint_tag.is_none() || recipient_tag.is_none() {
@@ -139,10 +131,6 @@ impl Parser {
                             }
                         }
                     }
-                    info!(
-                        "Parsed proof - amount: {}, secret: {}",
-                        proof.amount, proof.secret
-                    );
                     proofs.push(proof);
                 }
                 Err(e) => {

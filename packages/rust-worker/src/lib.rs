@@ -318,8 +318,6 @@ impl NostrClient {
             return Err(JsValue::from_str("Invalid message format"));
         };
 
-        info!("Received message in worker: {} bytes", message_bytes.len());
-
         // Decode FlatBuffer message
         let main_message = flatbuffers::root::<fb::MainMessage>(&message_bytes)
             .map_err(|e| JsValue::from_str(&format!("Failed to decode FlatBuffer: {:?}", e)))?;

@@ -155,7 +155,6 @@ impl SubscriptionManager {
             }
         }
 
-        info!("Sending eoce event {}", subscription_id);
         SharedBufferManager::send_eoce(&shared_buffer).await;
 
         post_worker_message(&JsValue::from_str(subscription_id));
@@ -174,14 +173,6 @@ impl SubscriptionManager {
                     config.close_on_eose(),
                 )
                 .await?;
-        }
-
-        // If there are no network requests, we consider the subscription complete
-        if network_requests.is_empty() {
-            info!(
-                "Subscription {} complete (no network requests needed)",
-                subscription_id
-            );
         }
 
         Ok(())

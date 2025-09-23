@@ -62,7 +62,6 @@ impl SharedBufferManager {
 
         let flatbuffer_data = builder.finished_data();
 
-        info!("Sending EOCE message with {} bytes", flatbuffer_data.len());
         let _ = Self::write_to_buffer(shared_buffer, flatbuffer_data).await;
     }
 

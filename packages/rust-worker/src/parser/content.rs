@@ -594,7 +594,6 @@ fn process_video(text: &str, _caps: &regex::Captures) -> Result<ContentBlock> {
 }
 
 fn process_nostr(text: &str, _caps: &regex::Captures) -> Result<ContentBlock> {
-    info!("process_nostr: text={:?}", text);
     let entity = if text.to_lowercase().starts_with("nostr:") {
         // Extract the identifier after nostr:
         &text[6..]

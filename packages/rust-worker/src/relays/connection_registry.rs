@@ -99,7 +99,6 @@ impl ConnectionRegistry {
                 }
             }
             _ => {
-                tracing::info!(kind = %kind, relay_url = %relay_url, "Received relay message");
                 // SharedBufferManager::send_connection_status(&buffer, relay_url, kind, message)
                 //     .await;
             }

@@ -20,7 +20,6 @@ impl Parser {
         &self,
         event: &Event,
     ) -> Result<(Kind17375Parsed, Option<Vec<Request>>)> {
-        info!("Parsing kind 17375 event");
         if event.kind != 17375 {
             return Err(ParserError::Other("event is not kind 17375".to_string()));
         }
@@ -35,7 +34,6 @@ impl Parser {
         let signer = &self.signer_manager;
 
         if signer.has_signer() {
-            info!("Signer available, attempting to decrypt event content");
             let pubkey = signer.get_public_key()?;
             match signer.nip44_decrypt(&pubkey, &event.content) {
                 Ok(decrypted) => {

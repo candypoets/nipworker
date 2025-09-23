@@ -404,17 +404,12 @@ impl ProofVerificationPipe {
 
         // Build root WorkerMessage
         let union_value = valid_proofs_msg.as_union_value();
-        tracing::info!("Union value for ValidProofs created");
 
         let message_args = fb::WorkerMessageArgs {
             type_: fb::MessageType::ValidProofs,
             content_type: fb::Message::ValidProofs,
             content: Some(union_value),
         };
-        tracing::info!(
-            "WorkerMessage args - content is Some: {}",
-            message_args.content.is_some()
-        );
 
         let root = fb::WorkerMessage::create(&mut builder, &message_args);
         builder.finish(root, None);
@@ -455,8 +450,6 @@ impl ProofVerificationPipe {
             .text()
             .await
             .map_err(|e| NostrError::Other(format!("Failed to read response: {:?}", e)))?;
-
-        info!("Raw mint response: {}", response_text);
 
         // ✅ UPDATED: Use custom JSON parsing instead of serde_json
         let check_response: CheckStateResponse = CheckStateResponse::from_json(&response_text)?;

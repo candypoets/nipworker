@@ -129,10 +129,7 @@ pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
             .base_units
             .iter()
             .flatten()
-            .map(|unit| {
-                info!("[10019] Adding base_unit: {}", unit);
-                builder.create_string(unit)
-            })
+            .map(|unit| builder.create_string(unit))
             .collect();
         let base_units = Some(builder.create_vector(&base_units_offsets));
 
