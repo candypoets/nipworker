@@ -2,95 +2,28 @@
 
 set -e
 
-echo "Building Nostr Worker WASM module (Performance Optimized)..."
+echo "Building Nostr Worker WASM module..."
 
-# Install required tools if not available
+# Install wasm-pack if not available (includes automatic wasm-opt support if Binaryen is installed)
 if ! command -v wasm-pack &> /dev/null; then
     echo "wasm-pack not found. Installing..."
     curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 fi
 
-if ! command -v wasm-opt &> /dev/null; then
-    echo "wasm-opt not found. Please install binaryen for WASM optimization:"
-    echo "  - macOS: brew install binaryen"
-    echo "  - Ubuntu/Debian: apt install binaryen"
-    echo "  - Windows: Download from https://github.com/WebAssembly/binaryen/releases"
-    echo "Continuing without wasm-opt optimizations..."
-fi
+# Note: wasm-opt (from Binaryen) is used automatically by wasm-pack for release builds if installed.
+# Install via: brew install binaryen (macOS), apt install binaryen (Ubuntu), etc.
 
-# Function to optimize WASM file for performance
-optimize_wasm() {
-    local file_path="$1"
-    local backup_path="${file_path}.backup"
+# Always use full release build for maximum performance
+echo "Building with full release optimizations..."
+wasm-pack build --release --target web
 
-    if command -v wasm-opt &> /dev/null; then
-        echo "Optimizing $file_path for performance..."
-
-        # Get original size
-        ORIGINAL_SIZE=$(wc -c < "$file_path")
-        echo "Original size: $ORIGINAL_SIZE bytes"
-
-        # Create backup
-        cp "$file_path" "$backup_path"
-
-        # Get optimized size
-        OPTIMIZED_SIZE=$(wc -c < "$file_path")
-        REDUCTION=$((ORIGINAL_SIZE - OPTIMIZED_SIZE))
-        if [ $REDUCTION -gt 0 ]; then
-            PERCENT_REDUCTION=$((REDUCTION * 100 / ORIGINAL_SIZE))
-            echo "Optimized size: $OPTIMIZED_SIZE bytes"
-            echo "Size reduction: $REDUCTION bytes ($PERCENT_REDUCTION%)"
-        else
-            INCREASE=$((OPTIMIZED_SIZE - ORIGINAL_SIZE))
-            PERCENT_INCREASE=$((INCREASE * 100 / ORIGINAL_SIZE))
-            echo "Optimized size: $OPTIMIZED_SIZE bytes"
-            echo "Size increase: $INCREASE bytes (+$PERCENT_INCREASE%) - Normal for performance optimization"
-        fi
-
-        # Remove backup
-        rm -f "$backup_path"
-    else
-        echo "Skipping optimization for $file_path (wasm-opt not available)"
-    fi
-}
-
-# Build configuration based on environment
-echo ""
-if [ "${CI:-false}" = "true" ]; then
-    echo "Building in CI environment..."
-    # Check available memory
-    if command -v free >/dev/null 2>&1; then
-        echo "Available memory:"
-        free -h
-    fi
-
-    # Use memory-safe Rust compilation settings
-    export CARGO_PROFILE_RELEASE_LTO=thin
-    export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=4
-    echo "Using CI-safe Rust compilation settings"
-
-    # Try CI profile first, fallback to release
-    echo "Attempting CI-optimized build profile..."
-    if wasm-pack build --release --target web -- --profile ci-release; then
-        echo "✅ CI profile build successful"
-    else
-        echo "⚠️ CI profile failed, using standard release build..."
-        wasm-pack build --release --target web
-    fi
-else
-    echo "Building in local environment..."
-    wasm-pack build --release --target web
-fi
-
-# Optimize the generated WASM file
+# Verify WASM file was generated
 if [ -f "pkg/rust_worker_bg.wasm" ]; then
-    optimize_wasm "pkg/rust_worker_bg.wasm"
+    echo "✅ WASM build completed successfully!"
 else
     echo "❌ WASM file not found - build may have failed"
     exit 1
 fi
-
-echo "✅ WASM build completed successfully!"
 
 # Create worker.js file
 echo ""
@@ -190,14 +123,10 @@ done
 # Show optimizations applied
 echo ""
 echo "Optimizations applied:"
-if [ "${CI:-false}" = "true" ]; then
-    echo "  - CI-safe Rust compilation (thin LTO, 4 codegen units)"
-else
-    echo "  - Full Rust optimization (opt-level=3, full LTO)"
-fi
-echo "  - WASM optimization with wasm-opt"
-echo "  - Debug symbols stripped"
-echo "  - Producer info stripped"
+echo "  - Full Rust optimization (opt-level=3, full LTO, 1 codegen unit)"
+echo "  - wasm-opt (via wasm-pack, if installed): -O, strip debug/producers, enable bulk-memory/sign-ext/etc."
+echo "  - Debug symbols stripped (Rust-side)"
+echo "  - Producer info stripped (wasm-opt)"
 
 # Final size report
 if [ -f "pkg/rust_worker_bg.wasm" ]; then
@@ -210,8 +139,4 @@ fi
 
 echo ""
 echo "✅ Nostr Worker build complete!"
-if [ "${CI:-false}" = "true" ]; then
-    echo "   Built with CI-safe settings for reliable GitHub Actions execution"
-else
-    echo "   Built with full performance optimizations"
-fi
+echo "   Built with full performance optimizations"

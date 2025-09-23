@@ -87,7 +87,7 @@ impl ConnectionRegistry {
                 let mut pipeline_guard = pipeline.lock().await;
                 if let Ok(Some(output)) = pipeline_guard.process(message).await {
                     SharedBufferManager::write_to_buffer(&buffer, &output).await;
-                    post_worker_message(&JsValue::from_str(&id));
+                    // post_worker_message(&JsValue::from_str(&id));
                 }
             }
             "EOSE" => {
