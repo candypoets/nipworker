@@ -150,7 +150,7 @@ impl SubscriptionManager {
             for event_batch in events {
                 let cache_outputs = pipeline.process_cached_batch(&event_batch).await?;
                 for out in cache_outputs {
-                    SharedBufferManager::write_to_buffer(&shared_buffer, &out).await;
+                    let _ = SharedBufferManager::write_to_buffer(&shared_buffer, &out).await;
                 }
             }
         }

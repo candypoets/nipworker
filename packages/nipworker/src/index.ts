@@ -71,6 +71,7 @@ export class NostrManager {
   private publishes = new Map<string, {buffer: SharedArrayBuffer}>();
   private signers = new Map<string, string>(); // name -> secret key hex
 
+  private signCB = (event: any) => {}
   private eventTarget = new EventTarget();
 
   public PERPETUAL_SUBSCRIPTIONS = ["notifications", "starterpack"];
@@ -101,6 +102,15 @@ export class NostrManager {
   private setupWorkerListener() {
     this.worker.onmessage = async (event) => {
       const id = typeof event.data === "string" ? event.data : undefined;
+      try {
+        if (event.data.startsWith('{"id":')) {
+          const parsed = JSON.parse(event.data);
+          this.signCB(parsed);
+        }
+      } catch (error) {
+        // console.error("Error parsing event data:", error);
+      }
+
       if (!id) return;
 
       // Prefer O(1) routing via your existing maps
@@ -328,7 +338,7 @@ export class NostrManager {
     })
   }
 
-  signEvent(event: NostrEvent) {
+  signEvent(event: NostrEvent, cb: (event: NostrEvent) => void) {
     const mainT = new MainMessageT(MainContent.SignEvent, new SignEventT(new TemplateT(event.kind, this.textEncoder.encode(event.content), event.tags.map(t => new StringVecT(t)))));
 
     // Serialize with FlatBuffers builder
@@ -336,7 +346,7 @@ export class NostrManager {
     const mainOffset = mainT.pack(builder);
     builder.finish(mainOffset);
     const serializedMessage = builder.asUint8Array();
-
+    this.signCB = cb;
     this.worker.postMessage(serializedMessage);
   }
 

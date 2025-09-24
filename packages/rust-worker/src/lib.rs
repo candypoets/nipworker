@@ -82,7 +82,10 @@ use js_sys::Uint8Array;
 use std::sync::{Arc, Once};
 use tracing::info;
 
-use crate::{generated::nostr::fb, relays::ConnectionRegistry, types::nostr::Template};
+use crate::{
+    generated::nostr::fb, relays::ConnectionRegistry, types::nostr::Template,
+    utils::js_interop::post_worker_message,
+};
 
 #[wasm_bindgen]
 extern "C" {
@@ -146,7 +149,7 @@ fn setup_tracing() {
             .with_writer(|| ConsoleWriter)
             .without_time()
             .with_target(false)
-            .with_max_level(tracing::Level::ERROR)
+            .with_max_level(tracing::Level::INFO)
             .try_init();
 
         console_log!("Tracing subscriber initialized for Web Worker");
@@ -230,7 +233,10 @@ impl NostrClient {
             .signer_manager
             .sign_event(&template)
             .map_err(|e| JsValue::from_str(&format!("Failed to sign event: {}", e)))?;
-
+        let json_str = signed_event.as_json();
+        let js_value = JsValue::from_str(&json_str);
+        info!("Event signed and ready for posting: {}", json_str);
+        post_worker_message(&js_value);
         Ok(())
     }
 

@@ -236,7 +236,7 @@ impl Event {
             self.created_at,
             self.kind,
             tags_json,
-            self.content.replace('\\', "\\\\").replace('"', "\\\"")
+            Self::escape_string(&self.content) // not manual replace
         );
 
         let mut hasher = Sha256::new();
@@ -355,13 +355,9 @@ impl Event {
 
     #[inline(always)]
     fn escape_string(s: &str) -> String {
-        if !s.contains('\\') && !s.contains('"') {
-            s.to_string()
-        } else {
-            let mut result = String::with_capacity(s.len() + 4);
-            Self::escape_string_to(&mut result, s);
-            result
-        }
+        let mut result = String::with_capacity(s.len() + 4);
+        Self::escape_string_to(&mut result, s);
+        result
     }
 
     #[inline(always)]

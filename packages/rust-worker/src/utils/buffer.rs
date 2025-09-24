@@ -138,13 +138,13 @@ impl SharedBufferManager {
         }
     }
 
-    pub async fn write_to_buffer(shared_buffer: &SharedArrayBuffer, data: &[u8]) {
+    pub async fn write_to_buffer(shared_buffer: &SharedArrayBuffer, data: &[u8]) -> Result<(), ()> {
         // Add safety checks for data size
         if data.len() > 1024 * 1024 {
             // 1MB limit
             warn!("Data too large for SharedArrayBuffer: {} bytes", data.len(),);
             warn!("Dropping message due to size limit");
-            return;
+            return Err(());
         }
 
         // Get the buffer as Uint8Array for manipulation
@@ -167,7 +167,7 @@ impl SharedBufferManager {
                 current_write_pos, buffer_length
             );
             warn!("Dropping message due to invalid write position");
-            return;
+            return Err(());
         }
 
         // Check if we have enough space (4 bytes write position header + 4 bytes length prefix + data)
@@ -175,7 +175,7 @@ impl SharedBufferManager {
         if new_write_pos > buffer_length {
             if Self::has_buffer_full_marker(&buffer_uint8, current_write_pos, buffer_length) {
                 warn!("Buffer full, but marker already exists");
-                return;
+                return Err(());
             }
 
             // Build bytes once using the same cached marker as the detector
@@ -218,11 +218,11 @@ impl SharedBufferManager {
                 buffer_uint8.set(&new_header_uint8, 0);
 
                 warn!("Buffer full, wrote WorkerMessage<BufferFull> marker");
+                return Ok(());
             } else {
                 warn!("Buffer completely full, cannot write BufferFull message");
+                return Err(());
             }
-
-            return;
         }
 
         // Write the length prefix (4 bytes, little endian) at current write position
@@ -238,5 +238,7 @@ impl SharedBufferManager {
         let new_header = (new_write_pos as u32).to_le_bytes();
         let new_header_uint8 = Uint8Array::from(&new_header[..]);
         buffer_uint8.set(&new_header_uint8, 0);
+
+        Ok(())
     }
 }

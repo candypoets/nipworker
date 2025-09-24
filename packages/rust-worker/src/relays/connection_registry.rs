@@ -15,7 +15,7 @@ use crate::{
     },
     utils::{buffer::SharedBufferManager, js_interop::post_worker_message},
 };
-use futures::future::LocalBoxFuture;
+use futures::future::{join_all, LocalBoxFuture};
 use futures::lock::Mutex;
 use js_sys::SharedArrayBuffer;
 use rustc_hash::FxHashMap;
@@ -40,7 +40,9 @@ struct SubscriptionMeta {
     relay_urls: Vec<String>,
     pipeline: Rc<Mutex<Pipeline>>,
     buffer: Rc<js_sys::SharedArrayBuffer>,
+    eosed: bool,
     close_on_eose: bool,
+    sub_id: String,
 }
 
 pub type EventCallback = Rc<dyn Fn(String, &str, &str, &str) -> LocalBoxFuture<'static, ()>>;
@@ -67,14 +69,15 @@ impl ConnectionRegistry {
         message: &str,
         relay_url: &str,
     ) {
-        let (pipeline, buffer, relay_urls, close_on_eose) = {
+        let (pipeline, buffer, eosed, close_on_eose, sub_id) = {
             let subs = self.active_subscriptions.lock().await;
             if let Some(meta) = subs.get(&id) {
                 (
                     meta.pipeline.clone(),
                     meta.buffer.clone(),
-                    meta.relay_urls.clone(),
+                    meta.eosed.clone(),
                     meta.close_on_eose,
+                    meta.sub_id.clone(),
                 )
             } else {
                 tracing::warn!(?id, "Message for unknown subscription");
@@ -86,17 +89,35 @@ impl ConnectionRegistry {
             "EVENT" => {
                 let mut pipeline_guard = pipeline.lock().await;
                 if let Ok(Some(output)) = pipeline_guard.process(message).await {
-                    SharedBufferManager::write_to_buffer(&buffer, &output).await;
-                    // post_worker_message(&JsValue::from_str(&id));
+                    if SharedBufferManager::write_to_buffer(&buffer, &output)
+                        .await
+                        .is_ok()
+                    {
+                        if eosed {
+                            post_worker_message(&JsValue::from_str(&id));
+                        }
+                    }
                 }
             }
             "EOSE" => {
                 SharedBufferManager::send_connection_status(&buffer, relay_url, kind, message)
                     .await;
                 post_worker_message(&JsValue::from_str(&id));
+                {
+                    let mut subs = self.active_subscriptions.lock().await;
+                    if let Some(meta) = subs.get_mut(&id) {
+                        meta.eosed = true;
+                    }
+                }
                 if close_on_eose {
                     let _ = self.close_subscription(&id).await;
                 }
+            }
+            "OK" => {
+                SharedBufferManager::send_connection_status(&buffer, relay_url, kind, message)
+                    .await;
+                post_worker_message(&JsValue::from_str(&sub_id));
+                info!("Publish {} OK", sub_id);
             }
             _ => {
                 // SharedBufferManager::send_connection_status(&buffer, relay_url, kind, message)
@@ -121,6 +142,8 @@ impl ConnectionRegistry {
                 pipeline,
                 buffer: buffer.clone(),
                 close_on_eose,
+                eosed: false,
+                sub_id: String::new(),
             },
         );
 
@@ -209,41 +232,57 @@ impl ConnectionRegistry {
                 pipeline: Rc::new(Mutex::new(Pipeline::new(vec![], "".to_string()).unwrap())),
                 buffer: buffer.clone(),
                 close_on_eose: false,
+                eosed: false,
+                sub_id: publish_id.to_string(),
             },
         );
 
-        for url in normalized_urls {
-            let conn = match self.ensure_connection(&url).await {
-                Ok(conn) => conn,
+        let mut connections = Vec::new();
+        for url in &normalized_urls {
+            match self.ensure_connection(url).await {
+                Ok(conn) => connections.push((url.clone(), conn)),
                 Err(e) => {
                     tracing::warn!(relay=%url, error=%e, "Failed to ensure connection, skipping");
-                    continue;
                 }
-            };
-
-            // Store publish tracking in the connection
-            conn.add_publish(event_id.to_hex(), "".into()).await;
-            SharedBufferManager::send_connection_status(&buffer, &url, "SENT", "").await;
-            // Send EVENT message
-            let event_message = ClientMessage::event(event.clone());
-            if let Err(e) = conn.send_message(event_message).await {
-                tracing::error!(relay=%url, error=%e, "Failed to send EVENT message");
-                // Optionally remove from publish tracking if failed
-                conn.remove_publish(&event_id.to_hex()).await;
-                SharedBufferManager::send_connection_status(
-                    &buffer,
-                    &url,
-                    "FAILED",
-                    &e.to_string(),
-                )
-                .await;
-                post_worker_message(&JsValue::from_str(publish_id));
-                continue;
-            } else {
-                SharedBufferManager::send_connection_status(&buffer, &url, "OK", "").await;
-                post_worker_message(&JsValue::from_str(publish_id));
             }
         }
+
+        let tasks: Vec<_> = connections
+            .into_iter()
+            .map(|(url, conn)| {
+                let event_clone = event.clone();
+                let buffer_clone = buffer.clone();
+                let publish_id_clone = publish_id.to_string();
+                let event_id_hex = event_id.to_hex();
+                async move {
+                    // Store publish tracking in the connection
+                    conn.add_publish(event_id_hex.clone(), "".into()).await;
+                    info!(relay = %url, "Publishing event {}", event_id_hex);
+                    SharedBufferManager::send_connection_status(&buffer_clone, &url, "SENT", "")
+                        .await;
+                    post_worker_message(&JsValue::from_str(&publish_id_clone));
+                    // Send EVENT message
+                    let event_message = ClientMessage::event(event_clone);
+                    if let Err(e) = conn.send_message(event_message).await {
+                        tracing::error!(relay=%url, error=%e, "Failed to send EVENT message");
+                        // Optionally remove from publish tracking if failed
+                        conn.remove_publish(&event_id_hex).await;
+                        SharedBufferManager::send_connection_status(
+                            &buffer_clone,
+                            &url,
+                            "FAILED",
+                            &e.to_string(),
+                        )
+                        .await;
+                        post_worker_message(&JsValue::from_str(&publish_id_clone));
+                    } else {
+                        // SharedBufferManager::send_connection_status(&buffer, &url, "OK", "").await;
+                        // post_worker_message(&JsValue::from_str(publish_id));
+                    }
+                }
+            })
+            .collect();
+        join_all(tasks).await;
 
         Ok(())
     }

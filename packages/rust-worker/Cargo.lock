@@ -705,6 +705,7 @@ dependencies = [
  "regex",
  "rustc-hash",
  "sha2",
+ "signature",
  "thiserror",
  "tracing",
  "tracing-subscriber",

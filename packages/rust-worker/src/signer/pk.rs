@@ -1,3 +1,4 @@
+use super::interface::SignerInterface;
 use crate::{
     nostr::{timestamp_now, Template},
     signer::{
@@ -7,11 +8,16 @@ use crate::{
     types::{Event, Keys, PublicKey},
     EventId, SecretKey,
 };
-use k256::schnorr::signature::Signer;
-use k256::schnorr::SigningKey;
-use tracing::{debug, info};
+use k256::schnorr::signature::{
+    RandomizedSigner, // optional randomized signing
+    Signer,
+    Verifier, // standard
+};
+use signature::hazmat::{PrehashSigner, PrehashVerifier};
 
-use super::interface::SignerInterface;
+use k256::schnorr::SigningKey;
+
+use tracing::{debug, info};
 
 type Result<T> = std::result::Result<T, SignerError>;
 
@@ -107,10 +113,32 @@ impl SignerInterface for PrivateKeySigner {
             .secret_key()
             .map_err(|e| SignerError::Other(format!("Failed to get secret key: {}", e)))?;
 
-        let signing_key = SigningKey::from_bytes(&secret_key.0)
+        // Create k256 Schnorr signing key from secret key bytes
+        let signing_key = k256::schnorr::SigningKey::from_bytes(&secret_key.0)
             .map_err(|e| SignerError::Other(format!("Failed to create signing key: {}", e)))?;
 
-        let signature = signing_key.sign(&event.id.0);
+        // Derive x-only pubkey (BIP-340) and ensure it matches event.pubkey
+        let verifying_key = signing_key.verifying_key();
+        let expected_pubkey: [u8; 32] = verifying_key.to_bytes().into();
+        if event.pubkey.0 != expected_pubkey {
+            return Err(SignerError::Other(
+                "Event pubkey does not match the signing key (x-only)".into(),
+            ));
+        }
+
+        // Sign the 32-byte event id as a prehash message
+        let signature = signing_key
+            .sign_prehash(&event.id.0)
+            .map_err(|e| SignerError::Other(format!("Schnorr prehash sign failed: {}", e)))?;
+
+        // Verify with the prehash verifier to match nostr-tools/relay behavior
+        verifying_key
+            .verify_prehash(&event.id.0, &signature)
+            .map_err(|e| {
+                SignerError::Other(format!("Local Schnorr prehash verify failed: {}", e))
+            })?;
+
+        // Save signature as lowercase hex
         event.sig = hex::encode(signature.to_bytes());
 
         Ok(event)
