@@ -1,4 +1,5 @@
 export { ConnectionTracker } from "./lib/ConnectionTracker";
+export {ByteString} from "./lib/ByteString"
 
 
 export * from "./lib/NarrowTypes";

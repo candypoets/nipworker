@@ -1,3 +1,20 @@
+import { ByteBuffer } from "flatbuffers";
+
+(ByteBuffer.prototype as any).__stringByteString = function(offset: number): ByteString {
+  // Follow indirect: add the relative offset stored at this location
+  offset += this.readInt32(offset);
+
+  // Now at the start of the string object → first 4 bytes = length
+  const length = this.readInt32(offset);
+  const start = offset + 4;
+
+  // Slice out exactly [start, start+length]
+  const slice = this.bytes().subarray(start, start + length);
+
+  return new ByteString(slice);
+}
+
+
 // lib/ByteString.ts
 export class ByteString {
   private readonly view: Uint8Array;

@@ -1,29 +1,6 @@
 import { encode } from "@msgpack/msgpack";
 import { ByteBuffer } from "flatbuffers";
 import { WorkerMessage } from "src/generated/nostr/fb";
-import { ByteString } from "src/lib/ByteString";
-
-const WorkerToMainMessageBufferFull = Object.freeze({
-  SubscriptionEvent: {
-    subscription_id: "",
-    event_type: "BUFFER_FULL",
-    event_data: []
-  }
-});
-
-(ByteBuffer.prototype as any).__stringByteString = function(offset: number): ByteString {
-  // Follow indirect: add the relative offset stored at this location
-  offset += this.readInt32(offset);
-
-  // Now at the start of the string object → first 4 bytes = length
-  const length = this.readInt32(offset);
-  const start = offset + 4;
-
-  // Slice out exactly [start, start+length]
-  const slice = this.bytes().subarray(start, start + length);
-
-  return new ByteString(slice);
-}
 
 
 /**

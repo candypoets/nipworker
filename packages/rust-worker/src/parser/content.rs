@@ -108,6 +108,12 @@ fn safe_truncate(s: &str, max_bytes: usize) -> &str {
     &s[..boundary]
 }
 
+fn normalize_escaped_whitespace(s: &str) -> String {
+    s.replace("\\n", "\n")
+        .replace("\\r", "\r")
+        .replace("\\t", "\t")
+}
+
 impl ContentParser {
     pub fn new() -> Self {
         let patterns = vec![
@@ -128,14 +134,18 @@ impl ContentParser {
             },
             Pattern {
                 name: "image".to_string(),
-                regex: Regex::new(r"(?i)(https?://\S+\.(jpg|jpeg|png|gif|webp|svg|ico)(\?\S*)?)")
-                    .unwrap(),
+                regex: Regex::new(
+                    r"(?i)(https?://[^\s\\]+\.(jpg|jpeg|png|gif|webp|svg|ico)(\?[^\s\\]*)?)",
+                )
+                .unwrap(),
                 processor: process_image,
             },
             Pattern {
                 name: "video".to_string(),
-                regex: Regex::new(r"(?i)(https?://\S+\.(mp4|mov|avi|mkv|webm|m4v)(\?\S*)?)")
-                    .unwrap(),
+                regex: Regex::new(
+                    r"(?i)(https?://[^\s\\]+\.(mp4|mov|avi|mkv|webm|m4v)(\?[^\s\\]*)?)",
+                )
+                .unwrap(),
                 processor: process_video,
             },
             Pattern {
@@ -146,7 +156,7 @@ impl ContentParser {
             },
             Pattern {
                 name: "link".to_string(),
-                regex: Regex::new(r"(?i)https?://[^\s\]\)]+").unwrap(),
+                regex: Regex::new(r"(?i)https?://[^\s\]\)\\]+").unwrap(),
                 processor: process_link,
             },
         ];
@@ -226,6 +236,13 @@ impl ContentParser {
             }
 
             blocks = new_blocks;
+            if pattern.name == "code" {
+                for b in blocks.iter_mut() {
+                    if b.block_type == "text" {
+                        b.text = normalize_escaped_whitespace(&b.text);
+                    }
+                }
+            }
         }
 
         // Combine adjacent text blocks
@@ -938,5 +955,14 @@ mod tests {
         let has_link = result.iter().any(|b| b.block_type == "link");
         assert!(has_hashtag);
         assert!(has_link);
+    }
+
+    #[test]
+    fn test_images_separated_by_escaped_newline() {
+        let content = "https://example.com/a.jpg\\nhttps://example.com/b.png";
+        let result = parse_content(content).unwrap();
+        let image_count = result.iter().filter(|b| b.block_type == "image").count();
+        let has_grid = result.iter().any(|b| b.block_type == "mediaGrid");
+        assert!(image_count == 2 || has_grid);
     }
 }
