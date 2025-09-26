@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use crate::parser::{
     content::{parse_content, serialize_content_data, ContentBlock, ContentParser},
     Parser,
@@ -500,74 +502,141 @@ pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
     Ok(offset)
 }
 
+fn is_hex64(s: &str) -> bool {
+    s.len() == 64 && s.chars().all(|c| c.is_ascii_hexdigit()) && s == s.to_lowercase()
+}
+
+fn looks_like_marker(s: &str) -> bool {
+    matches!(s, "reply" | "root" | "mention")
+}
+
+// Synchronous author guess based on the chosen e tag index.
+// Strategy:
+// 1) If e[3] looks like a hex pubkey and not a marker, use it (NIP-01 optional field).
+// 2) Else map e-rank -> p-rank (counting only e/p tags).
+// 3) If e-rank is 0 (root) and no p at same rank, use the first p.
+// No current_event_pubkey filtering.
+fn resolve_author_sync(tags: &[Vec<String>], chosen_e_abs_index: usize) -> Option<String> {
+    if chosen_e_abs_index >= tags.len() {
+        return None;
+    }
+
+    // Chosen e tag
+    let e_tag = &tags[chosen_e_abs_index];
+
+    // Step 1: NIP-01 optional author in e[3] (if not used by NIP-10 markers)
+    if e_tag.len() >= 4 {
+        let candidate = &e_tag[3];
+        if is_hex64(candidate) && !looks_like_marker(candidate) {
+            return Some(candidate.clone());
+        }
+    }
+
+    // Step 2: compute e-rank (0-based) among only 'e' tags
+    let mut e_rank = 0usize;
+    for (i, tag) in tags.iter().enumerate() {
+        if i == chosen_e_abs_index {
+            break;
+        }
+        if tag.len() >= 2 && tag[0] == "e" {
+            e_rank += 1;
+        }
+    }
+
+    // Collect only 'p' tags
+    let p_tags: Vec<&Vec<String>> = tags
+        .iter()
+        .filter(|t| t.len() >= 2 && t[0] == "p")
+        .collect();
+
+    // Step 3: map e-rank -> p-rank
+    if e_rank < p_tags.len() && p_tags[e_rank].len() >= 2 {
+        return Some(p_tags[e_rank][1].clone());
+    }
+
+    // Step 4: if chosen e is the root (rank 0) and no same-rank p, use first p
+    if e_rank == 0 && !p_tags.is_empty() && p_tags[0].len() >= 2 {
+        return Some(p_tags[0][1].clone());
+    }
+
+    None
+}
+
 impl Parser {
     fn get_immediate_parent(&self, tags: &[Vec<String>]) -> Option<EventPointer> {
-        // Find the last 'e' tag with 'reply' marker or the last 'e' tag if no markers
-        let mut reply_tag = None;
-        let mut last_e_tag = None;
+        let mut reply_idx: Option<usize> = None;
+        let mut last_e_idx: Option<usize> = None;
 
-        for tag in tags {
+        for (i, tag) in tags.iter().enumerate() {
             if tag.len() >= 2 && tag[0] == "e" {
-                last_e_tag = Some(tag);
-
-                // Check if this has a 'reply' marker
+                last_e_idx = Some(i);
                 if tag.len() >= 4 && tag[3] == "reply" {
-                    reply_tag = Some(tag);
+                    reply_idx = Some(i);
                 }
             }
         }
 
-        let chosen_tag = reply_tag.or(last_e_tag)?;
-        let tag_vec = chosen_tag;
+        let chosen_idx = reply_idx.or(last_e_idx)?;
+        let e_tag = &tags[chosen_idx];
 
-        if tag_vec.len() >= 2 {
-            Some(EventPointer {
-                id: tag_vec[1].clone(),
-                relays: if tag_vec.len() >= 3 && !tag_vec[2].is_empty() {
-                    vec![tag_vec[2].clone()]
+        if e_tag.len() >= 2 {
+            let mut ptr = EventPointer {
+                id: e_tag[1].clone(),
+                relays: if e_tag.len() >= 3 && !e_tag[2].is_empty() {
+                    vec![e_tag[2].clone()]
                 } else {
                     Vec::new()
                 },
                 author: None,
                 kind: None,
-            })
+            };
+
+            if let Some(author) = resolve_author_sync(tags, chosen_idx) {
+                ptr.author = Some(author);
+            }
+
+            Some(ptr)
         } else {
             None
         }
     }
 
     fn get_thread_root(&self, tags: &[Vec<String>]) -> Option<EventPointer> {
-        // Find the first 'e' tag with 'root' marker or the first 'e' tag if no markers
-        let mut root_tag = None;
-        let mut first_e_tag = None;
+        let mut root_idx: Option<usize> = None;
+        let mut first_e_idx: Option<usize> = None;
 
-        for tag in tags {
+        for (i, tag) in tags.iter().enumerate() {
             if tag.len() >= 2 && tag[0] == "e" {
-                if first_e_tag.is_none() {
-                    first_e_tag = Some(tag);
+                if first_e_idx.is_none() {
+                    first_e_idx = Some(i);
                 }
-
-                // Check if this has a 'root' marker
                 if tag.len() >= 4 && tag[3] == "root" {
-                    root_tag = Some(tag);
-                    break; // Found explicit root, use it
+                    root_idx = Some(i);
+                    break;
                 }
             }
         }
 
-        let tag_vec = root_tag.or(first_e_tag)?;
+        let chosen_idx = root_idx.or(first_e_idx)?;
+        let e_tag = &tags[chosen_idx];
 
-        if tag_vec.len() >= 2 {
-            Some(EventPointer {
-                id: tag_vec[1].clone(),
-                relays: if tag_vec.len() >= 3 && !tag_vec[2].is_empty() {
-                    vec![tag_vec[2].clone()]
+        if e_tag.len() >= 2 {
+            let mut ptr = EventPointer {
+                id: e_tag[1].clone(),
+                relays: if e_tag.len() >= 3 && !e_tag[2].is_empty() {
+                    vec![e_tag[2].clone()]
                 } else {
                     Vec::new()
                 },
                 author: None,
                 kind: None,
-            })
+            };
+
+            if let Some(author) = resolve_author_sync(tags, chosen_idx) {
+                ptr.author = Some(author);
+            }
+
+            Some(ptr)
         } else {
             None
         }

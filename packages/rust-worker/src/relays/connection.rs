@@ -289,6 +289,7 @@ impl RelayConnection {
                                         let reason = parts[2]
                                             .map(|s| s.trim_matches('"').to_string())
                                             .unwrap_or_default();
+                                        tracing::warn!(relay = %url, "NOTICE: id: {}, {}", id, reason);
                                         on_event(id, kind, &reason, &url).await;
                                     }
                                     "AUTH" => {
