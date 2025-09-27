@@ -1,0 +1,29 @@
+include "common.fbs";
+
+namespace nostr.fb;
+
+// Relay reference
+table RelayRef {
+  url: string (required);
+}
+
+// Message kind enum for lightweight metadata
+enum MsgKind : short {
+  Unknown = 0,
+  Event = 1,
+  Eose = 2,
+  Ok = 3,
+  Closed = 4,
+  Notice = 5,
+  Auth = 6
+}
+
+// Outbound worker line: raw WebSocket frame with minimal metadata
+table WorkerLine {
+  relay: RelayRef (required);
+  kind: MsgKind;
+  sub_id: string;  // optional, empty for kinds without subscription (e.g., NOTICE, OK)
+  raw: [ubyte] (required);  // UTF-8 bytes of the exact WebSocket text frame
+}
+
+root_type WorkerLine;

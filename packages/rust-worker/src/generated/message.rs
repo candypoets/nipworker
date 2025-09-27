@@ -1261,6 +1261,111 @@ impl MainContentT {
   }
 }
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
+pub const ENUM_MIN_MSG_KIND: i16 = 0;
+#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
+pub const ENUM_MAX_MSG_KIND: i16 = 6;
+#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
+#[allow(non_camel_case_types)]
+pub const ENUM_VALUES_MSG_KIND: [MsgKind; 7] = [
+  MsgKind::Unknown,
+  MsgKind::Event,
+  MsgKind::Eose,
+  MsgKind::Ok,
+  MsgKind::Closed,
+  MsgKind::Notice,
+  MsgKind::Auth,
+];
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[repr(transparent)]
+pub struct MsgKind(pub i16);
+#[allow(non_upper_case_globals)]
+impl MsgKind {
+  pub const Unknown: Self = Self(0);
+  pub const Event: Self = Self(1);
+  pub const Eose: Self = Self(2);
+  pub const Ok: Self = Self(3);
+  pub const Closed: Self = Self(4);
+  pub const Notice: Self = Self(5);
+  pub const Auth: Self = Self(6);
+
+  pub const ENUM_MIN: i16 = 0;
+  pub const ENUM_MAX: i16 = 6;
+  pub const ENUM_VALUES: &'static [Self] = &[
+    Self::Unknown,
+    Self::Event,
+    Self::Eose,
+    Self::Ok,
+    Self::Closed,
+    Self::Notice,
+    Self::Auth,
+  ];
+  /// Returns the variant's name or "" if unknown.
+  pub fn variant_name(self) -> Option<&'static str> {
+    match self {
+      Self::Unknown => Some("Unknown"),
+      Self::Event => Some("Event"),
+      Self::Eose => Some("Eose"),
+      Self::Ok => Some("Ok"),
+      Self::Closed => Some("Closed"),
+      Self::Notice => Some("Notice"),
+      Self::Auth => Some("Auth"),
+      _ => None,
+    }
+  }
+}
+impl core::fmt::Debug for MsgKind {
+  fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+    if let Some(name) = self.variant_name() {
+      f.write_str(name)
+    } else {
+      f.write_fmt(format_args!("<UNKNOWN {:?}>", self.0))
+    }
+  }
+}
+impl<'a> flatbuffers::Follow<'a> for MsgKind {
+  type Inner = Self;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    let b = flatbuffers::read_scalar_at::<i16>(buf, loc);
+    Self(b)
+  }
+}
+
+impl flatbuffers::Push for MsgKind {
+    type Output = MsgKind;
+    #[inline]
+    unsafe fn push(&self, dst: &mut [u8], _written_len: usize) {
+        flatbuffers::emplace_scalar::<i16>(dst, self.0);
+    }
+}
+
+impl flatbuffers::EndianScalar for MsgKind {
+  type Scalar = i16;
+  #[inline]
+  fn to_little_endian(self) -> i16 {
+    self.0.to_le()
+  }
+  #[inline]
+  #[allow(clippy::wrong_self_convention)]
+  fn from_little_endian(v: i16) -> Self {
+    let b = i16::from_le(v);
+    Self(b)
+  }
+}
+
+impl<'a> flatbuffers::Verifiable for MsgKind {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    i16::run_verifier(v, pos)
+  }
+}
+
+impl flatbuffers::SimpleToVerifyInSlice for MsgKind {}
+#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_MESSAGE_TYPE: u32 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MAX_MESSAGE_TYPE: u32 = 7;
@@ -10355,6 +10460,352 @@ impl MainMessageT {
     MainMessage::create(_fbb, &MainMessageArgs{
       content_type,
       content,
+    })
+  }
+}
+pub enum RelayRefOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct RelayRef<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for RelayRef<'a> {
+  type Inner = RelayRef<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> RelayRef<'a> {
+  pub const VT_URL: flatbuffers::VOffsetT = 4;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    RelayRef { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args RelayRefArgs<'args>
+  ) -> flatbuffers::WIPOffset<RelayRef<'bldr>> {
+    let mut builder = RelayRefBuilder::new(_fbb);
+    if let Some(x) = args.url { builder.add_url(x); }
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> RelayRefT {
+    let url = {
+      let x = self.url();
+      x.to_string()
+    };
+    RelayRefT {
+      url,
+    }
+  }
+
+  #[inline]
+  pub fn url(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(RelayRef::VT_URL, None).unwrap()}
+  }
+}
+
+impl flatbuffers::Verifiable for RelayRef<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("url", Self::VT_URL, true)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct RelayRefArgs<'a> {
+    pub url: Option<flatbuffers::WIPOffset<&'a str>>,
+}
+impl<'a> Default for RelayRefArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    RelayRefArgs {
+      url: None, // required field
+    }
+  }
+}
+
+pub struct RelayRefBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> RelayRefBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_url(&mut self, url: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(RelayRef::VT_URL, url);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> RelayRefBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    RelayRefBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<RelayRef<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, RelayRef::VT_URL,"url");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for RelayRef<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("RelayRef");
+      ds.field("url", &self.url());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct RelayRefT {
+  pub url: String,
+}
+impl Default for RelayRefT {
+  fn default() -> Self {
+    Self {
+      url: "".to_string(),
+    }
+  }
+}
+impl RelayRefT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<RelayRef<'b>> {
+    let url = Some({
+      let x = &self.url;
+      _fbb.create_string(x)
+    });
+    RelayRef::create(_fbb, &RelayRefArgs{
+      url,
+    })
+  }
+}
+pub enum WorkerLineOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct WorkerLine<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for WorkerLine<'a> {
+  type Inner = WorkerLine<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> WorkerLine<'a> {
+  pub const VT_RELAY: flatbuffers::VOffsetT = 4;
+  pub const VT_KIND: flatbuffers::VOffsetT = 6;
+  pub const VT_SUB_ID: flatbuffers::VOffsetT = 8;
+  pub const VT_RAW: flatbuffers::VOffsetT = 10;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    WorkerLine { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args WorkerLineArgs<'args>
+  ) -> flatbuffers::WIPOffset<WorkerLine<'bldr>> {
+    let mut builder = WorkerLineBuilder::new(_fbb);
+    if let Some(x) = args.raw { builder.add_raw(x); }
+    if let Some(x) = args.sub_id { builder.add_sub_id(x); }
+    if let Some(x) = args.relay { builder.add_relay(x); }
+    builder.add_kind(args.kind);
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> WorkerLineT {
+    let relay = {
+      let x = self.relay();
+      Box::new(x.unpack())
+    };
+    let kind = self.kind();
+    let sub_id = self.sub_id().map(|x| {
+      x.to_string()
+    });
+    let raw = {
+      let x = self.raw();
+      x.into_iter().collect()
+    };
+    WorkerLineT {
+      relay,
+      kind,
+      sub_id,
+      raw,
+    }
+  }
+
+  #[inline]
+  pub fn relay(&self) -> RelayRef<'a> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<RelayRef>>(WorkerLine::VT_RELAY, None).unwrap()}
+  }
+  #[inline]
+  pub fn kind(&self) -> MsgKind {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<MsgKind>(WorkerLine::VT_KIND, Some(MsgKind::Unknown)).unwrap()}
+  }
+  #[inline]
+  pub fn sub_id(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(WorkerLine::VT_SUB_ID, None)}
+  }
+  #[inline]
+  pub fn raw(&self) -> flatbuffers::Vector<'a, u8> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, u8>>>(WorkerLine::VT_RAW, None).unwrap()}
+  }
+}
+
+impl flatbuffers::Verifiable for WorkerLine<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<RelayRef>>("relay", Self::VT_RELAY, true)?
+     .visit_field::<MsgKind>("kind", Self::VT_KIND, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("sub_id", Self::VT_SUB_ID, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>("raw", Self::VT_RAW, true)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct WorkerLineArgs<'a> {
+    pub relay: Option<flatbuffers::WIPOffset<RelayRef<'a>>>,
+    pub kind: MsgKind,
+    pub sub_id: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub raw: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
+}
+impl<'a> Default for WorkerLineArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    WorkerLineArgs {
+      relay: None, // required field
+      kind: MsgKind::Unknown,
+      sub_id: None,
+      raw: None, // required field
+    }
+  }
+}
+
+pub struct WorkerLineBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> WorkerLineBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_relay(&mut self, relay: flatbuffers::WIPOffset<RelayRef<'b >>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<RelayRef>>(WorkerLine::VT_RELAY, relay);
+  }
+  #[inline]
+  pub fn add_kind(&mut self, kind: MsgKind) {
+    self.fbb_.push_slot::<MsgKind>(WorkerLine::VT_KIND, kind, MsgKind::Unknown);
+  }
+  #[inline]
+  pub fn add_sub_id(&mut self, sub_id: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(WorkerLine::VT_SUB_ID, sub_id);
+  }
+  #[inline]
+  pub fn add_raw(&mut self, raw: flatbuffers::WIPOffset<flatbuffers::Vector<'b , u8>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(WorkerLine::VT_RAW, raw);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> WorkerLineBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    WorkerLineBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<WorkerLine<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, WorkerLine::VT_RELAY,"relay");
+    self.fbb_.required(o, WorkerLine::VT_RAW,"raw");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for WorkerLine<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("WorkerLine");
+      ds.field("relay", &self.relay());
+      ds.field("kind", &self.kind());
+      ds.field("sub_id", &self.sub_id());
+      ds.field("raw", &self.raw());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct WorkerLineT {
+  pub relay: Box<RelayRefT>,
+  pub kind: MsgKind,
+  pub sub_id: Option<String>,
+  pub raw: Vec<u8>,
+}
+impl Default for WorkerLineT {
+  fn default() -> Self {
+    Self {
+      relay: Default::default(),
+      kind: MsgKind::Unknown,
+      sub_id: None,
+      raw: Default::default(),
+    }
+  }
+}
+impl WorkerLineT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<WorkerLine<'b>> {
+    let relay = Some({
+      let x = &self.relay;
+      x.pack(_fbb)
+    });
+    let kind = self.kind;
+    let sub_id = self.sub_id.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let raw = Some({
+      let x = &self.raw;
+      _fbb.create_vector(x)
+    });
+    WorkerLine::create(_fbb, &WorkerLineArgs{
+      relay,
+      kind,
+      sub_id,
+      raw,
     })
   }
 }

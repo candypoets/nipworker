@@ -1,6 +1,7 @@
 // Top-level schema that includes all dependencies
 include "common.fbs";
 include "main.fbs";
+include "websocket.fbs";
 include "kinds/kind0.fbs";
 include "kinds/kind1.fbs";
 include "kinds/kind3.fbs";
