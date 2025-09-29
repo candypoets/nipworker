@@ -3,7 +3,7 @@ name: Node.js Package
 on:
   push:
     tags:
-      - "v*"
+      - 'v*'
 
 permissions:
   contents: write
@@ -13,8 +13,8 @@ jobs:
   publish-npm:
     runs-on: ubuntu-latest
     env:
-      NODE_OPTIONS: "--max-old-space-size=4096"
-      CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+      NODE_OPTIONS: '--max-old-space-size=4096'
+      CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -103,11 +103,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # Build all packages with memory monitoring
+      # Build all packages
       - name: Build all packages
-        run: |
-          chmod +x scripts/monitor-build.sh
-          ./scripts/monitor-build.sh --continuous-monitor npm run build
+        run: npm run build
 
       # Create single GitHub release for all packages
       - name: Create Release
