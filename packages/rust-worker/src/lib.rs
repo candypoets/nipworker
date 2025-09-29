@@ -1,6 +1,7 @@
 #![allow(async_fn_in_trait)]
 
 use flatbuffers::FlatBufferBuilder;
+use js_sys::SharedArrayBuffer;
 use wasm_bindgen::prelude::*;
 
 pub mod db;
@@ -83,8 +84,10 @@ use std::sync::{Arc, Once};
 use tracing::info;
 
 use crate::{
-    generated::nostr::fb, relays::ConnectionRegistry, types::nostr::Template,
-    utils::js_interop::post_worker_message,
+    generated::nostr::fb,
+    relays::ConnectionRegistry,
+    types::nostr::Template,
+    utils::{js_interop::post_worker_message, sab_ring::WsRings},
 };
 
 #[wasm_bindgen]
@@ -149,7 +152,7 @@ fn setup_tracing() {
             .with_writer(|| ConsoleWriter)
             .without_time()
             .with_target(false)
-            .with_max_level(tracing::Level::WARN)
+            .with_max_level(tracing::Level::INFO)
             .try_init();
 
         console_log!("Tracing subscriber initialized for Web Worker");
@@ -178,7 +181,12 @@ pub struct NostrClient {
 
 #[wasm_bindgen]
 impl NostrClient {
-    pub async fn new(buffer_key: String, max_buffer_size: usize) -> Self {
+    pub async fn new(
+        buffer_key: String,
+        max_buffer_size: usize,
+        in_ring: SharedArrayBuffer,
+        out_ring: SharedArrayBuffer,
+    ) -> Self {
         // Set up enhanced panic handling
         setup_panic_hook();
         setup_tracing();
@@ -203,14 +211,16 @@ impl NostrClient {
 
         let signer_manager = Arc::new(SignerManager::new());
 
-        let connection_registry = Arc::new(ConnectionRegistry::new());
-
         let parser = Arc::new(Parser::new_with_signer(
             signer_manager.clone(),
             database.clone(),
         ));
 
-        let network_manager = NetworkManager::new(database, connection_registry, parser);
+        // Create WsRings from the two SharedArrayBuffers
+        let rings =
+            WsRings::new(in_ring, out_ring).expect("Invalid in/out SharedArrayBuffers for rings");
+
+        let network_manager = NetworkManager::new(database, parser, rings);
 
         info!("NostrClient components initialized");
 
@@ -281,10 +291,6 @@ impl NostrClient {
         postMessage(&uint8_array.into());
 
         Ok(())
-    }
-
-    pub async fn get_active_subscription_count(&self) -> u32 {
-        self.network_manager.get_active_subscription_count().await
     }
 
     pub async fn handle_message(&self, message_obj: &JsValue) -> Result<(), JsValue> {
@@ -428,8 +434,10 @@ impl NostrClient {
 pub async fn init_nostr_client(
     buffer_key: String,
     max_buffer_size: usize,
+    in_ring: SharedArrayBuffer,
+    out_ring: SharedArrayBuffer,
 ) -> Result<NostrClient, JsValue> {
-    match NostrClient::new(buffer_key, max_buffer_size).await {
+    match NostrClient::new(buffer_key, max_buffer_size, in_ring, out_ring).await {
         client => Ok(client),
         #[allow(unreachable_patterns)]
         _ => Err(JsValue::from_str("Failed to initialize NostrClient")),

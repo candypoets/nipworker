@@ -1,4 +1,3 @@
-use super::*;
 use crate::db::NostrDB;
 use crate::generated::nostr::fb;
 use crate::network::cache_processor::CacheProcessor;
@@ -12,14 +11,12 @@ use crate::types::*;
 use crate::utils::buffer::SharedBufferManager;
 use crate::utils::js_interop::post_worker_message;
 use crate::NostrError;
-use futures::lock::Mutex;
 use js_sys::SharedArrayBuffer;
 use rustc_hash::FxHashMap;
 
 type Result<T> = std::result::Result<T, NostrError>;
-use std::rc::Rc;
 use std::sync::{Arc, RwLock};
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 use wasm_bindgen::JsValue;
 
 pub struct SubscriptionManager {
@@ -27,21 +24,15 @@ pub struct SubscriptionManager {
     parser: Arc<Parser>,
     subscriptions: Arc<RwLock<FxHashMap<String, SharedArrayBuffer>>>,
     cache_processor: Arc<CacheProcessor>,
-    connection_registry: Arc<ConnectionRegistry>,
     relay_hints: FxHashMap<String, Vec<String>>,
 }
 
 impl SubscriptionManager {
-    pub fn new(
-        database: Arc<NostrDB>,
-        connection_registry: Arc<ConnectionRegistry>,
-        parser: Arc<Parser>,
-    ) -> Self {
+    pub fn new(database: Arc<NostrDB>, parser: Arc<Parser>) -> Self {
         let cache_processor = Arc::new(CacheProcessor::new(database.clone(), parser.clone()));
 
         Self {
             database: database.clone(),
-            connection_registry,
             parser,
             subscriptions: Arc::new(RwLock::new(FxHashMap::default())),
             relay_hints: FxHashMap::default(),
@@ -49,63 +40,63 @@ impl SubscriptionManager {
         }
     }
 
-    pub async fn open_subscription(
-        &self,
-        subscription_id: String,
-        shared_buffer: SharedArrayBuffer,
-        requests: &Vec<fb::Request<'_>>,
-        config: &fb::SubscriptionConfig<'_>,
-    ) -> Result<()> {
-        info!(
-            "Opening subscription: {} with {} requests (closeOnEOSE: {}, cacheFirst: {}){}",
-            subscription_id,
-            requests.len(),
-            config.close_on_eose(),
-            config.cache_first(),
-            if requests.len() == 1 {
-                format!(" with filter: {:?}", requests[0].tags())
-            } else {
-                String::new()
-            }
-        );
+    // pub async fn open_subscription(
+    //     &self,
+    //     subscription_id: String,
+    //     shared_buffer: SharedArrayBuffer,
+    //     requests: &Vec<fb::Request<'_>>,
+    //     config: &fb::SubscriptionConfig<'_>,
+    // ) -> Result<()> {
+    //     info!(
+    //         "Opening subscription: {} with {} requests (closeOnEOSE: {}, cacheFirst: {}){}",
+    //         subscription_id,
+    //         requests.len(),
+    //         config.close_on_eose(),
+    //         config.cache_first(),
+    //         if requests.len() == 1 {
+    //             format!(" with filter: {:?}", requests[0].tags())
+    //         } else {
+    //             String::new()
+    //         }
+    //     );
 
-        if self
-            .subscriptions
-            .read()
-            .unwrap()
-            .contains_key(&subscription_id)
-        {
-            return Ok(());
-        }
+    //     if self
+    //         .subscriptions
+    //         .read()
+    //         .unwrap()
+    //         .contains_key(&subscription_id)
+    //     {
+    //         return Ok(());
+    //     }
 
-        self.subscriptions
-            .write()
-            .unwrap()
-            .insert(subscription_id.clone(), shared_buffer.clone());
+    //     self.subscriptions
+    //         .write()
+    //         .unwrap()
+    //         .insert(subscription_id.clone(), shared_buffer.clone());
 
-        let parsed_requests: Vec<Request> = requests
-            .iter()
-            .map(|request| Request::from_flatbuffer(request))
-            .collect();
+    //     let parsed_requests: Vec<Request> = requests
+    //         .iter()
+    //         .map(|request| Request::from_flatbuffer(request))
+    //         .collect();
 
-        // Spawn subscription processing task
-        self.process_subscription(
-            shared_buffer.clone(),
-            &subscription_id,
-            parsed_requests,
-            config,
-        )
-        .await?;
+    //     // Spawn subscription processing task
+    //     self.process_subscription(
+    //         shared_buffer.clone(),
+    //         &subscription_id,
+    //         parsed_requests,
+    //         config,
+    //     )
+    //     .await?;
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
     pub async fn close_subscription(&self, subscription_id: &String) -> Result<()> {
         info!("Closing subscription: {}", subscription_id);
 
-        self.connection_registry
-            .close_subscription(&subscription_id)
-            .await?;
+        // self.connection_registry
+        //     .close_subscription(&subscription_id)
+        //     .await?;
 
         // drop the reference to the sharedBuffer
         self.subscriptions.write().unwrap().remove(subscription_id);
@@ -117,13 +108,13 @@ impl SubscriptionManager {
         self.subscriptions.read().unwrap().len() as u32
     }
 
-    async fn process_subscription(
+    pub async fn process_subscription(
         &self,
-        shared_buffer: SharedArrayBuffer,
         subscription_id: &String,
+        shared_buffer: SharedArrayBuffer,
         _requests: Vec<Request>,
         config: &fb::SubscriptionConfig<'_>,
-    ) -> Result<()> {
+    ) -> Result<(Pipeline, FxHashMap<String, Vec<Filter>>)> {
         // Create pipeline based on config
         let mut pipeline = self.build_pipeline(config.pipeline(), subscription_id.clone())?;
 
@@ -159,23 +150,9 @@ impl SubscriptionManager {
 
         post_worker_message(&JsValue::from_str(subscription_id));
 
-        // Only process network requests if there are any
-        if !network_requests.is_empty() {
-            let relay_filters = self.group_requests_by_relay(&network_requests)?;
+        let relay_filters = self.group_requests_by_relay(&network_requests)?;
 
-            // Kick off direct subscription setup — writes to SAB inside connection loop
-            self.connection_registry
-                .subscribe(
-                    subscription_id.clone(),
-                    relay_filters,
-                    Rc::new(Mutex::new(pipeline)),
-                    Rc::new(shared_buffer.clone()),
-                    config.close_on_eose(),
-                )
-                .await?;
-        }
-
-        Ok(())
+        Ok((pipeline, relay_filters))
     }
 
     fn group_requests_by_relay(

@@ -1,7 +1,6 @@
 use crate::db::NostrDB;
 use crate::nostr::Template;
 use crate::parser::Parser;
-use crate::relays::ConnectionRegistry;
 use crate::types::nostr::Event;
 use crate::NostrError;
 use crate::CONTACT_LIST;
@@ -11,25 +10,19 @@ use rustc_hash::FxHashSet;
 use std::sync::Arc;
 
 type Result<T> = std::result::Result<T, NostrError>;
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
 #[derive(Clone)]
 pub struct PublishManager {
     database: Arc<NostrDB>,
-    connection_registry: Arc<ConnectionRegistry>,
     parser: Arc<Parser>,
     callback: Option<js_sys::Function>,
 }
 
 impl PublishManager {
-    pub fn new(
-        database: Arc<NostrDB>,
-        connection_registry: Arc<ConnectionRegistry>,
-        parser: Arc<Parser>,
-    ) -> Self {
+    pub fn new(database: Arc<NostrDB>, parser: Arc<Parser>) -> Self {
         Self {
             database,
-            connection_registry,
             parser,
             callback: None,
         }
@@ -68,10 +61,10 @@ impl PublishManager {
             relays
         );
 
-        let _ = self
-            .connection_registry
-            .publish(&publish_id, event, relays.clone(), shared_buffer.into())
-            .await;
+        // let _ = self
+        //     .connection_registry
+        //     .publish(&publish_id, event, relays.clone(), shared_buffer.into())
+        //     .await;
 
         Ok(())
     }

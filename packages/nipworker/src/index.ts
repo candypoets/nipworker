@@ -10,6 +10,7 @@ import { RequestObject, SubscriptionConfig } from "src/types";
 import { GetPublicKeyT, MainContent, MainMessageT, PipelineConfigT, PrivateKeyT, PublishT, RequestT, SetSignerT, SignerType, SignEventT, StringVecT, SubscribeT, SubscriptionConfigT, TemplateT, UnsubscribeT } from "./generated/nostr/fb";
 
 import wasmAsset from "@candypoets/rust-worker/rust_worker_bg.wasm?url";
+import { initializeRingHeader } from "./ws-worker";
 
 /**
  * Configuration for the Nostr Manager
@@ -32,8 +33,12 @@ class WsWorkerSingleton {
   private initialized = false;
 
   private constructor() {
+    console.log("building ws worker");
     this.inRing = new SharedArrayBuffer(1 * 1024 * 1024); // 1MB
     this.outRing = new SharedArrayBuffer(5 * 1024 * 1024); // 5MB
+    // Initialize header here too (idempotent)
+    initializeRingHeader(this.inRing);
+    initializeRingHeader(this.outRing);
   }
 
   static getInstance(): WsWorkerSingleton {
@@ -141,7 +146,7 @@ export class NostrManager {
   public ready: Promise<void>;
 
   constructor(config: NostrManagerConfig = {bufferKey: "general", maxBufferSize: 5_000_000}) {
-
+    console.log('constructing nostrManager');
     this.worker = this.createWorker();
 
     this.setupWorkerListener();
