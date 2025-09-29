@@ -6,15 +6,14 @@ export class ConnectionRegistry {
 	private disabledRelays = new Set<string>();
 	private nextAllowed = new Map<string, number>(); // cooldown timestamps per URL (ms)
 	private subCounts = new Map<string, number>(); // active subscription count per URL
-	private disconnectTimers = new Map<string, number>(); // delayed disconnect timers per URL
+	private disconnectTimers = new Map<string, number>(); // delayed disconnect timers
 	private config: RelayConfig;
 
-	// Cooldown & delayed close configuration
 	private readonly cooldownMs = 60_000; // after failures
 	private readonly closeDelayMs = 1_000; // after last CLOSE
 
 	constructor(config: RelayConfig) {
-		this.config = config;
+		this.config = { maxReconnectAttempts: 2, ...config };
 	}
 
 	private now(): number {
@@ -33,20 +32,16 @@ export class ConnectionRegistry {
 	private getCount(url: string): number {
 		return this.subCounts.get(url) ?? 0;
 	}
-
 	private setCount(url: string, value: number): void {
-		if (value <= 0) this.subCounts.set(url, 0);
-		else this.subCounts.set(url, value);
+		this.subCounts.set(url, Math.max(0, value));
 	}
-
 	private cancelPendingDisconnect(url: string): void {
-		const t = this.disconnectTimers.get(url);
-		if (typeof t === 'number') {
-			clearTimeout(t);
+		const id = this.disconnectTimers.get(url);
+		if (typeof id === 'number') {
+			clearTimeout(id);
 			this.disconnectTimers.delete(url);
 		}
 	}
-
 	private scheduleDisconnectIfIdle(url: string): void {
 		if (this.disconnectTimers.has(url)) return;
 		const id = setTimeout(async () => {
@@ -57,37 +52,26 @@ export class ConnectionRegistry {
 		}, this.closeDelayMs) as unknown as number;
 		this.disconnectTimers.set(url, id);
 	}
-
 	private bumpCount(url: string, delta: number): void {
-		const prev = this.getCount(url);
-		let next = prev + delta;
-		if (next < 0) next = 0;
+		const next = this.getCount(url) + delta;
 		this.setCount(url, next);
-
 		if (delta > 0) {
-			// Any new REQ cancels a pending idle close
 			this.cancelPendingDisconnect(url);
-		} else if (delta < 0 && next === 0) {
-			console.log(`[registry] count for ${url} hit zero`);
-			// When count hits zero, schedule delayed close
+		} else if (delta < 0 && this.getCount(url) === 0) {
 			this.scheduleDisconnectIfIdle(url);
 		}
 	}
 
-	private shouldDisable(conn: RelayConnection): boolean {
-		const cap = this.config.maxReconnectAttempts ?? 5;
-		if (cap <= 0) return false;
-		const stats = conn.getStats?.();
-		if (!stats) return false;
-		return stats.reconnects >= cap && conn.getStatus() !== ConnectionStatus.Ready;
-	}
-
-	private disable(url: string, reason?: string) {
-		if (!this.disabledRelays.has(url)) {
-			console.warn(`[registry] disabling relay ${url}${reason ? `: ${reason}` : ''}`);
+	private giveUpOrCooldown(url: string, conn?: RelayConnection) {
+		if (conn?.hasGivenUp()) {
+			if (!this.disabledRelays.has(url)) {
+				console.warn(`[registry] disabling relay ${url}: max attempts reached`);
+			}
+			this.disabledRelays.add(url);
+			this.nextAllowed.set(url, this.now() + this.cooldownMs);
+		} else {
+			this.nextAllowed.set(url, this.now() + Math.min(this.cooldownMs, 10_000));
 		}
-		this.disabledRelays.add(url);
-		this.nextAllowed.set(url, this.now() + this.cooldownMs);
 	}
 
 	private isCoolingDown(url: string): boolean {
@@ -95,14 +79,13 @@ export class ConnectionRegistry {
 		return this.now() < at;
 	}
 
-	// Ensure a connection exists and is Ready (or throw)
 	async ensureConnection(url: string): Promise<RelayConnection> {
 		if (this.disabledRelays.has(url)) {
-			throw new Error(`Relay disabled after repeated failures: ${url}`);
+			throw new Error(`Relay disabled: ${url}`);
 		}
 		if (this.isCoolingDown(url)) {
 			throw new Error(
-				`Relay ${url} in cooldown until ${new Date(this.nextAllowed.get(url)!).toISOString()}`
+				`Relay ${url} cooling down until ${new Date(this.nextAllowed.get(url)!).toISOString()}`
 			);
 		}
 
@@ -110,34 +93,26 @@ export class ConnectionRegistry {
 		if (!conn) {
 			conn = new RelayConnection(url, this.config);
 			this.connections.set(url, conn);
-			conn.setMessageHandler(conn.messageHandler || null); // ensure property exists
 			conn.connect(); // fire-and-forget
 		}
 
 		if (conn.getStatus() !== ConnectionStatus.Ready) {
 			try {
-				await conn.waitForReady(this.config.connectTimeoutMs ?? 30_000);
+				await conn.waitForReady(this.config.connectTimeoutMs ?? 5_000);
 			} catch (e) {
-				if (this.shouldDisable(conn)) {
-					this.disable(url, 'max reconnect attempts reached');
-				} else {
-					// short cooldown to avoid hammering
-					this.nextAllowed.set(url, this.now() + Math.min(this.cooldownMs, 10_000));
-				}
+				this.giveUpOrCooldown(url, conn);
 				throw e;
 			}
 		}
 
 		if (conn.getStatus() !== ConnectionStatus.Ready) {
-			// still not ready; back off
-			this.nextAllowed.set(url, this.now() + Math.min(this.cooldownMs, 10_000));
+			this.giveUpOrCooldown(url, conn);
 			throw new Error(`Relay ${url} not ready`);
 		}
 
 		return conn;
 	}
 
-	// Sends exactly one frame and updates REQ/CLOSE counters
 	async sendFrame(url: string, frame: string): Promise<void> {
 		if (this.disabledRelays.has(url) || this.isCoolingDown(url)) return;
 
@@ -147,12 +122,7 @@ export class ConnectionRegistry {
 		try {
 			await conn.sendMessage(frame);
 		} catch (e) {
-			// Send failed; consider disabling/cooldown and disconnect
-			if (this.shouldDisable(conn)) {
-				this.disable(url, 'send failed and cap reached');
-			} else {
-				this.nextAllowed.set(url, this.now() + Math.min(this.cooldownMs, 10_000));
-			}
+			this.giveUpOrCooldown(url, conn);
 			await this.disconnect(url);
 			throw e;
 		}
@@ -171,13 +141,12 @@ export class ConnectionRegistry {
 				}
 			} catch (error) {
 				console.error(`[registry] failed to send to ${url}:`, error);
-				// errors handled per sendFrame; continue to next relay
+				// continue to next relay
 			}
 		}
 	}
 
 	async disconnect(url: string): Promise<void> {
-		console.log(`[registry] disconnecting from ${url}`);
 		const connection = this.connections.get(url);
 		if (connection) {
 			await connection.close();
@@ -193,7 +162,6 @@ export class ConnectionRegistry {
 		}
 	}
 
-	// Manual re-enable (e.g., via UI)
 	enableRelay(url: string): void {
 		this.disabledRelays.delete(url);
 		this.nextAllowed.delete(url);

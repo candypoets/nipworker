@@ -265,8 +265,18 @@ impl NetworkManager {
     ) -> Result<()> {
         let (event, relays) = self
             .publish_manager
-            .publish_event(publish_id, template, shared_buffer)
+            .publish_event(publish_id.clone(), template)
             .await?;
+
+        self.subscriptions.write().unwrap().insert(
+            publish_id.clone(),
+            Sub {
+                pipeline: Arc::new(Mutex::new(Pipeline::new(vec![], "".to_string()).unwrap())),
+                buffer: shared_buffer.clone(),
+                eosed: false,
+                relay_urls: relays.clone(),
+            },
+        );
 
         for relay_url in &relays {
             let event_message = ClientMessage::event(event.clone());

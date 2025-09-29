@@ -44,19 +44,31 @@ function handleIncomingMessage(
 }
 
 class WSManager {
-	private inRing: SharedArrayBuffer = new SharedArrayBuffer(1 * 1024 * 1024); // 1MB;
-	private outRing: SharedArrayBuffer = new SharedArrayBuffer(5 * 1024 * 1024); // 5MB;
+	private inRing: SharedArrayBuffer = new SharedArrayBuffer(1 * 1024 * 1024); // 1MB
+	private outRing: SharedArrayBuffer = new SharedArrayBuffer(5 * 1024 * 1024); // 5MB
+	private inputRing: ByteRingBuffer;
+	private outputRing: ByteRingBuffer;
+	private registry: ConnectionRegistry;
+
+	// Adaptive backoff state
+	private static readonly MIN_BACKOFF_MS = 10;
+	private static readonly MAX_BACKOFF_MS = 1000;
+	private static readonly BACKOFF_MULTIPLIER = 2;
+
+	private inputLoopBackoffMs = WSManager.MIN_BACKOFF_MS;
+	private inputLoopTimer: number | null = null;
+	private decoder = new TextDecoder();
 
 	constructor(config: RelayConfig) {
 		initializeRingHeader(this.inRing);
 		initializeRingHeader(this.outRing);
 
 		// Create ring buffers
-		const inputRing = new ByteRingBuffer(this.inRing);
-		const outputRing = new ByteRingBuffer(this.outRing);
+		this.inputRing = new ByteRingBuffer(this.inRing);
+		this.outputRing = new ByteRingBuffer(this.outRing);
 
 		// Create registry
-		const registry = new ConnectionRegistry(config || {});
+		this.registry = new ConnectionRegistry(config || {});
 
 		// Set up message handler for all future connections
 		const globalMessageHandler = (
@@ -65,12 +77,12 @@ class WSManager {
 			subId: string | null,
 			rawText: string
 		) => {
-			handleIncomingMessage(outputRing, url, kind, subId, rawText);
+			handleIncomingMessage(this.outputRing, url, kind, subId, rawText);
 		};
 
 		// Override ensureConnection to set handler
-		const originalEnsure = registry.ensureConnection.bind(registry);
-		registry.ensureConnection = async (url: string) => {
+		const originalEnsure = this.registry.ensureConnection.bind(this.registry);
+		this.registry.ensureConnection = async (url: string) => {
 			const conn = await originalEnsure(url);
 			if (!conn.messageHandler) {
 				conn.setMessageHandler(globalMessageHandler);
@@ -78,44 +90,75 @@ class WSManager {
 			return conn;
 		};
 
-		// Input processing loop: poll the input ring and dispatch envelopes
-		const processInputLoop = () => {
-			// console.log("processInputLoop")
-			while (true) {
-				const record = inputRing.read();
-				if (!record) break;
-				// Decode payload as UTF-8
-				const decoder = new TextDecoder();
-				const envelopeStr = decoder.decode(record);
-				let envelope;
-				try {
-					envelope = JSON.parse(envelopeStr);
-				} catch (e) {
-					console.warn('Invalid envelope JSON:', e);
-					continue;
-				}
-
-				if (!Array.isArray(envelope.relays) || !Array.isArray(envelope.frames)) {
-					console.warn('Invalid envelope structure');
-					continue;
-				}
-				// Send frames to relays
-				registry.sendToRelays(envelope.relays, envelope.frames).catch(console.error);
-			}
-
-			// Continue polling; use requestIdleCallback for efficiency if available, else setTimeout
-			if (typeof (self as any).requestIdleCallback === 'function') {
-				(self as any).requestIdleCallback(processInputLoop, { timeout: 1 });
-			} else {
-				setTimeout(processInputLoop, 1);
-			}
-		};
-
 		// Start the input loop
-		processInputLoop();
+		this.processInputLoop();
 
-		console.log('WS Worker initialized');
+		console.log('WS Manager initialized');
 	}
+
+	// External API: reset the input-loop backoff to be aggressive immediately
+	public resetInputLoopBackoff(): void {
+		this.inputLoopBackoffMs = WSManager.MIN_BACKOFF_MS;
+		if (this.inputLoopTimer !== null) {
+			clearTimeout(this.inputLoopTimer);
+			this.inputLoopTimer = null;
+		}
+		this.scheduleInputLoop();
+	}
+
+	// Scheduler helper
+	private scheduleInputLoop(): void {
+		const anyGlobal = globalThis as any;
+		if (typeof anyGlobal.requestIdleCallback === 'function') {
+			anyGlobal.requestIdleCallback(() => this.processInputLoop(), {
+				timeout: this.inputLoopBackoffMs
+			});
+		} else {
+			this.inputLoopTimer = setTimeout(
+				() => this.processInputLoop(),
+				this.inputLoopBackoffMs
+			) as unknown as number;
+		}
+	}
+
+	// Input processing loop: poll the input ring and dispatch envelopes with adaptive backoff
+	private processInputLoop = (): void => {
+		let processed = 0;
+
+		while (true) {
+			const record = this.inputRing.read();
+			if (!record) break;
+
+			const envelopeStr = this.decoder.decode(record);
+			let envelope: any;
+			try {
+				envelope = JSON.parse(envelopeStr);
+			} catch (e) {
+				console.warn('Invalid envelope JSON:', e);
+				continue;
+			}
+
+			if (!Array.isArray(envelope.relays) || !Array.isArray(envelope.frames)) {
+				console.warn('Invalid envelope structure');
+				continue;
+			}
+
+			// Fire-and-forget send to avoid blocking the loop
+			this.registry.sendToRelays(envelope.relays, envelope.frames).catch(console.error);
+			processed++;
+		}
+
+		// Adaptive backoff: reset when work was found; otherwise grow (capped)
+		this.inputLoopBackoffMs =
+			processed > 0
+				? WSManager.MIN_BACKOFF_MS
+				: Math.min(
+						this.inputLoopBackoffMs * WSManager.BACKOFF_MULTIPLIER,
+						WSManager.MAX_BACKOFF_MS
+					);
+
+		this.scheduleInputLoop();
+	};
 
 	getInRing(): SharedArrayBuffer {
 		return this.inRing;

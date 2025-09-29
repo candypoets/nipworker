@@ -5,7 +5,6 @@ use crate::types::nostr::Event;
 use crate::NostrError;
 use crate::CONTACT_LIST;
 use futures::future::join_all;
-use js_sys::SharedArrayBuffer;
 use rustc_hash::FxHashSet;
 use std::sync::Arc;
 
@@ -16,23 +15,17 @@ use tracing::{info, warn};
 pub struct PublishManager {
     database: Arc<NostrDB>,
     parser: Arc<Parser>,
-    callback: Option<js_sys::Function>,
 }
 
 impl PublishManager {
     pub fn new(database: Arc<NostrDB>, parser: Arc<Parser>) -> Self {
-        Self {
-            database,
-            parser,
-            callback: None,
-        }
+        Self { database, parser }
     }
 
     pub async fn publish_event(
         &self,
         publish_id: String,
         template: &Template,
-        shared_buffer: SharedArrayBuffer,
     ) -> Result<(Event, Vec<String>)> {
         info!("Publishing event with ID {}", publish_id);
 
@@ -60,11 +53,6 @@ impl PublishManager {
             relays.len(),
             relays
         );
-
-        // let _ = self
-        //     .connection_registry
-        //     .publish(&publish_id, event, relays.clone(), shared_buffer.into())
-        //     .await;
 
         Ok((event, relays))
     }
@@ -112,28 +100,5 @@ impl PublishManager {
         }
 
         Ok(relay_set.into_iter().collect())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn test_publish_manager_creation() {
-        // This would require mock implementations of the dependencies
-        // For now, just test that the struct can be created
-        assert!(true);
-    }
-
-    #[test]
-    fn test_determine_target_relays() {
-        // Test relay determination logic
-        // This would require setting up mock database responses
-        assert!(true);
-    }
-
-    #[test]
-    fn test_nip65_parsing() {
-        // Test NIP-65 relay list parsing
-        assert!(true);
     }
 }
