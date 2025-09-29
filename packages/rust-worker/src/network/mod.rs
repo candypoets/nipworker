@@ -176,8 +176,6 @@ impl NetworkManager {
         requests: &Vec<fb::Request<'_>>,
         config: &fb::SubscriptionConfig<'_>,
     ) -> Result<()> {
-        info!("Opening subscription: {}", subscription_id);
-
         // early bailout if the sub already exist
         if self
             .subscriptions
@@ -242,11 +240,6 @@ impl NetworkManager {
                 let frame = close_message.to_json()?;
                 let relays = [relay_url.as_str()];
                 let frames = [frame.clone()];
-                info!(
-                    "Writing CLOSE frame '{}' to relay: {}",
-                    frame.clone(),
-                    relay_url
-                );
                 let _ = self.rings.write_in_envelope(&relays, &frames);
             }
         }
