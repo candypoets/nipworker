@@ -1,53 +1,54 @@
 {
-  "name": "@candypoets/nipworker-workspace",
-  "version": "1.0.0",
-  "private": true,
-  "description": "Workspace for nipworker and rust-worker packages",
-  "workspaces": [
-    "packages/*"
-  ],
-  "scripts": {
-    "build": "npm run build --workspaces",
-    "flatc:all": "npm run flatc:nipworker && npm run flatc:rust-worker",
-    "flatc:nipworker": "flatc --ts --gen-object-api --gen-all --filename-suffix '' -o packages/nipworker/src/generated schemas/message.fbs && node ./scripts/patch-strings.js",
-    "build:nipworker": "npm run build --workspace=packages/nipworker",
-    "flatc:rust-worker": "flatc --rust --gen-object-api --gen-all --filename-suffix '' -o packages/rust-worker/src/generated schemas/message.fbs",
-    "build:rust-worker": "npm run build --workspace=packages/rust-worker",
-    "test": "npm run test --workspaces --if-present",
-    "clean": "npm run clean --workspaces --if-present",
-    "dev": "npm run dev --workspace=packages/nipworker",
-    "publish:rust-worker": "npm publish --workspace=packages/rust-worker --access public",
-    "publish:nipworker": "npm publish --workspace=packages/nipworker --access public",
-    "publish:all": "npm run publish:rust-worker && npm run publish:nipworker"
-  },
-  "devDependencies": {
-    "@types/node": "^20.0.0",
-    "typescript": "^5.0.0",
-    "vite": "^5.0.0",
-    "vite-plugin-dts": "^3.0.0",
-    "vite-plugin-static-copy": "^3.1.1",
-    "vite-plugin-top-level-await": "^1.6.0",
-    "vite-plugin-wasm": "^3.0.0"
-  },
-  "keywords": [
-    "nostr",
-    "protocol",
-    "web-worker",
-    "wasm",
-    "rust",
-    "workspace"
-  ],
-  "author": "So Tachi <sotachi@proton.me>",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/candypoets/nipworker.git"
-  },
-  "bugs": {
-    "url": "https://github.com/candypoets/nipworker/issues"
-  },
-  "homepage": "https://github.com/candypoets/nipworker#readme",
-  "engines": {
-    "node": ">=18.0.0"
-  }
+	"name": "@candypoets/nipworker-workspace",
+	"version": "1.0.0",
+	"private": true,
+	"description": "Workspace for nipworker and rust-worker packages",
+	"workspaces": [
+		"packages/*"
+	],
+	"scripts": {
+		"build": "npm run build --workspaces",
+		"flatc:all": "npm run flatc:nipworker && npm run flatc:rust-worker",
+		"flatc:nipworker": "flatc --ts --gen-object-api --gen-all --filename-suffix '' -o packages/nipworker/src/generated schemas/message.fbs && node ./scripts/patch-strings.js",
+		"build:nipworker": "npm run build --workspace=packages/nipworker",
+		"flatc:rust-worker": "flatc --rust --gen-object-api --gen-all --filename-suffix '' -o packages/rust-worker/src/generated schemas/message.fbs",
+		"build:rust-worker": "npm run build --workspace=packages/rust-worker",
+		"test": "npm run test --workspaces --if-present",
+		"clean": "npm run clean --workspaces --if-present",
+		"dev": "npm run dev --workspace=packages/nipworker",
+		"publish:rust-worker": "npm publish --workspace=packages/rust-worker --access public",
+		"publish:nipworker": "npm publish --workspace=packages/nipworker --access public",
+		"publish:all": "npm run publish:rust-worker && npm run publish:nipworker"
+	},
+	"devDependencies": {
+		"@types/node": "^20.0.0",
+		"prettier": "^3.6.2",
+		"typescript": "^5.0.0",
+		"vite": "^5.0.0",
+		"vite-plugin-dts": "^3.0.0",
+		"vite-plugin-static-copy": "^3.1.1",
+		"vite-plugin-top-level-await": "^1.6.0",
+		"vite-plugin-wasm": "^3.0.0"
+	},
+	"keywords": [
+		"nostr",
+		"protocol",
+		"web-worker",
+		"wasm",
+		"rust",
+		"workspace"
+	],
+	"author": "So Tachi <sotachi@proton.me>",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/candypoets/nipworker.git"
+	},
+	"bugs": {
+		"url": "https://github.com/candypoets/nipworker/issues"
+	},
+	"homepage": "https://github.com/candypoets/nipworker#readme",
+	"engines": {
+		"node": ">=18.0.0"
+	}
 }

@@ -50,7 +50,10 @@ impl SabRing {
         let total_len = view.length() as usize;
 
         if total_len < HEADER_SIZE {
-            return Err(JsValue::from_str("SAB too small for header"));
+            return Err(JsValue::from_str(&format!(
+                "SAB too small for header: length {} < {}",
+                total_len, HEADER_SIZE
+            )));
         }
 
         // Try to read capacity from header; if zero, use (total_len - HEADER_SIZE) as capacity.

@@ -49,7 +49,7 @@ const initPromise = async (config) => {
       // Fallback to default fetch (for standalone testing)
       await init();
     }
-    const clientInstance = await init_nostr_client(config.bufferKey, config.maxBufferSize);
+    const clientInstance = await init_nostr_client(config.bufferKey, config.maxBufferSize, config.inRing, config.outRing);
     console.log("WASM worker module initialized successfully");
     return clientInstance;
   } catch (error) {

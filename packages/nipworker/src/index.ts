@@ -1,16 +1,30 @@
-import { SharedBufferReader } from "src/lib/SharedBuffer";
-import WsWorker from "./ws-worker/index.ts?worker";
-
-
+import RustWorker from "@candypoets/rust-worker/worker.js?worker";
+import wasmAsset from "@candypoets/rust-worker/rust_worker_bg.wasm?url";
 import type { NostrEvent } from "nostr-tools";
 
-import RustWorker from "@candypoets/rust-worker/worker.js?worker";
+import { SharedBufferReader } from "src/lib/SharedBuffer";
+import {wsManager} from "src/ws";
+
 import * as flatbuffers from "flatbuffers";
 import { RequestObject, SubscriptionConfig } from "src/types";
-import { GetPublicKeyT, MainContent, MainMessageT, PipelineConfigT, PrivateKeyT, PublishT, RequestT, SetSignerT, SignerType, SignEventT, StringVecT, SubscribeT, SubscriptionConfigT, TemplateT, UnsubscribeT } from "./generated/nostr/fb";
+import {
+  GetPublicKeyT,
+  MainContent,
+  MainMessageT,
+  PipelineConfigT,
+  PrivateKeyT,
+  PublishT,
+  RequestT,
+  SetSignerT,
+  SignerType,
+  SignEventT,
+  StringVecT,
+  SubscribeT,
+  SubscriptionConfigT,
+  TemplateT,
+  UnsubscribeT
+} from "./generated/nostr/fb";
 
-import wasmAsset from "@candypoets/rust-worker/rust_worker_bg.wasm?url";
-import { initializeRingHeader } from "./ws-worker";
 
 /**
  * Configuration for the Nostr Manager
@@ -24,70 +38,6 @@ export interface NostrManagerConfig {
 let originalWasmBuffer: ArrayBuffer | null = null;
 let fetchPromise: Promise<void> | null = null;
 
-// WS Worker singleton
-class WsWorkerSingleton {
-  private static instance: WsWorkerSingleton | null = null;
-  private worker: Worker | null = null;
-  private inRing: SharedArrayBuffer;
-  private outRing: SharedArrayBuffer;
-  private initialized = false;
-
-  private constructor() {
-    console.log("building ws worker");
-    this.inRing = new SharedArrayBuffer(1 * 1024 * 1024); // 1MB
-    this.outRing = new SharedArrayBuffer(5 * 1024 * 1024); // 5MB
-    // Initialize header here too (idempotent)
-    initializeRingHeader(this.inRing);
-    initializeRingHeader(this.outRing);
-  }
-
-  static getInstance(): WsWorkerSingleton {
-    if (!WsWorkerSingleton.instance) {
-      WsWorkerSingleton.instance = new WsWorkerSingleton();
-    }
-    return WsWorkerSingleton.instance;
-  }
-
-  async init(): Promise<void> {
-    if (this.initialized) return;
-
-    this.worker = new WsWorker();
-    this.worker.postMessage({
-      type: 'init',
-      inRing: this.inRing,
-      outRing: this.outRing,
-      config: {} // Default config
-    });
-
-    return new Promise((resolve) => {
-      this.worker!.onmessage = (event) => {
-        if (event.data.type === 'initialized') {
-          this.initialized = true;
-          resolve();
-        }
-      };
-    });
-  }
-
-  getInRing(): SharedArrayBuffer {
-    return this.inRing;
-  }
-
-  getOutRing(): SharedArrayBuffer {
-    return this.outRing;
-  }
-
-  terminate(): void {
-    if (this.worker) {
-      this.worker.postMessage({ type: 'shutdown' });
-      this.worker.terminate();
-      this.worker = null;
-    }
-    this.initialized = false;
-  }
-}
-
-const wsWorker = WsWorkerSingleton.getInstance();
 
 async function ensureOriginalBuffer(): Promise<void> {
   if (fetchPromise) {
@@ -109,15 +59,6 @@ async function ensureOriginalBuffer(): Promise<void> {
   return fetchPromise;
 }
 
-async function getWasmBuffer(): Promise<ArrayBuffer> {
-  await ensureOriginalBuffer();
-  if (!originalWasmBuffer) {
-    throw new Error("Original WASM buffer not loaded");
-  }
-  // Create a fresh copy for this worker (transferable, doesn't detach original)
-  console.log("WASM buffer fetched and sending");
-  return originalWasmBuffer.slice(0);
-}
 
 /**
  * Pure TypeScript NostrClient that manages worker communication and state.
@@ -152,21 +93,23 @@ export class NostrManager {
     this.setupWorkerListener();
 
     this.ready = (async () => {
-      await wsWorker.init(); // Initialize WS worker singleton
+      const inRing = wsManager.getInRing();
+      const outRing = wsManager.getOutRing();
 
-      const wasmBuffer = await getWasmBuffer();
+      await ensureOriginalBuffer();
+
       this.worker.postMessage(
         {
           type: "init",
           payload: {
             bufferKey: config.bufferKey,
             maxBufferSize: config.maxBufferSize,
-            wasmBuffer,
-            inRing: wsWorker.getInRing(),
-            outRing: wsWorker.getOutRing()
+            wasmBuffer: originalWasmBuffer,
+            inRing,
+            outRing,
           }
         },
-        [wasmBuffer] // Transfer the copy (zero-copy to this worker)
+        // [inRing, outRing] // Transfer the copy (zero-copy to this worker)
       );
     })().catch((error) => {
       console.error("Failed to initialize worker with WASM:", error);
@@ -472,8 +415,6 @@ export class NostrManager {
 
 export const nostrManager = new NostrManager();
 
-// Ensure WS worker is initialized on module load
-wsWorker.init().catch(console.error);
 
 /**
  * Factory function to create a new NostrManager instance.

@@ -33,7 +33,7 @@ impl PublishManager {
         publish_id: String,
         template: &Template,
         shared_buffer: SharedArrayBuffer,
-    ) -> Result<()> {
+    ) -> Result<(Event, Vec<String>)> {
         info!("Publishing event with ID {}", publish_id);
 
         // Prepare the event using parser
@@ -66,7 +66,7 @@ impl PublishManager {
         //     .publish(&publish_id, event, relays.clone(), shared_buffer.into())
         //     .await;
 
-        Ok(())
+        Ok((event, relays))
     }
 
     async fn determine_target_relays(&self, event: &Event) -> Result<Vec<String>> {
