@@ -9,13 +9,13 @@
 //! - Connection lifecycle management
 //! - Automatic reconnection and cleanup
 
-pub mod connection;
-pub mod connection_registry;
+// pub mod connection;
+// pub mod connection_registry;
 pub mod types;
 
 // Re-export main public API
-pub use connection::RelayConnection;
-pub use connection_registry::ConnectionRegistry;
+// pub use connection::RelayConnection;
+// pub use connection_registry::ConnectionRegistry;
 pub use types::{
     ClientMessage, ConnectionStatus, PublishStatus, RelayError, RelayMessage, RelayResponse,
     SubscriptionStatus,
@@ -53,12 +53,9 @@ pub use crate::types::nostr::{Event, EventId, Filter, PublicKey};
 ///     Ok(())
 /// }
 /// ```
-pub type Registry = ConnectionRegistry;
+// pub type Registry = ConnectionRegistry;
 
 /// Create a new connection registry instance
-pub fn new_registry() -> ConnectionRegistry {
-    ConnectionRegistry::new()
-}
 
 /// Utility functions for the relay module
 pub mod utils {

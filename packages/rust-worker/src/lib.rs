@@ -85,7 +85,6 @@ use tracing::info;
 
 use crate::{
     generated::nostr::fb,
-    relays::ConnectionRegistry,
     types::nostr::Template,
     utils::{js_interop::post_worker_message, sab_ring::WsRings},
 };
