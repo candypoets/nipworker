@@ -290,7 +290,7 @@ export class RelayConnection {
 		else if (kindStr === 'NOTICE') kind = 5;
 		else if (kindStr === 'AUTH') kind = 6;
 
-		if (kind === 1 || kind === 2 || kind === 4) {
+		if (kind === 1 || kind === 2 || kind === 3 || kind === 4) {
 			while (i < n && s[i] !== ',') i++;
 			if (i < n && s[i] === ',') i++;
 			while (i < n && s.charCodeAt(i) <= 32) i++;

@@ -15,7 +15,6 @@ function handleIncomingMessage(
 ): void {
 	const encoder = new TextEncoder();
 	const rawBytes = encoder.encode(rawText);
-
 	// Build FlatBuffers WorkerLine
 	const builder = new flatbuffers.Builder(1024);
 	const relayOffset = WorkerMessages.RelayRef.createRelayRef(builder, builder.createString(url));

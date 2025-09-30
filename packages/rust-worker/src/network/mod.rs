@@ -31,6 +31,7 @@ struct Sub {
     buffer: SharedArrayBuffer,
     relay_urls: Vec<String>,
     eosed: bool,
+    publish_id: Option<String>,
 }
 
 pub struct NetworkManager {
@@ -59,42 +60,71 @@ impl NetworkManager {
     }
 
     fn start_out_ring_reader(&self) {
+        use futures::{future::LocalBoxFuture, stream, StreamExt};
+
         let rings = self.rings.clone();
         let subs = self.subscriptions.clone();
 
+        // Drive a stream of jobs, executed with at most 3 in parallel.
         spawn_local(async move {
-            loop {
-                // Drain as many committed records as available this tick
-                let mut processed = 0;
-                while let Some(bytes) = rings.read_out() {
-                    match flatbuffers::root::<fb::WorkerLine>(&bytes) {
-                        Ok(line) => {
-                            if let Some(sub_id) = line.sub_id() {
-                                let (pipeline_arc, buffer, eosed) = {
-                                    let guard = subs.read().unwrap();
-                                    if let Some(sub) = guard.get(sub_id) {
-                                        (sub.pipeline.clone(), sub.buffer.clone(), sub.eosed)
-                                    } else {
-                                        // Unknown subscription id; skip
-                                        continue;
-                                    }
-                                };
-                                match line.kind() {
-                                    fb::MsgKind::Event => {
-                                        let raw_str = match std::str::from_utf8(line.raw().bytes())
-                                        {
-                                            Ok(s) => s,
-                                            Err(e) => {
-                                                info!("Invalid UTF-8 in raw: {}", e);
-                                                continue;
-                                            }
-                                        };
+            // Produce one job per WorkerLine, on demand.
+            let job_stream = stream::unfold((rings, subs), |(rings, subs)| async move {
+                loop {
+                    if let Some(bytes) = rings.read_out() {
+                        match flatbuffers::root::<fb::WorkerLine>(&bytes) {
+                            Ok(line) => {
+                                // We construct a job future for each line, capturing only owned data.
+                                if let Some(sub_id) = line.sub_id() {
+                                    let (pipeline_arc, buffer, eosed, publish_id) = {
+                                        let guard = subs.read().unwrap();
+                                        if let Some(sub) = guard.get(sub_id) {
+                                            (
+                                                sub.pipeline.clone(),
+                                                sub.buffer.clone(),
+                                                sub.eosed,
+                                                sub.publish_id.clone(),
+                                            )
+                                        } else {
+                                            // Unknown subscription id; skip to next message
+                                            continue;
+                                        }
+                                    };
 
-                                        if let Some(parts) = extract_first_three(&raw_str) {
-                                            if let Some(event_raw) = parts[2] {
+                                    // Owned values for the job
+                                    let sub_id_owned = sub_id.to_owned();
+                                    let url_owned = line.relay().url().to_owned();
+
+                                    let job: LocalBoxFuture<'static, ()> = match line.kind() {
+                                        fb::MsgKind::Event => {
+                                            // Prepare owned event payload if present
+                                            let raw_str =
+                                                match std::str::from_utf8(line.raw().bytes()) {
+                                                    Ok(s) => s.to_owned(),
+                                                    Err(e) => {
+                                                        info!("Invalid UTF-8 in raw: {}", e);
+                                                        // No job to run; try next message
+                                                        continue;
+                                                    }
+                                                };
+
+                                            // Extract the event payload; if missing, skip
+                                            let event_raw = match extract_first_three(&raw_str)
+                                                .and_then(|parts| parts[2].map(|s| s.to_owned()))
+                                            {
+                                                Some(v) => v,
+                                                None => {
+                                                    // No event payload; try next message
+                                                    continue;
+                                                }
+                                            };
+
+                                            let pipeline_arc = pipeline_arc.clone();
+                                            let buffer = buffer.clone();
+                                            let eosed_flag = eosed;
+                                            Box::pin(async move {
                                                 let mut pipeline = pipeline_arc.lock().await;
                                                 if let Ok(Some(output)) =
-                                                    pipeline.process(event_raw).await
+                                                    pipeline.process(&event_raw).await
                                                 {
                                                     if SharedBufferManager::write_to_buffer(
                                                         &buffer, &output,
@@ -102,70 +132,89 @@ impl NetworkManager {
                                                     .await
                                                     .is_ok()
                                                     {
-                                                        if eosed {
+                                                        if eosed_flag {
                                                             post_worker_message(
-                                                                &JsValue::from_str(&sub_id),
+                                                                &JsValue::from_str(&sub_id_owned),
                                                             );
                                                         }
                                                     }
                                                 }
-                                            }
+                                            })
                                         }
-                                    }
-                                    fb::MsgKind::Notice => {
-                                        info!("Received notice: {:?}", line.relay().url());
-                                    }
-                                    fb::MsgKind::Eose => {
-                                        SharedBufferManager::send_connection_status(
-                                            &buffer,
-                                            line.relay().url(),
-                                            "EOSE",
-                                            "",
-                                        )
-                                        .await;
-                                        post_worker_message(&JsValue::from_str(&sub_id));
-                                        {
-                                            let mut guard = subs.write().unwrap();
-                                            if let Some(sub) = guard.get_mut(sub_id) {
-                                                sub.eosed = true;
-                                            }
+                                        fb::MsgKind::Eose => {
+                                            let buffer = buffer.clone();
+                                            let subs = subs.clone();
+                                            Box::pin(async move {
+                                                SharedBufferManager::send_connection_status(
+                                                    &buffer, &url_owned, "EOSE", "",
+                                                )
+                                                .await;
+                                                post_worker_message(&JsValue::from_str(
+                                                    &sub_id_owned,
+                                                ));
+                                                {
+                                                    let mut guard = subs.write().unwrap();
+                                                    if let Some(sub) = guard.get_mut(&sub_id_owned)
+                                                    {
+                                                        sub.eosed = true;
+                                                    }
+                                                }
+                                            })
                                         }
-                                    }
-                                    fb::MsgKind::Ok => {
-                                        info!("Publish {} OK", &sub_id);
-                                    }
-                                    fb::MsgKind::Closed => {
-                                        info!(
-                                            "Sub closed {}, on relay {:?}",
-                                            &sub_id,
-                                            line.relay().url()
-                                        );
-                                    }
-                                    fb::MsgKind::Auth => {
-                                        info!("Auth needed on relay: {:?}", line.relay().url());
-                                    }
-                                    _ => {
-                                        info!("Unknown WorkerLine kind");
-                                    }
+                                        fb::MsgKind::Ok => {
+                                            let buffer = buffer.clone();
+                                            let publish_id = publish_id.clone();
+                                            Box::pin(async move {
+                                                SharedBufferManager::send_connection_status(
+                                                    &buffer, &url_owned, "OK", "",
+                                                )
+                                                .await;
+                                                if let Some(ref pub_id) = publish_id {
+                                                    post_worker_message(&JsValue::from_str(pub_id));
+                                                }
+                                            })
+                                        }
+                                        fb::MsgKind::Notice => Box::pin(async move {
+                                            info!("Received notice: {:?}", &url_owned);
+                                        }),
+                                        fb::MsgKind::Closed => Box::pin(async move {
+                                            info!(
+                                                "Sub closed {}, on relay {:?}",
+                                                &sub_id_owned, &url_owned
+                                            );
+                                        }),
+                                        fb::MsgKind::Auth => Box::pin(async move {
+                                            info!("Auth needed on relay: {:?}", &url_owned);
+                                        }),
+                                        _ => Box::pin(async move {
+                                            info!("Unknown WorkerLine kind");
+                                        }),
+                                    };
+
+                                    // Yield one job; the stream will be polled again when a slot frees up.
+                                    return Some((job, (rings, subs)));
+                                } else {
+                                    // No sub_id; skip
+                                    continue;
                                 }
                             }
-
-                            // TODO: route to your pipeline or parser here
+                            Err(e) => {
+                                info!("Invalid WorkerLine: {}", e);
+                                // Skip and try to read the next one
+                                continue;
+                            }
                         }
-                        Err(e) => {
-                            info!("Invalid WorkerLine: {}", e);
-                        }
-                    }
-
-                    processed += 1;
-                    if processed >= 64 {
-                        break;
+                    } else {
+                        // No data currently available; brief sleep to avoid busy spinning
+                        TimeoutFuture::new(8).await;
+                        // Try reading again
+                        continue;
                     }
                 }
+            });
 
-                // Small sleep to avoid busy spinning
-                TimeoutFuture::new(if processed > 0 { 1 } else { 8 }).await;
-            }
+            // Execute up to 3 jobs at a time. A new job is pulled only when one finishes.
+            job_stream.for_each_concurrent(3, |job| job).await;
         });
     }
 
@@ -208,6 +257,7 @@ impl NetworkManager {
                 buffer: shared_buffer.clone(),
                 eosed: false,
                 relay_urls: relay_filters.keys().cloned().collect(),
+                publish_id: None,
             },
         );
 
@@ -262,12 +312,13 @@ impl NetworkManager {
             .await?;
 
         self.subscriptions.write().unwrap().insert(
-            publish_id.clone(),
+            event.id.to_string(),
             Sub {
                 pipeline: Arc::new(Mutex::new(Pipeline::new(vec![], "".to_string()).unwrap())),
                 buffer: shared_buffer.clone(),
                 eosed: false,
                 relay_urls: relays.clone(),
+                publish_id: Some(publish_id.clone()),
             },
         );
 
