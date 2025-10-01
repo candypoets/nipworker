@@ -60,7 +60,7 @@
     "vite-plugin-wasm": "^3.0.0"
   },
   "dependencies": {
-    "@candypoets/rust-worker": "0.0.53",
+    "@candypoets/rust-worker": "0.0.54",
     "@msgpack/msgpack": "^3.0.0",
     "flatbuffers": "^25.2.10",
     "msgpackr": "^1.11.5",
