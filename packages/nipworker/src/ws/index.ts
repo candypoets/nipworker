@@ -82,7 +82,9 @@ export class NipWorker {
 		return shortId.substring(0, 63);
 	}
 
-	constructor(config: RelayConfig, scale = 2) {
+	constructor(config: RelayConfig, scale = 1) {
+		const cores = navigator.hardwareConcurrency ?? 1;
+		console.log('cores', cores);
 		for (let i = 0; i < scale; i++) {
 			this.inRings.push(new SharedArrayBuffer(1 * 1024 * 1024)); // 1MB
 			this.outRings.push(new SharedArrayBuffer(5 * 1024 * 1024)); // 5MB
