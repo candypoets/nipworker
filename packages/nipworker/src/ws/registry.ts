@@ -94,6 +94,9 @@ export class ConnectionRegistry {
 			conn = new RelayConnection(url, this.config);
 			this.connections.set(url, conn);
 			conn.connect(); // fire-and-forget
+		} else if (conn.getStatus() !== ConnectionStatus.Ready) {
+			// nudge reconnect on existing connection
+			conn.connect();
 		}
 
 		if (conn.getStatus() !== ConnectionStatus.Ready) {
@@ -131,19 +134,26 @@ export class ConnectionRegistry {
 		else if (kind === 'CLOSE') this.bumpCount(url, -1);
 	}
 
+	private async sendAllFramesToRelay(url: string, frames: string[]): Promise<void> {
+		for (const frame of frames) {
+			await this.sendFrame(url, frame);
+		}
+	}
+
 	async sendToRelays(relays: string[], frames: string[]): Promise<void> {
+		const tasks: Promise<void>[] = [];
+
 		for (const url of relays) {
 			if (this.disabledRelays.has(url) || this.isCoolingDown(url)) continue;
 
-			try {
-				for (const frame of frames) {
-					await this.sendFrame(url, frame);
-				}
-			} catch (error) {
-				console.error(`[registry] failed to send to ${url}:`, error);
-				// continue to next relay
-			}
+			tasks.push(
+				this.sendAllFramesToRelay(url, frames).catch((error) => {
+					console.error(`[registry] failed to send to ${url}:`, error);
+				})
+			);
 		}
+
+		await Promise.allSettled(tasks);
 	}
 
 	async disconnect(url: string): Promise<void> {

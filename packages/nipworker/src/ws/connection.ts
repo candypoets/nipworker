@@ -3,12 +3,12 @@ import { ConnectionStatus, RelayConfig, RelayStats } from './types';
 // Callback invoked for every incoming websocket text frame
 export type MessageHandler = (
 	url: string,
-	kind: number, // 1=EVENT, 2=EOSE, 3=OK, 4=CLOSED, 5=NOTICE, 6=AUTH, 0=UNKNOWN
 	subId: string | null, // present for EVENT/EOSE/CLOSED
 	rawText: string
 ) => void;
 
 export class RelayConnection {
+	private wantReconnect = true;
 	private url: string;
 	private config: RelayConfig;
 	private status: ConnectionStatus = ConnectionStatus.Closed;
@@ -128,9 +128,9 @@ export class RelayConnection {
 
 				if (typeof event.data === 'string') {
 					const rawText = event.data;
-					const { kind, subId } = this.shallowScan(rawText);
+					const subId = this.extractSubId(rawText);
 					if (this.messageHandler) {
-						this.messageHandler(this.url, kind, subId, rawText);
+						this.messageHandler(this.url, subId, rawText);
 					}
 				}
 			};
@@ -154,7 +154,7 @@ export class RelayConnection {
 				}
 			}, this.config.connectTimeoutMs);
 
-			signal.addEventListener('abort', () => {
+			const onAbort = () => {
 				clearTimeout(to);
 				cleanup();
 				try {
@@ -162,8 +162,10 @@ export class RelayConnection {
 				} catch {}
 				this.status = ConnectionStatus.Closed;
 				this.resolveReady(false);
-				this.scheduleReconnect();
-			});
+				if (this.wantReconnect) this.scheduleReconnect(); // guard here
+			};
+
+			signal.addEventListener('abort', onAbort);
 		} catch {
 			this.status = ConnectionStatus.Closed;
 			this.resolveReady(false);
@@ -200,6 +202,7 @@ export class RelayConnection {
 	}
 
 	async close(): Promise<void> {
+		this.wantReconnect = false;
 		if (this.abortController) this.abortController.abort();
 		if (this.reconnectTimer) {
 			clearTimeout(this.reconnectTimer);
@@ -242,6 +245,7 @@ export class RelayConnection {
 	}
 
 	private scheduleReconnect(): void {
+		if (!this.wantReconnect) return;
 		if (this.status !== ConnectionStatus.Closed || !this.config.retry?.baseMs) return;
 
 		const cap = this.config.maxReconnectAttempts ?? 2;
@@ -268,40 +272,48 @@ export class RelayConnection {
 		}, delay) as unknown as number;
 	}
 
-	// Efficient shallow scan for kind+subId
-	private shallowScan(s: string): { kind: number; subId: string | null } {
+	private extractSubId(s: string): string | null {
 		let i = 0;
 		const n = s.length;
-		while (i < n && s.charCodeAt(i) <= 32) i++;
-		if (i >= n || s[i] !== '[') return { kind: 0, subId: null };
-		i++;
-		while (i < n && s.charCodeAt(i) <= 32) i++;
-		if (i >= n || s[i] !== '"') return { kind: 0, subId: null };
-		i++;
-		let start = i;
-		while (i < n && s[i] !== '"') i++;
-		const kindStr = s.slice(start, i).toUpperCase();
-		i++;
-		let kind = 0;
-		if (kindStr === 'EVENT') kind = 1;
-		else if (kindStr === 'EOSE') kind = 2;
-		else if (kindStr === 'OK') kind = 3;
-		else if (kindStr === 'CLOSED') kind = 4;
-		else if (kindStr === 'NOTICE') kind = 5;
-		else if (kindStr === 'AUTH') kind = 6;
 
-		if (kind === 1 || kind === 2 || kind === 3 || kind === 4) {
-			while (i < n && s[i] !== ',') i++;
-			if (i < n && s[i] === ',') i++;
-			while (i < n && s.charCodeAt(i) <= 32) i++;
-			if (i < n && s[i] === '"') {
-				i++;
-				start = i;
-				while (i < n && s[i] !== '"') i++;
-				const subId = s.slice(start, i);
-				return { kind, subId };
-			}
+		// Skip leading whitespace
+		while (i < n && s.charCodeAt(i) <= 32) i++;
+		if (i >= n || s[i] !== '[') return null;
+		i++;
+
+		// Skip whitespace before first element
+		while (i < n && s.charCodeAt(i) <= 32) i++;
+		if (i >= n) return null;
+
+		// Skip first element (kind or similar)
+		if (s[i] === '"') {
+			// Fast-skip a quoted string (no escape handling, consistent with existing code)
+			i++;
+			while (i < n && s[i] !== '"') i++;
+			if (i >= n) return null;
+			i++; // past closing quote
+		} else {
+			// Non-quoted first element; skip until comma or end of array
+			while (i < n && s[i] !== ',' && s[i] !== ']') i++;
 		}
-		return { kind, subId: null };
+
+		// Move to the comma after first element
+		while (i < n && s[i] !== ',') i++;
+		if (i >= n || s[i] !== ',') return null;
+		i++; // skip comma
+
+		// Skip whitespace before second element
+		while (i < n && s.charCodeAt(i) <= 32) i++;
+		if (i >= n) return null;
+
+		// Extract second element only if it's a quoted string
+		if (s[i] === '"') {
+			i++;
+			const start = i;
+			while (i < n && s[i] !== '"') i++;
+			if (i > n) return null;
+			return s.slice(start, i);
+		}
+		return null;
 	}
 }

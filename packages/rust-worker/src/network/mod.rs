@@ -41,6 +41,17 @@ pub struct NetworkManager {
     subscriptions: Arc<RwLock<FxHashMap<String, Sub>>>,
 }
 
+// Fast, zero-allocation unquote: removes a single pair of "..." if present.
+// Assumes no escaped quotes at the ends (which is true for standard JSON tokens).
+fn unquote_simple(s: &str) -> &str {
+    let b = s.as_bytes();
+    if b.len() >= 2 && b.first() == Some(&b'"') && b.last() == Some(&b'"') {
+        &s[1..b.len() - 1]
+    } else {
+        s
+    }
+}
+
 impl NetworkManager {
     pub fn new(database: Arc<NostrDB>, parser: Arc<Parser>, rings: WsRings) -> Self {
         let publish_manager = publish::PublishManager::new(database.clone(), parser.clone());
@@ -71,143 +82,207 @@ impl NetworkManager {
             let job_stream = stream::unfold((rings, subs), |(rings, subs)| async move {
                 loop {
                     if let Some(bytes) = rings.read_out() {
-                        match flatbuffers::root::<fb::WorkerLine>(&bytes) {
-                            Ok(line) => {
-                                // We construct a job future for each line, capturing only owned data.
-                                if let Some(sub_id) = line.sub_id() {
-                                    let (pipeline_arc, buffer, eosed, publish_id) = {
-                                        let guard = subs.read().unwrap();
-                                        if let Some(sub) = guard.get(sub_id) {
-                                            (
-                                                sub.pipeline.clone(),
-                                                sub.buffer.clone(),
-                                                sub.eosed,
-                                                sub.publish_id.clone(),
-                                            )
-                                        } else {
-                                            // Unknown subscription id; skip to next message
-                                            continue;
-                                        }
-                                    };
+                        // Decode tiny header: [u16 url_len][url][u32 raw_len][raw] (big-endian)
+                        if bytes.len() < 2 {
+                            info!("hoy");
+                            // Not enough bytes to read url_len
+                            continue;
+                        }
+                        let url_len = u16::from_be_bytes([bytes[0], bytes[1]]) as usize;
+                        let mut off = 2usize;
 
-                                    // Owned values for the job
-                                    let sub_id_owned = sub_id.to_owned();
-                                    let url_owned = line.relay().url().to_owned();
+                        if bytes.len() < off + url_len + 4 {
+                            info!("hay");
+                            // Not enough bytes for url + raw_len
+                            continue;
+                        }
 
-                                    let job: LocalBoxFuture<'static, ()> = match line.kind() {
-                                        fb::MsgKind::Event => {
-                                            // Prepare owned event payload if present
-                                            let raw_str =
-                                                match std::str::from_utf8(line.raw().bytes()) {
-                                                    Ok(s) => s.to_owned(),
-                                                    Err(e) => {
-                                                        info!("Invalid UTF-8 in raw: {}", e);
-                                                        // No job to run; try next message
-                                                        continue;
-                                                    }
-                                                };
+                        // URL
+                        let url_bytes = &bytes[off..off + url_len];
+                        off += url_len;
+                        let url_owned = match std::str::from_utf8(url_bytes) {
+                            Ok(s) => s.to_owned(),
+                            Err(e) => {
+                                info!("Invalid UTF-8 in url: {}", e);
+                                continue;
+                            }
+                        };
 
-                                            // Extract the event payload; if missing, skip
-                                            let event_raw = match extract_first_three(&raw_str)
-                                                .and_then(|parts| parts[2].map(|s| s.to_owned()))
-                                            {
-                                                Some(v) => v,
-                                                None => {
-                                                    // No event payload; try next message
-                                                    continue;
-                                                }
-                                            };
+                        // RAW length and bytes
+                        let raw_len = u32::from_be_bytes([
+                            bytes[off],
+                            bytes[off + 1],
+                            bytes[off + 2],
+                            bytes[off + 3],
+                        ]) as usize;
+                        off += 4;
 
-                                            let pipeline_arc = pipeline_arc.clone();
-                                            let buffer = buffer.clone();
-                                            let eosed_flag = eosed;
-                                            Box::pin(async move {
-                                                let mut pipeline = pipeline_arc.lock().await;
-                                                if let Ok(Some(output)) =
-                                                    pipeline.process(&event_raw).await
-                                                {
-                                                    if SharedBufferManager::write_to_buffer(
-                                                        &buffer, &output,
-                                                    )
-                                                    .await
-                                                    .is_ok()
-                                                    {
-                                                        if eosed_flag {
-                                                            post_worker_message(
-                                                                &JsValue::from_str(&sub_id_owned),
-                                                            );
-                                                        }
-                                                    }
-                                                }
-                                            })
-                                        }
-                                        fb::MsgKind::Eose => {
-                                            let buffer = buffer.clone();
-                                            let subs = subs.clone();
-                                            Box::pin(async move {
-                                                SharedBufferManager::send_connection_status(
-                                                    &buffer, &url_owned, "EOSE", "",
-                                                )
-                                                .await;
+                        if bytes.len() < off + raw_len {
+                            info!("invalid payload");
+                            // Not enough bytes for raw payload
+                            continue;
+                        }
+                        let raw_bytes = &bytes[off..off + raw_len];
+
+                        // Convert raw to &str (json array like ["EVENT","sub", {...}] etc.)
+                        let raw_str = match std::str::from_utf8(raw_bytes) {
+                            Ok(s) => s.to_owned(),
+                            Err(e) => {
+                                info!("Invalid UTF-8 in raw: {}", e);
+                                continue;
+                            }
+                        };
+
+                        // Shallow-parse kind and subId using your existing helper.
+                        // Expected: parts[0] = kind string, parts[1] = subId (if present), parts[2] = payload (if present)
+                        let parts = match extract_first_three(&raw_str) {
+                            Some(p) => p,
+                            None => {
+                                info!("invalid array");
+                                // Not a valid top-level array
+                                continue;
+                            }
+                        };
+
+                        // After: let parts = match extract_first_three(&raw_str) { ... };
+
+                        // Clean tokens returned by the shallow scanner (they include surrounding quotes)
+                        let kind_tok_raw = parts[0].unwrap_or("");
+                        let kind_tok = unquote_simple(kind_tok_raw);
+
+                        let sub_id_raw = match parts[1] {
+                            Some(s) => s,
+                            None => {
+                                // If you want to handle NOTICE/AUTH/etc. without sub_id, branch here instead of continue.
+                                continue;
+                            }
+                        };
+                        let sub_id_clean = unquote_simple(sub_id_raw);
+
+                        // Resolve subscription context using cleaned sub_id
+                        let (pipeline_arc, buffer, eosed, publish_id) = {
+                            let guard = subs.read().unwrap();
+                            if let Some(sub) = guard.get(sub_id_clean) {
+                                (
+                                    sub.pipeline.clone(),
+                                    sub.buffer.clone(),
+                                    sub.eosed,
+                                    sub.publish_id.clone(),
+                                )
+                            } else {
+                                // Log cleaned vs raw for diagnostics
+                                info!(
+                                    "unknown subId: {} (raw token: {})",
+                                    sub_id_clean, sub_id_raw
+                                );
+                                continue;
+                            }
+                        };
+
+                        // Now branch on cleaned kind
+                        let url_owned = url_owned; // already owned from earlier
+                        let sub_id_owned = sub_id_clean.to_owned();
+
+                        let job: LocalBoxFuture<'static, ()> = match kind_tok
+                            .to_ascii_uppercase()
+                            .as_str()
+                        {
+                            "EVENT" => {
+                                // Extract the event payload (3rd element) as before
+                                let event_raw = match extract_first_three(&raw_str)
+                                    .and_then(|p| p[2].map(|s| s.to_owned()))
+                                {
+                                    Some(v) => v,
+                                    None => continue,
+                                };
+
+                                let pipeline_arc = pipeline_arc.clone();
+                                let buffer = buffer.clone();
+                                let eosed_flag = eosed;
+                                Box::pin(async move {
+                                    let mut pipeline = pipeline_arc.lock().await;
+                                    if let Ok(Some(output)) = pipeline.process(&event_raw).await {
+                                        if SharedBufferManager::write_to_buffer(&buffer, &output)
+                                            .await
+                                            .is_ok()
+                                        {
+                                            if eosed_flag {
                                                 post_worker_message(&JsValue::from_str(
                                                     &sub_id_owned,
                                                 ));
-                                                {
-                                                    let mut guard = subs.write().unwrap();
-                                                    if let Some(sub) = guard.get_mut(&sub_id_owned)
-                                                    {
-                                                        sub.eosed = true;
-                                                    }
-                                                }
-                                            })
+                                            }
                                         }
-                                        fb::MsgKind::Ok => {
-                                            let buffer = buffer.clone();
-                                            let publish_id = publish_id.clone();
-                                            Box::pin(async move {
-                                                SharedBufferManager::send_connection_status(
-                                                    &buffer, &url_owned, "OK", "",
-                                                )
-                                                .await;
-                                                if let Some(ref pub_id) = publish_id {
-                                                    post_worker_message(&JsValue::from_str(pub_id));
-                                                }
-                                            })
+                                    }
+                                })
+                            }
+                            "EOSE" => {
+                                let buffer = buffer.clone();
+                                let url_owned = url_owned.clone();
+                                let sub_id_owned = sub_id_owned.clone();
+                                let subs = subs.clone();
+                                Box::pin(async move {
+                                    SharedBufferManager::send_connection_status(
+                                        &buffer, &url_owned, "EOSE", "",
+                                    )
+                                    .await;
+                                    post_worker_message(&JsValue::from_str(&sub_id_owned));
+                                    {
+                                        let mut guard = subs.write().unwrap();
+                                        if let Some(sub) = guard.get_mut(&sub_id_owned) {
+                                            sub.eosed = true;
                                         }
-                                        fb::MsgKind::Notice => Box::pin(async move {
-                                            info!("Received notice: {:?}", &url_owned);
-                                        }),
-                                        fb::MsgKind::Closed => Box::pin(async move {
-                                            info!(
-                                                "Sub closed {}, on relay {:?}",
-                                                &sub_id_owned, &url_owned
-                                            );
-                                        }),
-                                        fb::MsgKind::Auth => Box::pin(async move {
-                                            info!("Auth needed on relay: {:?}", &url_owned);
-                                        }),
-                                        _ => Box::pin(async move {
-                                            info!("Unknown WorkerLine kind");
-                                        }),
-                                    };
+                                    }
+                                })
+                            }
+                            "OK" => {
+                                let buffer = buffer.clone();
+                                let url_owned = url_owned.clone();
+                                let publish_id = publish_id.clone();
+                                Box::pin(async move {
+                                    SharedBufferManager::send_connection_status(
+                                        &buffer, &url_owned, "OK", "",
+                                    )
+                                    .await;
+                                    if let Some(ref pub_id) = publish_id {
+                                        post_worker_message(&JsValue::from_str(pub_id));
+                                    }
+                                })
+                            }
+                            "NOTICE" => {
+                                let url_owned = url_owned.clone();
+                                Box::pin(async move {
+                                    info!("Received notice: {:?}", &url_owned);
+                                })
+                            }
+                            "CLOSED" => {
+                                let url_owned = url_owned.clone();
+                                let sub_id_owned = sub_id_owned.clone();
+                                Box::pin(async move {
+                                    info!(
+                                        "Sub closed {}, on relay {:?}",
+                                        &sub_id_owned, &url_owned
+                                    );
+                                })
+                            }
+                            "AUTH" => {
+                                let url_owned = url_owned.clone();
+                                Box::pin(async move {
+                                    info!("Auth needed on relay: {:?}", &url_owned);
+                                })
+                            }
+                            _ => Box::pin(async move {
+                                // info!(
+                                //     "Unknown message kind in raw payload (cleaned kind: {})",
+                                //     kind_tok
+                                // );
+                            }),
+                        };
 
-                                    // Yield one job; the stream will be polled again when a slot frees up.
-                                    return Some((job, (rings, subs)));
-                                } else {
-                                    // No sub_id; skip
-                                    continue;
-                                }
-                            }
-                            Err(e) => {
-                                info!("Invalid WorkerLine: {}", e);
-                                // Skip and try to read the next one
-                                continue;
-                            }
-                        }
+                        // Yield one job; the stream will be polled again when a slot frees up.
+                        return Some((job, (rings, subs)));
                     } else {
                         // No data currently available; brief sleep to avoid busy spinning
                         TimeoutFuture::new(8).await;
-                        // Try reading again
                         continue;
                     }
                 }
@@ -260,6 +335,8 @@ impl NetworkManager {
                 publish_id: None,
             },
         );
+
+        info!("writing sub_id: {}", subscription_id.clone());
 
         // Construct and write one REQ frame per relay group:
         // ["REQ", subscription_id, ...filters]

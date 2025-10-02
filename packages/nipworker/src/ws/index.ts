@@ -5,42 +5,41 @@ import { MsgKind, RelayConfig } from 'src/ws/types';
 import { ConnectionRegistry } from './registry';
 import { NostrManager } from 'src/manager';
 
+// Reuse encoder and cache URL bytes to avoid per-message URL encoding
+const __encoder = new TextEncoder();
+const __urlBytesCache = new Map<string, Uint8Array>();
+
+function __getUrlBytes(url: string): Uint8Array {
+	const cached = __urlBytesCache.get(url);
+	if (cached) return cached;
+	const bytes = __encoder.encode(url);
+	__urlBytesCache.set(url, bytes);
+	return bytes;
+}
+
 // Message handler for connections: builds FlatBuffers WorkerLine and writes to output ring
-function handleIncomingMessage(
-	outputRing: ByteRingBuffer,
-	url: string,
-	kind: MsgKind,
-	subId: string | null,
-	rawText: string
-): void {
-	const encoder = new TextEncoder();
-	const rawBytes = encoder.encode(rawText);
-	// Build FlatBuffers WorkerLine
-	const builder = new flatbuffers.Builder(1024);
-	const relayOffset = WorkerMessages.RelayRef.createRelayRef(builder, builder.createString(url));
-	const kindEnum = kind;
+function handleIncomingMessage(outputRing: ByteRingBuffer, url: string, rawText: string): void {
+	// Encode URL once (cached) and rawText once
+	const urlBytes = __getUrlBytes(url);
+	const rawBytes = __encoder.encode(rawText);
 
-	let subIdOffset: flatbuffers.Offset | null = null;
-	if (subId) {
-		subIdOffset = builder.createString(subId);
-	}
+	// Envelope: [u16 urlLen][url][u32 rawLen][raw]
+	const totalLen = 2 + urlBytes.length + 4 + rawBytes.length;
+	const out = new Uint8Array(totalLen);
+	const view = new DataView(out.buffer, out.byteOffset, out.byteLength);
 
-	const rawOffset = builder.createByteVector(rawBytes);
+	let o = 0;
+	view.setUint16(o, urlBytes.length, false);
+	o += 2; // big-endian
+	out.set(urlBytes, o);
+	o += urlBytes.length;
 
-	WorkerMessages.WorkerLine.startWorkerLine(builder);
-	WorkerMessages.WorkerLine.addRelay(builder, relayOffset);
-	WorkerMessages.WorkerLine.addKind(builder, kindEnum);
-	if (subIdOffset) {
-		WorkerMessages.WorkerLine.addSubId(builder, subIdOffset);
-	}
-	WorkerMessages.WorkerLine.addRaw(builder, rawOffset);
-	const lineOffset = WorkerMessages.WorkerLine.endWorkerLine(builder);
+	view.setUint32(o, rawBytes.length, false);
+	o += 4; // big-endian
+	out.set(rawBytes, o);
 
-	builder.finish(lineOffset);
-	const fbBytes = new Uint8Array(builder.asUint8Array());
-
-	// Write to output ring
-	outputRing.write(fbBytes);
+	// Single write to the ring buffer
+	outputRing.write(out);
 }
 
 export class NipWorker {
@@ -70,6 +69,20 @@ export class NipWorker {
 		return Math.abs(hash) % this.managers.length;
 	}
 
+	// Somewhere in the class:
+	private subIdToRing = new Map<string, ByteRingBuffer>();
+
+	private getOutRingForSubId(subId: string): ByteRingBuffer {
+		let ring = this.subIdToRing.get(subId);
+		if (ring) return ring;
+
+		// Fallback: compute once, then cache
+		const idx = this.hashSubId(subId);
+		ring = this.outputRings[idx] as ByteRingBuffer;
+		this.subIdToRing.set(subId, ring);
+		return ring;
+	}
+
 	public createShortId(input: string): string {
 		if (input.length < 64) return input;
 		let hash = 0;
@@ -82,7 +95,7 @@ export class NipWorker {
 		return shortId.substring(0, 63);
 	}
 
-	constructor(config: RelayConfig, scale = 1) {
+	constructor(config: RelayConfig, scale = 3) {
 		const cores = navigator.hardwareConcurrency ?? 1;
 		console.log('cores', cores);
 		for (let i = 0; i < scale; i++) {
@@ -106,14 +119,9 @@ export class NipWorker {
 		this.registry = new ConnectionRegistry(config || {});
 
 		// Set up message handler for all future connections
-		const globalMessageHandler = (
-			url: string,
-			kind: MsgKind,
-			subId: string | null,
-			rawText: string
-		) => {
-			const outRing = this.outputRings[this.hashSubId(subId || '')] as ByteRingBuffer;
-			handleIncomingMessage(outRing, url, kind, subId, rawText);
+		const globalMessageHandler = (url: string, subId: string | null, rawText: string) => {
+			const outRing = this.getOutRingForSubId(subId as string);
+			handleIncomingMessage(outRing, url, rawText);
 		};
 
 		// Override ensureConnection to set handler
