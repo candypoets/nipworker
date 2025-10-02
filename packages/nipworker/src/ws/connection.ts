@@ -95,6 +95,8 @@ export class RelayConnection {
 			};
 
 			const onOpen = () => {
+				// Clear connect timeout
+				clearTimeout(to);
 				// Success: reset attempts and flags
 				this.status = ConnectionStatus.Ready;
 				this.attempts = 0;
@@ -105,6 +107,8 @@ export class RelayConnection {
 			};
 
 			const onClose = (ev: CloseEvent) => {
+				// Clear connect timeout
+				clearTimeout(to);
 				cleanup();
 				this.status = ConnectionStatus.Closed;
 				this.resolveReady(false);
@@ -114,6 +118,8 @@ export class RelayConnection {
 			};
 
 			const onError = (_ev: Event) => {
+				// Clear connect timeout
+				clearTimeout(to);
 				// Treat like close; don’t throw
 				cleanup();
 				this.status = ConnectionStatus.Closed;

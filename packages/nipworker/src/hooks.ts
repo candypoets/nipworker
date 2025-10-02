@@ -2,7 +2,7 @@ import { Event, EventTemplate, NostrEvent } from 'nostr-tools';
 import { SharedBufferReader } from 'src/lib/SharedBuffer';
 import { WorkerMessage } from './generated/nostr/fb';
 import { RequestObject, type SubscriptionConfig } from './manager';
-import { nipWorker } from './ws';
+import { nipWorker } from '.';
 
 export function useSubscription(
 	subId: string,
@@ -14,6 +14,7 @@ export function useSubscription(
 		console.warn('useSharedSubscription: No subscription ID provided');
 		return () => {};
 	}
+
 	let buffer: SharedArrayBuffer | null = null;
 	let lastReadPos: number = 4;
 	let running: boolean = true;
@@ -34,6 +35,7 @@ export function useSubscription(
 	};
 
 	manager.ready.then(() => {
+		nipWorker.resetInputLoopBackoff();
 		buffer = manager.subscribe(subId, requests, options);
 		hasSubscribed = true;
 	});

@@ -3,7 +3,6 @@ import wasmAsset from '@candypoets/rust-worker/rust_worker_bg.wasm?url';
 import type { EventTemplate, NostrEvent } from 'nostr-tools';
 
 import { SharedBufferReader } from 'src/lib/SharedBuffer';
-import { nipWorker } from 'src/ws';
 
 import * as flatbuffers from 'flatbuffers';
 import { RequestObject, SubscriptionConfig } from 'src/types';
@@ -265,7 +264,7 @@ export class NostrManager {
 		const serializedMessage = builder.asUint8Array();
 
 		try {
-			nipWorker.resetInputLoopBackoff();
+			// nipWorker.resetInputLoopBackoff();
 			this.worker.postMessage({
 				serializedMessage,
 				sharedBuffer: buffer
@@ -319,7 +318,7 @@ export class NostrManager {
 			builder.finish(mainOffset);
 			const serializedMessage = builder.asUint8Array();
 
-			nipWorker.resetInputLoopBackoff();
+			// nipWorker.resetInputLoopBackoff();
 			this.worker.postMessage({ serializedMessage, sharedBuffer: buffer });
 
 			this.publishes.set(publish_id, { buffer });
@@ -408,7 +407,7 @@ export class NostrManager {
 				const mainOffset = mainT.pack(builder);
 				builder.finish(mainOffset);
 				const serializedMessage = builder.asUint8Array();
-				nipWorker.resetInputLoopBackoff();
+				// nipWorker.resetInputLoopBackoff();
 				this.worker.postMessage(serializedMessage);
 				this.subscriptions.delete(subId);
 			}
