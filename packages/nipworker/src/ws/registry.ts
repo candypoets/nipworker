@@ -142,7 +142,6 @@ export class ConnectionRegistry {
 
 	async sendToRelays(relays: string[], frames: string[]): Promise<void> {
 		const tasks: Promise<void>[] = [];
-		console.log(relays, frames);
 		for (const url of relays) {
 			if (this.disabledRelays.has(url) || this.isCoolingDown(url)) continue;
 

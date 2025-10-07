@@ -1,10 +1,6 @@
 import { NostrManager } from 'src/manager';
 import { initializeRingHeader } from 'src/ws/ring-buffer';
 
-import WsWorker from './ws/index.ts?worker';
-
-// import wsWorker from 'src/ws/index.ts?worker';
-
 export * from 'src/manager';
 
 export class NipWorker {
@@ -14,26 +10,42 @@ export class NipWorker {
 	private worker: Worker;
 
 	private hashSubId(sub_id: string): number {
+		const target = sub_id.includes('_') ? (sub_id.split('_')[1] ?? '') : sub_id;
 		let hash = 0;
-		for (let i = 0; i < sub_id.length; i++) {
-			hash = (hash << 5) - hash + sub_id.charCodeAt(i);
+		for (let i = 0; i < target.length; i++) {
+			hash = (hash << 5) - hash + target.charCodeAt(i);
 		}
 		return Math.abs(hash) % this.managers.length;
 	}
 
 	public createShortId(input: string): string {
-		if (input.length < 64) return input;
-		let hash = 0;
-		for (let i = 0; i < input.length; i++) {
-			const char = input.charCodeAt(i);
-			hash = (hash << 5) - hash + char;
-			hash = hash & hash;
+		const maxTotalLength = 63;
+		const computeHash = (value: string, limit: number): string => {
+			let hash = 0;
+			for (let i = 0; i < value.length; i++) {
+				const char = value.charCodeAt(i);
+				hash = (hash << 5) - hash + char;
+				hash = hash & hash;
+			}
+			const short = Math.abs(hash).toString(36);
+			return short.substring(0, Math.max(1, limit));
+		};
+
+		if (input.includes('_')) {
+			const [firstPart, ...rest] = input.split('_');
+			const secondPart = rest.join('_');
+			const partLimit = Math.max(1, Math.floor((maxTotalLength - 1) / 2));
+			const firstShort = computeHash(firstPart ?? '', partLimit);
+			const secondShort = computeHash(secondPart ?? '', partLimit);
+			const result = `${firstShort}_${secondShort}`;
+			return result.length > maxTotalLength ? result.substring(0, maxTotalLength) : result;
 		}
-		const shortId = Math.abs(hash).toString(36);
-		return shortId.substring(0, 63);
+
+		if (input.length < 64) return input;
+		return computeHash(input, maxTotalLength);
 	}
 
-	constructor(config: any = {}, scale = 3) {
+	constructor(config: any = {}, scale = 2) {
 		for (let i = 0; i < scale; i++) {
 			const inRing = new SharedArrayBuffer(1 * 1024 * 1024); // 1MB
 			const outRing = new SharedArrayBuffer(5 * 1024 * 1024); // 5MB
@@ -85,7 +97,10 @@ export class NipWorker {
 	}
 
 	public getManager(subId: string): NostrManager {
-		subId = this.createShortId(subId);
+		if (subId?.length > 64) {
+			throw new Error('subId cannot exceed 64 characters');
+		}
+		// subId = this.createShortId(subId);
 		const hash = this.hashSubId(subId || '');
 		return this.managers[hash] as NostrManager;
 	}

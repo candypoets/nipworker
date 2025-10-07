@@ -76,10 +76,12 @@ const subIdToRing = new Map<string, ByteRingBuffer>();
 const decoder = new TextDecoder();
 
 function hashSubId(sub_id: string): number {
+	const target = sub_id.includes('_') ? (sub_id.split('_')[1] ?? '') : sub_id;
 	let hash = 0;
-	for (let i = 0; i < sub_id.length; i++) hash = (hash << 5) - hash + sub_id.charCodeAt(i);
+	for (let i = 0; i < target.length; i++) hash = (hash << 5) - hash + target.charCodeAt(i);
 	return Math.abs(hash) % outputRings.length;
 }
+
 function getOutRingForSubId(subId: string): ByteRingBuffer {
 	let ring = subIdToRing.get(subId);
 	if (ring) return ring;

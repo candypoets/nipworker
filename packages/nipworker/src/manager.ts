@@ -84,32 +84,58 @@ export class NostrManager {
 
 	public PERPETUAL_SUBSCRIPTIONS = ['notifications', 'starterpack'];
 
-	public ready: Promise<void>;
-
+	// In constructor, do NOT start init directly. Just set up ready lazily.
 	constructor(config: NostrManagerConfig) {
-		this.worker = this.createWorker();
+		this.config = config;
+		// Optionally prewarm, but at idle priority:
+		const prewarm = () => void this.init();
+		if ('requestIdleCallback' in window) {
+			(window as any).requestIdleCallback(prewarm, { timeout: 2000 });
+		} else {
+			setTimeout(prewarm, 1500);
+		}
+	}
 
+	private _ready: Promise<void> | null = null;
+	private config!: NostrManagerConfig;
+
+	private init(): Promise<void> {
+		if (this._ready) return this._ready;
+
+		this.worker = this.createWorker();
 		this.setupWorkerListener();
 
-		this.ready = (async () => {
+		this._ready = (async () => {
 			await ensureOriginalBuffer();
-
+			// Create a transferable copy for the worker to avoid an extra clone.
+			const wasmCopy = originalWasmBuffer!.slice(0);
 			this.worker.postMessage(
 				{
 					type: 'init',
 					payload: {
-						bufferKey: config.bufferKey,
-						maxBufferSize: config.maxBufferSize,
-						wasmBuffer: originalWasmBuffer,
-						inRing: config.inRing,
-						outRing: config.outRing
+						bufferKey: this.config.bufferKey,
+						maxBufferSize: this.config.maxBufferSize,
+						wasmBuffer: wasmCopy,
+						inRing: this.config.inRing,
+						outRing: this.config.outRing
 					}
-				}
-				// [inRing, outRing] // Transfer the copy (zero-copy to this worker)
+				},
+				// Transfer the wasm copy to the worker (no duplicate copy).
+				[wasmCopy]
 			);
-		})().catch((error) => {
-			console.error('Failed to initialize worker with WASM:', error);
-			// Optionally terminate: this.worker.terminate();
+		})();
+
+		return this._ready;
+	}
+
+	// Helper so all calls route through a single place and never race init:
+	private postToWorker(message: any, transfer?: Transferable[]) {
+		return this.init().then(() => {
+			if (transfer && transfer.length) {
+				this.worker.postMessage(message, transfer);
+			} else {
+				this.worker.postMessage(message);
+			}
 		});
 	}
 
@@ -265,10 +291,7 @@ export class NostrManager {
 
 		try {
 			// nipWorker.resetInputLoopBackoff();
-			this.worker.postMessage({
-				serializedMessage,
-				sharedBuffer: buffer
-			});
+			void this.postToWorker({ serializedMessage, sharedBuffer: buffer });
 
 			return buffer;
 		} catch (error) {
@@ -319,7 +342,7 @@ export class NostrManager {
 			const serializedMessage = builder.asUint8Array();
 
 			// nipWorker.resetInputLoopBackoff();
-			this.worker.postMessage({ serializedMessage, sharedBuffer: buffer });
+			this.postToWorker({ serializedMessage, sharedBuffer: buffer });
 
 			this.publishes.set(publish_id, { buffer });
 			return buffer;
@@ -330,27 +353,25 @@ export class NostrManager {
 	}
 
 	setSigner(name: string, secretKeyHex: string): void {
-		this.ready.then(() => {
-			console.log('setSigner', name, secretKeyHex);
+		console.log('setSigner', name, secretKeyHex);
 
-			// Create the PrivateKeyT object
-			const privateKeyT = new PrivateKeyT(this.textEncoder.encode(secretKeyHex));
+		// Create the PrivateKeyT object
+		const privateKeyT = new PrivateKeyT(this.textEncoder.encode(secretKeyHex));
 
-			// Create the SetSignerT object and set the union
-			const setSignerT = new SetSignerT(SignerType.PrivateKey, privateKeyT);
+		// Create the SetSignerT object and set the union
+		const setSignerT = new SetSignerT(SignerType.PrivateKey, privateKeyT);
 
-			// Create the MainMessageT with the properly constructed SetSignerT
-			const mainT = new MainMessageT(MainContent.SetSigner, setSignerT);
+		// Create the MainMessageT with the properly constructed SetSignerT
+		const mainT = new MainMessageT(MainContent.SetSigner, setSignerT);
 
-			// Serialize with FlatBuffers builder (unchanged)
-			const builder = new flatbuffers.Builder(2048);
-			const mainOffset = mainT.pack(builder);
-			builder.finish(mainOffset);
-			const serializedMessage = builder.asUint8Array();
+		// Serialize with FlatBuffers builder (unchanged)
+		const builder = new flatbuffers.Builder(2048);
+		const mainOffset = mainT.pack(builder);
+		builder.finish(mainOffset);
+		const serializedMessage = builder.asUint8Array();
 
-			this.worker.postMessage(serializedMessage);
-			this.signers.set(name, secretKeyHex);
-		});
+		void this.postToWorker(serializedMessage);
+		this.signers.set(name, secretKeyHex);
 	}
 
 	signEvent(event: EventTemplate, cb: (event: NostrEvent) => void) {
