@@ -37,7 +37,7 @@ export default defineConfig({
 				if (id.includes('@candypoets/rust-worker')) {
 					return true;
 				}
-				return ['@msgpack/msgpack', 'nostr-tools', 'msgpackr'].includes(id);
+				return ['flatbuffers', 'nostr-tools'].includes(id);
 			},
 			input: {
 				index: resolve(__dirname, 'src/index.ts'),

@@ -1,6 +1,6 @@
 /* Worker runtime (dedicated Web Worker, module) */
-import { ByteRingBuffer } from 'src/ws/ring-buffer';
-import { ConnectionRegistry } from 'src/ws/registry';
+import { ByteRingBuffer } from './ring-buffer';
+import { ConnectionRegistry } from './registry';
 
 const __encoder = new TextEncoder();
 const __urlBytesCache = new Map<string, Uint8Array>();
