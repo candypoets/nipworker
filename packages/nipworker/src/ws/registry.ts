@@ -129,19 +129,60 @@ export class ConnectionRegistry {
 		}
 	}
 
-	async sendToRelays(relays: string[], frames: string[]): Promise<void> {
-		const tasks: Promise<void>[] = [];
-		for (const url of relays) {
-			if (this.disabledRelays.has(url) || this.isCoolingDown(url)) continue;
+	async sendToRelays(
+		relays: string[],
+		frames: string[],
+		maxSuccesses = 5,
+		maxConcurrency = 5
+	): Promise<void> {
+		const available = relays.filter(
+			(url) => !this.disabledRelays.has(url) && !this.isCoolingDown(url)
+		);
 
-			tasks.push(
-				this.sendAllFramesToRelay(url, frames).catch((error) => {
-					console.error(`[registry] failed to send to ${url}:`, error);
-				})
-			);
-		}
+		const target = Math.min(maxSuccesses, available.length);
+		if (target === 0) return;
 
-		await Promise.allSettled(tasks);
+		let index = 0;
+		let successes = 0;
+		let inFlight = 0;
+
+		let resolveDone!: () => void;
+		const done = new Promise<void>((resolve) => {
+			resolveDone = resolve;
+		});
+
+		const maybeFinish = () => {
+			if (successes >= target || (index >= available.length && inFlight === 0)) {
+				resolveDone();
+				return true;
+			}
+			return false;
+		};
+
+		const launch = () => {
+			// Fill available “slots” up to maxConcurrency.
+			while (inFlight < maxConcurrency && index < available.length && successes < target) {
+				const url = available[index++];
+				inFlight++;
+
+				this.sendAllFramesToRelay(url, frames)
+					.then(() => {
+						successes++;
+					})
+					.catch(() => {
+						// ignore failures; just move on
+					})
+					.finally(() => {
+						inFlight--;
+						if (!maybeFinish()) {
+							launch(); // backfill the freed slot
+						}
+					});
+			}
+		};
+
+		launch();
+		await done;
 	}
 
 	async disconnect(url: string): Promise<void> {
