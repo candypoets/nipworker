@@ -6,6 +6,10 @@ import { ByteString } from "src/lib/ByteString";
 import * as flatbuffers from 'flatbuffers';
 
 import { DLEQProof, DLEQProofT } from '../../nostr/fb/dleqproof.js';
+import { HTLCWitness, HTLCWitnessT } from '../../nostr/fb/htlcwitness.js';
+import { P2PKWitness, P2PKWitnessT } from '../../nostr/fb/p2-pkwitness.js';
+import { Witness, unionToWitness, unionListToWitness } from '../../nostr/fb/witness.js';
+import { WitnessString, WitnessStringT } from '../../nostr/fb/witness-string.js';
 
 
 export class Proof implements flatbuffers.IUnpackableObject<ProofT> {
@@ -57,13 +61,23 @@ dleq(obj?:DLEQProof):DLEQProof|null {
   return offset ? (obj || new DLEQProof()).__init(this.bb!.__indirect(this.bb_pos + offset), this.bb!) : null;
 }
 
-version():number {
+witnessType():Witness {
   const offset = this.bb!.__offset(this.bb_pos, 14);
+  return offset ? this.bb!.readUint8(this.bb_pos + offset) : Witness.NONE;
+}
+
+witness<T extends flatbuffers.Table>(obj:any):any|null {
+  const offset = this.bb!.__offset(this.bb_pos, 16);
+  return offset ? this.bb!.__union(obj, this.bb_pos + offset) : null;
+}
+
+version():number {
+  const offset = this.bb!.__offset(this.bb_pos, 18);
   return offset ? this.bb!.readUint8(this.bb_pos + offset) : 0;
 }
 
 static startProof(builder:flatbuffers.Builder) {
-  builder.startObject(6);
+  builder.startObject(8);
 }
 
 static addAmount(builder:flatbuffers.Builder, amount:bigint) {
@@ -86,8 +100,16 @@ static addDleq(builder:flatbuffers.Builder, dleqOffset:flatbuffers.Offset) {
   builder.addFieldOffset(4, dleqOffset, 0);
 }
 
+static addWitnessType(builder:flatbuffers.Builder, witnessType:Witness) {
+  builder.addFieldInt8(5, witnessType, Witness.NONE);
+}
+
+static addWitness(builder:flatbuffers.Builder, witnessOffset:flatbuffers.Offset) {
+  builder.addFieldOffset(6, witnessOffset, 0);
+}
+
 static addVersion(builder:flatbuffers.Builder, version:number) {
-  builder.addFieldInt8(5, version, 0);
+  builder.addFieldInt8(7, version, 0);
 }
 
 static endProof(builder:flatbuffers.Builder):flatbuffers.Offset {
@@ -106,6 +128,12 @@ unpack(): ProofT {
     this.secret(),
     this.c(),
     (this.dleq() !== null ? this.dleq()!.unpack() : null),
+    this.witnessType(),
+    (() => {
+      const temp = unionToWitness(this.witnessType(), this.witness.bind(this));
+      if(temp === null) { return null; }
+      return temp.unpack()
+  })(),
     this.version()
   );
 }
@@ -117,6 +145,12 @@ unpackTo(_o: ProofT): void {
   _o.secret = this.secret();
   _o.c = this.c();
   _o.dleq = (this.dleq() !== null ? this.dleq()!.unpack() : null);
+  _o.witnessType = this.witnessType();
+  _o.witness = (() => {
+      const temp = unionToWitness(this.witnessType(), this.witness.bind(this));
+      if(temp === null) { return null; }
+      return temp.unpack()
+  })();
   _o.version = this.version();
 }
 }
@@ -128,6 +162,8 @@ constructor(
   public secret: ByteString|Uint8Array|null = null,
   public c: ByteString|Uint8Array|null = null,
   public dleq: DLEQProofT|null = null,
+  public witnessType: Witness = Witness.NONE,
+  public witness: HTLCWitnessT|P2PKWitnessT|WitnessStringT|null = null,
   public version: number = 0
 ){}
 
@@ -137,6 +173,7 @@ pack(builder:flatbuffers.Builder): flatbuffers.Offset {
   const secret = (this.secret !== null ? builder.createString(this.secret!) : 0);
   const c = (this.c !== null ? builder.createString(this.c!) : 0);
   const dleq = (this.dleq !== null ? this.dleq!.pack(builder) : 0);
+  const witness = builder.createObjectOffset(this.witness);
 
   Proof.startProof(builder);
   Proof.addAmount(builder, this.amount);
@@ -144,6 +181,8 @@ pack(builder:flatbuffers.Builder): flatbuffers.Offset {
   Proof.addSecret(builder, secret);
   Proof.addC(builder, c);
   Proof.addDleq(builder, dleq);
+  Proof.addWitnessType(builder, this.witnessType);
+  Proof.addWitness(builder, witness);
   Proof.addVersion(builder, this.version);
 
   return Proof.endProof(builder);

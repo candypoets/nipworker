@@ -77,6 +77,310 @@ impl DleqProof {
     }
 }
 
+/// P2PK witness
+#[derive(Debug, Clone, PartialEq)]
+pub struct P2PKWitness {
+    /// An array of signatures in hex format
+    pub signatures: Option<Vec<String>>,
+}
+
+/// HTLC witness
+#[derive(Debug, Clone, PartialEq)]
+pub struct HTLCWitness {
+    /// preimage
+    pub preimage: String,
+    /// An array of signatures in hex format
+    pub signatures: Option<Vec<String>>,
+}
+
+/// Witness enum
+#[derive(Debug, Clone, PartialEq)]
+pub enum Witness {
+    String(String),
+    P2PK(P2PKWitness),
+    HTLC(HTLCWitness),
+}
+
+impl P2PKWitness {
+    pub fn from_json(json: &str) -> Result<Self> {
+        let mut parser = BaseJsonParser::new(json.as_bytes());
+        parser.skip_whitespace();
+        parser.expect_byte(b'{')?;
+        let mut signatures = None;
+        while parser.pos < parser.bytes.len() {
+            parser.skip_whitespace();
+            if parser.peek() == b'}' {
+                parser.pos += 1;
+                break;
+            }
+            let key = parser.parse_string()?;
+            parser.skip_whitespace();
+            parser.expect_byte(b':')?;
+            parser.skip_whitespace();
+            match key {
+                "signatures" => {
+                    if parser.peek() == b'n' {
+                        parser.expect_byte(b'n')?;
+                        parser.expect_byte(b'u')?;
+                        parser.expect_byte(b'l')?;
+                        parser.expect_byte(b'l')?;
+                        signatures = None;
+                    } else {
+                        signatures = Some(Self::parse_string_array(&mut parser)?);
+                    }
+                }
+                _ => parser.skip_value()?,
+            }
+            parser.skip_comma_or_end()?;
+        }
+        Ok(P2PKWitness { signatures })
+    }
+
+    pub fn to_json(&self) -> String {
+        let mut result = String::new();
+        result.push('{');
+        if let Some(ref sigs) = self.signatures {
+            result.push_str(r#""signatures":["#);
+            for (i, sig) in sigs.iter().enumerate() {
+                if i > 0 {
+                    result.push(',');
+                }
+                result.push('"');
+                Self::escape_string_to(&mut result, sig);
+                result.push('"');
+            }
+            result.push(']');
+        } else {
+            result.push_str(r#""signatures":null"#);
+        }
+        result.push('}');
+        result
+    }
+
+    fn parse_string_array(parser: &mut BaseJsonParser) -> Result<Vec<String>> {
+        parser.expect_byte(b'[')?;
+        let mut array = Vec::new();
+        while parser.pos < parser.bytes.len() {
+            parser.skip_whitespace();
+            if parser.peek() == b']' {
+                parser.pos += 1;
+                break;
+            }
+            let value = parser.parse_string_unescaped()?;
+            array.push(value);
+            parser.skip_comma_or_end()?;
+        }
+        Ok(array)
+    }
+
+    fn escape_string_to(result: &mut String, s: &str) {
+        for ch in s.chars() {
+            match ch {
+                '\\' => result.push_str("\\\\"),
+                '"' => result.push_str("\\\""),
+                '\n' => result.push_str("\\n"),
+                '\r' => result.push_str("\\r"),
+                '\t' => result.push_str("\\t"),
+                other => result.push(other),
+            }
+        }
+    }
+}
+
+impl HTLCWitness {
+    pub fn from_json(json: &str) -> Result<Self> {
+        let mut parser = BaseJsonParser::new(json.as_bytes());
+        parser.skip_whitespace();
+        parser.expect_byte(b'{')?;
+        let mut preimage = String::new();
+        let mut signatures = None;
+        while parser.pos < parser.bytes.len() {
+            parser.skip_whitespace();
+            if parser.peek() == b'}' {
+                parser.pos += 1;
+                break;
+            }
+            let key = parser.parse_string()?;
+            parser.skip_whitespace();
+            parser.expect_byte(b':')?;
+            parser.skip_whitespace();
+            match key {
+                "preimage" => preimage = parser.parse_string_unescaped()?,
+                "signatures" => {
+                    if parser.peek() == b'n' {
+                        parser.expect_byte(b'n')?;
+                        parser.expect_byte(b'u')?;
+                        parser.expect_byte(b'l')?;
+                        parser.expect_byte(b'l')?;
+                        signatures = None;
+                    } else {
+                        signatures = Some(Self::parse_string_array(&mut parser)?);
+                    }
+                }
+                _ => parser.skip_value()?,
+            }
+            parser.skip_comma_or_end()?;
+        }
+        if preimage.is_empty() {
+            return Err(ParserError::InvalidFormat("Missing preimage".to_string()));
+        }
+        Ok(HTLCWitness {
+            preimage,
+            signatures,
+        })
+    }
+
+    pub fn to_json(&self) -> String {
+        let mut result = String::new();
+        result.push('{');
+        result.push_str(r#""preimage":""#);
+        Self::escape_string_to(&mut result, &self.preimage);
+        result.push('"');
+        if let Some(ref sigs) = self.signatures {
+            result.push_str(r#","signatures":["#);
+            for (i, sig) in sigs.iter().enumerate() {
+                if i > 0 {
+                    result.push(',');
+                }
+                result.push('"');
+                Self::escape_string_to(&mut result, sig);
+                result.push('"');
+            }
+            result.push(']');
+        } else {
+            result.push_str(r#","signatures":null"#);
+        }
+        result.push('}');
+        result
+    }
+
+    fn parse_string_array(parser: &mut BaseJsonParser) -> Result<Vec<String>> {
+        parser.expect_byte(b'[')?;
+        let mut array = Vec::new();
+        while parser.pos < parser.bytes.len() {
+            parser.skip_whitespace();
+            if parser.peek() == b']' {
+                parser.pos += 1;
+                break;
+            }
+            let value = parser.parse_string_unescaped()?;
+            array.push(value);
+            parser.skip_comma_or_end()?;
+        }
+        Ok(array)
+    }
+
+    fn escape_string_to(result: &mut String, s: &str) {
+        for ch in s.chars() {
+            match ch {
+                '\\' => result.push_str("\\\\"),
+                '"' => result.push_str("\\\""),
+                '\n' => result.push_str("\\n"),
+                '\r' => result.push_str("\\r"),
+                '\t' => result.push_str("\\t"),
+                other => result.push(other),
+            }
+        }
+    }
+}
+
+impl Witness {
+    pub fn from_json(json: &str) -> Result<Self> {
+        let mut parser = BaseJsonParser::new(json.as_bytes());
+        parser.skip_whitespace();
+        if parser.peek() == b'"' {
+            let s = parser.parse_string_unescaped()?;
+            Ok(Witness::String(s))
+        } else if parser.peek() == b'{' {
+            parser.expect_byte(b'{')?;
+            let mut preimage = None;
+            let mut signatures = None;
+            while parser.pos < parser.bytes.len() {
+                parser.skip_whitespace();
+                if parser.peek() == b'}' {
+                    parser.pos += 1;
+                    break;
+                }
+                let key = parser.parse_string()?;
+                parser.skip_whitespace();
+                parser.expect_byte(b':')?;
+                parser.skip_whitespace();
+                match key {
+                    "preimage" => preimage = Some(parser.parse_string_unescaped()?),
+                    "signatures" => {
+                        if parser.peek() == b'n' {
+                            parser.expect_byte(b'n')?;
+                            parser.expect_byte(b'u')?;
+                            parser.expect_byte(b'l')?;
+                            parser.expect_byte(b'l')?;
+                            signatures = None;
+                        } else {
+                            signatures = Some(Self::parse_string_array(&mut parser)?);
+                        }
+                    }
+                    _ => parser.skip_value()?,
+                }
+                parser.skip_comma_or_end()?;
+            }
+            if let Some(preimage) = preimage {
+                Ok(Witness::HTLC(HTLCWitness {
+                    preimage,
+                    signatures,
+                }))
+            } else {
+                Ok(Witness::P2PK(P2PKWitness { signatures }))
+            }
+        } else {
+            Err(ParserError::InvalidFormat(
+                "Invalid Witness JSON".to_string(),
+            ))
+        }
+    }
+
+    pub fn to_json(&self) -> String {
+        match self {
+            Witness::String(s) => {
+                let mut result = String::new();
+                result.push('"');
+                Self::escape_string_to(&mut result, s);
+                result.push('"');
+                result
+            }
+            Witness::P2PK(p) => p.to_json(),
+            Witness::HTLC(h) => h.to_json(),
+        }
+    }
+
+    fn parse_string_array(parser: &mut BaseJsonParser) -> Result<Vec<String>> {
+        parser.expect_byte(b'[')?;
+        let mut array = Vec::new();
+        while parser.pos < parser.bytes.len() {
+            parser.skip_whitespace();
+            if parser.peek() == b']' {
+                parser.pos += 1;
+                break;
+            }
+            let value = parser.parse_string_unescaped()?;
+            array.push(value);
+            parser.skip_comma_or_end()?;
+        }
+        Ok(array)
+    }
+
+    fn escape_string_to(result: &mut String, s: &str) {
+        for ch in s.chars() {
+            match ch {
+                '\\' => result.push_str("\\\\"),
+                '"' => result.push_str("\\\""),
+                '\n' => result.push_str("\\n"),
+                '\r' => result.push_str("\\r"),
+                '\t' => result.push_str("\\t"),
+                other => result.push(other),
+            }
+        }
+    }
+}
+
 /// Helper struct for creating proof test data
 #[derive(Debug, Clone)]
 pub struct Proof {
@@ -86,6 +390,7 @@ pub struct Proof {
     pub id: Option<String>,
     pub version: Option<i32>,
     pub dleq: Option<DleqProof>,
+    pub witness: Option<Witness>,
 }
 
 impl Proof {
@@ -97,6 +402,7 @@ impl Proof {
             id: None,
             version: None,
             dleq: None,
+            witness: None,
         }
     }
 
@@ -112,6 +418,7 @@ impl Proof {
                 None
             },
             dleq: None,
+            witness: None,
         }
     }
 
@@ -226,12 +533,11 @@ impl Proof {
         let secret = builder.create_string(&self.secret);
         let c = builder.create_string(&self.c);
 
-        // Build DLEQ proof if present
+        // DLEQ proof (if present)
         let dleq = self.dleq.as_ref().map(|d| {
             let e = builder.create_string(&d.e);
             let s = builder.create_string(&d.s);
             let r = d.r.as_ref().map(|r| builder.create_string(r));
-
             let dleq_args = fb::DLEQProofArgs {
                 e: Some(e),
                 s: Some(s),
@@ -240,16 +546,69 @@ impl Proof {
             fb::DLEQProof::create(builder, &dleq_args)
         });
 
+        // Witness union
+        let (witness, witness_type) = self
+            .witness
+            .as_ref()
+            .map(|w| match w {
+                Witness::String(s) => {
+                    // Wrap the string into the WitnessString table
+                    let s_off = builder.create_string(s);
+                    let ws = fb::WitnessString::create(
+                        builder,
+                        &fb::WitnessStringArgs { value: Some(s_off) },
+                    );
+                    (Some(ws.as_union_value()), fb::Witness::WitnessString)
+                }
+                Witness::P2PK(p) => {
+                    let signatures = p.signatures.as_ref().map(|sigs| {
+                        let sig_offsets: Vec<_> =
+                            sigs.iter().map(|sig| builder.create_string(sig)).collect();
+                        builder.create_vector(&sig_offsets)
+                    });
+                    let p2pk =
+                        fb::P2PKWitness::create(builder, &fb::P2PKWitnessArgs { signatures });
+                    (Some(p2pk.as_union_value()), fb::Witness::P2PKWitness)
+                }
+                Witness::HTLC(h) => {
+                    let preimage = builder.create_string(&h.preimage);
+                    let signatures = h.signatures.as_ref().map(|sigs| {
+                        let sig_offsets: Vec<_> =
+                            sigs.iter().map(|sig| builder.create_string(sig)).collect();
+                        builder.create_vector(&sig_offsets)
+                    });
+                    let htlc = fb::HTLCWitness::create(
+                        builder,
+                        &fb::HTLCWitnessArgs {
+                            preimage: Some(preimage),
+                            signatures,
+                        },
+                    );
+                    (Some(htlc.as_union_value()), fb::Witness::HTLCWitness)
+                }
+            })
+            .unwrap_or((None, fb::Witness::NONE));
+
+        if let Some(ref w) = self.witness {
+            tracing::info!("Witness present: {:?}", w);
+        }
+        if let Some(ref d) = self.dleq {
+            tracing::info!("DLEQ proof present: {:?}", d);
+        }
+
+        // IMPORTANT: keep witness + witness_type; don't overwrite proof_args
         let proof_args = fb::ProofArgs {
             amount: self.amount,
             id,
             secret: Some(secret),
             c: Some(c),
             dleq,
+            witness,
+            witness_type,
             version: 0,
         };
 
-        return fb::Proof::create(builder, &proof_args);
+        fb::Proof::create(builder, &proof_args)
     }
 }
 
@@ -469,6 +828,7 @@ impl<'a> ProofParser<'a> {
         let mut id = None;
         let mut version = None;
         let mut dleq = None;
+        let mut witness = None;
 
         while parser.pos < parser.bytes.len() {
             parser.skip_whitespace();
@@ -489,6 +849,7 @@ impl<'a> ProofParser<'a> {
                 "id" => id = Some(parser.parse_string_unescaped()?),
                 "version" => version = Some(parser.parse_i32()?),
                 "dleq" => dleq = Some(DleqProof::from_json(parser.parse_raw_json_value()?)?),
+                "witness" => witness = Some(Witness::from_json(parser.parse_raw_json_value()?)?),
                 _ => parser.skip_value()?,
             }
 
@@ -508,6 +869,7 @@ impl<'a> ProofParser<'a> {
             id,
             version,
             dleq,
+            witness,
         })
     }
 }

@@ -84,7 +84,6 @@ impl NetworkManager {
                     if let Some(bytes) = rings.read_out() {
                         // Decode tiny header: [u16 url_len][url][u32 raw_len][raw] (big-endian)
                         if bytes.len() < 2 {
-                            info!("hoy");
                             // Not enough bytes to read url_len
                             continue;
                         }
@@ -92,7 +91,6 @@ impl NetworkManager {
                         let mut off = 2usize;
 
                         if bytes.len() < off + url_len + 4 {
-                            info!("hay");
                             // Not enough bytes for url + raw_len
                             continue;
                         }
@@ -335,8 +333,6 @@ impl NetworkManager {
                 publish_id: None,
             },
         );
-
-        info!("writing sub_id: {}", subscription_id.clone());
 
         // Construct and write one REQ frame per relay group:
         // ["REQ", subscription_id, ...filters]

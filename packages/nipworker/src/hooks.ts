@@ -172,7 +172,7 @@ export function useSubscription(
 		return () => {};
 	};
 
-	nipWorker.resetInputLoopBackoff();
+	// nipWorker.resetInputLoopBackoff();
 	buffer = manager.subscribe(subId, requests, options);
 	hasSubscribed = true;
 

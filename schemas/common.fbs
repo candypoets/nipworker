@@ -122,12 +122,32 @@ table DLEQProof {
   r: string (required);
 }
 
+table P2PKWitness {
+  signatures: [string];
+}
+
+table HTLCWitness {
+  preimage: string (required);
+  signatures: [string];
+}
+
+table WitnessString {
+  value: string;
+}
+
+union Witness {
+  WitnessString,
+  P2PKWitness,
+  HTLCWitness
+}
+
 table Proof {
   amount: ulong;
   id: string (required);
   secret: string (required);
   c: string (required);
   dleq: DLEQProof;
+  witness: Witness;
   version: ubyte;
 }
 

@@ -92,8 +92,6 @@ impl SubscriptionManager {
     // }
 
     pub async fn close_subscription(&self, subscription_id: &String) -> Result<()> {
-        info!("Closing subscription: {}", subscription_id);
-
         // self.connection_registry
         //     .close_subscription(&subscription_id)
         //     .await?;

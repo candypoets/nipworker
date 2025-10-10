@@ -551,6 +551,196 @@ impl<'a> flatbuffers::Verifiable for SubscribeKind {
 
 impl flatbuffers::SimpleToVerifyInSlice for SubscribeKind {}
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
+pub const ENUM_MIN_WITNESS: u8 = 0;
+#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
+pub const ENUM_MAX_WITNESS: u8 = 3;
+#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
+#[allow(non_camel_case_types)]
+pub const ENUM_VALUES_WITNESS: [Witness; 4] = [
+  Witness::NONE,
+  Witness::WitnessString,
+  Witness::P2PKWitness,
+  Witness::HTLCWitness,
+];
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[repr(transparent)]
+pub struct Witness(pub u8);
+#[allow(non_upper_case_globals)]
+impl Witness {
+  pub const NONE: Self = Self(0);
+  pub const WitnessString: Self = Self(1);
+  pub const P2PKWitness: Self = Self(2);
+  pub const HTLCWitness: Self = Self(3);
+
+  pub const ENUM_MIN: u8 = 0;
+  pub const ENUM_MAX: u8 = 3;
+  pub const ENUM_VALUES: &'static [Self] = &[
+    Self::NONE,
+    Self::WitnessString,
+    Self::P2PKWitness,
+    Self::HTLCWitness,
+  ];
+  /// Returns the variant's name or "" if unknown.
+  pub fn variant_name(self) -> Option<&'static str> {
+    match self {
+      Self::NONE => Some("NONE"),
+      Self::WitnessString => Some("WitnessString"),
+      Self::P2PKWitness => Some("P2PKWitness"),
+      Self::HTLCWitness => Some("HTLCWitness"),
+      _ => None,
+    }
+  }
+}
+impl core::fmt::Debug for Witness {
+  fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+    if let Some(name) = self.variant_name() {
+      f.write_str(name)
+    } else {
+      f.write_fmt(format_args!("<UNKNOWN {:?}>", self.0))
+    }
+  }
+}
+impl<'a> flatbuffers::Follow<'a> for Witness {
+  type Inner = Self;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    let b = flatbuffers::read_scalar_at::<u8>(buf, loc);
+    Self(b)
+  }
+}
+
+impl flatbuffers::Push for Witness {
+    type Output = Witness;
+    #[inline]
+    unsafe fn push(&self, dst: &mut [u8], _written_len: usize) {
+        flatbuffers::emplace_scalar::<u8>(dst, self.0);
+    }
+}
+
+impl flatbuffers::EndianScalar for Witness {
+  type Scalar = u8;
+  #[inline]
+  fn to_little_endian(self) -> u8 {
+    self.0.to_le()
+  }
+  #[inline]
+  #[allow(clippy::wrong_self_convention)]
+  fn from_little_endian(v: u8) -> Self {
+    let b = u8::from_le(v);
+    Self(b)
+  }
+}
+
+impl<'a> flatbuffers::Verifiable for Witness {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    u8::run_verifier(v, pos)
+  }
+}
+
+impl flatbuffers::SimpleToVerifyInSlice for Witness {}
+pub struct WitnessUnionTableOffset {}
+
+#[allow(clippy::upper_case_acronyms)]
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub enum WitnessT {
+  NONE,
+  WitnessString(Box<WitnessStringT>),
+  P2PKWitness(Box<P2PKWitnessT>),
+  HTLCWitness(Box<HTLCWitnessT>),
+}
+impl Default for WitnessT {
+  fn default() -> Self {
+    Self::NONE
+  }
+}
+impl WitnessT {
+  pub fn witness_type(&self) -> Witness {
+    match self {
+      Self::NONE => Witness::NONE,
+      Self::WitnessString(_) => Witness::WitnessString,
+      Self::P2PKWitness(_) => Witness::P2PKWitness,
+      Self::HTLCWitness(_) => Witness::HTLCWitness,
+    }
+  }
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(&self, fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>) -> Option<flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>> {
+    match self {
+      Self::NONE => None,
+      Self::WitnessString(v) => Some(v.pack(fbb).as_union_value()),
+      Self::P2PKWitness(v) => Some(v.pack(fbb).as_union_value()),
+      Self::HTLCWitness(v) => Some(v.pack(fbb).as_union_value()),
+    }
+  }
+  /// If the union variant matches, return the owned WitnessStringT, setting the union to NONE.
+  pub fn take_witness_string(&mut self) -> Option<Box<WitnessStringT>> {
+    if let Self::WitnessString(_) = self {
+      let v = core::mem::replace(self, Self::NONE);
+      if let Self::WitnessString(w) = v {
+        Some(w)
+      } else {
+        unreachable!()
+      }
+    } else {
+      None
+    }
+  }
+  /// If the union variant matches, return a reference to the WitnessStringT.
+  pub fn as_witness_string(&self) -> Option<&WitnessStringT> {
+    if let Self::WitnessString(v) = self { Some(v.as_ref()) } else { None }
+  }
+  /// If the union variant matches, return a mutable reference to the WitnessStringT.
+  pub fn as_witness_string_mut(&mut self) -> Option<&mut WitnessStringT> {
+    if let Self::WitnessString(v) = self { Some(v.as_mut()) } else { None }
+  }
+  /// If the union variant matches, return the owned P2PKWitnessT, setting the union to NONE.
+  pub fn take_p2_pkwitness(&mut self) -> Option<Box<P2PKWitnessT>> {
+    if let Self::P2PKWitness(_) = self {
+      let v = core::mem::replace(self, Self::NONE);
+      if let Self::P2PKWitness(w) = v {
+        Some(w)
+      } else {
+        unreachable!()
+      }
+    } else {
+      None
+    }
+  }
+  /// If the union variant matches, return a reference to the P2PKWitnessT.
+  pub fn as_p2_pkwitness(&self) -> Option<&P2PKWitnessT> {
+    if let Self::P2PKWitness(v) = self { Some(v.as_ref()) } else { None }
+  }
+  /// If the union variant matches, return a mutable reference to the P2PKWitnessT.
+  pub fn as_p2_pkwitness_mut(&mut self) -> Option<&mut P2PKWitnessT> {
+    if let Self::P2PKWitness(v) = self { Some(v.as_mut()) } else { None }
+  }
+  /// If the union variant matches, return the owned HTLCWitnessT, setting the union to NONE.
+  pub fn take_htlcwitness(&mut self) -> Option<Box<HTLCWitnessT>> {
+    if let Self::HTLCWitness(_) = self {
+      let v = core::mem::replace(self, Self::NONE);
+      if let Self::HTLCWitness(w) = v {
+        Some(w)
+      } else {
+        unreachable!()
+      }
+    } else {
+      None
+    }
+  }
+  /// If the union variant matches, return a reference to the HTLCWitnessT.
+  pub fn as_htlcwitness(&self) -> Option<&HTLCWitnessT> {
+    if let Self::HTLCWitness(v) = self { Some(v.as_ref()) } else { None }
+  }
+  /// If the union variant matches, return a mutable reference to the HTLCWitnessT.
+  pub fn as_htlcwitness_mut(&mut self) -> Option<&mut HTLCWitnessT> {
+    if let Self::HTLCWitness(v) = self { Some(v.as_mut()) } else { None }
+  }
+}
+#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_SIGNER_TYPE: u8 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MAX_SIGNER_TYPE: u8 = 1;
@@ -5811,6 +6001,426 @@ impl DLEQProofT {
     })
   }
 }
+pub enum P2PKWitnessOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct P2PKWitness<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for P2PKWitness<'a> {
+  type Inner = P2PKWitness<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> P2PKWitness<'a> {
+  pub const VT_SIGNATURES: flatbuffers::VOffsetT = 4;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    P2PKWitness { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args P2PKWitnessArgs<'args>
+  ) -> flatbuffers::WIPOffset<P2PKWitness<'bldr>> {
+    let mut builder = P2PKWitnessBuilder::new(_fbb);
+    if let Some(x) = args.signatures { builder.add_signatures(x); }
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> P2PKWitnessT {
+    let signatures = self.signatures().map(|x| {
+      x.iter().map(|s| s.to_string()).collect()
+    });
+    P2PKWitnessT {
+      signatures,
+    }
+  }
+
+  #[inline]
+  pub fn signatures(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>(P2PKWitness::VT_SIGNATURES, None)}
+  }
+}
+
+impl flatbuffers::Verifiable for P2PKWitness<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("signatures", Self::VT_SIGNATURES, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct P2PKWitnessArgs<'a> {
+    pub signatures: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>,
+}
+impl<'a> Default for P2PKWitnessArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    P2PKWitnessArgs {
+      signatures: None,
+    }
+  }
+}
+
+pub struct P2PKWitnessBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> P2PKWitnessBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_signatures(&mut self, signatures: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<&'b  str>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(P2PKWitness::VT_SIGNATURES, signatures);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> P2PKWitnessBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    P2PKWitnessBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<P2PKWitness<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for P2PKWitness<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("P2PKWitness");
+      ds.field("signatures", &self.signatures());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct P2PKWitnessT {
+  pub signatures: Option<Vec<String>>,
+}
+impl Default for P2PKWitnessT {
+  fn default() -> Self {
+    Self {
+      signatures: None,
+    }
+  }
+}
+impl P2PKWitnessT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<P2PKWitness<'b>> {
+    let signatures = self.signatures.as_ref().map(|x|{
+      let w: Vec<_> = x.iter().map(|s| _fbb.create_string(s)).collect();_fbb.create_vector(&w)
+    });
+    P2PKWitness::create(_fbb, &P2PKWitnessArgs{
+      signatures,
+    })
+  }
+}
+pub enum HTLCWitnessOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct HTLCWitness<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for HTLCWitness<'a> {
+  type Inner = HTLCWitness<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> HTLCWitness<'a> {
+  pub const VT_PREIMAGE: flatbuffers::VOffsetT = 4;
+  pub const VT_SIGNATURES: flatbuffers::VOffsetT = 6;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    HTLCWitness { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args HTLCWitnessArgs<'args>
+  ) -> flatbuffers::WIPOffset<HTLCWitness<'bldr>> {
+    let mut builder = HTLCWitnessBuilder::new(_fbb);
+    if let Some(x) = args.signatures { builder.add_signatures(x); }
+    if let Some(x) = args.preimage { builder.add_preimage(x); }
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> HTLCWitnessT {
+    let preimage = {
+      let x = self.preimage();
+      x.to_string()
+    };
+    let signatures = self.signatures().map(|x| {
+      x.iter().map(|s| s.to_string()).collect()
+    });
+    HTLCWitnessT {
+      preimage,
+      signatures,
+    }
+  }
+
+  #[inline]
+  pub fn preimage(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(HTLCWitness::VT_PREIMAGE, None).unwrap()}
+  }
+  #[inline]
+  pub fn signatures(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>(HTLCWitness::VT_SIGNATURES, None)}
+  }
+}
+
+impl flatbuffers::Verifiable for HTLCWitness<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("preimage", Self::VT_PREIMAGE, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("signatures", Self::VT_SIGNATURES, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct HTLCWitnessArgs<'a> {
+    pub preimage: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub signatures: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>,
+}
+impl<'a> Default for HTLCWitnessArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    HTLCWitnessArgs {
+      preimage: None, // required field
+      signatures: None,
+    }
+  }
+}
+
+pub struct HTLCWitnessBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> HTLCWitnessBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_preimage(&mut self, preimage: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(HTLCWitness::VT_PREIMAGE, preimage);
+  }
+  #[inline]
+  pub fn add_signatures(&mut self, signatures: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<&'b  str>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(HTLCWitness::VT_SIGNATURES, signatures);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> HTLCWitnessBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    HTLCWitnessBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<HTLCWitness<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, HTLCWitness::VT_PREIMAGE,"preimage");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for HTLCWitness<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("HTLCWitness");
+      ds.field("preimage", &self.preimage());
+      ds.field("signatures", &self.signatures());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct HTLCWitnessT {
+  pub preimage: String,
+  pub signatures: Option<Vec<String>>,
+}
+impl Default for HTLCWitnessT {
+  fn default() -> Self {
+    Self {
+      preimage: "".to_string(),
+      signatures: None,
+    }
+  }
+}
+impl HTLCWitnessT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<HTLCWitness<'b>> {
+    let preimage = Some({
+      let x = &self.preimage;
+      _fbb.create_string(x)
+    });
+    let signatures = self.signatures.as_ref().map(|x|{
+      let w: Vec<_> = x.iter().map(|s| _fbb.create_string(s)).collect();_fbb.create_vector(&w)
+    });
+    HTLCWitness::create(_fbb, &HTLCWitnessArgs{
+      preimage,
+      signatures,
+    })
+  }
+}
+pub enum WitnessStringOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct WitnessString<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for WitnessString<'a> {
+  type Inner = WitnessString<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> WitnessString<'a> {
+  pub const VT_VALUE: flatbuffers::VOffsetT = 4;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    WitnessString { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args WitnessStringArgs<'args>
+  ) -> flatbuffers::WIPOffset<WitnessString<'bldr>> {
+    let mut builder = WitnessStringBuilder::new(_fbb);
+    if let Some(x) = args.value { builder.add_value(x); }
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> WitnessStringT {
+    let value = self.value().map(|x| {
+      x.to_string()
+    });
+    WitnessStringT {
+      value,
+    }
+  }
+
+  #[inline]
+  pub fn value(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(WitnessString::VT_VALUE, None)}
+  }
+}
+
+impl flatbuffers::Verifiable for WitnessString<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("value", Self::VT_VALUE, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct WitnessStringArgs<'a> {
+    pub value: Option<flatbuffers::WIPOffset<&'a str>>,
+}
+impl<'a> Default for WitnessStringArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    WitnessStringArgs {
+      value: None,
+    }
+  }
+}
+
+pub struct WitnessStringBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> WitnessStringBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_value(&mut self, value: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(WitnessString::VT_VALUE, value);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> WitnessStringBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    WitnessStringBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<WitnessString<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for WitnessString<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("WitnessString");
+      ds.field("value", &self.value());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct WitnessStringT {
+  pub value: Option<String>,
+}
+impl Default for WitnessStringT {
+  fn default() -> Self {
+    Self {
+      value: None,
+    }
+  }
+}
+impl WitnessStringT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<WitnessString<'b>> {
+    let value = self.value.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    WitnessString::create(_fbb, &WitnessStringArgs{
+      value,
+    })
+  }
+}
 pub enum ProofOffset {}
 #[derive(Copy, Clone, PartialEq)]
 
@@ -5832,7 +6442,9 @@ impl<'a> Proof<'a> {
   pub const VT_SECRET: flatbuffers::VOffsetT = 8;
   pub const VT_C: flatbuffers::VOffsetT = 10;
   pub const VT_DLEQ: flatbuffers::VOffsetT = 12;
-  pub const VT_VERSION: flatbuffers::VOffsetT = 14;
+  pub const VT_WITNESS_TYPE: flatbuffers::VOffsetT = 14;
+  pub const VT_WITNESS: flatbuffers::VOffsetT = 16;
+  pub const VT_VERSION: flatbuffers::VOffsetT = 18;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -5845,11 +6457,13 @@ impl<'a> Proof<'a> {
   ) -> flatbuffers::WIPOffset<Proof<'bldr>> {
     let mut builder = ProofBuilder::new(_fbb);
     builder.add_amount(args.amount);
+    if let Some(x) = args.witness { builder.add_witness(x); }
     if let Some(x) = args.dleq { builder.add_dleq(x); }
     if let Some(x) = args.c { builder.add_c(x); }
     if let Some(x) = args.secret { builder.add_secret(x); }
     if let Some(x) = args.id { builder.add_id(x); }
     builder.add_version(args.version);
+    builder.add_witness_type(args.witness_type);
     builder.finish()
   }
 
@@ -5870,6 +6484,25 @@ impl<'a> Proof<'a> {
     let dleq = self.dleq().map(|x| {
       Box::new(x.unpack())
     });
+    let witness = match self.witness_type() {
+      Witness::NONE => WitnessT::NONE,
+      Witness::WitnessString => WitnessT::WitnessString(Box::new(
+        self.witness_as_witness_string()
+            .expect("Invalid union table, expected `Witness::WitnessString`.")
+            .unpack()
+      )),
+      Witness::P2PKWitness => WitnessT::P2PKWitness(Box::new(
+        self.witness_as_p2_pkwitness()
+            .expect("Invalid union table, expected `Witness::P2PKWitness`.")
+            .unpack()
+      )),
+      Witness::HTLCWitness => WitnessT::HTLCWitness(Box::new(
+        self.witness_as_htlcwitness()
+            .expect("Invalid union table, expected `Witness::HTLCWitness`.")
+            .unpack()
+      )),
+      _ => WitnessT::NONE,
+    };
     let version = self.version();
     ProofT {
       amount,
@@ -5877,6 +6510,7 @@ impl<'a> Proof<'a> {
       secret,
       c,
       dleq,
+      witness,
       version,
     }
   }
@@ -5917,12 +6551,71 @@ impl<'a> Proof<'a> {
     unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<DLEQProof>>(Proof::VT_DLEQ, None)}
   }
   #[inline]
+  pub fn witness_type(&self) -> Witness {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<Witness>(Proof::VT_WITNESS_TYPE, Some(Witness::NONE)).unwrap()}
+  }
+  #[inline]
+  pub fn witness(&self) -> Option<flatbuffers::Table<'a>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Table<'a>>>(Proof::VT_WITNESS, None)}
+  }
+  #[inline]
   pub fn version(&self) -> u8 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
     unsafe { self._tab.get::<u8>(Proof::VT_VERSION, Some(0)).unwrap()}
   }
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn witness_as_witness_string(&self) -> Option<WitnessString<'a>> {
+    if self.witness_type() == Witness::WitnessString {
+      self.witness().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { WitnessString::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn witness_as_p2_pkwitness(&self) -> Option<P2PKWitness<'a>> {
+    if self.witness_type() == Witness::P2PKWitness {
+      self.witness().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { P2PKWitness::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn witness_as_htlcwitness(&self) -> Option<HTLCWitness<'a>> {
+    if self.witness_type() == Witness::HTLCWitness {
+      self.witness().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { HTLCWitness::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
 }
 
 impl flatbuffers::Verifiable for Proof<'_> {
@@ -5937,6 +6630,14 @@ impl flatbuffers::Verifiable for Proof<'_> {
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("secret", Self::VT_SECRET, true)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("c", Self::VT_C, true)?
      .visit_field::<flatbuffers::ForwardsUOffset<DLEQProof>>("dleq", Self::VT_DLEQ, false)?
+     .visit_union::<Witness, _>("witness_type", Self::VT_WITNESS_TYPE, "witness", Self::VT_WITNESS, false, |key, v, pos| {
+        match key {
+          Witness::WitnessString => v.verify_union_variant::<flatbuffers::ForwardsUOffset<WitnessString>>("Witness::WitnessString", pos),
+          Witness::P2PKWitness => v.verify_union_variant::<flatbuffers::ForwardsUOffset<P2PKWitness>>("Witness::P2PKWitness", pos),
+          Witness::HTLCWitness => v.verify_union_variant::<flatbuffers::ForwardsUOffset<HTLCWitness>>("Witness::HTLCWitness", pos),
+          _ => Ok(()),
+        }
+     })?
      .visit_field::<u8>("version", Self::VT_VERSION, false)?
      .finish();
     Ok(())
@@ -5948,6 +6649,8 @@ pub struct ProofArgs<'a> {
     pub secret: Option<flatbuffers::WIPOffset<&'a str>>,
     pub c: Option<flatbuffers::WIPOffset<&'a str>>,
     pub dleq: Option<flatbuffers::WIPOffset<DLEQProof<'a>>>,
+    pub witness_type: Witness,
+    pub witness: Option<flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>>,
     pub version: u8,
 }
 impl<'a> Default for ProofArgs<'a> {
@@ -5959,6 +6662,8 @@ impl<'a> Default for ProofArgs<'a> {
       secret: None, // required field
       c: None, // required field
       dleq: None,
+      witness_type: Witness::NONE,
+      witness: None,
       version: 0,
     }
   }
@@ -5990,6 +6695,14 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> ProofBuilder<'a, 'b, A> {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<DLEQProof>>(Proof::VT_DLEQ, dleq);
   }
   #[inline]
+  pub fn add_witness_type(&mut self, witness_type: Witness) {
+    self.fbb_.push_slot::<Witness>(Proof::VT_WITNESS_TYPE, witness_type, Witness::NONE);
+  }
+  #[inline]
+  pub fn add_witness(&mut self, witness: flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Proof::VT_WITNESS, witness);
+  }
+  #[inline]
   pub fn add_version(&mut self, version: u8) {
     self.fbb_.push_slot::<u8>(Proof::VT_VERSION, version, 0);
   }
@@ -6019,6 +6732,34 @@ impl core::fmt::Debug for Proof<'_> {
       ds.field("secret", &self.secret());
       ds.field("c", &self.c());
       ds.field("dleq", &self.dleq());
+      ds.field("witness_type", &self.witness_type());
+      match self.witness_type() {
+        Witness::WitnessString => {
+          if let Some(x) = self.witness_as_witness_string() {
+            ds.field("witness", &x)
+          } else {
+            ds.field("witness", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        Witness::P2PKWitness => {
+          if let Some(x) = self.witness_as_p2_pkwitness() {
+            ds.field("witness", &x)
+          } else {
+            ds.field("witness", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        Witness::HTLCWitness => {
+          if let Some(x) = self.witness_as_htlcwitness() {
+            ds.field("witness", &x)
+          } else {
+            ds.field("witness", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        _ => {
+          let x: Option<()> = None;
+          ds.field("witness", &x)
+        },
+      };
       ds.field("version", &self.version());
       ds.finish()
   }
@@ -6031,6 +6772,7 @@ pub struct ProofT {
   pub secret: String,
   pub c: String,
   pub dleq: Option<Box<DLEQProofT>>,
+  pub witness: WitnessT,
   pub version: u8,
 }
 impl Default for ProofT {
@@ -6041,6 +6783,7 @@ impl Default for ProofT {
       secret: "".to_string(),
       c: "".to_string(),
       dleq: None,
+      witness: WitnessT::NONE,
       version: 0,
     }
   }
@@ -6066,6 +6809,8 @@ impl ProofT {
     let dleq = self.dleq.as_ref().map(|x|{
       x.pack(_fbb)
     });
+    let witness_type = self.witness.witness_type();
+    let witness = self.witness.pack(_fbb);
     let version = self.version;
     Proof::create(_fbb, &ProofArgs{
       amount,
@@ -6073,6 +6818,8 @@ impl ProofT {
       secret,
       c,
       dleq,
+      witness_type,
+      witness,
       version,
     })
   }

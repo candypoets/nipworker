@@ -425,6 +425,7 @@ impl ProofVerificationPipe {
         mint_url: &str,
         y_points: &[String],
     ) -> Result<Vec<ProofState>> {
+        info!("check proof for mint {}", mint_url);
         let url = format!("{}/v1/checkstate", mint_url.trim_end_matches('/'));
 
         let request = CheckStateRequest::new(y_points.to_vec());
