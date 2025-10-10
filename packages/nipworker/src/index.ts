@@ -1,4 +1,5 @@
 import { NostrManager } from 'src/manager';
+import { WSRuntime } from './ws/runtime';
 // import { initializeRingHeader } from './ws/ring-buffer';
 
 export * from 'src/manager';
@@ -41,7 +42,7 @@ export class NipWorker {
 	private inRings: SharedArrayBuffer[] = [];
 	private outRings: SharedArrayBuffer[] = [];
 	private managers: NostrManager[] = [];
-	private worker: Worker;
+	private worker: WSRuntime;
 
 	private hashSubId(sub_id: string): number {
 		const target = sub_id.includes('_') ? (sub_id.split('_')[1] ?? '') : sub_id;
@@ -79,10 +80,10 @@ export class NipWorker {
 		return computeHash(input, maxTotalLength);
 	}
 
-	constructor(config: any = {}, scale = 2) {
+	constructor(config: any = {}, scale = 1) {
 		for (let i = 0; i < scale; i++) {
-			const inRing = new SharedArrayBuffer(1 * 1024 * 1024); // 1MB
-			const outRing = new SharedArrayBuffer(5 * 1024 * 1024); // 5MB
+			const inRing = new SharedArrayBuffer(512 * 1024); // 1MB
+			const outRing = new SharedArrayBuffer(2 * 1024 * 1024); // 2MB
 			initializeRingHeader(inRing);
 			initializeRingHeader(outRing);
 			this.inRings.push(inRing);
@@ -97,24 +98,28 @@ export class NipWorker {
 				})
 			);
 		}
-		const url = new URL('./ws/index.js', import.meta.url);
-		this.worker = new Worker(url, { type: 'module' });
 
-		this.worker.onerror = (e) => {
-			console.error('WS Worker error:', e);
-		};
-		// this.worker = new Worker(workerUrl, { type: 'module' });
-
-		console.log('ok', url, this.worker);
-
-		this.worker.postMessage({
-			type: 'init',
-			payload: {
-				inRings: this.inRings,
-				outRings: this.outRings,
-				relayConfig: config
-			}
+		// Instantiate the main-thread WS runtime instead of a Web Worker
+		this.worker = new WSRuntime({
+			inRings: this.inRings,
+			outRings: this.outRings,
+			relayConfig: config
 		});
+		// const url = new URL('./ws/index.js', import.meta.url);
+		// this.worker = new Worker(url, { type: 'module' });
+
+		// this.worker.onerror = (e) => {
+		// 	console.error('WS Worker error:', e);
+		// };
+
+		// this.worker.postMessage({
+		// 	type: 'init',
+		// 	payload: {
+		// 		inRings: this.inRings,
+		// 		outRings: this.outRings,
+		// 		relayConfig: config
+		// 	}
+		// });
 		// this.worker.postMessage({ type: 'wake' });
 	}
 
@@ -141,7 +146,8 @@ export class NipWorker {
 
 	// Called by NostrManager to ensure low-latency pickup by the worker
 	public resetInputLoopBackoff(): void {
-		this.worker.postMessage({ type: 'wake' });
+		// this.worker.postMessage({ type: 'wake' });
+		this.worker.wake();
 	}
 }
 

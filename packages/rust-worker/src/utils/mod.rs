@@ -1,4 +1,5 @@
 pub mod buffer;
+pub mod cashu;
 pub mod js_interop;
 pub mod json;
 pub mod relay;

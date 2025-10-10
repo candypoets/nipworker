@@ -417,7 +417,11 @@ impl Proof {
             } else {
                 None
             },
-            dleq: None,
+            dleq: proof.dleq().map(|d| DleqProof {
+                e: d.e().to_string(),
+                s: d.s().to_string(),
+                r: Some(d.r().to_string()),
+            }),
             witness: None,
         }
     }
@@ -589,12 +593,8 @@ impl Proof {
             })
             .unwrap_or((None, fb::Witness::NONE));
 
-        if let Some(ref w) = self.witness {
-            tracing::info!("Witness present: {:?}", w);
-        }
-        if let Some(ref d) = self.dleq {
-            tracing::info!("DLEQ proof present: {:?}", d);
-        }
+        if let Some(ref w) = self.witness {}
+        if let Some(ref d) = self.dleq {}
 
         // IMPORTANT: keep witness + witness_type; don't overwrite proof_args
         let proof_args = fb::ProofArgs {

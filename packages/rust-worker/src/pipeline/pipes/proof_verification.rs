@@ -1,4 +1,5 @@
 use super::super::*;
+use crate::utils::cashu::filter_valid_dleq_proofs_with_mint;
 use crate::{generated::nostr::fb, parsed_event::ParsedData, types::proof::Proof, NostrError};
 
 type Result<T> = std::result::Result<T, NostrError>;
@@ -372,12 +373,27 @@ impl ProofVerificationPipe {
         // No more pending proofs, set verification_running to false
         self.verification_running = false;
 
+        // Apply DLEQ filtering per mint (NUT-12) using mint keys
+        let mut filtered_valid: FxHashMap<String, Vec<Proof>> = FxHashMap::default();
+        for (mint_url, proofs) in &valid_proofs {
+            match filter_valid_dleq_proofs_with_mint(&mint_url, proofs).await {
+                Ok(p) => {
+                    if !p.is_empty() {
+                        filtered_valid.insert(mint_url.to_string(), p);
+                    }
+                }
+                Err(e) => {
+                    warn!("Failed DLEQ verification for mint {}: {}", mint_url, e);
+                }
+            }
+        }
+
         // Serialize valid proofs to bytes
         let mut builder = FlatBufferBuilder::new();
 
         let mut proofs_mint = Vec::new();
 
-        for (mint_url, proofs) in &valid_proofs {
+        for (mint_url, proofs) in &filtered_valid {
             let mut proofs_offsets = Vec::new();
             for proof in proofs {
                 proofs_offsets.push(proof.to_offset(&mut builder));
@@ -474,7 +490,6 @@ impl Pipe for ProofVerificationPipe {
 
                             // Extract proofs directly from the Kind9321Parsed struct
                             let proofs = kind9321.proofs.clone();
-
                             (proofs, mint_url)
                         } else {
                             error!("parsed_data is not Kind9321Parsed variant");
