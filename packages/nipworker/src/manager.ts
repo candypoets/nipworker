@@ -429,7 +429,8 @@ export class NostrManager {
 				builder.finish(mainOffset);
 				const serializedMessage = builder.asUint8Array();
 				// nipWorker.resetInputLoopBackoff();
-				this.worker.postMessage(serializedMessage);
+				this.postToWorker(serializedMessage);
+				subscription.closed = true;
 				this.subscriptions.delete(subId);
 			}
 		}

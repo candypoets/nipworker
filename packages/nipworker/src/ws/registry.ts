@@ -6,11 +6,9 @@ export class ConnectionRegistry {
 	private disabledRelays = new Set<string>();
 	private nextAllowed = new Map<string, number>(); // cooldown timestamps per URL (ms)
 	private subCounts = new Map<string, number>(); // active subscription count per URL
-	private disconnectTimers = new Map<string, number>(); // delayed disconnect timers
 	private config: RelayConfig;
 
 	private readonly cooldownMs = 60_000; // after failures
-	private readonly closeDelayMs = 1_000; // after last CLOSE
 
 	constructor(config: RelayConfig) {
 		this.config = { maxReconnectAttempts: 2, ...config };
@@ -35,31 +33,12 @@ export class ConnectionRegistry {
 	private setCount(url: string, value: number): void {
 		this.subCounts.set(url, Math.max(0, value));
 	}
-	private cancelPendingDisconnect(url: string): void {
-		const id = this.disconnectTimers.get(url);
-		if (typeof id === 'number') {
-			clearTimeout(id);
-			this.disconnectTimers.delete(url);
-		}
-	}
-	private scheduleDisconnectIfIdle(url: string): void {
-		if (this.disconnectTimers.has(url)) return;
-		const id = setTimeout(async () => {
-			this.disconnectTimers.delete(url);
-			if (this.getCount(url) === 0) {
-				await this.disconnect(url);
-			}
-		}, this.closeDelayMs) as unknown as number;
-		this.disconnectTimers.set(url, id);
-	}
-	private bumpCount(url: string, delta: number): void {
-		const next = this.getCount(url) + delta;
-		this.setCount(url, next);
-		if (delta > 0) {
-			this.cancelPendingDisconnect(url);
-		} else if (delta < 0 && this.getCount(url) === 0) {
-			this.scheduleDisconnectIfIdle(url);
-		}
+
+	// Replace bumpCount with a pure counter that returns the new value.
+	private bumpCount(url: string, delta: number): number {
+		const next = Math.max(0, this.getCount(url) + delta);
+		this.subCounts.set(url, next);
+		return next;
 	}
 
 	private giveUpOrCooldown(url: string, conn?: RelayConnection) {
@@ -116,6 +95,7 @@ export class ConnectionRegistry {
 		return conn;
 	}
 
+	// Update sendFrame to disconnect immediately when count becomes 0 after a CLOSE.
 	async sendFrame(url: string, frame: string): Promise<void> {
 		if (this.disabledRelays.has(url) || this.isCoolingDown(url)) return;
 
@@ -130,8 +110,17 @@ export class ConnectionRegistry {
 			throw e;
 		}
 
-		if (kind === 'REQ') this.bumpCount(url, +1);
-		else if (kind === 'CLOSE') this.bumpCount(url, -1);
+		// Track the sub count for visibility and lifecycle decisions
+		if (kind === 'REQ') {
+			this.bumpCount(url, +1);
+		} else if (kind === 'CLOSE') {
+			const newCount = this.bumpCount(url, -1);
+			if (newCount === 0) {
+				console.log('disconnecting', url);
+				// Immediately disconnect when no more active REQ for this relay
+				await this.disconnect(url);
+			}
+		}
 	}
 
 	private async sendAllFramesToRelay(url: string, frames: string[]): Promise<void> {
@@ -161,7 +150,7 @@ export class ConnectionRegistry {
 			await connection.close();
 			this.connections.delete(url);
 		}
-		this.cancelPendingDisconnect(url);
+		// No pending-disconnects to cancel anymore
 		this.subCounts.delete(url);
 	}
 

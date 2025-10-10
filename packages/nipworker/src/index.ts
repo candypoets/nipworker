@@ -81,8 +81,8 @@ export class NipWorker {
 
 	constructor(config: any = {}, scale = 2) {
 		for (let i = 0; i < scale; i++) {
-			const inRing = new SharedArrayBuffer(1 * 1024 * 1024); // 1MB
-			const outRing = new SharedArrayBuffer(5 * 1024 * 1024); // 5MB
+			const inRing = new SharedArrayBuffer(512 * 1024); // 1MB
+			const outRing = new SharedArrayBuffer(2 * 1024 * 1024); // 2MB
 			initializeRingHeader(inRing);
 			initializeRingHeader(outRing);
 			this.inRings.push(inRing);
@@ -115,7 +115,7 @@ export class NipWorker {
 				relayConfig: config
 			}
 		});
-		// this.worker.postMessage({ type: 'wake' });
+		this.worker.postMessage({ type: 'wake' });
 	}
 
 	public cleanup(): void {

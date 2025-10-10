@@ -171,8 +171,8 @@ export function useSubscription(
 		pending = [];
 		return () => {};
 	};
-
-	nipWorker.resetInputLoopBackoff();
+	// console.log('no more wake');
+	// nipWorker.resetInputLoopBackoff();
 	buffer = manager.subscribe(subId, requests, options);
 	hasSubscribed = true;
 
