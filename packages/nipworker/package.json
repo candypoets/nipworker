@@ -63,7 +63,7 @@
     "vite-plugin-wasm": "^3.0.0"
   },
   "dependencies": {
-    "@candypoets/rust-worker": "0.0.59",
+    "@candypoets/rust-worker": "0.0.60",
     "nostr-tools": "^2.0.0"
   },
   "engines": {
