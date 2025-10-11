@@ -1,0 +1,14 @@
+[package]
+name = "ws-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wasm-bindgen = "0.2.93"
+wasm-bindgen-futures = "0.4.43"
+js-sys = "0.3.70"
+web-sys = { version = "0.3.70", features = ["console", "Window"] }  # For setTimeout and logging
+stdweb = "0.4.20"  # For simple UTF-8 decoding if needed; minimal
