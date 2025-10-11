@@ -59,6 +59,7 @@ export class ConnectionRegistry {
 	}
 
 	async ensureConnection(url: string): Promise<RelayConnection> {
+		if (url.includes('proxy')) throw new Error(`Bad relay url`);
 		if (this.disabledRelays.has(url)) {
 			throw new Error(`Relay disabled: ${url}`);
 		}

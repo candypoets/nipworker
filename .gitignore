@@ -1,4 +1,5 @@
-packages/rust-worker/target
+#packages/rust-worker/target
+packages/**/target
 packages/*/node_modules
 packages/*/dist
 packages/*/pkg

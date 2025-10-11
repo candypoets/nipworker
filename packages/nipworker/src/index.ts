@@ -42,7 +42,7 @@ export class NipWorker {
 	private inRings: SharedArrayBuffer[] = [];
 	private outRings: SharedArrayBuffer[] = [];
 	private managers: NostrManager[] = [];
-	private worker: WSRuntime;
+	private worker: Worker;
 
 	private hashSubId(sub_id: string): number {
 		const target = sub_id.includes('_') ? (sub_id.split('_')[1] ?? '') : sub_id;
@@ -100,27 +100,27 @@ export class NipWorker {
 		}
 
 		// Instantiate the main-thread WS runtime instead of a Web Worker
-		this.worker = new WSRuntime({
-			inRings: this.inRings,
-			outRings: this.outRings,
-			relayConfig: config
-		});
-		// const url = new URL('./ws/index.js', import.meta.url);
-		// this.worker = new Worker(url, { type: 'module' });
-
-		// this.worker.onerror = (e) => {
-		// 	console.error('WS Worker error:', e);
-		// };
-
-		// this.worker.postMessage({
-		// 	type: 'init',
-		// 	payload: {
-		// 		inRings: this.inRings,
-		// 		outRings: this.outRings,
-		// 		relayConfig: config
-		// 	}
+		// this.worker = new WSRuntime({
+		// 	inRings: this.inRings,
+		// 	outRings: this.outRings,
+		// 	relayConfig: config
 		// });
-		// this.worker.postMessage({ type: 'wake' });
+		const url = new URL('./ws/index.js', import.meta.url);
+		this.worker = new Worker(url, { type: 'module' });
+
+		this.worker.onerror = (e) => {
+			console.error('WS Worker error:', e);
+		};
+
+		this.worker.postMessage({
+			type: 'init',
+			payload: {
+				inRings: this.inRings,
+				outRings: this.outRings,
+				relayConfig: config
+			}
+		});
+		this.worker.postMessage({ type: 'wake' });
 	}
 
 	public cleanup(): void {
