@@ -44,7 +44,8 @@ export default defineConfig({
 				// types: resolve(__dirname, "src/types/index.ts"),
 				utils: resolve(__dirname, 'src/utils.ts'),
 				hooks: resolve(__dirname, 'src/hooks.ts'),
-				ws: resolve(__dirname, 'src/ws/index.ts')
+				ws: resolve(__dirname, 'src/ws/index.ts'),
+				'ws-rust': resolve(__dirname, 'src/ws-rust/index.ts')
 			},
 			output: {
 				entryFileNames: (chunkInfo) => {
@@ -53,7 +54,8 @@ export default defineConfig({
 						index: 'index.js',
 						utils: 'utils.js',
 						hooks: 'hooks.js',
-						ws: 'ws/index.js'
+						ws: 'ws/index.js',
+						'ws-rust': 'ws-rust/index.js'
 					};
 					return entryNameMap[chunkInfo.name as string] || '[name].js';
 				},

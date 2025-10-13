@@ -1,72 +1,73 @@
 {
-  "name": "@candypoets/nipworker",
-  "version": "0.0.60",
-  "description": "Nostr client library with worker-based architecture using Rust WASM",
-  "type": "module",
-  "module": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
-    },
-    "./hooks": {
-      "import": "./dist/hooks.js",
-      "types": "./dist/hooks.d.ts"
-    },
-    "./utils": {
-      "import": "./dist/utils.js",
-      "types": "./dist/utils.d.ts"
-    }
-  },
-  "files": [
-    "dist",
-    "README.md"
-  ],
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "build:types": "tsc --emitDeclarationOnly --outDir dist",
-    "preview": "vite preview",
-    "prepublishOnly": "npm run build",
-    "clean": "rm -rf dist",
-    "test": "echo \"No tests yet\" && exit 0"
-  },
-  "keywords": [
-    "nostr",
-    "protocol",
-    "web-worker",
-    "wasm",
-    "rust"
-  ],
-  "author": "So Tachi <sotachi@proton.me>",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/candypoets/nipworker.git",
-    "directory": "packages/nipworker"
-  },
-  "bugs": {
-    "url": "https://github.com/candypoets/nipworker/issues"
-  },
-  "homepage": "https://github.com/candypoets/nipworker#readme",
-  "peerDependencies": {
-    "flatbuffers": "^25.2.10"
-  },
-  "devDependencies": {
-    "@types/node": "^20.19.17",
-    "typescript": "^5.0.0",
-    "vite": "^5.0.0",
-    "vite-plugin-dts": "^3.0.0",
-    "vite-plugin-static-copy": "^3.1.1",
-    "vite-plugin-top-level-await": "^1.6.0",
-    "vite-plugin-wasm": "^3.0.0"
-  },
-  "dependencies": {
-    "@candypoets/rust-worker": "0.0.60",
-    "nostr-tools": "^2.0.0"
-  },
-  "engines": {
-    "node": ">=18.0.0"
-  }
+	"name": "@candypoets/nipworker",
+	"version": "0.0.60",
+	"description": "Nostr client library with worker-based architecture using Rust WASM",
+	"type": "module",
+	"module": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"import": "./dist/index.js",
+			"types": "./dist/index.d.ts"
+		},
+		"./hooks": {
+			"import": "./dist/hooks.js",
+			"types": "./dist/hooks.d.ts"
+		},
+		"./utils": {
+			"import": "./dist/utils.js",
+			"types": "./dist/utils.d.ts"
+		}
+	},
+	"files": [
+		"dist",
+		"README.md"
+	],
+	"scripts": {
+		"dev": "vite",
+		"build:ws-rust": "wasm-pack build ./src/ws-rust --release --target web",
+		"build": "npm run build:ws-rust && vite build",
+		"build:types": "tsc --emitDeclarationOnly --outDir dist",
+		"preview": "vite preview",
+		"prepublishOnly": "npm run build",
+		"clean": "rm -rf dist",
+		"test": "echo \"No tests yet\" && exit 0"
+	},
+	"keywords": [
+		"nostr",
+		"protocol",
+		"web-worker",
+		"wasm",
+		"rust"
+	],
+	"author": "So Tachi <sotachi@proton.me>",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/candypoets/nipworker.git",
+		"directory": "packages/nipworker"
+	},
+	"bugs": {
+		"url": "https://github.com/candypoets/nipworker/issues"
+	},
+	"homepage": "https://github.com/candypoets/nipworker#readme",
+	"peerDependencies": {
+		"flatbuffers": "^25.2.10"
+	},
+	"devDependencies": {
+		"@types/node": "^20.19.17",
+		"typescript": "^5.0.0",
+		"vite": "^5.0.0",
+		"vite-plugin-dts": "^3.0.0",
+		"vite-plugin-static-copy": "^3.1.1",
+		"vite-plugin-top-level-await": "^1.6.0",
+		"vite-plugin-wasm": "^3.0.0"
+	},
+	"dependencies": {
+		"@candypoets/rust-worker": "0.0.59",
+		"nostr-tools": "^2.0.0"
+	},
+	"engines": {
+		"node": ">=18.0.0"
+	}
 }

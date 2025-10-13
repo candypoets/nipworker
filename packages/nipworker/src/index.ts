@@ -105,7 +105,7 @@ export class NipWorker {
 		// 	outRings: this.outRings,
 		// 	relayConfig: config
 		// });
-		const url = new URL('./ws/index.js', import.meta.url);
+		const url = new URL('./ws-rust/index.js', import.meta.url);
 		this.worker = new Worker(url, { type: 'module' });
 
 		this.worker.onerror = (e) => {
