@@ -83,6 +83,27 @@ impl RingBufferStorage {
         Ok(())
     }
 
+    /// Returns true if at least one event has arrived since the last persist
+    /// and the throttle window hasn't been reset yet.
+    pub fn has_unpersisted_events(&self) -> bool {
+        self.first_event_since_last_persist_ms.get().is_some()
+    }
+
+    /// Persist only if the throttle window has elapsed since the first event
+    /// after the previous persist. Returns true if it actually persisted.
+    pub async fn persist_if_due(&self) -> Result<bool, DatabaseError> {
+        let now_ms = Date::now();
+        if let Some(t0) = self.first_event_since_last_persist_ms.get() {
+            if now_ms - t0 >= PERSIST_MIN_INTERVAL_MS {
+                self.persist_to_indexeddb().await?;
+                // Reset the window to indicate "no active window"
+                self.first_event_since_last_persist_ms.set(None);
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
     /// Add a new event to the ring buffer
     pub async fn add_event(&self, event_data: &[u8]) -> Result<u64, DatabaseError> {
         let event_size = event_data.len();

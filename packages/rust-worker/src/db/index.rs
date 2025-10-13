@@ -1,4 +1,5 @@
 use crate::db::ring_buffer::RingBufferStorage;
+use crate::db::sharded_storage::ShardedRingBufferStorage;
 use crate::db::types::{
     intersect_event_sets, DatabaseConfig, DatabaseError, DatabaseIndexes, EventStorage,
     QueryFilter, QueryResult,
@@ -17,22 +18,14 @@ use crate::types::nostr::{Event, EventId, Filter, PublicKey};
 use std::sync::{Arc, RwLock};
 use tracing::{debug, error, info, warn};
 
-/// Constants for event processing
-const MAX_EVENTS_PER_PROCESS: usize = 10; // Process max 10 events per add_event call
-const MIN_PROCESS_INTERVAL_MS: u64 = 20; // Minimum time between processing batches
-
 /// Main NostrDB implementation with RefCell indexes for single-threaded async access
-pub struct NostrDB<S = RingBufferStorage> {
-    /// Database configuration
-    config: DatabaseConfig,
+pub struct NostrDB<S = ShardedRingBufferStorage> {
     /// Event indexes
     indexes: DatabaseIndexes,
     /// Persistent storage backend
     storage: S,
     /// Initialization state
     is_initialized: Arc<RwLock<bool>>,
-    /// Buffer for events to be saved to storage
-    to_save: Arc<RwLock<Vec<ParsedEvent>>>,
     /// Default relays for nostr operations
     pub default_relays: Vec<String>,
     /// Indexer relays for nostr operations
@@ -45,7 +38,7 @@ pub struct NostrDB<S = RingBufferStorage> {
     default_relay_counter: Arc<RwLock<usize>>,
 }
 
-impl NostrDB<RingBufferStorage> {
+impl NostrDB<ShardedRingBufferStorage> {
     pub fn new_with_ringbuffer(
         db_name: String,
         buffer_key: String,
@@ -53,14 +46,19 @@ impl NostrDB<RingBufferStorage> {
         default_relays: Vec<String>,
         indexer_relays: Vec<String>,
     ) -> Self {
-        let config = DatabaseConfig::default();
-        let storage = RingBufferStorage::new(db_name, buffer_key, max_buffer_size, config.clone());
+        let storage = ShardedRingBufferStorage::new_default(
+            &db_name,
+            max_buffer_size, // default kinds ring size
+            2 * 1024 * 1024, // kind 0 ring size
+            2 * 1024 * 1024, // kind 4 ring size
+            1 * 1024 * 1024, // kind 7375 ring size
+            DatabaseConfig::default(),
+        );
+        // let storage = RingBufferStorage::new(db_name, buffer_key, max_buffer_size, config.clone());
         Self {
-            config,
             indexes: DatabaseIndexes::new(),
             storage,
             is_initialized: Arc::new(RwLock::new(false)),
-            to_save: Arc::new(RwLock::new(Vec::new())),
             default_relays,
             indexer_relays,
             relay_hints: Arc::new(RwLock::new(FxHashMap::default())),
@@ -690,7 +688,19 @@ impl<S: EventStorage> NostrDB<S> {
         if let Ok(worker_message) = flatbuffers::root::<fb::WorkerMessage>(&finished_data) {
             // Add to indexes
             if let Some(parsed_event) = worker_message.content_as_parsed_event() {
-                let offset = self.storage.add_event_data(&finished_data).await?;
+                let offset: u64;
+                if let Some(sharded) = self
+                    .storage
+                    .as_any()
+                    .downcast_ref::<ShardedRingBufferStorage>()
+                {
+                    offset = sharded
+                        .add_event_for_kind(event.event.kind as u32, &finished_data)
+                        .await?;
+                } else {
+                    offset = self.storage.add_event_data(&finished_data).await?;
+                }
+                // let offset = self.storage.add_event_data(&finished_data).await?;
                 self.index_event(parsed_event, offset);
             } else {
                 warn!("Failed to get parsed event from worker message");
