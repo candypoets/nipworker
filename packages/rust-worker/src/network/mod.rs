@@ -280,7 +280,7 @@ impl NetworkManager {
                         return Some((job, (rings, subs)));
                     } else {
                         // No data currently available; brief sleep to avoid busy spinning
-                        TimeoutFuture::new(8).await;
+                        TimeoutFuture::new(16).await;
                         continue;
                     }
                 }

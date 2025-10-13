@@ -93,7 +93,7 @@ function getOutRingForSubId(subId: string): ByteRingBuffer {
 let lastRingIndex = 0;
 let backoffMs = 10;
 const MIN_BACKOFF_MS = 10;
-const MAX_BACKOFF_MS = 1000;
+const MAX_BACKOFF_MS = 100;
 let loopTimer: number | null = null;
 
 function scheduleLoop() {
