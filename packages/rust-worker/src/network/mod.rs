@@ -287,7 +287,7 @@ impl NetworkManager {
             });
 
             // Execute up to 3 jobs at a time. A new job is pulled only when one finishes.
-            job_stream.for_each_concurrent(3, |job| job).await;
+            job_stream.for_each_concurrent(9, |job| job).await;
         });
     }
 

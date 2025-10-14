@@ -14,6 +14,7 @@ pub enum ShardId {
     Kind0 = 1,
     Kind4 = 2,
     Kind7375 = 3,
+    Kind10002 = 4,
 }
 
 impl ShardId {
@@ -22,6 +23,7 @@ impl ShardId {
             0 => ShardId::Kind0,
             4 => ShardId::Kind4,
             7375 => ShardId::Kind7375,
+            10002 => ShardId::Kind10002,
             _ => ShardId::Default,
         }
     }
@@ -34,6 +36,7 @@ impl ShardId {
             1 => Some(ShardId::Kind0),
             2 => Some(ShardId::Kind4),
             3 => Some(ShardId::Kind7375),
+            4 => Some(ShardId::Kind10002),
             _ => None,
         }
     }
@@ -83,6 +86,7 @@ impl ShardedRingBufferStorage {
         max_buffer_size_kind0: usize,
         max_buffer_size_kind4: usize,
         max_buffer_size_kind7375: usize,
+        max_buffer_size_kind10002: usize,
         config: DatabaseConfig,
     ) -> Self {
         let mut shards = BTreeMap::new();
@@ -121,6 +125,15 @@ impl ShardedRingBufferStorage {
                 db_name.to_string(),
                 "rb:kind:7375".to_string(),
                 max_buffer_size_kind7375,
+                config.clone(),
+            ),
+        );
+        shards.insert(
+            ShardId::Kind10002,
+            RingBufferStorage::new(
+                db_name.to_string(),
+                "rb:kind:10002".to_string(),
+                max_buffer_size_kind10002,
                 config.clone(),
             ),
         );

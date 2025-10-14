@@ -1,4 +1,3 @@
-use crate::db::ring_buffer::RingBufferStorage;
 use crate::db::sharded_storage::ShardedRingBufferStorage;
 use crate::db::types::{
     intersect_event_sets, DatabaseConfig, DatabaseError, DatabaseIndexes, EventStorage,
@@ -16,7 +15,7 @@ type Result<T> = std::result::Result<T, DatabaseError>;
 
 use crate::types::nostr::{Event, EventId, Filter, PublicKey};
 use std::sync::{Arc, RwLock};
-use tracing::{debug, error, info, warn};
+use tracing::{info, warn};
 
 /// Main NostrDB implementation with RefCell indexes for single-threaded async access
 pub struct NostrDB<S = ShardedRingBufferStorage> {
@@ -52,6 +51,7 @@ impl NostrDB<ShardedRingBufferStorage> {
             2 * 1024 * 1024, // kind 0 ring size
             2 * 1024 * 1024, // kind 4 ring size
             1 * 1024 * 1024, // kind 7375 ring size
+            1 * 1024 * 1024,
             DatabaseConfig::default(),
         );
         // let storage = RingBufferStorage::new(db_name, buffer_key, max_buffer_size, config.clone());
