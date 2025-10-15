@@ -16,6 +16,8 @@ use std::sync::Arc;
 use std::sync::RwLock;
 use wasm_bindgen_futures::spawn_local;
 
+type StatusWriter = Rc<dyn Fn(&str, &str)>; // (status, url)
+
 /// Individual relay connection managing one WebSocket to one relay
 pub struct RelayConnection {
     url: String,
@@ -25,6 +27,7 @@ pub struct RelayConnection {
     ws_sink: Rc<Mutex<Option<SplitSink<WebSocket, Message>>>>,
     stats: Arc<RwLock<ConnectionStats>>,
     inflight_reqs: Arc<RwLock<i32>>,
+    status_writer: Arc<RwLock<Option<StatusWriter>>>,
 }
 
 impl RelayConnection {
@@ -37,6 +40,7 @@ impl RelayConnection {
             ws_sink: Rc::new(Mutex::new(None)),
             stats: Arc::new(RwLock::new(ConnectionStats::default())),
             inflight_reqs: Arc::new(RwLock::new(0)),
+            status_writer: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -50,6 +54,18 @@ impl RelayConnection {
     pub async fn stats(&self) -> ConnectionStats {
         // If you want truly minimal stats, just return the struct with connected_at set
         self.stats.read().unwrap().clone()
+    }
+
+    pub fn set_status_writer(&self, writer: StatusWriter) {
+        let mut w = self.status_writer.write().unwrap();
+        *w = Some(writer);
+    }
+
+    #[inline]
+    fn emit_status(&self, status: &str) {
+        if let Some(ref f) = *self.status_writer.read().unwrap() {
+            f(status, &self.url);
+        }
     }
 
     /// Connect to the relay
@@ -78,6 +94,7 @@ impl RelayConnection {
         let websocket = WebSocket::open(&self.url).map_err(|e| {
             let mut status = self.status.write().unwrap();
             *status = ConnectionStatus::Failed;
+            self.emit_status("failed");
             RelayError::WebSocketError(e.to_string())
         })?;
 
@@ -91,6 +108,7 @@ impl RelayConnection {
         self.setup_message_handling(cb).await.map_err(|e| {
             let mut status = self.status.write().unwrap();
             *status = ConnectionStatus::Failed;
+            self.emit_status("failed");
             e
         })?;
 
@@ -103,6 +121,8 @@ impl RelayConnection {
             let mut stats = self.stats.write().unwrap();
             stats.connected_at = Some(js_sys::Date::now() as u64);
         }
+
+        self.emit_status("connected");
 
         Ok(())
     }
@@ -131,6 +151,8 @@ impl RelayConnection {
         let status_clone = self.status.clone();
         let ws_sink_arc = self.ws_sink.clone();
         let url = self.url.clone();
+
+        let writer_opt = self.status_writer.clone();
 
         // Single task: read WS → parse JSON → callback
         spawn_local(async move {
@@ -211,6 +233,10 @@ impl RelayConnection {
                             let mut sink_guard = ws_sink_arc.lock().await;
                             *sink_guard = None;
                         }
+                        // report failure on socket error
+                        if let Some(f) = &*writer_opt.read().unwrap() {
+                            f("failed", &url);
+                        }
                     }
                 }
             }
@@ -246,6 +272,8 @@ impl RelayConnection {
 
             // 🔹 Drop sink so future sends fail fast
             *sink_guard = None;
+
+            self.emit_status("failed");
 
             return Err(RelayError::ConnectionClosed);
         }
@@ -370,6 +398,8 @@ impl RelayConnection {
                 let _ = ws.close(None, None);
             }
         }
+
+        self.emit_status("close");
 
         Ok(())
     }

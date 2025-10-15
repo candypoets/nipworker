@@ -4,6 +4,8 @@ import { WSRuntime } from './ws/runtime';
 
 export * from 'src/manager';
 
+export const statusRing = new SharedArrayBuffer(512 * 1024);
+
 // Idempotent header initializer for rings created on the TS side.
 // If capacity (u32 at offset 0) is 0, we set it to (byteLength - 32)
 // and zero head, tail, and seq. Reserved bytes are cleared as well.
@@ -84,8 +86,10 @@ export class NipWorker {
 		for (let i = 0; i < scale; i++) {
 			const inRing = new SharedArrayBuffer(512 * 1024); // 1MB
 			const outRing = new SharedArrayBuffer(2 * 1024 * 1024); // 2MB
+
 			initializeRingHeader(inRing);
 			initializeRingHeader(outRing);
+
 			this.inRings.push(inRing);
 			this.outRings.push(outRing);
 
@@ -98,6 +102,8 @@ export class NipWorker {
 				})
 			);
 		}
+
+		initializeRingHeader(statusRing);
 
 		// Instantiate the main-thread WS runtime instead of a Web Worker
 		// this.worker = new WSRuntime({
@@ -117,6 +123,7 @@ export class NipWorker {
 			payload: {
 				inRings: this.inRings,
 				outRings: this.outRings,
+				statusRing,
 				relayConfig: config
 			}
 		});

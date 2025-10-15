@@ -21,10 +21,14 @@ pub type EventCallback = Rc<dyn Fn(String, &str, &str, &str) -> LocalBoxFuture<'
 /// (url, sub_id, raw_text)
 type OutWriter = Rc<dyn Fn(&str, &str, &str)>;
 
+/// Writer for simple status lines: (status, url), where status ∈ {"connected","failed","close"}
+type StatusWriter = Rc<dyn Fn(&str, &str)>;
+
 pub struct ConnectionRegistry {
     connections: Arc<RwLock<HashMap<String, Arc<RelayConnection>>>>,
     config: RelayConfig,
     out_writer: Option<OutWriter>,
+    status_writer: Option<StatusWriter>,
 }
 
 impl ConnectionRegistry {
@@ -37,11 +41,22 @@ impl ConnectionRegistry {
             connections: Arc::new(RwLock::new(HashMap::new())),
             config,
             out_writer: None,
+            status_writer: None,
         }
     }
 
     pub fn set_out_writer(&mut self, writer: OutWriter) {
         self.out_writer = Some(writer);
+    }
+
+    pub fn set_status_writer(&mut self, writer: StatusWriter) {
+        self.status_writer = Some(writer);
+    }
+
+    fn apply_status_writer(&self, conn: &Arc<RelayConnection>) {
+        if let Some(ref w) = self.status_writer {
+            conn.set_status_writer(w.clone());
+        }
     }
 
     async fn process_incoming_message(
@@ -99,10 +114,13 @@ impl ConnectionRegistry {
                 })
             });
             conn.reconnect(cb).await?;
+            // no registry-level status emission; connection.rs does it
             return Ok(conn);
         }
 
         let connection = Arc::new(RelayConnection::new(url.to_string(), self.config.clone()));
+        self.apply_status_writer(&connection); // set writer on newly created
+
         {
             let mut connections = self.connections.write().unwrap();
             connections.insert(url.to_string(), connection.clone());
@@ -223,6 +241,7 @@ impl Clone for ConnectionRegistry {
             connections: self.connections.clone(),
             config: self.config.clone(),
             out_writer: self.out_writer.clone(),
+            status_writer: self.status_writer.clone(),
         }
     }
 }

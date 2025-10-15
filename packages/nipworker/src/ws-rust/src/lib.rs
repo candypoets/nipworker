@@ -52,11 +52,22 @@ fn write_worker_line(out_ring: &mut SabRing, url: &str, raw: &str) {
     out_ring.write(&buf);
 }
 
+fn write_status_line(status_ring: &mut SabRing, status: &str, url: &str) {
+    // Simple ASCII: "status|url"
+    // Frontend splits on the first '|' to parse.
+    let mut line = String::with_capacity(status.len() + 1 + url.len());
+    line.push_str(status);
+    line.push('|');
+    line.push_str(url);
+    status_ring.write(line.as_bytes());
+}
+
 #[wasm_bindgen]
 pub struct WSRust {
     // Own the rings behind Rc so tasks can hold them without borrowing `self`.
     in_rings: Vec<Rc<RefCell<SabRing>>>,
     out_rings: Vec<Rc<RefCell<SabRing>>>,
+    status_ring: Rc<RefCell<SabRing>>,
     registry: ConnectionRegistry,
 }
 
@@ -64,7 +75,11 @@ pub struct WSRust {
 impl WSRust {
     /// new(inRings: SharedArrayBuffer[], outRings: SharedArrayBuffer[])
     #[wasm_bindgen(constructor)]
-    pub fn new(in_rings: Array, out_rings: Array) -> Result<WSRust, JsValue> {
+    pub fn new(
+        in_rings: Array,
+        out_rings: Array,
+        status_ring: SharedArrayBuffer,
+    ) -> Result<WSRust, JsValue> {
         let mut in_vec: Vec<Rc<RefCell<SabRing>>> = Vec::new();
         for v in in_rings.iter() {
             let sab: SharedArrayBuffer = v.dyn_into()?;
@@ -75,6 +90,7 @@ impl WSRust {
             let sab: SharedArrayBuffer = v.dyn_into()?;
             out_vec.push(Rc::new(RefCell::new(SabRing::new(sab)?)));
         }
+        let status_ring = Rc::new(RefCell::new(SabRing::new(status_ring)?));
 
         // Build registry and wire writer that routes by subId to the correct out ring
         let mut registry = ConnectionRegistry::new();
@@ -88,9 +104,18 @@ impl WSRust {
         });
         registry.set_out_writer(writer);
 
+        // Wire status writer
+        let status_cell = status_ring.clone();
+        let status_writer = Rc::new(move |status: &str, url: &str| {
+            let mut ring = status_cell.borrow_mut();
+            write_status_line(&mut ring, status, url);
+        });
+        registry.set_status_writer(status_writer);
+
         Ok(WSRust {
             in_rings: in_vec,
             out_rings: out_vec,
+            status_ring,
             registry,
         })
     }

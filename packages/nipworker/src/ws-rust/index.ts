@@ -8,6 +8,7 @@ type InitMsg = {
 	payload: {
 		inRings: SharedArrayBuffer[];
 		outRings: SharedArrayBuffer[];
+		statusRing: SharedArrayBuffer;
 	};
 };
 
@@ -29,11 +30,9 @@ self.addEventListener('message', async (evt: MessageEvent<InitMsg | { type: 'wak
 	if (msg?.type === 'init') {
 		await ensureWasm();
 
-		const inRings = msg.payload.inRings;
-		const outRings = msg.payload.outRings;
-
+		const { inRings, outRings, statusRing } = msg.payload;
 		// Create the Rust worker and start it
-		instance = new WSRust(inRings as any, outRings as any);
+		instance = new WSRust(inRings as any, outRings as any, statusRing);
 		instance.start();
 
 		return;
