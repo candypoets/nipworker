@@ -64,7 +64,7 @@ export function useSubscription(
 	}
 
 	let buffer: SharedArrayBuffer | null = null;
-	let lastReadPos: number = 4;
+	let lastReadPos = 4;
 	let running = true;
 	let hasUnsubscribed = false;
 	let hasSubscribed = false;
@@ -72,11 +72,43 @@ export function useSubscription(
 	subId = nipWorker.createShortId(subId);
 	const manager = nipWorker.getManager(subId);
 
+	// Reentrancy/coalescing flags
+	let scheduled = false;
+	let processing = false;
+
+	const processEvents = (): void => {
+		if (!running || !buffer) return;
+		if (processing) return; // Avoid overlapping runs
+		processing = true;
+		try {
+			let result = SharedBufferReader.readMessages(buffer, lastReadPos);
+			while (result.hasNewData) {
+				for (const message of result.messages) {
+					callback(message);
+				}
+				lastReadPos = result.newReadPosition;
+				result = SharedBufferReader.readMessages(buffer, lastReadPos);
+			}
+		} finally {
+			processing = false;
+		}
+	};
+
+	const scheduleProcess = () => {
+		if (!running) return;
+		if (scheduled) return;
+		scheduled = true;
+		queueMicrotask(() => {
+			scheduled = false;
+			processEvents();
+		});
+	};
+
 	const unsubscribe = (): (() => void) => {
 		running = false;
 
 		if (hasSubscribed && !hasUnsubscribed) {
-			manager.removeEventListener(`subscription:${subId}`, processEvents);
+			manager.removeEventListener(`subscription:${subId}`, scheduleProcess);
 			manager.unsubscribe(subId);
 			hasUnsubscribed = true;
 		}
@@ -84,28 +116,13 @@ export function useSubscription(
 		return () => {};
 	};
 
-	// nipWorker.resetInputLoopBackoff();
 	buffer = manager.subscribe(subId, requests, options);
 	hasSubscribed = true;
 
-	const processEvents = (): void => {
-		if (!running || !buffer) return;
+	manager.addEventListener(`subscription:${subId}`, scheduleProcess);
 
-		let result = SharedBufferReader.readMessages(buffer, lastReadPos);
-		while (result.hasNewData) {
-			for (const message of result.messages) {
-				callback(message);
-			}
-			lastReadPos = result.newReadPosition;
-			// queueMicrotask(() => {
-			result = SharedBufferReader.readMessages(buffer, lastReadPos);
-			// });
-		}
-	};
-
-	manager.addEventListener(`subscription:${subId}`, processEvents);
-
-	queueMicrotask(processEvents);
+	// Prime initial drain
+	scheduleProcess();
 
 	return unsubscribe;
 }
