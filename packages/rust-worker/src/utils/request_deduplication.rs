@@ -53,6 +53,7 @@ impl RequestDeduplicator {
                     search: request.search.clone(),
                     close_on_eose: request.close_on_eose,
                     cache_first: request.cache_first,
+                    no_cache: request.no_cache,
                     relays: {
                         let mut relays: Vec<String> = relay_set.into_iter().collect();
                         relays.sort();

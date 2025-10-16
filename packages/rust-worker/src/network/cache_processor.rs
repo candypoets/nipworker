@@ -24,12 +24,15 @@ impl CacheProcessorTrait for CacheProcessor {
     async fn process_local_requests(
         &self,
         requests: Vec<Request>,
-        max_depth: usize,
     ) -> Result<(Vec<Request>, Vec<Vec<Vec<u8>>>)> {
         let mut remaining_requests = Vec::new();
         let mut cached_events_batches = Vec::new();
 
         for request in requests {
+            if request.no_cache {
+                remaining_requests.push(request);
+                continue;
+            }
             // Convert request to filter and query local database
             match request.to_filter() {
                 Ok(filter) => {

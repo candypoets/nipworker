@@ -27,6 +27,8 @@ pub struct Request {
     pub close_on_eose: bool,
 
     pub cache_first: bool,
+
+    pub no_cache: bool,
 }
 
 impl Request {
@@ -86,6 +88,7 @@ impl Request {
                 .unwrap_or_default(),
             close_on_eose: fb_req.close_on_eose(),
             cache_first: fb_req.cache_first(),
+            no_cache: fb_req.no_cache(),
         }
     }
 
@@ -166,6 +169,7 @@ impl Request {
                 relays,
                 close_on_eose: self.close_on_eose,
                 cache_first: self.cache_first,
+                no_cache: self.no_cache,
             },
         )
     }

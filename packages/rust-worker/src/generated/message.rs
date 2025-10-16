@@ -7311,6 +7311,7 @@ impl<'a> Request<'a> {
   pub const VT_RELAYS: flatbuffers::VOffsetT = 20;
   pub const VT_CLOSE_ON_EOSE: flatbuffers::VOffsetT = 22;
   pub const VT_CACHE_FIRST: flatbuffers::VOffsetT = 24;
+  pub const VT_NO_CACHE: flatbuffers::VOffsetT = 26;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -7331,6 +7332,7 @@ impl<'a> Request<'a> {
     if let Some(x) = args.kinds { builder.add_kinds(x); }
     if let Some(x) = args.authors { builder.add_authors(x); }
     if let Some(x) = args.ids { builder.add_ids(x); }
+    builder.add_no_cache(args.no_cache);
     builder.add_cache_first(args.cache_first);
     builder.add_close_on_eose(args.close_on_eose);
     builder.finish()
@@ -7360,6 +7362,7 @@ impl<'a> Request<'a> {
     });
     let close_on_eose = self.close_on_eose();
     let cache_first = self.cache_first();
+    let no_cache = self.no_cache();
     RequestT {
       ids,
       authors,
@@ -7372,6 +7375,7 @@ impl<'a> Request<'a> {
       relays,
       close_on_eose,
       cache_first,
+      no_cache,
     }
   }
 
@@ -7452,6 +7456,13 @@ impl<'a> Request<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<bool>(Request::VT_CACHE_FIRST, Some(false)).unwrap()}
   }
+  #[inline]
+  pub fn no_cache(&self) -> bool {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<bool>(Request::VT_NO_CACHE, Some(false)).unwrap()}
+  }
 }
 
 impl flatbuffers::Verifiable for Request<'_> {
@@ -7472,6 +7483,7 @@ impl flatbuffers::Verifiable for Request<'_> {
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("relays", Self::VT_RELAYS, false)?
      .visit_field::<bool>("close_on_eose", Self::VT_CLOSE_ON_EOSE, false)?
      .visit_field::<bool>("cache_first", Self::VT_CACHE_FIRST, false)?
+     .visit_field::<bool>("no_cache", Self::VT_NO_CACHE, false)?
      .finish();
     Ok(())
   }
@@ -7488,6 +7500,7 @@ pub struct RequestArgs<'a> {
     pub relays: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>,
     pub close_on_eose: bool,
     pub cache_first: bool,
+    pub no_cache: bool,
 }
 impl<'a> Default for RequestArgs<'a> {
   #[inline]
@@ -7504,6 +7517,7 @@ impl<'a> Default for RequestArgs<'a> {
       relays: None,
       close_on_eose: false,
       cache_first: false,
+      no_cache: false,
     }
   }
 }
@@ -7558,6 +7572,10 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> RequestBuilder<'a, 'b, A> {
     self.fbb_.push_slot::<bool>(Request::VT_CACHE_FIRST, cache_first, false);
   }
   #[inline]
+  pub fn add_no_cache(&mut self, no_cache: bool) {
+    self.fbb_.push_slot::<bool>(Request::VT_NO_CACHE, no_cache, false);
+  }
+  #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> RequestBuilder<'a, 'b, A> {
     let start = _fbb.start_table();
     RequestBuilder {
@@ -7586,6 +7604,7 @@ impl core::fmt::Debug for Request<'_> {
       ds.field("relays", &self.relays());
       ds.field("close_on_eose", &self.close_on_eose());
       ds.field("cache_first", &self.cache_first());
+      ds.field("no_cache", &self.no_cache());
       ds.finish()
   }
 }
@@ -7603,6 +7622,7 @@ pub struct RequestT {
   pub relays: Option<Vec<String>>,
   pub close_on_eose: bool,
   pub cache_first: bool,
+  pub no_cache: bool,
 }
 impl Default for RequestT {
   fn default() -> Self {
@@ -7618,6 +7638,7 @@ impl Default for RequestT {
       relays: None,
       close_on_eose: false,
       cache_first: false,
+      no_cache: false,
     }
   }
 }
@@ -7649,6 +7670,7 @@ impl RequestT {
     });
     let close_on_eose = self.close_on_eose;
     let cache_first = self.cache_first;
+    let no_cache = self.no_cache;
     Request::create(_fbb, &RequestArgs{
       ids,
       authors,
@@ -7661,6 +7683,7 @@ impl RequestT {
       relays,
       close_on_eose,
       cache_first,
+      no_cache,
     })
   }
 }

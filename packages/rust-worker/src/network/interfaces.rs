@@ -37,7 +37,6 @@ pub trait CacheProcessor {
     async fn process_local_requests(
         &self,
         requests: Vec<Request>,
-        max_depth: usize,
     ) -> Result<(Vec<Request>, Vec<Vec<Vec<u8>>>)>;
 
     async fn find_event_context(&self, event: &ParsedEvent, max_depth: usize) -> Vec<Vec<u8>>;

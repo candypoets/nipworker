@@ -274,7 +274,8 @@ export class NostrManager {
 						this.textEncoder.encode(r.search),
 						r.relays,
 						r.closeOnEOSE,
-						r.cacheFirst
+						r.cacheFirst,
+						r.noCache
 					)
 			),
 			optionsT

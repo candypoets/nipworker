@@ -23,7 +23,6 @@ export function initializeRingHeader(buffer: SharedArrayBuffer): void {
 		// Already initialized; nothing to do.
 		return;
 	}
-
 	const capacity = total - HEADER;
 	if (capacity <= 0) {
 		throw new Error(`Invalid ring capacity computed from total=${total}`);

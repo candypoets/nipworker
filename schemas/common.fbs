@@ -178,6 +178,7 @@ table Request {
   relays: [string];
   close_on_eose: bool;
   cache_first: bool;
+  no_cache: bool;
 }
 
 table NostrEvent {

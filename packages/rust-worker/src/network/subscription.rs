@@ -116,23 +116,20 @@ impl SubscriptionManager {
         // Create pipeline based on config
         let mut pipeline = self.build_pipeline(config.pipeline(), subscription_id.clone())?;
 
-        let (network_requests, events) = match self
-            .cache_processor
-            .process_local_requests(_requests, 3)
-            .await
-        {
-            Ok((network_requests, events)) => (network_requests, events),
-            Err(e) => {
-                error!(
-                    "Failed to process local requests for subscription {}: {}",
-                    subscription_id, e
-                );
-                return Err(NostrError::Other(format!(
-                    "Failed to process local requests: {}",
-                    e
-                )));
-            }
-        };
+        let (network_requests, events) =
+            match self.cache_processor.process_local_requests(_requests).await {
+                Ok((network_requests, events)) => (network_requests, events),
+                Err(e) => {
+                    error!(
+                        "Failed to process local requests for subscription {}: {}",
+                        subscription_id, e
+                    );
+                    return Err(NostrError::Other(format!(
+                        "Failed to process local requests: {}",
+                        e
+                    )));
+                }
+            };
 
         // Process cached events through cache-capable pipes first, then write originals
         if !events.is_empty() {
