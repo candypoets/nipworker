@@ -13,8 +13,10 @@ use tracing::{debug, error, info, warn};
 use crate::generated::nostr::*;
 
 pub struct Kind9321Parsed {
+    pub id: String,
     pub amount: i32,
     pub recipient: String,
+    pub sender: String,
     pub event_id: Option<String>,
     pub mint_url: String,
     pub redeemed: bool,
@@ -143,8 +145,10 @@ impl Parser {
         }
 
         let result = Kind9321Parsed {
+            id: event.id.to_hex(),
             amount: total,
             recipient,
+            sender: event.pubkey.to_string(),
             mint_url,
             proofs,
             redeemed: false, // Default to not redeemed, will check later
@@ -283,7 +287,9 @@ pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
     parsed: &Kind9321Parsed,
     builder: &mut flatbuffers::FlatBufferBuilder<'a, A>,
 ) -> Result<flatbuffers::WIPOffset<fb::Kind9321Parsed<'a>>> {
+    let id = builder.create_string(&parsed.id);
     let recipient = builder.create_string(&parsed.recipient);
+    let sender = builder.create_string(&parsed.sender);
     let event_id = parsed.event_id.as_ref().map(|id| builder.create_string(id));
     let mint_url = builder.create_string(&parsed.mint_url);
     let comment = parsed.comment.as_ref().map(|c| builder.create_string(c));
@@ -307,8 +313,10 @@ pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
     }
 
     let args = fb::Kind9321ParsedArgs {
+        id: Some(id),
         amount: parsed.amount,
         recipient: Some(recipient),
+        sender: Some(sender),
         event_id,
         mint_url: Some(mint_url),
         redeemed: parsed.redeemed,

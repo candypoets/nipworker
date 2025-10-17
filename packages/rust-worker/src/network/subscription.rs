@@ -90,7 +90,7 @@ impl SubscriptionManager {
                             // Buffer is full: signal EOCE and return early.
                             SharedBufferManager::send_eoce(&shared_buffer).await;
                             post_worker_message(&JsValue::from_str(subscription_id));
-                            return Ok((pipeline, FxHashMap::default()));
+                            // return Ok((pipeline, FxHashMap::default()));
                         }
                         Ok(false) => {
                             // Written successfully, continue

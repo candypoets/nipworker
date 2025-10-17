@@ -26,92 +26,114 @@ static getSizePrefixedRootAsKind9321Parsed(bb:flatbuffers.ByteBuffer, obj?:Kind9
   return (obj || new Kind9321Parsed()).__init(bb.readInt32(bb.position()) + bb.position(), bb);
 }
 
-amount():number {
+id(): ByteString|null
+id(optionalEncoding:flatbuffers.Encoding): ByteString|Uint8Array|null
+id(optionalEncoding?:any): ByteString|Uint8Array|null {
   const offset = this.bb!.__offset(this.bb_pos, 4);
+  return offset ? this.bb!.__stringByteString(this.bb_pos + offset, optionalEncoding) : null;
+}
+
+amount():number {
+  const offset = this.bb!.__offset(this.bb_pos, 6);
   return offset ? this.bb!.readInt32(this.bb_pos + offset) : 0;
 }
 
 recipient(): ByteString|null
 recipient(optionalEncoding:flatbuffers.Encoding): ByteString|Uint8Array|null
 recipient(optionalEncoding?:any): ByteString|Uint8Array|null {
-  const offset = this.bb!.__offset(this.bb_pos, 6);
+  const offset = this.bb!.__offset(this.bb_pos, 8);
+  return offset ? this.bb!.__stringByteString(this.bb_pos + offset, optionalEncoding) : null;
+}
+
+sender(): ByteString|null
+sender(optionalEncoding:flatbuffers.Encoding): ByteString|Uint8Array|null
+sender(optionalEncoding?:any): ByteString|Uint8Array|null {
+  const offset = this.bb!.__offset(this.bb_pos, 10);
   return offset ? this.bb!.__stringByteString(this.bb_pos + offset, optionalEncoding) : null;
 }
 
 eventId(): ByteString|null
 eventId(optionalEncoding:flatbuffers.Encoding): ByteString|Uint8Array|null
 eventId(optionalEncoding?:any): ByteString|Uint8Array|null {
-  const offset = this.bb!.__offset(this.bb_pos, 8);
+  const offset = this.bb!.__offset(this.bb_pos, 12);
   return offset ? this.bb!.__stringByteString(this.bb_pos + offset, optionalEncoding) : null;
 }
 
 mintUrl(): ByteString|null
 mintUrl(optionalEncoding:flatbuffers.Encoding): ByteString|Uint8Array|null
 mintUrl(optionalEncoding?:any): ByteString|Uint8Array|null {
-  const offset = this.bb!.__offset(this.bb_pos, 10);
+  const offset = this.bb!.__offset(this.bb_pos, 14);
   return offset ? this.bb!.__stringByteString(this.bb_pos + offset, optionalEncoding) : null;
 }
 
 redeemed():boolean {
-  const offset = this.bb!.__offset(this.bb_pos, 12);
+  const offset = this.bb!.__offset(this.bb_pos, 16);
   return offset ? !!this.bb!.readInt8(this.bb_pos + offset) : false;
 }
 
 proofs(index: number, obj?:Proof):Proof|null {
-  const offset = this.bb!.__offset(this.bb_pos, 14);
+  const offset = this.bb!.__offset(this.bb_pos, 18);
   return offset ? (obj || new Proof()).__init(this.bb!.__indirect(this.bb!.__vector(this.bb_pos + offset) + index * 4), this.bb!) : null;
 }
 
 proofsLength():number {
-  const offset = this.bb!.__offset(this.bb_pos, 14);
+  const offset = this.bb!.__offset(this.bb_pos, 18);
   return offset ? this.bb!.__vector_len(this.bb_pos + offset) : 0;
 }
 
 comment(): ByteString|null
 comment(optionalEncoding:flatbuffers.Encoding): ByteString|Uint8Array|null
 comment(optionalEncoding?:any): ByteString|Uint8Array|null {
-  const offset = this.bb!.__offset(this.bb_pos, 16);
+  const offset = this.bb!.__offset(this.bb_pos, 20);
   return offset ? this.bb!.__stringByteString(this.bb_pos + offset, optionalEncoding) : null;
 }
 
 isP2pkLocked():boolean {
-  const offset = this.bb!.__offset(this.bb_pos, 18);
+  const offset = this.bb!.__offset(this.bb_pos, 22);
   return offset ? !!this.bb!.readInt8(this.bb_pos + offset) : false;
 }
 
 p2pkPubkey(): ByteString|null
 p2pkPubkey(optionalEncoding:flatbuffers.Encoding): ByteString|Uint8Array|null
 p2pkPubkey(optionalEncoding?:any): ByteString|Uint8Array|null {
-  const offset = this.bb!.__offset(this.bb_pos, 20);
+  const offset = this.bb!.__offset(this.bb_pos, 24);
   return offset ? this.bb!.__stringByteString(this.bb_pos + offset, optionalEncoding) : null;
 }
 
 static startKind9321Parsed(builder:flatbuffers.Builder) {
-  builder.startObject(9);
+  builder.startObject(11);
+}
+
+static addId(builder:flatbuffers.Builder, idOffset:flatbuffers.Offset) {
+  builder.addFieldOffset(0, idOffset, 0);
 }
 
 static addAmount(builder:flatbuffers.Builder, amount:number) {
-  builder.addFieldInt32(0, amount, 0);
+  builder.addFieldInt32(1, amount, 0);
 }
 
 static addRecipient(builder:flatbuffers.Builder, recipientOffset:flatbuffers.Offset) {
-  builder.addFieldOffset(1, recipientOffset, 0);
+  builder.addFieldOffset(2, recipientOffset, 0);
+}
+
+static addSender(builder:flatbuffers.Builder, senderOffset:flatbuffers.Offset) {
+  builder.addFieldOffset(3, senderOffset, 0);
 }
 
 static addEventId(builder:flatbuffers.Builder, eventIdOffset:flatbuffers.Offset) {
-  builder.addFieldOffset(2, eventIdOffset, 0);
+  builder.addFieldOffset(4, eventIdOffset, 0);
 }
 
 static addMintUrl(builder:flatbuffers.Builder, mintUrlOffset:flatbuffers.Offset) {
-  builder.addFieldOffset(3, mintUrlOffset, 0);
+  builder.addFieldOffset(5, mintUrlOffset, 0);
 }
 
 static addRedeemed(builder:flatbuffers.Builder, redeemed:boolean) {
-  builder.addFieldInt8(4, +redeemed, +false);
+  builder.addFieldInt8(6, +redeemed, +false);
 }
 
 static addProofs(builder:flatbuffers.Builder, proofsOffset:flatbuffers.Offset) {
-  builder.addFieldOffset(5, proofsOffset, 0);
+  builder.addFieldOffset(7, proofsOffset, 0);
 }
 
 static createProofsVector(builder:flatbuffers.Builder, data:flatbuffers.Offset[]):flatbuffers.Offset {
@@ -127,29 +149,33 @@ static startProofsVector(builder:flatbuffers.Builder, numElems:number) {
 }
 
 static addComment(builder:flatbuffers.Builder, commentOffset:flatbuffers.Offset) {
-  builder.addFieldOffset(6, commentOffset, 0);
+  builder.addFieldOffset(8, commentOffset, 0);
 }
 
 static addIsP2pkLocked(builder:flatbuffers.Builder, isP2pkLocked:boolean) {
-  builder.addFieldInt8(7, +isP2pkLocked, +false);
+  builder.addFieldInt8(9, +isP2pkLocked, +false);
 }
 
 static addP2pkPubkey(builder:flatbuffers.Builder, p2pkPubkeyOffset:flatbuffers.Offset) {
-  builder.addFieldOffset(8, p2pkPubkeyOffset, 0);
+  builder.addFieldOffset(10, p2pkPubkeyOffset, 0);
 }
 
 static endKind9321Parsed(builder:flatbuffers.Builder):flatbuffers.Offset {
   const offset = builder.endObject();
-  builder.requiredField(offset, 6) // recipient
-  builder.requiredField(offset, 10) // mint_url
-  builder.requiredField(offset, 14) // proofs
+  builder.requiredField(offset, 4) // id
+  builder.requiredField(offset, 8) // recipient
+  builder.requiredField(offset, 10) // sender
+  builder.requiredField(offset, 14) // mint_url
+  builder.requiredField(offset, 18) // proofs
   return offset;
 }
 
-static createKind9321Parsed(builder:flatbuffers.Builder, amount:number, recipientOffset:flatbuffers.Offset, eventIdOffset:flatbuffers.Offset, mintUrlOffset:flatbuffers.Offset, redeemed:boolean, proofsOffset:flatbuffers.Offset, commentOffset:flatbuffers.Offset, isP2pkLocked:boolean, p2pkPubkeyOffset:flatbuffers.Offset):flatbuffers.Offset {
+static createKind9321Parsed(builder:flatbuffers.Builder, idOffset:flatbuffers.Offset, amount:number, recipientOffset:flatbuffers.Offset, senderOffset:flatbuffers.Offset, eventIdOffset:flatbuffers.Offset, mintUrlOffset:flatbuffers.Offset, redeemed:boolean, proofsOffset:flatbuffers.Offset, commentOffset:flatbuffers.Offset, isP2pkLocked:boolean, p2pkPubkeyOffset:flatbuffers.Offset):flatbuffers.Offset {
   Kind9321Parsed.startKind9321Parsed(builder);
+  Kind9321Parsed.addId(builder, idOffset);
   Kind9321Parsed.addAmount(builder, amount);
   Kind9321Parsed.addRecipient(builder, recipientOffset);
+  Kind9321Parsed.addSender(builder, senderOffset);
   Kind9321Parsed.addEventId(builder, eventIdOffset);
   Kind9321Parsed.addMintUrl(builder, mintUrlOffset);
   Kind9321Parsed.addRedeemed(builder, redeemed);
@@ -162,8 +188,10 @@ static createKind9321Parsed(builder:flatbuffers.Builder, amount:number, recipien
 
 unpack(): Kind9321ParsedT {
   return new Kind9321ParsedT(
+    this.id(),
     this.amount(),
     this.recipient(),
+    this.sender(),
     this.eventId(),
     this.mintUrl(),
     this.redeemed(),
@@ -176,8 +204,10 @@ unpack(): Kind9321ParsedT {
 
 
 unpackTo(_o: Kind9321ParsedT): void {
+  _o.id = this.id();
   _o.amount = this.amount();
   _o.recipient = this.recipient();
+  _o.sender = this.sender();
   _o.eventId = this.eventId();
   _o.mintUrl = this.mintUrl();
   _o.redeemed = this.redeemed();
@@ -190,8 +220,10 @@ unpackTo(_o: Kind9321ParsedT): void {
 
 export class Kind9321ParsedT implements flatbuffers.IGeneratedObject {
 constructor(
+  public id: ByteString|Uint8Array|null = null,
   public amount: number = 0,
   public recipient: ByteString|Uint8Array|null = null,
+  public sender: ByteString|Uint8Array|null = null,
   public eventId: ByteString|Uint8Array|null = null,
   public mintUrl: ByteString|Uint8Array|null = null,
   public redeemed: boolean = false,
@@ -203,7 +235,9 @@ constructor(
 
 
 pack(builder:flatbuffers.Builder): flatbuffers.Offset {
+  const id = (this.id !== null ? builder.createString(this.id!) : 0);
   const recipient = (this.recipient !== null ? builder.createString(this.recipient!) : 0);
+  const sender = (this.sender !== null ? builder.createString(this.sender!) : 0);
   const eventId = (this.eventId !== null ? builder.createString(this.eventId!) : 0);
   const mintUrl = (this.mintUrl !== null ? builder.createString(this.mintUrl!) : 0);
   const proofs = Kind9321Parsed.createProofsVector(builder, builder.createObjectOffsetList(this.proofs));
@@ -211,8 +245,10 @@ pack(builder:flatbuffers.Builder): flatbuffers.Offset {
   const p2pkPubkey = (this.p2pkPubkey !== null ? builder.createString(this.p2pkPubkey!) : 0);
 
   return Kind9321Parsed.createKind9321Parsed(builder,
+    id,
     this.amount,
     recipient,
+    sender,
     eventId,
     mintUrl,
     this.redeemed,

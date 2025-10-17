@@ -14969,15 +14969,17 @@ impl<'a> flatbuffers::Follow<'a> for Kind9321Parsed<'a> {
 }
 
 impl<'a> Kind9321Parsed<'a> {
-  pub const VT_AMOUNT: flatbuffers::VOffsetT = 4;
-  pub const VT_RECIPIENT: flatbuffers::VOffsetT = 6;
-  pub const VT_EVENT_ID: flatbuffers::VOffsetT = 8;
-  pub const VT_MINT_URL: flatbuffers::VOffsetT = 10;
-  pub const VT_REDEEMED: flatbuffers::VOffsetT = 12;
-  pub const VT_PROOFS: flatbuffers::VOffsetT = 14;
-  pub const VT_COMMENT: flatbuffers::VOffsetT = 16;
-  pub const VT_IS_P2PK_LOCKED: flatbuffers::VOffsetT = 18;
-  pub const VT_P2PK_PUBKEY: flatbuffers::VOffsetT = 20;
+  pub const VT_ID: flatbuffers::VOffsetT = 4;
+  pub const VT_AMOUNT: flatbuffers::VOffsetT = 6;
+  pub const VT_RECIPIENT: flatbuffers::VOffsetT = 8;
+  pub const VT_SENDER: flatbuffers::VOffsetT = 10;
+  pub const VT_EVENT_ID: flatbuffers::VOffsetT = 12;
+  pub const VT_MINT_URL: flatbuffers::VOffsetT = 14;
+  pub const VT_REDEEMED: flatbuffers::VOffsetT = 16;
+  pub const VT_PROOFS: flatbuffers::VOffsetT = 18;
+  pub const VT_COMMENT: flatbuffers::VOffsetT = 20;
+  pub const VT_IS_P2PK_LOCKED: flatbuffers::VOffsetT = 22;
+  pub const VT_P2PK_PUBKEY: flatbuffers::VOffsetT = 24;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -14994,17 +14996,27 @@ impl<'a> Kind9321Parsed<'a> {
     if let Some(x) = args.proofs { builder.add_proofs(x); }
     if let Some(x) = args.mint_url { builder.add_mint_url(x); }
     if let Some(x) = args.event_id { builder.add_event_id(x); }
+    if let Some(x) = args.sender { builder.add_sender(x); }
     if let Some(x) = args.recipient { builder.add_recipient(x); }
     builder.add_amount(args.amount);
+    if let Some(x) = args.id { builder.add_id(x); }
     builder.add_is_p2pk_locked(args.is_p2pk_locked);
     builder.add_redeemed(args.redeemed);
     builder.finish()
   }
 
   pub fn unpack(&self) -> Kind9321ParsedT {
+    let id = {
+      let x = self.id();
+      x.to_string()
+    };
     let amount = self.amount();
     let recipient = {
       let x = self.recipient();
+      x.to_string()
+    };
+    let sender = {
+      let x = self.sender();
       x.to_string()
     };
     let event_id = self.event_id().map(|x| {
@@ -15027,8 +15039,10 @@ impl<'a> Kind9321Parsed<'a> {
       x.to_string()
     });
     Kind9321ParsedT {
+      id,
       amount,
       recipient,
+      sender,
       event_id,
       mint_url,
       redeemed,
@@ -15039,6 +15053,13 @@ impl<'a> Kind9321Parsed<'a> {
     }
   }
 
+  #[inline]
+  pub fn id(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Kind9321Parsed::VT_ID, None).unwrap()}
+  }
   #[inline]
   pub fn amount(&self) -> i32 {
     // Safety:
@@ -15052,6 +15073,13 @@ impl<'a> Kind9321Parsed<'a> {
     // Created from valid Table for this object
     // which contains a valid value in this slot
     unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Kind9321Parsed::VT_RECIPIENT, None).unwrap()}
+  }
+  #[inline]
+  pub fn sender(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Kind9321Parsed::VT_SENDER, None).unwrap()}
   }
   #[inline]
   pub fn event_id(&self) -> Option<&'a str> {
@@ -15111,8 +15139,10 @@ impl flatbuffers::Verifiable for Kind9321Parsed<'_> {
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("id", Self::VT_ID, true)?
      .visit_field::<i32>("amount", Self::VT_AMOUNT, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("recipient", Self::VT_RECIPIENT, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("sender", Self::VT_SENDER, true)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("event_id", Self::VT_EVENT_ID, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("mint_url", Self::VT_MINT_URL, true)?
      .visit_field::<bool>("redeemed", Self::VT_REDEEMED, false)?
@@ -15125,8 +15155,10 @@ impl flatbuffers::Verifiable for Kind9321Parsed<'_> {
   }
 }
 pub struct Kind9321ParsedArgs<'a> {
+    pub id: Option<flatbuffers::WIPOffset<&'a str>>,
     pub amount: i32,
     pub recipient: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub sender: Option<flatbuffers::WIPOffset<&'a str>>,
     pub event_id: Option<flatbuffers::WIPOffset<&'a str>>,
     pub mint_url: Option<flatbuffers::WIPOffset<&'a str>>,
     pub redeemed: bool,
@@ -15139,8 +15171,10 @@ impl<'a> Default for Kind9321ParsedArgs<'a> {
   #[inline]
   fn default() -> Self {
     Kind9321ParsedArgs {
+      id: None, // required field
       amount: 0,
       recipient: None, // required field
+      sender: None, // required field
       event_id: None,
       mint_url: None, // required field
       redeemed: false,
@@ -15158,12 +15192,20 @@ pub struct Kind9321ParsedBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
 }
 impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> Kind9321ParsedBuilder<'a, 'b, A> {
   #[inline]
+  pub fn add_id(&mut self, id: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind9321Parsed::VT_ID, id);
+  }
+  #[inline]
   pub fn add_amount(&mut self, amount: i32) {
     self.fbb_.push_slot::<i32>(Kind9321Parsed::VT_AMOUNT, amount, 0);
   }
   #[inline]
   pub fn add_recipient(&mut self, recipient: flatbuffers::WIPOffset<&'b  str>) {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind9321Parsed::VT_RECIPIENT, recipient);
+  }
+  #[inline]
+  pub fn add_sender(&mut self, sender: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind9321Parsed::VT_SENDER, sender);
   }
   #[inline]
   pub fn add_event_id(&mut self, event_id: flatbuffers::WIPOffset<&'b  str>) {
@@ -15204,7 +15246,9 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> Kind9321ParsedBuilder<'a, 'b, A
   #[inline]
   pub fn finish(self) -> flatbuffers::WIPOffset<Kind9321Parsed<'a>> {
     let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, Kind9321Parsed::VT_ID,"id");
     self.fbb_.required(o, Kind9321Parsed::VT_RECIPIENT,"recipient");
+    self.fbb_.required(o, Kind9321Parsed::VT_SENDER,"sender");
     self.fbb_.required(o, Kind9321Parsed::VT_MINT_URL,"mint_url");
     self.fbb_.required(o, Kind9321Parsed::VT_PROOFS,"proofs");
     flatbuffers::WIPOffset::new(o.value())
@@ -15214,8 +15258,10 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> Kind9321ParsedBuilder<'a, 'b, A
 impl core::fmt::Debug for Kind9321Parsed<'_> {
   fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
     let mut ds = f.debug_struct("Kind9321Parsed");
+      ds.field("id", &self.id());
       ds.field("amount", &self.amount());
       ds.field("recipient", &self.recipient());
+      ds.field("sender", &self.sender());
       ds.field("event_id", &self.event_id());
       ds.field("mint_url", &self.mint_url());
       ds.field("redeemed", &self.redeemed());
@@ -15229,8 +15275,10 @@ impl core::fmt::Debug for Kind9321Parsed<'_> {
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq)]
 pub struct Kind9321ParsedT {
+  pub id: String,
   pub amount: i32,
   pub recipient: String,
+  pub sender: String,
   pub event_id: Option<String>,
   pub mint_url: String,
   pub redeemed: bool,
@@ -15242,8 +15290,10 @@ pub struct Kind9321ParsedT {
 impl Default for Kind9321ParsedT {
   fn default() -> Self {
     Self {
+      id: "".to_string(),
       amount: 0,
       recipient: "".to_string(),
+      sender: "".to_string(),
       event_id: None,
       mint_url: "".to_string(),
       redeemed: false,
@@ -15259,9 +15309,17 @@ impl Kind9321ParsedT {
     &self,
     _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
   ) -> flatbuffers::WIPOffset<Kind9321Parsed<'b>> {
+    let id = Some({
+      let x = &self.id;
+      _fbb.create_string(x)
+    });
     let amount = self.amount;
     let recipient = Some({
       let x = &self.recipient;
+      _fbb.create_string(x)
+    });
+    let sender = Some({
+      let x = &self.sender;
       _fbb.create_string(x)
     });
     let event_id = self.event_id.as_ref().map(|x|{
@@ -15284,8 +15342,10 @@ impl Kind9321ParsedT {
       _fbb.create_string(x)
     });
     Kind9321Parsed::create(_fbb, &Kind9321ParsedArgs{
+      id,
       amount,
       recipient,
+      sender,
       event_id,
       mint_url,
       redeemed,
