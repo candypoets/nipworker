@@ -151,7 +151,7 @@ fn setup_tracing() {
             .with_writer(|| ConsoleWriter)
             .without_time()
             .with_target(false)
-            .with_max_level(tracing::Level::ERROR)
+            .with_max_level(tracing::Level::INFO)
             .try_init();
 
         console_log!("Tracing subscriber initialized for Web Worker");

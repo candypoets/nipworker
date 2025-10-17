@@ -279,10 +279,11 @@ impl NetworkManager {
                         };
 
                         // Yield one job; the stream will be polled again when a slot frees up.
+                        TimeoutFuture::new(0).await;
                         return Some((job, (rings, subs)));
                     } else {
                         // No data currently available; brief sleep to avoid busy spinning
-                        TimeoutFuture::new(128).await;
+                        TimeoutFuture::new(64).await;
                         continue;
                     }
                 }

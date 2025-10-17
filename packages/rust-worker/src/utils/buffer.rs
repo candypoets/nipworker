@@ -138,7 +138,10 @@ impl SharedBufferManager {
         }
     }
 
-    pub async fn write_to_buffer(shared_buffer: &SharedArrayBuffer, data: &[u8]) -> Result<(), ()> {
+    pub async fn write_to_buffer(
+        shared_buffer: &SharedArrayBuffer,
+        data: &[u8],
+    ) -> Result<bool, ()> {
         // Add safety checks for data size
         if data.len() > 1024 * 1024 {
             // 1MB limit
@@ -173,9 +176,10 @@ impl SharedBufferManager {
         // Check if we have enough space (4 bytes write position header + 4 bytes length prefix + data)
         let new_write_pos = current_write_pos + 4 + data.len(); // +4 for length prefix
         if new_write_pos > buffer_length {
+            // Buffer is full from the perspective of the payload we want to write
             if Self::has_buffer_full_marker(&buffer_uint8, current_write_pos, buffer_length) {
                 warn!("Buffer full, but marker already exists");
-                return Err(());
+                return Ok(true);
             }
 
             // Build bytes once using the same cached marker as the detector
@@ -218,10 +222,10 @@ impl SharedBufferManager {
                 buffer_uint8.set(&new_header_uint8, 0);
 
                 warn!("Buffer full, wrote WorkerMessage<BufferFull> marker");
-                return Ok(());
+                return Ok(true);
             } else {
                 warn!("Buffer completely full, cannot write BufferFull message");
-                return Err(());
+                return Ok(true);
             }
         }
 
@@ -239,6 +243,6 @@ impl SharedBufferManager {
         let new_header_uint8 = Uint8Array::from(&new_header[..]);
         buffer_uint8.set(&new_header_uint8, 0);
 
-        Ok(())
+        Ok(false)
     }
 }

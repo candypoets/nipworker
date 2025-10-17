@@ -40,57 +40,6 @@ impl SubscriptionManager {
         }
     }
 
-    // pub async fn open_subscription(
-    //     &self,
-    //     subscription_id: String,
-    //     shared_buffer: SharedArrayBuffer,
-    //     requests: &Vec<fb::Request<'_>>,
-    //     config: &fb::SubscriptionConfig<'_>,
-    // ) -> Result<()> {
-    //     info!(
-    //         "Opening subscription: {} with {} requests (closeOnEOSE: {}, cacheFirst: {}){}",
-    //         subscription_id,
-    //         requests.len(),
-    //         config.close_on_eose(),
-    //         config.cache_first(),
-    //         if requests.len() == 1 {
-    //             format!(" with filter: {:?}", requests[0].tags())
-    //         } else {
-    //             String::new()
-    //         }
-    //     );
-
-    //     if self
-    //         .subscriptions
-    //         .read()
-    //         .unwrap()
-    //         .contains_key(&subscription_id)
-    //     {
-    //         return Ok(());
-    //     }
-
-    //     self.subscriptions
-    //         .write()
-    //         .unwrap()
-    //         .insert(subscription_id.clone(), shared_buffer.clone());
-
-    //     let parsed_requests: Vec<Request> = requests
-    //         .iter()
-    //         .map(|request| Request::from_flatbuffer(request))
-    //         .collect();
-
-    //     // Spawn subscription processing task
-    //     self.process_subscription(
-    //         shared_buffer.clone(),
-    //         &subscription_id,
-    //         parsed_requests,
-    //         config,
-    //     )
-    //     .await?;
-
-    //     Ok(())
-    // }
-
     pub async fn close_subscription(&self, subscription_id: &String) -> Result<()> {
         // self.connection_registry
         //     .close_subscription(&subscription_id)
@@ -136,7 +85,21 @@ impl SubscriptionManager {
             for event_batch in events {
                 let cache_outputs = pipeline.process_cached_batch(&event_batch).await?;
                 for out in cache_outputs {
-                    let _ = SharedBufferManager::write_to_buffer(&shared_buffer, &out).await;
+                    match SharedBufferManager::write_to_buffer(&shared_buffer, &out).await {
+                        Ok(true) => {
+                            // Buffer is full: signal EOCE and return early.
+                            SharedBufferManager::send_eoce(&shared_buffer).await;
+                            post_worker_message(&JsValue::from_str(subscription_id));
+                            return Ok((pipeline, FxHashMap::default()));
+                        }
+                        Ok(false) => {
+                            // Written successfully, continue
+                        }
+                        Err(_) => {
+                            // Malformed/invalid state; keep behavior minimal (ignore and continue)
+                            // You could log or handle differently if desired.
+                        }
+                    }
                 }
             }
         }
