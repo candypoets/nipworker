@@ -1,7 +1,7 @@
 use crate::{generated::nostr::fb, types::TypesError, utils::json::BaseJsonParser};
 use k256::schnorr::{Signature, SigningKey, VerifyingKey};
 use sha2::{Digest, Sha256};
-use std::fmt::Write;
+use std::{collections::HashMap, fmt::Write};
 
 type Result<T> = std::result::Result<T, TypesError>;
 
@@ -700,6 +700,7 @@ pub struct Filter {
     pub p_tags: Option<Vec<String>>,
     pub d_tags: Option<Vec<String>>,
     pub a_tags: Option<Vec<String>>,
+    pub tags: Option<HashMap<String, Vec<String>>>,
     pub since: Option<Timestamp>,
     pub until: Option<Timestamp>,
     pub limit: Option<usize>,
@@ -716,6 +717,7 @@ impl Filter {
             p_tags: None,
             d_tags: None,
             a_tags: None,
+            tags: None,
             since: None,
             until: None,
             limit: None,
@@ -813,6 +815,14 @@ impl Filter {
         add_optional_field!(self.a_tags, "#a", |tags: &Vec<String>| {
             Self::format_tags(tags)
         });
+
+        if let Some(ref tags_map) = self.tags {
+            for (key, values) in tags_map {
+                add_optional_field!(Some(values), &format!("#{}", key), |tags: &Vec<String>| {
+                    Self::format_tags(tags)
+                });
+            }
+        }
 
         // Handle scalar fields
         if let Some(since) = self.since {

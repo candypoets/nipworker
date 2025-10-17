@@ -79,7 +79,7 @@ impl NetworkManager {
         // Drive a stream of jobs, executed with at most 3 in parallel.
         spawn_local(async move {
             // Initial delay to stagger startup
-            TimeoutFuture::new(300).await;
+            TimeoutFuture::new(500).await;
             // Produce one job per WorkerLine, on demand.
             let job_stream = stream::unfold((rings, subs), |(rings, subs)| async move {
                 loop {
@@ -290,7 +290,7 @@ impl NetworkManager {
             });
 
             // Execute up to 3 jobs at a time. A new job is pulled only when one finishes.
-            job_stream.for_each_concurrent(3, |job| job).await;
+            job_stream.for_each_concurrent(6, |job| job).await;
         });
     }
 
