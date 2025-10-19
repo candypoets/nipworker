@@ -1,7 +1,7 @@
 {
   "name": "@candypoets/rust-worker",
   "type": "module",
-  "version": "0.0.66",
+  "version": "0.0.67",
   "description": "Rust WASM worker for Nostr protocol operations",
   "files": [
     "dist"
