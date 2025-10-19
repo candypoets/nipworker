@@ -26,6 +26,14 @@ use wasm_bindgen_futures::spawn_local;
 
 type Result<T> = std::result::Result<T, NostrError>;
 
+// Parsed view of a single out frame
+struct ParsedOut {
+    url: String,
+    kind: String,            // uppercased
+    sub_id: Option<String>,  // cleaned (no quotes)
+    payload: Option<String>, // third element when present (e.g., event json)
+}
+
 struct Sub {
     pipeline: Arc<Mutex<Pipeline>>,
     buffer: SharedArrayBuffer,
@@ -70,227 +78,281 @@ impl NetworkManager {
         manager
     }
 
+    // Parse [u16 url_len][url][u32 raw_len][raw] and shallow extract kind/sub_id/payload
+    fn parse_out_frame(bytes: &[u8]) -> Option<ParsedOut> {
+        if bytes.len() < 2 {
+            return None;
+        }
+        let url_len = u16::from_be_bytes([bytes[0], bytes[1]]) as usize;
+        let mut off = 2usize;
+        if bytes.len() < off + url_len + 4 {
+            return None;
+        }
+
+        let url = std::str::from_utf8(&bytes[off..off + url_len])
+            .ok()?
+            .to_owned();
+        off += url_len;
+
+        if bytes.len() < off + 4 {
+            return None;
+        }
+        let raw_len =
+            u32::from_be_bytes([bytes[off], bytes[off + 1], bytes[off + 2], bytes[off + 3]])
+                as usize;
+        off += 4;
+
+        if bytes.len() < off + raw_len {
+            return None;
+        }
+        let raw_str = std::str::from_utf8(&bytes[off..off + raw_len])
+            .ok()?
+            .to_owned();
+
+        let parts = extract_first_three(&raw_str)?;
+        let kind_tok_raw = parts[0].unwrap_or("");
+        let kind = unquote_simple(kind_tok_raw).to_ascii_uppercase();
+        let sub_id = parts[1].map(unquote_simple).map(|s| s.to_owned());
+        let payload = parts[2].map(|s| s.to_owned());
+
+        Some(ParsedOut {
+            url,
+            kind,
+            sub_id,
+            payload,
+        })
+    }
+
+    async fn handle_message_core(subs: Arc<RwLock<FxHashMap<String, Sub>>>, parsed: ParsedOut) {
+        let ParsedOut {
+            url,
+            kind,
+            sub_id,
+            payload,
+        } = parsed;
+
+        match kind.as_str() {
+            "EVENT" => {
+                let sub_id = match sub_id {
+                    Some(s) => s,
+                    None => {
+                        info!("missing sub_id for EVENT");
+                        return;
+                    }
+                };
+                let event_raw = match payload {
+                    Some(p) => p,
+                    None => return,
+                };
+
+                // Resolve sub context
+                let (pipeline_arc, buffer, eosed_flag) = {
+                    let guard = subs.read().unwrap();
+                    match guard.get(&sub_id) {
+                        Some(sub) => (sub.pipeline.clone(), sub.buffer.clone(), sub.eosed),
+                        None => {
+                            info!("unknown subId: {}", sub_id);
+                            return;
+                        }
+                    }
+                };
+
+                let mut pipeline = pipeline_arc.lock().await;
+                if let Ok(Some(output)) = pipeline.process(&event_raw).await {
+                    if SharedBufferManager::write_to_buffer(&buffer, &output)
+                        .await
+                        .is_ok()
+                    {
+                        if eosed_flag {
+                            post_worker_message(&JsValue::from_str(&sub_id));
+                        }
+                    }
+                }
+            }
+            "EOSE" => {
+                let sub_id = match sub_id {
+                    Some(s) => s,
+                    None => {
+                        info!("missing sub_id for EOSE");
+                        return;
+                    }
+                };
+
+                let buffer = {
+                    let guard = subs.read().unwrap();
+                    match guard.get(&sub_id) {
+                        Some(sub) => sub.buffer.clone(),
+                        None => {
+                            info!("unknown subId (EOSE): {}", sub_id);
+                            return;
+                        }
+                    }
+                };
+
+                SharedBufferManager::send_connection_status(&buffer, &url, "EOSE", "").await;
+                post_worker_message(&JsValue::from_str(&sub_id));
+
+                {
+                    let mut guard = subs.write().unwrap();
+                    if let Some(sub) = guard.get_mut(&sub_id) {
+                        sub.eosed = true;
+                    }
+                }
+            }
+            "OK" => {
+                let sub_id = match sub_id {
+                    Some(s) => s,
+                    None => {
+                        info!("missing sub_id for OK");
+                        return;
+                    }
+                };
+
+                let (buffer, publish_id) = {
+                    let guard = subs.read().unwrap();
+                    match guard.get(&sub_id) {
+                        Some(sub) => (sub.buffer.clone(), sub.publish_id.clone()),
+                        None => {
+                            info!("unknown subId (OK): {}", sub_id);
+                            return;
+                        }
+                    }
+                };
+
+                SharedBufferManager::send_connection_status(&buffer, &url, "OK", "").await;
+                if let Some(pub_id) = publish_id {
+                    post_worker_message(&JsValue::from_str(&pub_id));
+                }
+            }
+            "NOTICE" => {
+                info!("Received notice: {:?}", &url);
+            }
+            "CLOSED" => {
+                let sid = sub_id.unwrap_or_default();
+                info!("Sub closed {}, on relay {:?}", &sid, &url);
+            }
+            "AUTH" => {
+                info!("Auth needed on relay: {:?}", &url);
+            }
+            _ => {
+                // ignore unknown kinds
+            }
+        }
+    }
+
     fn start_out_ring_reader(&self) {
-        use futures::{future::LocalBoxFuture, stream, StreamExt};
+        use futures::{channel::mpsc, FutureExt, StreamExt};
+        use std::cell::Cell;
 
         let rings = self.rings.clone();
         let subs = self.subscriptions.clone();
 
-        // Drive a stream of jobs, executed with at most 3 in parallel.
-        spawn_local(async move {
-            // Initial delay to stagger startup
-            TimeoutFuture::new(500).await;
-            // Produce one job per WorkerLine, on demand.
-            let job_stream = stream::unfold((rings, subs), |(rings, subs)| async move {
+        // Single-threaded inflight counter
+        let inflight: Rc<Cell<usize>> = Rc::new(Cell::new(0));
+        let max_inflight = 6usize;
+
+        // Channel to notify when a slot becomes available
+        let (slot_tx, mut slot_rx) = mpsc::unbounded::<()>();
+
+        spawn_local({
+            let inflight = inflight.clone();
+            let slot_tx_main = slot_tx.clone();
+            async move {
+                // Initial delay to stagger startup
+                TimeoutFuture::new(500).await;
+
+                // Backoffs for fairness and avoiding spin
+                let mut empty_backoff_ms: u32 = 8;
+                let mut full_backoff_ms: u32 = 8;
+
                 loop {
-                    if let Some(bytes) = rings.read_out() {
-                        // Decode tiny header: [u16 url_len][url][u32 raw_len][raw] (big-endian)
-                        if bytes.len() < 2 {
-                            // Not enough bytes to read url_len
-                            continue;
+                    // Throttle when at capacity: wait for either a slot or timeout
+                    if inflight.get() >= max_inflight {
+                        let mut timeout = TimeoutFuture::new(full_backoff_ms).fuse();
+                        let mut slot = slot_rx.next().fuse();
+                        futures::select! {
+                            _ = timeout => {
+                                full_backoff_ms = (full_backoff_ms.saturating_mul(2)).min(512);
+                            }
+                            _ = slot => {
+                                // slot freed, try immediately
+                                full_backoff_ms = 8;
+                            }
                         }
-                        let url_len = u16::from_be_bytes([bytes[0], bytes[1]]) as usize;
-                        let mut off = 2usize;
-
-                        if bytes.len() < off + url_len + 4 {
-                            // Not enough bytes for url + raw_len
-                            continue;
-                        }
-
-                        // URL
-                        let url_bytes = &bytes[off..off + url_len];
-                        off += url_len;
-                        let url_owned = match std::str::from_utf8(url_bytes) {
-                            Ok(s) => s.to_owned(),
-                            Err(e) => {
-                                info!("Invalid UTF-8 in url: {}", e);
-                                continue;
-                            }
-                        };
-
-                        // RAW length and bytes
-                        let raw_len = u32::from_be_bytes([
-                            bytes[off],
-                            bytes[off + 1],
-                            bytes[off + 2],
-                            bytes[off + 3],
-                        ]) as usize;
-                        off += 4;
-
-                        if bytes.len() < off + raw_len {
-                            info!("invalid payload");
-                            // Not enough bytes for raw payload
-                            continue;
-                        }
-                        let raw_bytes = &bytes[off..off + raw_len];
-
-                        // Convert raw to &str (json array like ["EVENT","sub", {...}] etc.)
-                        let raw_str = match std::str::from_utf8(raw_bytes) {
-                            Ok(s) => s.to_owned(),
-                            Err(e) => {
-                                info!("Invalid UTF-8 in raw: {}", e);
-                                continue;
-                            }
-                        };
-
-                        // Shallow-parse kind and subId using your existing helper.
-                        // Expected: parts[0] = kind string, parts[1] = subId (if present), parts[2] = payload (if present)
-                        let parts = match extract_first_three(&raw_str) {
-                            Some(p) => p,
-                            None => {
-                                info!("invalid array");
-                                // Not a valid top-level array
-                                continue;
-                            }
-                        };
-
-                        // After: let parts = match extract_first_three(&raw_str) { ... };
-
-                        // Clean tokens returned by the shallow scanner (they include surrounding quotes)
-                        let kind_tok_raw = parts[0].unwrap_or("");
-                        let kind_tok = unquote_simple(kind_tok_raw);
-
-                        let sub_id_raw = match parts[1] {
-                            Some(s) => s,
-                            None => {
-                                // If you want to handle NOTICE/AUTH/etc. without sub_id, branch here instead of continue.
-                                continue;
-                            }
-                        };
-                        let sub_id_clean = unquote_simple(sub_id_raw);
-
-                        // Resolve subscription context using cleaned sub_id
-                        let (pipeline_arc, buffer, eosed, publish_id) = {
-                            let guard = subs.read().unwrap();
-                            if let Some(sub) = guard.get(sub_id_clean) {
-                                (
-                                    sub.pipeline.clone(),
-                                    sub.buffer.clone(),
-                                    sub.eosed,
-                                    sub.publish_id.clone(),
-                                )
-                            } else {
-                                // Log cleaned vs raw for diagnostics
-                                info!(
-                                    "unknown subId: {} (raw token: {})",
-                                    sub_id_clean, sub_id_raw
-                                );
-                                continue;
-                            }
-                        };
-
-                        // Now branch on cleaned kind
-                        let url_owned = url_owned; // already owned from earlier
-                        let sub_id_owned = sub_id_clean.to_owned();
-
-                        let job: LocalBoxFuture<'static, ()> = match kind_tok
-                            .to_ascii_uppercase()
-                            .as_str()
-                        {
-                            "EVENT" => {
-                                // Extract the event payload (3rd element) as before
-                                let event_raw = match extract_first_three(&raw_str)
-                                    .and_then(|p| p[2].map(|s| s.to_owned()))
-                                {
-                                    Some(v) => v,
-                                    None => continue,
-                                };
-
-                                let pipeline_arc = pipeline_arc.clone();
-                                let buffer = buffer.clone();
-                                let eosed_flag = eosed;
-                                Box::pin(async move {
-                                    let mut pipeline = pipeline_arc.lock().await;
-                                    if let Ok(Some(output)) = pipeline.process(&event_raw).await {
-                                        if SharedBufferManager::write_to_buffer(&buffer, &output)
-                                            .await
-                                            .is_ok()
-                                        {
-                                            if eosed_flag {
-                                                post_worker_message(&JsValue::from_str(
-                                                    &sub_id_owned,
-                                                ));
-                                            }
-                                        }
-                                    }
-                                })
-                            }
-                            "EOSE" => {
-                                let buffer = buffer.clone();
-                                let url_owned = url_owned.clone();
-                                let sub_id_owned = sub_id_owned.clone();
-                                let subs = subs.clone();
-                                Box::pin(async move {
-                                    SharedBufferManager::send_connection_status(
-                                        &buffer, &url_owned, "EOSE", "",
-                                    )
-                                    .await;
-                                    post_worker_message(&JsValue::from_str(&sub_id_owned));
-                                    {
-                                        let mut guard = subs.write().unwrap();
-                                        if let Some(sub) = guard.get_mut(&sub_id_owned) {
-                                            sub.eosed = true;
-                                        }
-                                    }
-                                })
-                            }
-                            "OK" => {
-                                let buffer = buffer.clone();
-                                let url_owned = url_owned.clone();
-                                let publish_id = publish_id.clone();
-                                Box::pin(async move {
-                                    SharedBufferManager::send_connection_status(
-                                        &buffer, &url_owned, "OK", "",
-                                    )
-                                    .await;
-                                    if let Some(ref pub_id) = publish_id {
-                                        post_worker_message(&JsValue::from_str(pub_id));
-                                    }
-                                })
-                            }
-                            "NOTICE" => {
-                                let url_owned = url_owned.clone();
-                                Box::pin(async move {
-                                    info!("Received notice: {:?}", &url_owned);
-                                })
-                            }
-                            "CLOSED" => {
-                                let url_owned = url_owned.clone();
-                                let sub_id_owned = sub_id_owned.clone();
-                                Box::pin(async move {
-                                    info!(
-                                        "Sub closed {}, on relay {:?}",
-                                        &sub_id_owned, &url_owned
-                                    );
-                                })
-                            }
-                            "AUTH" => {
-                                let url_owned = url_owned.clone();
-                                Box::pin(async move {
-                                    info!("Auth needed on relay: {:?}", &url_owned);
-                                })
-                            }
-                            _ => Box::pin(async move {
-                                // info!(
-                                //     "Unknown message kind in raw payload (cleaned kind: {})",
-                                //     kind_tok
-                                // );
-                            }),
-                        };
-
-                        // Yield one job; the stream will be polled again when a slot frees up.
-                        TimeoutFuture::new(0).await;
-                        return Some((job, (rings, subs)));
-                    } else {
-                        // No data currently available; brief sleep to avoid busy spinning
-                        TimeoutFuture::new(64).await;
                         continue;
                     }
-                }
-            });
 
-            // Execute up to 3 jobs at a time. A new job is pulled only when one finishes.
-            job_stream.for_each_concurrent(6, |job| job).await;
+                    if let Some(bytes) = rings.read_out() {
+                        // Progress: reset empty backoff
+                        empty_backoff_ms = 8;
+
+                        if let Some(parsed) = Self::parse_out_frame(&bytes) {
+                            // Fast-path filter before spawning to avoid extra tasks
+                            match parsed.kind.as_str() {
+                                // Purely logging — handle inline, do not spawn
+                                "NOTICE" => {
+                                    info!("Received notice: {:?}", &parsed.url);
+                                    continue;
+                                }
+                                "AUTH" => {
+                                    info!("Auth needed on relay: {:?}", &parsed.url);
+                                    continue;
+                                }
+                                "CLOSED" => {
+                                    let sid = parsed.sub_id.clone().unwrap_or_default();
+                                    info!("Sub closed {}, on relay {:?}", &sid, &parsed.url);
+                                    continue;
+                                }
+                                // Require sub_id and existing subscription; skip if unknown
+                                "EVENT" | "EOSE" | "OK" => {
+                                    let Some(ref sid) = parsed.sub_id else {
+                                        continue;
+                                    };
+                                    let has_sub = {
+                                        let g = subs.read().unwrap();
+                                        g.contains_key(sid)
+                                    };
+                                    if !has_sub {
+                                        // Unknown sub — drop early, don't spawn
+                                        continue;
+                                    }
+                                    // Fall through to spawn
+                                }
+                                // Unknown kinds — ignore
+                                _ => {
+                                    continue;
+                                }
+                            }
+
+                            // Reserve a slot and spawn the async handler
+                            inflight.set(inflight.get() + 1);
+                            let inflight_clone = inflight.clone();
+                            let subs_clone = subs.clone();
+                            let slot_tx = slot_tx_main.clone();
+                            let parsed_for_task = parsed;
+
+                            spawn_local(async move {
+                                Self::handle_message_core(subs_clone, parsed_for_task).await;
+                                inflight_clone.set(inflight_clone.get().saturating_sub(1));
+                                let _ = slot_tx.unbounded_send(());
+                            });
+
+                            // small yield for fairness
+                            TimeoutFuture::new(0).await;
+
+                            // Reset full backoff as we made progress
+                            full_backoff_ms = 8;
+                        } else {
+                            // malformed frame — tiny yield
+                            TimeoutFuture::new(0).await;
+                        }
+                    } else {
+                        // Ring empty — exponential backoff
+                        TimeoutFuture::new(empty_backoff_ms).await;
+                        empty_backoff_ms = (empty_backoff_ms.saturating_mul(2)).min(512);
+                    }
+                }
+            }
         });
     }
 
