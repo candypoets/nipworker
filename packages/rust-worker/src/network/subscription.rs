@@ -19,12 +19,31 @@ use std::sync::{Arc, RwLock};
 use tracing::{error, info, warn};
 use wasm_bindgen::JsValue;
 
+// Added: async backoff sleep for acquiring permits
+use gloo_timers::future::TimeoutFuture;
+// Added: lightweight semaphore via atomics
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 pub struct SubscriptionManager {
     database: Arc<NostrDB>,
     parser: Arc<Parser>,
     subscriptions: Arc<RwLock<FxHashMap<String, SharedArrayBuffer>>>,
     cache_processor: Arc<CacheProcessor>,
     relay_hints: FxHashMap<String, Vec<String>>,
+
+    // Added: simple concurrency limiter
+    permits: Arc<AtomicUsize>,
+    max_permits: usize,
+}
+
+// RAII guard that releases a permit when dropped
+struct PermitGuard {
+    permits: Arc<AtomicUsize>,
+}
+impl Drop for PermitGuard {
+    fn drop(&mut self) {
+        self.permits.fetch_sub(1, Ordering::Release);
+    }
 }
 
 impl SubscriptionManager {
@@ -37,6 +56,38 @@ impl SubscriptionManager {
             subscriptions: Arc::new(RwLock::new(FxHashMap::default())),
             relay_hints: FxHashMap::default(),
             cache_processor,
+
+            // Added: init limiter (12 max concurrent process_subscription calls)
+            permits: Arc::new(AtomicUsize::new(0)),
+            max_permits: 12,
+        }
+    }
+
+    // Acquire one concurrency slot with a short async backoff.
+    async fn acquire_permit(&self) -> PermitGuard {
+        // small exponential backoff to avoid tight loops
+        let mut backoff_ms: u32 = 2;
+        loop {
+            let current = self.permits.load(Ordering::Relaxed);
+            if current < self.max_permits {
+                if self
+                    .permits
+                    .compare_exchange(current, current + 1, Ordering::AcqRel, Ordering::Relaxed)
+                    .is_ok()
+                {
+                    break;
+                }
+                // CAS failed, retry quickly
+            } else {
+                // At capacity: wait a bit before trying again
+                TimeoutFuture::new(backoff_ms).await;
+                backoff_ms = (backoff_ms.saturating_mul(2)).min(128);
+            }
+            // tiny yield between attempts
+            TimeoutFuture::new(0).await;
+        }
+        PermitGuard {
+            permits: self.permits.clone(),
         }
     }
 
@@ -62,6 +113,9 @@ impl SubscriptionManager {
         _requests: Vec<Request>,
         config: &fb::SubscriptionConfig<'_>,
     ) -> Result<(Pipeline, FxHashMap<String, Vec<Filter>>)> {
+        // Acquire concurrency permit (released automatically when this fn returns)
+        let _permit = self.acquire_permit().await;
+
         // Create pipeline based on config
         let mut pipeline = self.build_pipeline(config.pipeline(), subscription_id.clone())?;
 
