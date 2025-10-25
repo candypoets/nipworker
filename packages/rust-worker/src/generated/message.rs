@@ -7312,6 +7312,7 @@ impl<'a> Request<'a> {
   pub const VT_CLOSE_ON_EOSE: flatbuffers::VOffsetT = 22;
   pub const VT_CACHE_FIRST: flatbuffers::VOffsetT = 24;
   pub const VT_NO_CACHE: flatbuffers::VOffsetT = 26;
+  pub const VT_MAX_RELAYS: flatbuffers::VOffsetT = 28;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -7332,6 +7333,7 @@ impl<'a> Request<'a> {
     if let Some(x) = args.kinds { builder.add_kinds(x); }
     if let Some(x) = args.authors { builder.add_authors(x); }
     if let Some(x) = args.ids { builder.add_ids(x); }
+    builder.add_max_relays(args.max_relays);
     builder.add_no_cache(args.no_cache);
     builder.add_cache_first(args.cache_first);
     builder.add_close_on_eose(args.close_on_eose);
@@ -7363,6 +7365,7 @@ impl<'a> Request<'a> {
     let close_on_eose = self.close_on_eose();
     let cache_first = self.cache_first();
     let no_cache = self.no_cache();
+    let max_relays = self.max_relays();
     RequestT {
       ids,
       authors,
@@ -7376,6 +7379,7 @@ impl<'a> Request<'a> {
       close_on_eose,
       cache_first,
       no_cache,
+      max_relays,
     }
   }
 
@@ -7463,6 +7467,13 @@ impl<'a> Request<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<bool>(Request::VT_NO_CACHE, Some(false)).unwrap()}
   }
+  #[inline]
+  pub fn max_relays(&self) -> u16 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u16>(Request::VT_MAX_RELAYS, Some(0)).unwrap()}
+  }
 }
 
 impl flatbuffers::Verifiable for Request<'_> {
@@ -7484,6 +7495,7 @@ impl flatbuffers::Verifiable for Request<'_> {
      .visit_field::<bool>("close_on_eose", Self::VT_CLOSE_ON_EOSE, false)?
      .visit_field::<bool>("cache_first", Self::VT_CACHE_FIRST, false)?
      .visit_field::<bool>("no_cache", Self::VT_NO_CACHE, false)?
+     .visit_field::<u16>("max_relays", Self::VT_MAX_RELAYS, false)?
      .finish();
     Ok(())
   }
@@ -7501,6 +7513,7 @@ pub struct RequestArgs<'a> {
     pub close_on_eose: bool,
     pub cache_first: bool,
     pub no_cache: bool,
+    pub max_relays: u16,
 }
 impl<'a> Default for RequestArgs<'a> {
   #[inline]
@@ -7518,6 +7531,7 @@ impl<'a> Default for RequestArgs<'a> {
       close_on_eose: false,
       cache_first: false,
       no_cache: false,
+      max_relays: 0,
     }
   }
 }
@@ -7576,6 +7590,10 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> RequestBuilder<'a, 'b, A> {
     self.fbb_.push_slot::<bool>(Request::VT_NO_CACHE, no_cache, false);
   }
   #[inline]
+  pub fn add_max_relays(&mut self, max_relays: u16) {
+    self.fbb_.push_slot::<u16>(Request::VT_MAX_RELAYS, max_relays, 0);
+  }
+  #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> RequestBuilder<'a, 'b, A> {
     let start = _fbb.start_table();
     RequestBuilder {
@@ -7605,6 +7623,7 @@ impl core::fmt::Debug for Request<'_> {
       ds.field("close_on_eose", &self.close_on_eose());
       ds.field("cache_first", &self.cache_first());
       ds.field("no_cache", &self.no_cache());
+      ds.field("max_relays", &self.max_relays());
       ds.finish()
   }
 }
@@ -7623,6 +7642,7 @@ pub struct RequestT {
   pub close_on_eose: bool,
   pub cache_first: bool,
   pub no_cache: bool,
+  pub max_relays: u16,
 }
 impl Default for RequestT {
   fn default() -> Self {
@@ -7639,6 +7659,7 @@ impl Default for RequestT {
       close_on_eose: false,
       cache_first: false,
       no_cache: false,
+      max_relays: 0,
     }
   }
 }
@@ -7671,6 +7692,7 @@ impl RequestT {
     let close_on_eose = self.close_on_eose;
     let cache_first = self.cache_first;
     let no_cache = self.no_cache;
+    let max_relays = self.max_relays;
     Request::create(_fbb, &RequestArgs{
       ids,
       authors,
@@ -7684,6 +7706,7 @@ impl RequestT {
       close_on_eose,
       cache_first,
       no_cache,
+      max_relays,
     })
   }
 }

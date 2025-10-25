@@ -29,6 +29,8 @@ pub struct Request {
     pub cache_first: bool,
 
     pub no_cache: bool,
+
+    pub max_relays: u32,
 }
 
 impl Request {
@@ -89,6 +91,7 @@ impl Request {
             close_on_eose: fb_req.close_on_eose(),
             cache_first: fb_req.cache_first(),
             no_cache: fb_req.no_cache(),
+            max_relays: fb_req.max_relays() as u32,
         }
     }
 
@@ -170,6 +173,7 @@ impl Request {
                 close_on_eose: self.close_on_eose,
                 cache_first: self.cache_first,
                 no_cache: self.no_cache,
+                max_relays: self.max_relays as u16,
             },
         )
     }

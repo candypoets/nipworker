@@ -35,6 +35,7 @@ export type RequestObject = {
 	count?: boolean;
 	noContext?: boolean;
 	noCache?: boolean;
+	maxRelays?: number;
 };
 
 // export type PipeConfig = {

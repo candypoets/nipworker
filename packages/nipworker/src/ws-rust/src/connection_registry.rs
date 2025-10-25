@@ -7,7 +7,7 @@
 
 use crate::connection::RelayConnection;
 use crate::types::{ConnectionStatus, RelayConfig, RelayError};
-use crate::utils::normalize_relay_url;
+use crate::utils::{extract_first_three, normalize_relay_url};
 use futures::future::LocalBoxFuture;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -51,12 +51,6 @@ impl ConnectionRegistry {
 
     pub fn set_status_writer(&mut self, writer: StatusWriter) {
         self.status_writer = Some(writer);
-    }
-
-    fn apply_status_writer(&self, conn: &Arc<RelayConnection>) {
-        if let Some(ref w) = self.status_writer {
-            conn.set_status_writer(w.clone());
-        }
     }
 
     async fn process_incoming_message(
@@ -119,7 +113,6 @@ impl ConnectionRegistry {
         }
 
         let connection = Arc::new(RelayConnection::new(url.to_string(), self.config.clone()));
-        self.apply_status_writer(&connection); // set writer on newly created
 
         {
             let mut connections = self.connections.write().unwrap();
@@ -171,9 +164,46 @@ impl ConnectionRegistry {
                 // Ensure connection and send frames in-order for this relay
                 if let Ok(conn) = this.ensure_connection(&url).await {
                     for f in &frames {
+                        // Parse kind and sub_id from the outgoing frame
+                        let (is_req, sub_id) = if let Some(parts) = extract_first_three(f) {
+                            if let Some(kind_raw) = parts[0] {
+                                let kind = kind_raw.trim_matches('"');
+                                if kind == "REQ" {
+                                    let sid = parts[1].map(|s| s.trim_matches('"').to_string());
+                                    (true, sid)
+                                } else {
+                                    (false, None)
+                                }
+                            } else {
+                                (false, None)
+                            }
+                        } else {
+                            (false, None)
+                        };
+
+                        // Try to send the frame
                         if let Err(e) = conn.send_raw(f).await {
                             tracing::warn!("send frame failed {}: {}", url, e);
+
+                            // Emit synthetic OK "<sub_id>","FAILED" for REQ
+                            if let (true, Some(sub_id)) = (is_req, sub_id.clone()) {
+                                // JSON string payload → include quotes
+                                this.process_incoming_message(sub_id, "OK", "FAILED", &url)
+                                    .await;
+                            }
+
+                            // Optional: also inform connection-level status UI
+                            if let Some(ref w) = this.status_writer {
+                                w("failed", &url);
+                            }
+
                             break;
+                        } else {
+                            // On success, emit synthetic OK "<sub_id>","SUBSCRIBED" for REQ
+                            if let (true, Some(sub_id)) = (is_req, sub_id) {
+                                this.process_incoming_message(sub_id, "OK", "SUBSCRIBED", &url)
+                                    .await;
+                            }
                         }
                     }
                     Ok::<(), ()>(())
@@ -224,14 +254,6 @@ impl ConnectionRegistry {
             let _ = c.close().await;
         }
         Ok(())
-    }
-
-    pub async fn connection_status(&self, url: &str) -> Option<ConnectionStatus> {
-        if let Some(connection) = self.get_connection(url).await {
-            Some(connection.status().await)
-        } else {
-            None
-        }
     }
 }
 

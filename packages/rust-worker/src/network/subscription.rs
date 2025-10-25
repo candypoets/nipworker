@@ -59,7 +59,7 @@ impl SubscriptionManager {
 
             // Added: init limiter (12 max concurrent process_subscription calls)
             permits: Arc::new(AtomicUsize::new(0)),
-            max_permits: 12,
+            max_permits: 36,
         }
     }
 
@@ -81,7 +81,7 @@ impl SubscriptionManager {
             } else {
                 // At capacity: wait a bit before trying again
                 TimeoutFuture::new(backoff_ms).await;
-                backoff_ms = (backoff_ms.saturating_mul(2)).min(128);
+                backoff_ms = (backoff_ms.saturating_mul(2)).min(32);
             }
             // tiny yield between attempts
             TimeoutFuture::new(0).await;
@@ -221,8 +221,15 @@ impl SubscriptionManager {
 
             let relays = self.database.find_relay_candidates(kind, &pubkey, &false);
 
-            // Limit to maximum of 8 relays
-            let relays_to_add: Vec<String> = relays.into_iter().take(8).collect();
+            // Limit to maximum of 8 relays, or use request's max_relay if set
+            let limit = if request.max_relays == 0 {
+                8
+            } else {
+                request.max_relays
+            };
+
+            let relays_to_add: Vec<String> =
+                relays.into_iter().take(limit.try_into().unwrap()).collect();
 
             return Ok(relays_to_add);
         }

@@ -27,7 +27,8 @@ pub struct RelayConnection {
     ws_sink: Rc<Mutex<Option<SplitSink<WebSocket, Message>>>>,
     stats: Arc<RwLock<ConnectionStats>>,
     inflight_reqs: Arc<RwLock<i32>>,
-    status_writer: Arc<RwLock<Option<StatusWriter>>>,
+    backoff_attempts: Arc<RwLock<u32>>,
+    next_retry_at_ms: Arc<RwLock<u64>>,
 }
 
 impl RelayConnection {
@@ -40,15 +41,42 @@ impl RelayConnection {
             ws_sink: Rc::new(Mutex::new(None)),
             stats: Arc::new(RwLock::new(ConnectionStats::default())),
             inflight_reqs: Arc::new(RwLock::new(0)),
-            status_writer: Arc::new(RwLock::new(None)),
+            backoff_attempts: Arc::new(RwLock::new(0)),
+            next_retry_at_ms: Arc::new(RwLock::new(0)),
         }
     }
 
     pub fn url(&self) -> &str {
         &self.url
     }
-    pub async fn status(&self) -> ConnectionStatus {
-        *self.status.read().unwrap()
+
+    #[inline]
+    fn schedule_backoff(&self) {
+        let now = js_sys::Date::now() as u64;
+        let mut attempts = self.backoff_attempts.write().unwrap();
+        *attempts = attempts.saturating_add(1);
+        let base_ms = self.config.reconnect_delay.as_millis() as u64;
+        // exponential backoff with cap: base * 2^(n-1), max 30s
+        let exp = (*attempts - 1).min(8);
+        let mut delay_ms = base_ms.saturating_mul(1u64 << exp);
+        if delay_ms > 30_000 {
+            delay_ms = 30_000;
+        }
+        *self.next_retry_at_ms.write().unwrap() = now + delay_ms;
+    }
+
+    #[inline]
+    fn clear_backoff(&self) {
+        *self.backoff_attempts.write().unwrap() = 0;
+        *self.next_retry_at_ms.write().unwrap() = 0;
+    }
+
+    async fn wait_backoff(&self) {
+        let now = js_sys::Date::now() as u64;
+        let until = *self.next_retry_at_ms.read().unwrap();
+        if until > now {
+            gloo_timers::future::TimeoutFuture::new((until - now) as u32).await;
+        }
     }
 
     pub async fn stats(&self) -> ConnectionStats {
@@ -56,21 +84,8 @@ impl RelayConnection {
         self.stats.read().unwrap().clone()
     }
 
-    pub fn set_status_writer(&self, writer: StatusWriter) {
-        let mut w = self.status_writer.write().unwrap();
-        *w = Some(writer);
-    }
-
-    #[inline]
-    fn emit_status(&self, status: &str) {
-        if let Some(ref f) = *self.status_writer.read().unwrap() {
-            f(status, &self.url);
-        }
-    }
-
     /// Connect to the relay
     pub async fn connect(&self, cb: EventCallback) -> Result<(), RelayError> {
-        // Check if already connected or connecting
         {
             let status = self.status.read().unwrap();
             if matches!(
@@ -81,38 +96,32 @@ impl RelayConnection {
             }
         }
 
-        // Set status to connecting
         {
             let mut status = self.status.write().unwrap();
             *status = ConnectionStatus::Connecting;
         }
 
-        // Validate URL
         validate_relay_url(&self.url)?;
 
-        // Connect WebSocket
         let websocket = WebSocket::open(&self.url).map_err(|e| {
             let mut status = self.status.write().unwrap();
             *status = ConnectionStatus::Failed;
-            self.emit_status("failed");
+            self.schedule_backoff();
             RelayError::WebSocketError(e.to_string())
         })?;
 
-        // Store WebSocket connection
         {
             let mut ws_guard = self.websocket.write().unwrap();
             *ws_guard = Some(websocket);
         }
 
-        // Set up message handling
         self.setup_message_handling(cb).await.map_err(|e| {
             let mut status = self.status.write().unwrap();
             *status = ConnectionStatus::Failed;
-            self.emit_status("failed");
+            self.schedule_backoff();
             e
         })?;
 
-        // Update status and stats
         {
             let mut status = self.status.write().unwrap();
             *status = ConnectionStatus::Connected;
@@ -122,7 +131,7 @@ impl RelayConnection {
             stats.connected_at = Some(js_sys::Date::now() as u64);
         }
 
-        self.emit_status("connected");
+        self.clear_backoff();
 
         Ok(())
     }
@@ -152,7 +161,7 @@ impl RelayConnection {
         let ws_sink_arc = self.ws_sink.clone();
         let url = self.url.clone();
 
-        let writer_opt = self.status_writer.clone();
+        // let writer_opt = self.status_writer.clone();
 
         // Single task: read WS → parse JSON → callback
         spawn_local(async move {
@@ -234,9 +243,9 @@ impl RelayConnection {
                             *sink_guard = None;
                         }
                         // report failure on socket error
-                        if let Some(f) = &*writer_opt.read().unwrap() {
-                            f("failed", &url);
-                        }
+                        // if let Some(f) = &*writer_opt.read().unwrap() {
+                        //     f("failed", &url);
+                        // }
                     }
                 }
             }
@@ -273,7 +282,7 @@ impl RelayConnection {
             // 🔹 Drop sink so future sends fail fast
             *sink_guard = None;
 
-            self.emit_status("failed");
+            self.schedule_backoff();
 
             return Err(RelayError::ConnectionClosed);
         }
@@ -334,6 +343,7 @@ impl RelayConnection {
 
     /// Reconnect to the relay
     pub async fn reconnect(&self, cb: EventCallback) -> Result<(), RelayError> {
+        self.wait_backoff().await;
         // Close existing connection
         self.close().await?;
 
@@ -398,8 +408,6 @@ impl RelayConnection {
                 let _ = ws.close(None, None);
             }
         }
-
-        self.emit_status("close");
 
         Ok(())
     }

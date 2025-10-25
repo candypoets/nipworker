@@ -124,8 +124,13 @@ noCache():boolean {
   return offset ? !!this.bb!.readInt8(this.bb_pos + offset) : false;
 }
 
+maxRelays():number {
+  const offset = this.bb!.__offset(this.bb_pos, 28);
+  return offset ? this.bb!.readUint16(this.bb_pos + offset) : 0;
+}
+
 static startRequest(builder:flatbuffers.Builder) {
-  builder.startObject(12);
+  builder.startObject(13);
 }
 
 static addIds(builder:flatbuffers.Builder, idsOffset:flatbuffers.Offset) {
@@ -241,12 +246,16 @@ static addNoCache(builder:flatbuffers.Builder, noCache:boolean) {
   builder.addFieldInt8(11, +noCache, +false);
 }
 
+static addMaxRelays(builder:flatbuffers.Builder, maxRelays:number) {
+  builder.addFieldInt16(12, maxRelays, 0);
+}
+
 static endRequest(builder:flatbuffers.Builder):flatbuffers.Offset {
   const offset = builder.endObject();
   return offset;
 }
 
-static createRequest(builder:flatbuffers.Builder, idsOffset:flatbuffers.Offset, authorsOffset:flatbuffers.Offset, kindsOffset:flatbuffers.Offset, tagsOffset:flatbuffers.Offset, limit:number, since:number, until:number, searchOffset:flatbuffers.Offset, relaysOffset:flatbuffers.Offset, closeOnEose:boolean, cacheFirst:boolean, noCache:boolean):flatbuffers.Offset {
+static createRequest(builder:flatbuffers.Builder, idsOffset:flatbuffers.Offset, authorsOffset:flatbuffers.Offset, kindsOffset:flatbuffers.Offset, tagsOffset:flatbuffers.Offset, limit:number, since:number, until:number, searchOffset:flatbuffers.Offset, relaysOffset:flatbuffers.Offset, closeOnEose:boolean, cacheFirst:boolean, noCache:boolean, maxRelays:number):flatbuffers.Offset {
   Request.startRequest(builder);
   Request.addIds(builder, idsOffset);
   Request.addAuthors(builder, authorsOffset);
@@ -260,6 +269,7 @@ static createRequest(builder:flatbuffers.Builder, idsOffset:flatbuffers.Offset, 
   Request.addCloseOnEose(builder, closeOnEose);
   Request.addCacheFirst(builder, cacheFirst);
   Request.addNoCache(builder, noCache);
+  Request.addMaxRelays(builder, maxRelays);
   return Request.endRequest(builder);
 }
 
@@ -276,7 +286,8 @@ unpack(): RequestT {
     this.bb!.createScalarList<string>(this.relays.bind(this), this.relaysLength()),
     this.closeOnEose(),
     this.cacheFirst(),
-    this.noCache()
+    this.noCache(),
+    this.maxRelays()
   );
 }
 
@@ -294,6 +305,7 @@ unpackTo(_o: RequestT): void {
   _o.closeOnEose = this.closeOnEose();
   _o.cacheFirst = this.cacheFirst();
   _o.noCache = this.noCache();
+  _o.maxRelays = this.maxRelays();
 }
 }
 
@@ -310,7 +322,8 @@ constructor(
   public relays: (string)[] = [],
   public closeOnEose: boolean = false,
   public cacheFirst: boolean = false,
-  public noCache: boolean = false
+  public noCache: boolean = false,
+  public maxRelays: number = 0
 ){}
 
 
@@ -334,7 +347,8 @@ pack(builder:flatbuffers.Builder): flatbuffers.Offset {
     relays,
     this.closeOnEose,
     this.cacheFirst,
-    this.noCache
+    this.noCache,
+    this.maxRelays
   );
 }
 }

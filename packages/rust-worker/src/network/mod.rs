@@ -218,8 +218,13 @@ impl NetworkManager {
                         }
                     }
                 };
-
-                SharedBufferManager::send_connection_status(&buffer, &url, "OK", "").await;
+                SharedBufferManager::send_connection_status(
+                    &buffer,
+                    &url,
+                    payload.as_deref().unwrap_or(""),
+                    "",
+                )
+                .await;
                 if let Some(pub_id) = publish_id {
                     post_worker_message(&JsValue::from_str(&pub_id));
                 }
