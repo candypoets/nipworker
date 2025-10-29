@@ -96,6 +96,7 @@ pub enum PipeType {
     Counter(CounterPipe),
     KindFilter(KindFilterPipe),
     NpubLimiter(NpubLimiterPipe),
+    MuteFilter(MuteFilterPipe),
 }
 
 impl PipeType {
@@ -108,6 +109,7 @@ impl PipeType {
             PipeType::Counter(pipe) => pipe.process(event).await,
             PipeType::KindFilter(pipe) => pipe.process(event).await,
             PipeType::NpubLimiter(pipe) => pipe.process(event).await,
+            PipeType::MuteFilter(pipe) => pipe.process(event).await,
         }
     }
 
@@ -134,6 +136,9 @@ impl PipeType {
             PipeType::NpubLimiter(pipe) => {
                 <NpubLimiterPipe as Pipe>::process_cached_batch(pipe, messages).await
             }
+            PipeType::MuteFilter(pipe) => {
+                <MuteFilterPipe as Pipe>::process_cached_batch(pipe, messages).await
+            }
         }
     }
 
@@ -146,6 +151,7 @@ impl PipeType {
             PipeType::Counter(pipe) => pipe.name(),
             PipeType::KindFilter(pipe) => pipe.name(),
             PipeType::NpubLimiter(pipe) => pipe.name(),
+            PipeType::MuteFilter(pipe) => pipe.name(),
         }
     }
 
@@ -158,6 +164,7 @@ impl PipeType {
             PipeType::Counter(pipe) => pipe.can_direct_output(),
             PipeType::KindFilter(pipe) => pipe.can_direct_output(),
             PipeType::NpubLimiter(pipe) => pipe.can_direct_output(),
+            PipeType::MuteFilter(pipe) => pipe.can_direct_output(),
         }
     }
 
@@ -170,6 +177,7 @@ impl PipeType {
             PipeType::Counter(pipe) => pipe.run_for_cached_events(),
             PipeType::KindFilter(pipe) => pipe.run_for_cached_events(),
             PipeType::NpubLimiter(pipe) => pipe.run_for_cached_events(),
+            PipeType::MuteFilter(pipe) => pipe.run_for_cached_events(),
         }
     }
 }
@@ -214,6 +222,12 @@ impl Pipeline {
     ) -> Result<Self> {
         Self::new(
             vec![
+                PipeType::MuteFilter(MuteFilterPipe::new(MuteCriteria::new(
+                    vec![],
+                    vec!["nsfw".to_string()],
+                    vec!["nsfw".to_string()],
+                    vec![],
+                ))),
                 PipeType::Parse(ParsePipe::new(parser)),
                 PipeType::SaveToDb(SaveToDbPipe::new(database)),
                 PipeType::SerializeEvents(SerializeEventsPipe::new(subscription_id.clone())),
