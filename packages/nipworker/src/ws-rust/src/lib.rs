@@ -4,6 +4,7 @@ use wasm_bindgen_futures::spawn_local;
 use js_sys::{Array, SharedArrayBuffer};
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::{Arc, Once};
 
 mod connection;
 mod connection_registry;
@@ -17,6 +18,45 @@ use sab_ring::SabRing;
 struct Envelope {
     relays: Vec<String>,
     frames: Vec<String>,
+}
+
+// Common macros
+#[macro_export]
+macro_rules! console_log {
+    ($($t:tt)*) => {
+        web_sys::console::log_1(&format_args!($($t)*).to_string().into());
+    }
+}
+
+static TRACING_INIT: Once = Once::new();
+
+fn setup_tracing() {
+    TRACING_INIT.call_once(|| {
+        // Simple console writer for Web Workers
+        struct ConsoleWriter;
+
+        impl std::io::Write for ConsoleWriter {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                let message = String::from_utf8_lossy(buf);
+                web_sys::console::log_1(&JsValue::from_str(&message));
+                Ok(buf.len())
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        // Try to set up a simple subscriber - if it fails, just continue
+        let _ = tracing_subscriber::fmt()
+            .with_writer(|| ConsoleWriter)
+            .without_time()
+            .with_target(false)
+            .with_max_level(tracing::Level::ERROR)
+            .try_init();
+
+        console_log!("Tracing subscriber initialized for Web Worker");
+    });
 }
 
 // Same hashing logic as TS (hashSubId)
@@ -80,6 +120,7 @@ impl WSRust {
         out_rings: Array,
         status_ring: SharedArrayBuffer,
     ) -> Result<WSRust, JsValue> {
+        setup_tracing();
         let mut in_vec: Vec<Rc<RefCell<SabRing>>> = Vec::new();
         for v in in_rings.iter() {
             let sab: SharedArrayBuffer = v.dyn_into()?;
@@ -130,26 +171,26 @@ impl WSRust {
             let reg = self.registry.clone();
 
             spawn_local(async move {
+                // Inside the spawn_local(async move { ... }) block
+                let mut sleep_ms: u32 = 16; // base delay
+                let max_sleep_ms: u32 = 500; // cap the backoff
+
                 loop {
                     let mut processed = 0usize;
 
-                    // Drain this ring without holding the RefMut across await points
+                    // Drain ring
                     loop {
-                        // Short borrow scope: drop before any await
                         let bytes_opt = {
                             let mut ring = ring_rc.borrow_mut();
                             ring.read_next()
                         };
 
-                        let Some(bytes) = bytes_opt else {
-                            break;
-                        };
+                        let Some(bytes) = bytes_opt else { break };
 
                         processed += 1;
 
                         if let Ok(env) = serde_json::from_slice::<Envelope>(&bytes) {
                             if !env.relays.is_empty() && !env.frames.is_empty() {
-                                // Fire-and-forget like TS: do NOT await here
                                 let reg2 = reg.clone();
                                 let relays = env.relays;
                                 let frames = env.frames;
@@ -167,7 +208,11 @@ impl WSRust {
                     }
 
                     if processed == 0 {
-                        gloo_timers::future::TimeoutFuture::new(16).await;
+                        gloo_timers::future::TimeoutFuture::new(sleep_ms).await;
+                        sleep_ms = (sleep_ms.saturating_mul(2)).min(max_sleep_ms);
+                    // backoff
+                    } else {
+                        sleep_ms = 16; // reset on activity
                     }
                 }
             });
