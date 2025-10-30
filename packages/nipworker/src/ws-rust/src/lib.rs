@@ -224,7 +224,7 @@ impl WSRust {
 pub mod utils {
     use crate::types::RelayError;
 
-    const BLACKLISTED_RELAYS: &[&str] = &["wheat.happytavern.co"];
+    // const BLACKLISTED_RELAYS: &[&str] = &["wheat.happytavern.co"];
 
     pub fn extract_first_three<'a>(text: &'a str) -> Option<[Option<&'a str>; 3]> {
         let bytes = text.as_bytes();
@@ -317,14 +317,14 @@ pub mod utils {
         }
 
         let normalized_url = url.trim().to_lowercase();
-        for &blacklisted in BLACKLISTED_RELAYS {
-            if normalized_url.contains(blacklisted) {
-                return Err(RelayError::InvalidUrl(format!(
-                    "Relay URL is blacklisted: {}",
-                    url
-                )));
-            }
-        }
+        // for &blacklisted in BLACKLISTED_RELAYS {
+        //     if normalized_url.contains(blacklisted) {
+        //         return Err(RelayError::InvalidUrl(format!(
+        //             "Relay URL is blacklisted: {}",
+        //             url
+        //         )));
+        //     }
+        // }
 
         if !url.starts_with("ws://") && !url.starts_with("wss://") {
             return Err(RelayError::InvalidUrl(
