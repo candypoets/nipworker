@@ -27,7 +27,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 pub struct SubscriptionManager {
     database: Arc<NostrDB>,
     parser: Arc<Parser>,
-    subscriptions: Arc<RwLock<FxHashMap<String, SharedArrayBuffer>>>,
     cache_processor: Arc<CacheProcessor>,
     relay_hints: FxHashMap<String, Vec<String>>,
 
@@ -53,7 +52,6 @@ impl SubscriptionManager {
         Self {
             database: database.clone(),
             parser,
-            subscriptions: Arc::new(RwLock::new(FxHashMap::default())),
             relay_hints: FxHashMap::default(),
             cache_processor,
 
@@ -89,21 +87,6 @@ impl SubscriptionManager {
         PermitGuard {
             permits: self.permits.clone(),
         }
-    }
-
-    pub async fn close_subscription(&self, subscription_id: &String) -> Result<()> {
-        // self.connection_registry
-        //     .close_subscription(&subscription_id)
-        //     .await?;
-
-        // drop the reference to the sharedBuffer
-        self.subscriptions.write().unwrap().remove(subscription_id);
-
-        Ok(())
-    }
-
-    pub async fn get_active_subscription_count(&self) -> u32 {
-        self.subscriptions.read().unwrap().len() as u32
     }
 
     pub async fn process_subscription(
