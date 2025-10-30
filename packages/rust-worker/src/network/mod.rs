@@ -26,6 +26,12 @@ use wasm_bindgen_futures::spawn_local;
 
 type Result<T> = std::result::Result<T, NostrError>;
 
+// Tunables
+const MAX_INFLIGHT: usize = 6;
+const STARTUP_DELAY_MS: u32 = 500;
+const INITIAL_BACKOFF_MS: u32 = 8;
+const MAX_BACKOFF_MS: u32 = 512;
+
 // Parsed view of a single out frame
 struct ParsedOut {
     url: String,
@@ -63,7 +69,6 @@ fn unquote_simple(s: &str) -> &str {
 impl NetworkManager {
     pub fn new(database: Arc<NostrDB>, parser: Arc<Parser>, rings: WsRings) -> Self {
         let publish_manager = publish::PublishManager::new(database.clone(), parser.clone());
-
         let subscription_manager =
             subscription::SubscriptionManager::new(database.clone(), parser.clone());
 
@@ -105,15 +110,14 @@ impl NetworkManager {
         if bytes.len() < off + raw_len {
             return None;
         }
-        let raw_str = std::str::from_utf8(&bytes[off..off + raw_len])
-            .ok()?
-            .to_owned();
+        // Borrow raw JSON slice (avoid extra allocation here)
+        let raw_str = std::str::from_utf8(&bytes[off..off + raw_len]).ok()?;
 
-        let parts = extract_first_three(&raw_str)?;
+        let parts = extract_first_three(raw_str)?;
         let kind_tok_raw = parts[0].unwrap_or("");
         let kind = unquote_simple(kind_tok_raw).to_ascii_uppercase();
-        let sub_id = parts[1].map(unquote_simple).map(|s| s.to_owned());
-        let payload = parts[2].map(|s| s.to_owned());
+        let sub_id = parts[1].map(unquote_simple).map(str::to_owned);
+        let payload = parts[2].map(str::to_owned);
 
         Some(ParsedOut {
             url,
@@ -254,7 +258,6 @@ impl NetworkManager {
 
         // Single-threaded inflight counter
         let inflight: Rc<Cell<usize>> = Rc::new(Cell::new(0));
-        let max_inflight = 6usize;
 
         // Channel to notify when a slot becomes available
         let (slot_tx, mut slot_rx) = mpsc::unbounded::<()>();
@@ -264,24 +267,24 @@ impl NetworkManager {
             let slot_tx_main = slot_tx.clone();
             async move {
                 // Initial delay to stagger startup
-                TimeoutFuture::new(500).await;
+                TimeoutFuture::new(STARTUP_DELAY_MS).await;
 
                 // Backoffs for fairness and avoiding spin
-                let mut empty_backoff_ms: u32 = 8;
-                let mut full_backoff_ms: u32 = 8;
+                let mut empty_backoff_ms: u32 = INITIAL_BACKOFF_MS;
+                let mut full_backoff_ms: u32 = INITIAL_BACKOFF_MS;
 
                 loop {
                     // Throttle when at capacity: wait for either a slot or timeout
-                    if inflight.get() >= max_inflight {
+                    if inflight.get() >= MAX_INFLIGHT {
                         let mut timeout = TimeoutFuture::new(full_backoff_ms).fuse();
                         let mut slot = slot_rx.next().fuse();
                         futures::select! {
                             _ = timeout => {
-                                full_backoff_ms = (full_backoff_ms.saturating_mul(2)).min(512);
+                                full_backoff_ms = (full_backoff_ms.saturating_mul(2)).min(MAX_BACKOFF_MS);
                             }
                             _ = slot => {
                                 // slot freed, try immediately
-                                full_backoff_ms = 8;
+                                full_backoff_ms = INITIAL_BACKOFF_MS;
                             }
                         }
                         continue;
@@ -289,7 +292,7 @@ impl NetworkManager {
 
                     if let Some(bytes) = rings.read_out() {
                         // Progress: reset empty backoff
-                        empty_backoff_ms = 8;
+                        empty_backoff_ms = INITIAL_BACKOFF_MS;
 
                         if let Some(parsed) = Self::parse_out_frame(&bytes) {
                             // Fast-path filter before spawning to avoid extra tasks
@@ -346,7 +349,7 @@ impl NetworkManager {
                             TimeoutFuture::new(0).await;
 
                             // Reset full backoff as we made progress
-                            full_backoff_ms = 8;
+                            full_backoff_ms = INITIAL_BACKOFF_MS;
                         } else {
                             // malformed frame — tiny yield
                             TimeoutFuture::new(0).await;
@@ -354,7 +357,7 @@ impl NetworkManager {
                     } else {
                         // Ring empty — exponential backoff
                         TimeoutFuture::new(empty_backoff_ms).await;
-                        empty_backoff_ms = (empty_backoff_ms.saturating_mul(2)).min(512);
+                        empty_backoff_ms = (empty_backoff_ms.saturating_mul(2)).min(MAX_BACKOFF_MS);
                     }
                 }
             }
@@ -378,10 +381,7 @@ impl NetworkManager {
             return Ok(());
         }
 
-        let parsed_requests: Vec<Request> = requests
-            .iter()
-            .map(|request| Request::from_flatbuffer(request))
-            .collect();
+        let parsed_requests: Vec<Request> = requests.iter().map(Request::from_flatbuffer).collect();
 
         let (pipeline, relay_filters) = self
             .subscription_manager
@@ -408,18 +408,8 @@ impl NetworkManager {
         // ["REQ", subscription_id, ...filters]
         for (relay_url, filters) in relay_filters {
             let req_message = ClientMessage::req(subscription_id.clone(), filters);
-
             let frame = req_message.to_json()?;
-            let relays = [relay_url.as_str()];
-            let frames = [frame.clone()];
-            // info!(
-            //     "Writing REQ frame '{}' to relay: {}",
-            //     frame.clone(),
-            //     relay_url
-            // );
-            // // Write JSON envelope { relays: [...], frames: [...] } to the inRing.
-            // // Use an unsafe mutable borrow to avoid changing struct mutability here.
-            let _ = self.rings.write_in_envelope(&relays, &frames);
+            self.send_frame_to_relay(&relay_url, &frame);
         }
 
         Ok(())
@@ -431,9 +421,7 @@ impl NetworkManager {
             for relay_url in &sub.relay_urls {
                 let close_message = ClientMessage::close(subscription_id.clone());
                 let frame = close_message.to_json()?;
-                let relays = [relay_url.as_str()];
-                let frames = [frame.clone()];
-                let _ = self.rings.write_in_envelope(&relays, &frames);
+                self.send_frame_to_relay(relay_url, &frame);
             }
         }
 
@@ -468,11 +456,16 @@ impl NetworkManager {
         for relay_url in &relays {
             let event_message = ClientMessage::event(event.clone());
             let frame = event_message.to_json()?;
-            let relays_array = [relay_url.as_str()];
-            let frames = [frame];
-            let _ = self.rings.write_in_envelope(&relays_array, &frames);
+            self.send_frame_to_relay(relay_url, &frame);
         }
 
         Ok(())
+    }
+
+    // Small helper to avoid repeating envelope writes
+    fn send_frame_to_relay(&self, relay_url: &str, frame: &str) {
+        let relays = [relay_url];
+        let frames = [frame.to_owned()];
+        let _ = self.rings.write_in_envelope(&relays, &frames);
     }
 }
