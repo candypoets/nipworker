@@ -160,6 +160,9 @@ impl ConnectionRegistry {
         let jobs = relays.into_iter().map(move |url| {
             let this = this.clone();
             let frames = frames.clone();
+            if let Some(ref w) = this.status_writer {
+                w("connecting", &url);
+            }
             async move {
                 // Ensure connection and send frames in-order for this relay
                 if let Ok(conn) = this.ensure_connection(&url).await {
@@ -204,6 +207,9 @@ impl ConnectionRegistry {
                                 this.process_incoming_message(sub_id, "OK", "SUBSCRIBED", &url)
                                     .await;
                             }
+                            if let Some(ref w) = this.status_writer {
+                                w("connected", &url);
+                            }
                         }
                     }
                     Ok::<(), ()>(())
@@ -230,31 +236,35 @@ impl ConnectionRegistry {
         // but the above already unblocks other relays so it addresses the hang.
     }
 
-    pub async fn disconnect(&self, url: &str) -> Result<(), RelayError> {
-        let normalized_url = normalize_relay_url(url);
-        let connection = {
-            let mut connections = self.connections.write().unwrap();
-            connections.remove(&normalized_url)
-        };
-        if let Some(connection) = connection {
-            connection.close().await?;
-        }
-        Ok(())
-    }
+    // pub async fn disconnect(&self, url: &str) -> Result<(), RelayError> {
+    //     let normalized_url = normalize_relay_url(url);
+    //     let connection = {
+    //         let mut connections = self.connections.write().unwrap();
+    //         connections.remove(&normalized_url)
+    //     };
+    //     if let Some(connection) = connection {
+    //         connection.close().await?;
+    //     }
+    //     if let Some(ref w) = self.status_writer {
+    //         tracing::info!("Disconnecting from relay: {}", url);
+    //         w("close", &url);
+    //     }
+    //     Ok(())
+    // }
 
-    pub async fn disconnect_all(&self) -> Result<(), RelayError> {
-        let connections = {
-            let mut connections_guard = self.connections.write().unwrap();
-            connections_guard
-                .drain()
-                .map(|(_, c)| c)
-                .collect::<Vec<_>>()
-        };
-        for c in connections {
-            let _ = c.close().await;
-        }
-        Ok(())
-    }
+    // pub async fn disconnect_all(&self) -> Result<(), RelayError> {
+    //     let connections = {
+    //         let mut connections_guard = self.connections.write().unwrap();
+    //         connections_guard
+    //             .drain()
+    //             .map(|(_, c)| c)
+    //             .collect::<Vec<_>>()
+    //     };
+    //     for c in connections {
+    //         let _ = c.close().await;
+    //     }
+    //     Ok(())
+    // }
 }
 
 impl Clone for ConnectionRegistry {
