@@ -52,7 +52,7 @@ fn setup_tracing() {
             .with_writer(|| ConsoleWriter)
             .without_time()
             .with_target(false)
-            .with_max_level(tracing::Level::ERROR)
+            .with_max_level(tracing::Level::INFO)
             .try_init();
 
         console_log!("Tracing subscriber initialized for Web Worker");
@@ -133,8 +133,6 @@ impl WSRust {
         }
         let status_ring = Rc::new(RefCell::new(SabRing::new(status_ring)?));
 
-        // Build registry and wire writer that routes by subId to the correct out ring
-        let mut registry = ConnectionRegistry::new();
         let out_vec_for_writer = out_vec.clone();
         let writer = Rc::new(move |url: &str, sub_id: &str, raw: &str| {
             let idx = hash_sub_id(sub_id, out_vec_for_writer.len());
@@ -143,7 +141,6 @@ impl WSRust {
                 write_worker_line(&mut ring, url, raw);
             }
         });
-        registry.set_out_writer(writer);
 
         // Wire status writer
         let status_cell = status_ring.clone();
@@ -151,7 +148,9 @@ impl WSRust {
             let mut ring = status_cell.borrow_mut();
             write_status_line(&mut ring, status, url);
         });
-        registry.set_status_writer(status_writer);
+
+        // Build registry and wire writer that routes by subId to the correct out ring
+        let registry = ConnectionRegistry::new(writer, status_writer);
 
         Ok(WSRust {
             in_rings: in_vec,
@@ -171,9 +170,8 @@ impl WSRust {
             let reg = self.registry.clone();
 
             spawn_local(async move {
-                // Inside the spawn_local(async move { ... }) block
-                let mut sleep_ms: u32 = 16; // base delay
-                let max_sleep_ms: u32 = 500; // cap the backoff
+                let mut sleep_ms: u32 = 16;
+                let max_sleep_ms: u32 = 500;
 
                 loop {
                     let mut processed = 0usize;
@@ -191,18 +189,11 @@ impl WSRust {
 
                         if let Ok(env) = serde_json::from_slice::<Envelope>(&bytes) {
                             if !env.relays.is_empty() && !env.frames.is_empty() {
-                                let reg2 = reg.clone();
-                                let relays = env.relays;
-                                let frames = env.frames;
-                                spawn_local(async move {
-                                    reg2.send_to_relays(
-                                        relays,
-                                        frames,
-                                        max_successes,
-                                        max_concurrency,
-                                    )
-                                    .await;
-                                });
+                                // Sync call to send_to_relays
+                                if let Err(e) = reg.send_to_relays(&env.relays, &env.frames) {
+                                    tracing::error!("send_to_relays failed: {:?}", e);
+                                    // No retry; just log
+                                }
                             }
                         }
                     }
@@ -210,9 +201,8 @@ impl WSRust {
                     if processed == 0 {
                         gloo_timers::future::TimeoutFuture::new(sleep_ms).await;
                         sleep_ms = (sleep_ms.saturating_mul(2)).min(max_sleep_ms);
-                    // backoff
                     } else {
-                        sleep_ms = 16; // reset on activity
+                        sleep_ms = 16;
                     }
                 }
             });

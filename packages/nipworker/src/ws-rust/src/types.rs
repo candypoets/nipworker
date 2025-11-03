@@ -94,6 +94,9 @@ pub enum RelayError {
     #[error("Connection closed")]
     ConnectionClosed,
 
+    #[error("Queue full")]
+    QueueFull,
+
     #[error("Invalid message format")]
     InvalidMessage,
 
