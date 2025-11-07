@@ -97,6 +97,7 @@ table Unsubscribe {
 table Publish {
   publish_id: string (required);
   template: Template (required);
+  relays: [string] (required);
 }
 
 table SignEvent {

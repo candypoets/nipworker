@@ -376,9 +376,12 @@ impl NostrClient {
 
                 let publish_id = publish.publish_id().to_string();
                 let template = Template::from_flatbuffer(&publish.template());
+                let relays: Vec<String> = (0..publish.relays().len())
+                    .map(|i| publish.relays().get(i).to_string())
+                    .collect();
 
                 self.network_manager
-                    .publish_event(publish_id, &template, shared_buffer)
+                    .publish_event(publish_id, &template, &relays, shared_buffer)
                     .await
                     .map_err(|e| JsValue::from_str(&format!("Failed to publish event: {}", e)))?;
             }

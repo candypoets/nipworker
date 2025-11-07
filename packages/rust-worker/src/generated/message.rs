@@ -10373,6 +10373,7 @@ impl<'a> flatbuffers::Follow<'a> for Publish<'a> {
 impl<'a> Publish<'a> {
   pub const VT_PUBLISH_ID: flatbuffers::VOffsetT = 4;
   pub const VT_TEMPLATE: flatbuffers::VOffsetT = 6;
+  pub const VT_RELAYS: flatbuffers::VOffsetT = 8;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -10384,6 +10385,7 @@ impl<'a> Publish<'a> {
     args: &'args PublishArgs<'args>
   ) -> flatbuffers::WIPOffset<Publish<'bldr>> {
     let mut builder = PublishBuilder::new(_fbb);
+    if let Some(x) = args.relays { builder.add_relays(x); }
     if let Some(x) = args.template { builder.add_template(x); }
     if let Some(x) = args.publish_id { builder.add_publish_id(x); }
     builder.finish()
@@ -10398,9 +10400,14 @@ impl<'a> Publish<'a> {
       let x = self.template();
       Box::new(x.unpack())
     };
+    let relays = {
+      let x = self.relays();
+      x.iter().map(|s| s.to_string()).collect()
+    };
     PublishT {
       publish_id,
       template,
+      relays,
     }
   }
 
@@ -10418,6 +10425,13 @@ impl<'a> Publish<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<Template>>(Publish::VT_TEMPLATE, None).unwrap()}
   }
+  #[inline]
+  pub fn relays(&self) -> flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>(Publish::VT_RELAYS, None).unwrap()}
+  }
 }
 
 impl flatbuffers::Verifiable for Publish<'_> {
@@ -10429,6 +10443,7 @@ impl flatbuffers::Verifiable for Publish<'_> {
     v.visit_table(pos)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("publish_id", Self::VT_PUBLISH_ID, true)?
      .visit_field::<flatbuffers::ForwardsUOffset<Template>>("template", Self::VT_TEMPLATE, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("relays", Self::VT_RELAYS, true)?
      .finish();
     Ok(())
   }
@@ -10436,6 +10451,7 @@ impl flatbuffers::Verifiable for Publish<'_> {
 pub struct PublishArgs<'a> {
     pub publish_id: Option<flatbuffers::WIPOffset<&'a str>>,
     pub template: Option<flatbuffers::WIPOffset<Template<'a>>>,
+    pub relays: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>,
 }
 impl<'a> Default for PublishArgs<'a> {
   #[inline]
@@ -10443,6 +10459,7 @@ impl<'a> Default for PublishArgs<'a> {
     PublishArgs {
       publish_id: None, // required field
       template: None, // required field
+      relays: None, // required field
     }
   }
 }
@@ -10461,6 +10478,10 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> PublishBuilder<'a, 'b, A> {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<Template>>(Publish::VT_TEMPLATE, template);
   }
   #[inline]
+  pub fn add_relays(&mut self, relays: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<&'b  str>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Publish::VT_RELAYS, relays);
+  }
+  #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> PublishBuilder<'a, 'b, A> {
     let start = _fbb.start_table();
     PublishBuilder {
@@ -10473,6 +10494,7 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> PublishBuilder<'a, 'b, A> {
     let o = self.fbb_.end_table(self.start_);
     self.fbb_.required(o, Publish::VT_PUBLISH_ID,"publish_id");
     self.fbb_.required(o, Publish::VT_TEMPLATE,"template");
+    self.fbb_.required(o, Publish::VT_RELAYS,"relays");
     flatbuffers::WIPOffset::new(o.value())
   }
 }
@@ -10482,6 +10504,7 @@ impl core::fmt::Debug for Publish<'_> {
     let mut ds = f.debug_struct("Publish");
       ds.field("publish_id", &self.publish_id());
       ds.field("template", &self.template());
+      ds.field("relays", &self.relays());
       ds.finish()
   }
 }
@@ -10490,12 +10513,14 @@ impl core::fmt::Debug for Publish<'_> {
 pub struct PublishT {
   pub publish_id: String,
   pub template: Box<TemplateT>,
+  pub relays: Vec<String>,
 }
 impl Default for PublishT {
   fn default() -> Self {
     Self {
       publish_id: "".to_string(),
       template: Default::default(),
+      relays: Default::default(),
     }
   }
 }
@@ -10512,9 +10537,14 @@ impl PublishT {
       let x = &self.template;
       x.pack(_fbb)
     });
+    let relays = Some({
+      let x = &self.relays;
+      let w: Vec<_> = x.iter().map(|s| _fbb.create_string(s)).collect();_fbb.create_vector(&w)
+    });
     Publish::create(_fbb, &PublishArgs{
       publish_id,
       template,
+      relays,
     })
   }
 }

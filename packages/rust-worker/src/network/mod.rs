@@ -435,6 +435,7 @@ impl NetworkManager {
         &self,
         publish_id: String,
         template: &Template,
+        default_relays: &Vec<String>,
         shared_buffer: SharedArrayBuffer,
     ) -> Result<()> {
         let (event, relays) = self
@@ -442,18 +443,24 @@ impl NetworkManager {
             .publish_event(publish_id.clone(), template)
             .await?;
 
+        let mut all_relays = relays.clone();
+
+        all_relays.extend(default_relays.iter().cloned());
+        all_relays.sort();
+        all_relays.dedup();
+
         self.subscriptions.write().unwrap().insert(
             event.id.to_string(),
             Sub {
                 pipeline: Arc::new(Mutex::new(Pipeline::new(vec![], "".to_string()).unwrap())),
                 buffer: shared_buffer.clone(),
                 eosed: false,
-                relay_urls: relays.clone(),
+                relay_urls: all_relays.clone(),
                 publish_id: Some(publish_id.clone()),
             },
         );
 
-        for relay_url in &relays {
+        for relay_url in &all_relays {
             let event_message = ClientMessage::event(event.clone());
             let frame = event_message.to_json()?;
             self.send_frame_to_relay(relay_url, &frame);

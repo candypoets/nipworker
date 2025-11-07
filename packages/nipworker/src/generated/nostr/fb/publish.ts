@@ -38,8 +38,20 @@ template(obj?:Template):Template|null {
   return offset ? (obj || new Template()).__init(this.bb!.__indirect(this.bb_pos + offset), this.bb!) : null;
 }
 
+relays(index: number): ByteString
+relays(index: number,optionalEncoding:flatbuffers.Encoding): ByteString|Uint8Array
+relays(index: number,optionalEncoding?:any): ByteString|Uint8Array|null {
+  const offset = this.bb!.__offset(this.bb_pos, 8);
+  return offset ? this.bb!.__stringByteString(this.bb!.__vector(this.bb_pos + offset) + index * 4, optionalEncoding) : null;
+}
+
+relaysLength():number {
+  const offset = this.bb!.__offset(this.bb_pos, 8);
+  return offset ? this.bb!.__vector_len(this.bb_pos + offset) : 0;
+}
+
 static startPublish(builder:flatbuffers.Builder) {
-  builder.startObject(2);
+  builder.startObject(3);
 }
 
 static addPublishId(builder:flatbuffers.Builder, publishIdOffset:flatbuffers.Offset) {
@@ -50,10 +62,27 @@ static addTemplate(builder:flatbuffers.Builder, templateOffset:flatbuffers.Offse
   builder.addFieldOffset(1, templateOffset, 0);
 }
 
+static addRelays(builder:flatbuffers.Builder, relaysOffset:flatbuffers.Offset) {
+  builder.addFieldOffset(2, relaysOffset, 0);
+}
+
+static createRelaysVector(builder:flatbuffers.Builder, data:flatbuffers.Offset[]):flatbuffers.Offset {
+  builder.startVector(4, data.length, 4);
+  for (let i = data.length - 1; i >= 0; i--) {
+    builder.addOffset(data[i]!);
+  }
+  return builder.endVector();
+}
+
+static startRelaysVector(builder:flatbuffers.Builder, numElems:number) {
+  builder.startVector(4, numElems, 4);
+}
+
 static endPublish(builder:flatbuffers.Builder):flatbuffers.Offset {
   const offset = builder.endObject();
   builder.requiredField(offset, 4) // publish_id
   builder.requiredField(offset, 6) // template
+  builder.requiredField(offset, 8) // relays
   return offset;
 }
 
@@ -61,7 +90,8 @@ static endPublish(builder:flatbuffers.Builder):flatbuffers.Offset {
 unpack(): PublishT {
   return new PublishT(
     this.publishId(),
-    (this.template() !== null ? this.template()!.unpack() : null)
+    (this.template() !== null ? this.template()!.unpack() : null),
+    this.bb!.createScalarList<string>(this.relays.bind(this), this.relaysLength())
   );
 }
 
@@ -69,23 +99,27 @@ unpack(): PublishT {
 unpackTo(_o: PublishT): void {
   _o.publishId = this.publishId();
   _o.template = (this.template() !== null ? this.template()!.unpack() : null);
+  _o.relays = this.bb!.createScalarList<string>(this.relays.bind(this), this.relaysLength());
 }
 }
 
 export class PublishT implements flatbuffers.IGeneratedObject {
 constructor(
   public publishId: ByteString|Uint8Array|null = null,
-  public template: TemplateT|null = null
+  public template: TemplateT|null = null,
+  public relays: (string)[] = []
 ){}
 
 
 pack(builder:flatbuffers.Builder): flatbuffers.Offset {
   const publishId = (this.publishId !== null ? builder.createString(this.publishId!) : 0);
   const template = (this.template !== null ? this.template!.pack(builder) : 0);
+  const relays = Publish.createRelaysVector(builder, builder.createObjectOffsetList(this.relays));
 
   Publish.startPublish(builder);
   Publish.addPublishId(builder, publishId);
   Publish.addTemplate(builder, template);
+  Publish.addRelays(builder, relays);
 
   return Publish.endPublish(builder);
 }

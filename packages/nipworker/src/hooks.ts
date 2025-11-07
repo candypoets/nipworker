@@ -131,7 +131,10 @@ export function usePublish(
 	pubId: string,
 	event: EventTemplate,
 	callback: (message: WorkerMessage) => void = () => {},
-	options: { trackStatus?: boolean } = { trackStatus: true }
+	options: { trackStatus?: boolean; defaultRelays?: string[] } = {
+		trackStatus: true,
+		defaultRelays: []
+	}
 ): () => void {
 	if (!pubId) {
 		console.warn('usePublish: No publish ID provided');
@@ -151,7 +154,7 @@ export function usePublish(
 		manager.removeEventListener(`publish:${pubId}`, processEvents);
 	};
 
-	buffer = manager.publish(pubId, event);
+	buffer = manager.publish(pubId, event, options.defaultRelays);
 
 	const processEvents = (): void => {
 		if (!running || !buffer) {

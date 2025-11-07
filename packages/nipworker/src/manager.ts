@@ -318,7 +318,7 @@ export class NostrManager {
 		}
 	}
 
-	publish(publish_id: string, event: NostrEvent): SharedArrayBuffer {
+	publish(publish_id: string, event: NostrEvent, defaultRelays: string[] = []): SharedArrayBuffer {
 		// a publish buffer fit in 3kb
 		const buffer = new SharedArrayBuffer(3072);
 
@@ -331,7 +331,7 @@ export class NostrManager {
 				this.textEncoder.encode(event.content),
 				event.tags.map((t) => new StringVecT(t)) || []
 			);
-			const publishT = new PublishT(this.textEncoder.encode(publish_id), templateT);
+			const publishT = new PublishT(this.textEncoder.encode(publish_id), templateT, defaultRelays);
 
 			// Wrap in MainMessageT as Publish variant
 			const mainT = new MainMessageT(MainContent.Publish, publishT);
