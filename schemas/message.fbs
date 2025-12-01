@@ -2,6 +2,7 @@
 include "common.fbs";
 include "main.fbs";
 include "websocket.fbs";
+include "out_envelop.fbs";
 include "kinds/kind0.fbs";
 include "kinds/kind1.fbs";
 include "kinds/kind3.fbs";

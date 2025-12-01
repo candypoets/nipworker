@@ -1,7 +1,4 @@
 import { NostrManager } from 'src/manager';
-import { WSRuntime } from './ws/runtime';
-// import { initializeRingHeader } from './ws/ring-buffer';
-
 export * from 'src/manager';
 
 export const statusRing = new SharedArrayBuffer(512 * 1024);

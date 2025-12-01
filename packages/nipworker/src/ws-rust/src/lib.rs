@@ -1,3 +1,4 @@
+use serde_json::Value;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
@@ -8,11 +9,15 @@ use std::sync::{Arc, Once};
 
 mod connection;
 mod connection_registry;
+mod fb_utils;
+mod generated;
 mod sab_ring;
 mod types;
 
 use connection_registry::ConnectionRegistry;
 use sab_ring::SabRing;
+
+use crate::fb_utils::serialize_out_envelope;
 
 #[derive(serde::Deserialize)]
 struct Envelope {
@@ -76,22 +81,6 @@ fn hash_sub_id(sub_id: &str, rings_len: usize) -> usize {
     hash.unsigned_abs() as usize % rings_len
 }
 
-fn write_worker_line(out_ring: &mut SabRing, url: &str, raw: &str) {
-    // [u16_be url_len][url][u32_be raw_len][raw]
-    let url_b = url.as_bytes();
-    let raw_b = raw.as_bytes();
-    let total = 2 + url_b.len() + 4 + raw_b.len();
-    let mut buf = vec![0u8; total];
-    buf[0..2].copy_from_slice(&(url_b.len() as u16).to_be_bytes());
-    let mut o = 2usize;
-    buf[o..o + url_b.len()].copy_from_slice(url_b);
-    o += url_b.len();
-    buf[o..o + 4].copy_from_slice(&(raw_b.len() as u32).to_be_bytes());
-    o += 4;
-    buf[o..].copy_from_slice(raw_b);
-    out_ring.write(&buf);
-}
-
 fn write_status_line(status_ring: &mut SabRing, status: &str, url: &str) {
     // Simple ASCII: "status|url"
     // Frontend splits on the first '|' to parse.
@@ -135,10 +124,30 @@ impl WSRust {
 
         let out_vec_for_writer = out_vec.clone();
         let writer = Rc::new(move |url: &str, sub_id: &str, raw: &str| {
-            let idx = hash_sub_id(sub_id, out_vec_for_writer.len());
-            if let Some(cell) = out_vec_for_writer.get(idx) {
-                let mut ring = cell.borrow_mut();
-                write_worker_line(&mut ring, url, raw);
+            if let Some(envelope_bytes) = serialize_out_envelope(sub_id, url, raw) {
+                let idx = hash_sub_id(sub_id, out_vec_for_writer.len());
+                if let Some(cell) = out_vec_for_writer.get(idx) {
+                    let mut ring = cell.borrow_mut();
+                    ring.write(&envelope_bytes); // Write prefixed FB bytes
+                } else {
+                    console_log!("No ring cell at idx={} for sub_id='{}'", idx, sub_id);
+                    // Error: Missing ring
+                }
+            } else {
+                // Failure log (error handling) - now compiles with Value import
+                let raw_sub_id = if let Ok(parsed) = serde_json::from_str::<Value>(raw) {
+                    if let Value::Array(arr) = parsed {
+                        arr.get(1).and_then(|v| v.as_str()).map(|s| s.to_string())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+                console_log!(
+                    "Failed to serialize envelope for caller_sub_id='{}': raw_sub_id={:?}, raw='{}' (len={})",
+                    sub_id, raw_sub_id, raw, raw.len()
+                );
             }
         });
 

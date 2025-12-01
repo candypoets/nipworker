@@ -12,6 +12,7 @@ use sha2::{Digest, Sha256};
 use k256::{
     elliptic_curve::sec1::ToEncodedPoint, AffinePoint, EncodedPoint, ProjectivePoint, Scalar,
 };
+use tracing::info;
 
 type Result<T> = std::result::Result<T, NostrError>;
 
@@ -48,11 +49,12 @@ fn verify_proof_dleq_with_keys(proof: &Proof, keys_map: &FxHashMap<u64, String>)
         None => return false,
     };
 
-    let A = match point_from_hex_unchecked(key_hex) {
+    let a = match point_from_hex_unchecked(key_hex) {
         Some(p) => p,
         None => return false,
     };
-    let C = match point_from_hex_unchecked(&proof.c) {
+
+    let c = match point_from_hex_unchecked(&proof.c) {
         Some(p) => p,
         None => return false,
     };
@@ -71,7 +73,7 @@ fn verify_proof_dleq_with_keys(proof: &Proof, keys_map: &FxHashMap<u64, String>)
     };
 
     // Y = hash_to_curve(secret) (NUT-00)
-    let Y = match hash_to_curve_point(proof.secret.as_bytes()) {
+    let y = match hash_to_curve_point(proof.secret.as_bytes()) {
         Some(p) => p,
         None => return false,
     };
@@ -79,24 +81,32 @@ fn verify_proof_dleq_with_keys(proof: &Proof, keys_map: &FxHashMap<u64, String>)
     // Reblind to reconstruct Carol-side B' and C' (NUT-12):
     // B' = Y + r*G
     // C' = C + r*A
-    let rG = ProjectivePoint::from(AffinePoint::GENERATOR) * r;
-    let Bp = Y + rG;
-    let Cp = C + (A * r);
+    let r_g = ProjectivePoint::from(AffinePoint::GENERATOR) * r;
+
+    let bp = y + r_g;
+
+    let cp = c + (a * r);
 
     // Verify Chaum-Pedersen DLEQ (NUT-12):
     // R1 = s*G - e*A
     // R2 = s*B' - e*C'
     // e' = H(R1, R2, A, C')  (uncompressed hex concatenation)
-    let sG = ProjectivePoint::from(AffinePoint::GENERATOR) * s;
-    let eA = A * e;
-    let R1 = sG + (-eA);
+    let s_g = ProjectivePoint::from(AffinePoint::GENERATOR) * s;
 
-    let sB = Bp * s;
-    let eC = Cp * e;
-    let R2 = sB + (-eC);
+    let e_a = a * e;
 
-    let e_prime = compute_challenge_e_nut12(&R1, &R2, &A, &Cp);
-    e == e_prime
+    let r1 = s_g + (-e_a);
+
+    let s_b = bp * s;
+
+    let e_c = cp * e;
+
+    let r2 = s_b + (-e_c);
+
+    let e_prime = compute_challenge_e_nut12(&r1, &r2, &a, &cp);
+
+    let valid = e == e_prime;
+    valid
 }
 
 //

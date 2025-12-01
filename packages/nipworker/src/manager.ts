@@ -1,10 +1,10 @@
-import RustWorker from '@candypoets/rust-worker/worker.js?worker';
 import wasmAsset from '@candypoets/rust-worker/rust_worker_bg.wasm?url';
+import RustWorker from '@candypoets/rust-worker/worker.js?worker';
+import * as flatbuffers from 'flatbuffers';
 import type { EventTemplate, NostrEvent } from 'nostr-tools';
 
 import { SharedBufferReader } from 'src/lib/SharedBuffer';
 
-import * as flatbuffers from 'flatbuffers';
 import { RequestObject, SubscriptionConfig } from 'src/types';
 import {
 	GetPublicKeyT,

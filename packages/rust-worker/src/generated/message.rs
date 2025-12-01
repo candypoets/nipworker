@@ -1556,6 +1556,107 @@ impl<'a> flatbuffers::Verifiable for MsgKind {
 
 impl flatbuffers::SimpleToVerifyInSlice for MsgKind {}
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
+pub const ENUM_MIN_MESSAGE_KIND: i8 = 0;
+#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
+pub const ENUM_MAX_MESSAGE_KIND: i8 = 5;
+#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
+#[allow(non_camel_case_types)]
+pub const ENUM_VALUES_MESSAGE_KIND: [MessageKind; 6] = [
+  MessageKind::EVENT,
+  MessageKind::EOSE,
+  MessageKind::OK,
+  MessageKind::NOTICE,
+  MessageKind::AUTH,
+  MessageKind::CLOSED,
+];
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[repr(transparent)]
+pub struct MessageKind(pub i8);
+#[allow(non_upper_case_globals)]
+impl MessageKind {
+  pub const EVENT: Self = Self(0);
+  pub const EOSE: Self = Self(1);
+  pub const OK: Self = Self(2);
+  pub const NOTICE: Self = Self(3);
+  pub const AUTH: Self = Self(4);
+  pub const CLOSED: Self = Self(5);
+
+  pub const ENUM_MIN: i8 = 0;
+  pub const ENUM_MAX: i8 = 5;
+  pub const ENUM_VALUES: &'static [Self] = &[
+    Self::EVENT,
+    Self::EOSE,
+    Self::OK,
+    Self::NOTICE,
+    Self::AUTH,
+    Self::CLOSED,
+  ];
+  /// Returns the variant's name or "" if unknown.
+  pub fn variant_name(self) -> Option<&'static str> {
+    match self {
+      Self::EVENT => Some("EVENT"),
+      Self::EOSE => Some("EOSE"),
+      Self::OK => Some("OK"),
+      Self::NOTICE => Some("NOTICE"),
+      Self::AUTH => Some("AUTH"),
+      Self::CLOSED => Some("CLOSED"),
+      _ => None,
+    }
+  }
+}
+impl core::fmt::Debug for MessageKind {
+  fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+    if let Some(name) = self.variant_name() {
+      f.write_str(name)
+    } else {
+      f.write_fmt(format_args!("<UNKNOWN {:?}>", self.0))
+    }
+  }
+}
+impl<'a> flatbuffers::Follow<'a> for MessageKind {
+  type Inner = Self;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    let b = flatbuffers::read_scalar_at::<i8>(buf, loc);
+    Self(b)
+  }
+}
+
+impl flatbuffers::Push for MessageKind {
+    type Output = MessageKind;
+    #[inline]
+    unsafe fn push(&self, dst: &mut [u8], _written_len: usize) {
+        flatbuffers::emplace_scalar::<i8>(dst, self.0);
+    }
+}
+
+impl flatbuffers::EndianScalar for MessageKind {
+  type Scalar = i8;
+  #[inline]
+  fn to_little_endian(self) -> i8 {
+    self.0.to_le()
+  }
+  #[inline]
+  #[allow(clippy::wrong_self_convention)]
+  fn from_little_endian(v: i8) -> Self {
+    let b = i8::from_le(v);
+    Self(b)
+  }
+}
+
+impl<'a> flatbuffers::Verifiable for MessageKind {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    i8::run_verifier(v, pos)
+  }
+}
+
+impl flatbuffers::SimpleToVerifyInSlice for MessageKind {}
+#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_MESSAGE_TYPE: u32 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MAX_MESSAGE_TYPE: u32 = 7;
@@ -11629,6 +11730,323 @@ impl WorkerLineT {
       kind,
       sub_id,
       raw,
+    })
+  }
+}
+pub enum OutEnvelopeOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct OutEnvelope<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for OutEnvelope<'a> {
+  type Inner = OutEnvelope<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> OutEnvelope<'a> {
+  pub const VT_SUB_ID: flatbuffers::VOffsetT = 4;
+  pub const VT_URL: flatbuffers::VOffsetT = 6;
+  pub const VT_KIND: flatbuffers::VOffsetT = 8;
+  pub const VT_IS_EOSE: flatbuffers::VOffsetT = 10;
+  pub const VT_EVENT: flatbuffers::VOffsetT = 12;
+  pub const VT_PARSED_EVENT: flatbuffers::VOffsetT = 14;
+  pub const VT_MESSAGE: flatbuffers::VOffsetT = 16;
+  pub const VT_SUCCESS: flatbuffers::VOffsetT = 18;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    OutEnvelope { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args OutEnvelopeArgs<'args>
+  ) -> flatbuffers::WIPOffset<OutEnvelope<'bldr>> {
+    let mut builder = OutEnvelopeBuilder::new(_fbb);
+    if let Some(x) = args.message { builder.add_message(x); }
+    if let Some(x) = args.parsed_event { builder.add_parsed_event(x); }
+    if let Some(x) = args.event { builder.add_event(x); }
+    if let Some(x) = args.kind { builder.add_kind(x); }
+    if let Some(x) = args.url { builder.add_url(x); }
+    if let Some(x) = args.sub_id { builder.add_sub_id(x); }
+    builder.add_success(args.success);
+    builder.add_is_eose(args.is_eose);
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> OutEnvelopeT {
+    let sub_id = {
+      let x = self.sub_id();
+      x.to_string()
+    };
+    let url = self.url().map(|x| {
+      x.to_string()
+    });
+    let kind = {
+      let x = self.kind();
+      x.to_string()
+    };
+    let is_eose = self.is_eose();
+    let event = self.event().map(|x| {
+      Box::new(x.unpack())
+    });
+    let parsed_event = self.parsed_event().map(|x| {
+      Box::new(x.unpack())
+    });
+    let message = self.message().map(|x| {
+      x.to_string()
+    });
+    let success = self.success();
+    OutEnvelopeT {
+      sub_id,
+      url,
+      kind,
+      is_eose,
+      event,
+      parsed_event,
+      message,
+      success,
+    }
+  }
+
+  #[inline]
+  pub fn sub_id(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(OutEnvelope::VT_SUB_ID, None).unwrap()}
+  }
+  #[inline]
+  pub fn url(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(OutEnvelope::VT_URL, None)}
+  }
+  #[inline]
+  pub fn kind(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(OutEnvelope::VT_KIND, None).unwrap()}
+  }
+  #[inline]
+  pub fn is_eose(&self) -> bool {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<bool>(OutEnvelope::VT_IS_EOSE, Some(false)).unwrap()}
+  }
+  #[inline]
+  pub fn event(&self) -> Option<NostrEvent<'a>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<NostrEvent>>(OutEnvelope::VT_EVENT, None)}
+  }
+  #[inline]
+  pub fn parsed_event(&self) -> Option<ParsedEvent<'a>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<ParsedEvent>>(OutEnvelope::VT_PARSED_EVENT, None)}
+  }
+  #[inline]
+  pub fn message(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(OutEnvelope::VT_MESSAGE, None)}
+  }
+  #[inline]
+  pub fn success(&self) -> bool {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<bool>(OutEnvelope::VT_SUCCESS, Some(false)).unwrap()}
+  }
+}
+
+impl flatbuffers::Verifiable for OutEnvelope<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("sub_id", Self::VT_SUB_ID, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("url", Self::VT_URL, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("kind", Self::VT_KIND, true)?
+     .visit_field::<bool>("is_eose", Self::VT_IS_EOSE, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<NostrEvent>>("event", Self::VT_EVENT, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<ParsedEvent>>("parsed_event", Self::VT_PARSED_EVENT, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("message", Self::VT_MESSAGE, false)?
+     .visit_field::<bool>("success", Self::VT_SUCCESS, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct OutEnvelopeArgs<'a> {
+    pub sub_id: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub url: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub kind: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub is_eose: bool,
+    pub event: Option<flatbuffers::WIPOffset<NostrEvent<'a>>>,
+    pub parsed_event: Option<flatbuffers::WIPOffset<ParsedEvent<'a>>>,
+    pub message: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub success: bool,
+}
+impl<'a> Default for OutEnvelopeArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    OutEnvelopeArgs {
+      sub_id: None, // required field
+      url: None,
+      kind: None, // required field
+      is_eose: false,
+      event: None,
+      parsed_event: None,
+      message: None,
+      success: false,
+    }
+  }
+}
+
+pub struct OutEnvelopeBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> OutEnvelopeBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_sub_id(&mut self, sub_id: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(OutEnvelope::VT_SUB_ID, sub_id);
+  }
+  #[inline]
+  pub fn add_url(&mut self, url: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(OutEnvelope::VT_URL, url);
+  }
+  #[inline]
+  pub fn add_kind(&mut self, kind: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(OutEnvelope::VT_KIND, kind);
+  }
+  #[inline]
+  pub fn add_is_eose(&mut self, is_eose: bool) {
+    self.fbb_.push_slot::<bool>(OutEnvelope::VT_IS_EOSE, is_eose, false);
+  }
+  #[inline]
+  pub fn add_event(&mut self, event: flatbuffers::WIPOffset<NostrEvent<'b >>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<NostrEvent>>(OutEnvelope::VT_EVENT, event);
+  }
+  #[inline]
+  pub fn add_parsed_event(&mut self, parsed_event: flatbuffers::WIPOffset<ParsedEvent<'b >>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<ParsedEvent>>(OutEnvelope::VT_PARSED_EVENT, parsed_event);
+  }
+  #[inline]
+  pub fn add_message(&mut self, message: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(OutEnvelope::VT_MESSAGE, message);
+  }
+  #[inline]
+  pub fn add_success(&mut self, success: bool) {
+    self.fbb_.push_slot::<bool>(OutEnvelope::VT_SUCCESS, success, false);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> OutEnvelopeBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    OutEnvelopeBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<OutEnvelope<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, OutEnvelope::VT_SUB_ID,"sub_id");
+    self.fbb_.required(o, OutEnvelope::VT_KIND,"kind");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for OutEnvelope<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("OutEnvelope");
+      ds.field("sub_id", &self.sub_id());
+      ds.field("url", &self.url());
+      ds.field("kind", &self.kind());
+      ds.field("is_eose", &self.is_eose());
+      ds.field("event", &self.event());
+      ds.field("parsed_event", &self.parsed_event());
+      ds.field("message", &self.message());
+      ds.field("success", &self.success());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct OutEnvelopeT {
+  pub sub_id: String,
+  pub url: Option<String>,
+  pub kind: String,
+  pub is_eose: bool,
+  pub event: Option<Box<NostrEventT>>,
+  pub parsed_event: Option<Box<ParsedEventT>>,
+  pub message: Option<String>,
+  pub success: bool,
+}
+impl Default for OutEnvelopeT {
+  fn default() -> Self {
+    Self {
+      sub_id: "".to_string(),
+      url: None,
+      kind: "".to_string(),
+      is_eose: false,
+      event: None,
+      parsed_event: None,
+      message: None,
+      success: false,
+    }
+  }
+}
+impl OutEnvelopeT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<OutEnvelope<'b>> {
+    let sub_id = Some({
+      let x = &self.sub_id;
+      _fbb.create_string(x)
+    });
+    let url = self.url.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let kind = Some({
+      let x = &self.kind;
+      _fbb.create_string(x)
+    });
+    let is_eose = self.is_eose;
+    let event = self.event.as_ref().map(|x|{
+      x.pack(_fbb)
+    });
+    let parsed_event = self.parsed_event.as_ref().map(|x|{
+      x.pack(_fbb)
+    });
+    let message = self.message.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let success = self.success;
+    OutEnvelope::create(_fbb, &OutEnvelopeArgs{
+      sub_id,
+      url,
+      kind,
+      is_eose,
+      event,
+      parsed_event,
+      message,
+      success,
     })
   }
 }

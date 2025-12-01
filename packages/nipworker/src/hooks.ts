@@ -1,9 +1,9 @@
-import { Event, EventTemplate, NostrEvent } from 'nostr-tools';
+import { Event, EventTemplate } from 'nostr-tools';
 import { SharedBufferReader } from 'src/lib/SharedBuffer';
-import { WorkerMessage } from './generated/nostr/fb';
-import { ByteRingBuffer } from './ws/ring-buffer'; // existing helper
-import { RequestObject, type SubscriptionConfig } from './manager';
 import { nipWorker, statusRing } from '.';
+import { WorkerMessage } from './generated/nostr/fb';
+import { RequestObject, type SubscriptionConfig } from './manager';
+import { ByteRingBuffer } from './ws/ring-buffer'; // existing helper
 
 const decoder = new TextDecoder();
 
