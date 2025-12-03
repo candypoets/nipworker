@@ -1,5 +1,3 @@
-import wasmAsset from '@candypoets/rust-worker/rust_worker_bg.wasm?url';
-import RustWorker from '@candypoets/rust-worker/worker.js?worker';
 import * as flatbuffers from 'flatbuffers';
 import type { EventTemplate, NostrEvent } from 'nostr-tools';
 
@@ -23,13 +21,15 @@ import {
 	TemplateT,
 	UnsubscribeT
 } from './generated/nostr/fb';
+import { InitConnectionsMsg } from './connections';
+import { InitCacheMsg } from './cache';
+import { InitParserMsg } from './parser';
 
 /**
  * Configuration for the Nostr Manager
  */
 export interface NostrManagerConfig {
-	bufferKey: string;
-	maxBufferSize: number;
+	ingestDBRing: SharedArrayBuffer;
 	inRing: SharedArrayBuffer;
 	outRing: SharedArrayBuffer;
 }
@@ -38,35 +38,14 @@ export interface NostrManagerConfig {
 let originalWasmBuffer: ArrayBuffer | null = null;
 let fetchPromise: Promise<void> | null = null;
 
-async function ensureOriginalBuffer(): Promise<void> {
-	if (fetchPromise) {
-		return fetchPromise;
-	}
-
-	fetchPromise = fetch(wasmAsset)
-		.then((res) => {
-			if (!res.ok) {
-				throw new Error(`Failed to fetch WASM: ${res.status} ${res.statusText}`);
-			}
-			return res.arrayBuffer();
-		})
-		.then((buffer) => {
-			originalWasmBuffer = buffer; // Cache the original (never transfer this one)
-		})
-		.catch((error) => {
-			console.error('WASM fetch failed:', error);
-			throw error;
-		});
-
-	return fetchPromise;
-}
-
 /**
  * Pure TypeScript NostrClient that manages worker communication and state.
  * Uses WASM utilities for heavy lifting (encoding, decoding, crypto).
  */
 export class NostrManager {
-	private worker: Worker;
+	private connections: Worker;
+	private cache: Worker;
+	private parser: Worker;
 	private textEncoder = new TextEncoder();
 	private subscriptions = new Map<
 		string,
@@ -87,46 +66,40 @@ export class NostrManager {
 	// In constructor, do NOT start init directly. Just set up ready lazily.
 	constructor(config: NostrManagerConfig) {
 		this.config = config;
-		// Optionally prewarm, but at idle priority:
-		const prewarm = () => void this.init();
-		if ('requestIdleCallback' in window) {
-			(window as any).requestIdleCallback(prewarm, { timeout: 2000 });
-		} else {
-			setTimeout(prewarm, 1500);
-		}
+
+		const wsRequest = new SharedArrayBuffer(1 * 1024 * 1024); // 1MB (ws request)
+		const wsResponse = new SharedArrayBuffer(5 * 1024 * 1024); // 2MB (ws response)
+
+		const cacheRequest = new SharedArrayBuffer(1 * 1024 * 1024);
+		const cacheResponse = new SharedArrayBuffer(2 * 1024 * 1024);
+
+		const dbRing = new SharedArrayBuffer(2 * 1024 * 1024);
+		const statusRing = new SharedArrayBuffer(512 * 1024);
+
+		this.connections = new Worker(new URL('./connections/index.ts', import.meta.url), {
+			type: 'module'
+		});
+		this.cache = new Worker(new URL('./cache/index.ts', import.meta.url), { type: 'module' });
+		this.parser = new Worker(new URL('./parser/index.ts', import.meta.url), { type: 'module' });
+
+		this.connections.postMessage({
+			type: 'init',
+			payload: { ws_request: [wsRequest], ws_response: [wsResponse], statusRing }
+		} as InitConnectionsMsg);
+
+		this.cache.postMessage({
+			type: 'init',
+			payload: { inRing: cacheRequest, outRing: cacheResponse, ingestRing: ingestDBRing }
+		} as InitCacheMsg);
+
+		this.parser.postMessage({
+			type: 'init',
+			payload: { inRing: wsRequest, outRing: wsResponse, ingestRing: ingestDBRing }
+		} as InitParserMsg);
 	}
 
 	private _ready: Promise<void> | null = null;
 	private config!: NostrManagerConfig;
-
-	private init(): Promise<void> {
-		if (this._ready) return this._ready;
-
-		this.worker = this.createWorker();
-		this.setupWorkerListener();
-
-		this._ready = (async () => {
-			await ensureOriginalBuffer();
-			// Create a transferable copy for the worker to avoid an extra clone.
-			const wasmCopy = originalWasmBuffer!.slice(0);
-			this.worker.postMessage(
-				{
-					type: 'init',
-					payload: {
-						bufferKey: this.config.bufferKey,
-						maxBufferSize: this.config.maxBufferSize,
-						wasmBuffer: wasmCopy,
-						inRing: this.config.inRing,
-						outRing: this.config.outRing
-					}
-				},
-				// Transfer the wasm copy to the worker (no duplicate copy).
-				[wasmCopy]
-			);
-		})();
-
-		return this._ready;
-	}
 
 	// Helper so all calls route through a single place and never race init:
 	private postToWorker(message: any, transfer?: Transferable[]) {

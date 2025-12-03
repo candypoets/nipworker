@@ -8,18 +8,17 @@
 	],
 	"scripts": {
 		"build": "npm run build --workspaces",
-		"flatc:all": "npm run flatc:nipworker && npm run flatc:rust-worker && npm run flatc:ws-rust",
+		"flatc:all": "npm run flatc:nipworker && npm run flatc:rust-worker && npm run flatc:ws-rust && npm run flatc:caching",
 		"flatc:nipworker": "flatc --ts --gen-object-api --gen-all --filename-suffix '' -o packages/nipworker/src/generated schemas/message.fbs && node ./scripts/patch-strings.js",
 		"build:nipworker": "npm run build --workspace=packages/nipworker",
-		"flatc:rust-worker": "flatc --rust --gen-object-api --gen-all --filename-suffix '' -o packages/rust-worker/src/generated schemas/message.fbs",
+		"flatc:parser": "flatc --rust --gen-object-api --gen-all --filename-suffix '' -o packages/nipworker/src/generated schemas/message.fbs",
 		"build:rust-worker": "npm run build --workspace=packages/rust-worker",
-		"flatc:ws-rust": "flatc --rust --gen-object-api --gen-all --filename-suffix '' -o packages/nipworker/src/ws-rust/src/generated schemas/message.fbs",
+		"flatc:ws-rust": "flatc --rust --gen-object-api --gen-all --filename-suffix '' -o packages/nipworker/src/connections/src/generated schemas/message.fbs",
+		"flatc:caching": "flatc --rust --gen-object-api --gen-all --filename-suffix '' -o packages/nipworker/src/caching/src/generated schemas/message.fbs",
 		"test": "npm run test --workspaces --if-present",
 		"clean": "npm run clean --workspaces --if-present",
 		"dev": "npm run dev --workspace=packages/nipworker",
-		"publish:rust-worker": "npm publish --workspace=packages/rust-worker --access public",
-		"publish:nipworker": "npm publish --workspace=packages/nipworker --access public",
-		"publish:all": "npm run publish:rust-worker && npm run publish:nipworker"
+		"publish:nipworker": "npm publish --workspace=packages/nipworker --access public"
 	},
 	"devDependencies": {
 		"@types/node": "^20.0.0",

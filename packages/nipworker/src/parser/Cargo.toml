@@ -1,0 +1,126 @@
+[package]
+name = "parser"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "rust_worker"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+
+[profile.dev]
+debug = 2              # Full debug info
+panic = "unwind"       # Allow unwinding for better stack traces
+opt-level = 0          # No optimization
+overflow-checks = true
+lto = false
+codegen-units = 256
+incremental = true
+
+[profile.release]
+opt-level = 3           # Optimize for performance
+lto = true              # Enable Link Time Optimization
+codegen-units = 1       # Reduce number of codegen units to increase optimizations
+panic = "abort"         # Abort on panic to reduce binary size
+strip = true            # Strip symbols from binary
+debug = false           # Disable debug info in release builds
+overflow-checks = false # Disable overflow checks in release
+
+[dependencies]
+# Lightweight async utilities (replacing tokio)
+futures = "0.3"
+
+# Essential WASM bindings
+gloo-timers = { version = "0.3", features = ["futures"] }
+
+# Basic error handling
+thiserror = "1.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+# Pattern matching
+regex = "1.0"
+
+# WASM-native WebSocket support
+gloo-net = { version = "0.4", features = ["websocket"] }
+
+# Cryptography
+
+k256 = { version = "0.13", features = ["schnorr", "ecdsa", "sha256", "ecdh"] }
+sha2 = "0.10"
+hex = "0.4"
+rustc-hash = "2.0"
+chacha20 = "0.9"
+hmac = "0.12"
+hkdf = "0.12"
+base64 = "0.22"
+aes = "0.8"        # Required for NIP-04 AES-256-CBC
+cbc = { version = "0.1", features = ["alloc"] }
+signature = "2"
+
+
+# Fix for WASM compilation
+getrandom = { version = "0.2", features = ["js"] }
+
+# WASM bindings (all targets for now to avoid conditional compilation issues)
+wasm-bindgen = { version = "0.2" }
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+console_error_panic_hook = { version = "0.1", optional = true }
+wasm-bindgen-test = "0.3.50"
+
+# Memory optimization
+flatbuffers = "25.2.10"
+async-lock = "3.4.1"
+
+[dependencies.web-sys]
+version = "0.3"
+default-features = false
+features = [
+    "console",
+    "DomStringList",
+    "IdbFactory",
+    "IdbDatabase",
+    "IdbObjectStore",
+    "IdbOpenDbRequest",
+    "IdbRequest",
+    "IdbTransaction",
+    "IdbTransactionMode",
+    "IdbVersionChangeEvent",
+    "WorkerGlobalScope",
+    "DedicatedWorkerGlobalScope",
+    "WebSocket",
+    "CloseEvent",
+    "ErrorEvent",
+    "Event",
+    "BinaryType",
+]
+
+[features]
+default = ["minimal"]
+
+# Full feature set - includes all heavy dependencies
+full = [
+    "console_error_panic_hook",
+]
+
+# Minimal feature set - just types and basic functionality
+minimal = []
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = [
+   "-O3",
+   "--strip-debug",
+   "--strip-producers",
+   "--enable-bulk-memory",
+   "--enable-sign-ext",
+   "--enable-mutable-globals",
+   "--enable-nontrapping-float-to-int",
+   "--enable-simd"
+]
+
+[package.metadata.wasm-pack.profile.dev]
+wasm-opt = false

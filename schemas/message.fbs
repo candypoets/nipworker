@@ -1,8 +1,6 @@
 // Top-level schema that includes all dependencies
 include "common.fbs";
 include "main.fbs";
-include "websocket.fbs";
-include "out_envelop.fbs";
 include "kinds/kind0.fbs";
 include "kinds/kind1.fbs";
 include "kinds/kind3.fbs";
@@ -33,6 +31,7 @@ enum MessageType : uint32 {
   ValidProofs = 5,
   SignedEvent = 6,
   Pubkey = 7,
+  Raw = 8,
 }
 
 enum ParsedDataUnion : uint32 {
@@ -123,9 +122,15 @@ table SignedEvent {
     event: NostrEvent (required);
 }
 
+// a raw string message coming from relays
+table Raw {
+    raw: string (required);
+}
+
 // Root union type
 union Message {
   ParsedEvent,
+  NostrEvent,
   ConnectionStatus,
   CountResponse,
   Eoce,
@@ -133,12 +138,20 @@ union Message {
   ValidProofs,
   SignedEvent,
   Pubkey,
+  Raw
 }
 
 // NEW: Wrapper table
 table WorkerMessage {
+  sub_id: string;
+  url: string;
   type: MessageType;
   content: Message;
+}
+
+table CacheRequest {
+    sub_id: string (required);
+    requests: [Request];
 }
 
 root_type WorkerMessage;
