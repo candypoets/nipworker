@@ -9,6 +9,7 @@ export type InitCacheMsg = {
 		ingestRing: SharedArrayBuffer;
 		cache_request: SharedArrayBuffer;
 		cache_response: SharedArrayBuffer;
+		ws_request: SharedArrayBuffer;
 	};
 };
 
@@ -30,10 +31,15 @@ self.addEventListener('message', async (evt: MessageEvent<InitCacheMsg | { type:
 	if (msg?.type === 'init') {
 		await ensureWasm();
 
-		const { cache_request, cache_response, ingestRing } = msg.payload;
+		const { cache_request, cache_response, ws_request, ingestRing } = msg.payload;
+
+		console.log('[cache] cache_request.len', cache_request.byteLength);
+		console.log('[cache] cache_response.len', cache_response.byteLength);
+		console.log('[cache] ws_request.len', ws_request.byteLength);
+		console.log('[cache] ingestRing.len', ingestRing.byteLength);
+
 		// Create the Rust worker and start it
-		instance = new Caching(5 * 1024 * 1024, ingestRing, cache_request, cache_response);
-		instance.start();
+		instance = new Caching(5 * 1024 * 1024, ingestRing, cache_request, cache_response, ws_request);
 
 		return;
 	}

@@ -1,13 +1,13 @@
 /* WASM-based WS worker runtime (dedicated Web Worker, module) */
 
-import initWasm, { WSRust } from './pkg/ws_rust.js';
-import wasmUrl from './pkg/ws_rust_bg.wasm?url';
+import initWasm, { WSRust } from './pkg/connections.js';
+import wasmUrl from './pkg/connections_bg.wasm?url';
 
 export type InitConnectionsMsg = {
 	type: 'init';
 	payload: {
-		ws_request: SharedArrayBuffer[];
-		ws_response: SharedArrayBuffer[];
+		ws_request: SharedArrayBuffer;
+		ws_response: SharedArrayBuffer;
 		statusRing: SharedArrayBuffer;
 	};
 };
@@ -33,9 +33,13 @@ self.addEventListener(
 			await ensureWasm();
 
 			const { ws_request, ws_response, statusRing } = msg.payload;
+
+			console.log('[connections] ws_request.len', ws_request.byteLength);
+			console.log('[connections] ws_response.len', ws_response.byteLength);
+			console.log('[connections] statusRing.len', statusRing.byteLength);
+
 			// Create the Rust worker and start it
 			instance = new WSRust(ws_request, ws_response, statusRing);
-			instance.start();
 
 			return;
 		}

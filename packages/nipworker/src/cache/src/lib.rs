@@ -1,8 +1,12 @@
+#![allow(async_fn_in_trait)]
+
 use crate::db::NostrDB;
 use crate::generated::nostr::fb;
+use crate::utils::wrap_event_with_worker_message;
 use flatbuffers::FlatBufferBuilder;
 use gloo_timers::future::TimeoutFuture;
 use serde_json::{Map, Value};
+use shared::{init_with_component, SabRing};
 use tracing::{info, warn};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
@@ -14,48 +18,7 @@ use std::sync::{Arc, Once};
 
 mod db;
 mod generated;
-mod sab_ring;
-
-use sab_ring::SabRing;
-
-// Common macros
-#[macro_export]
-macro_rules! console_log {
-    ($($t:tt)*) => {
-        web_sys::console::log_1(&format_args!($($t)*).to_string().into());
-    }
-}
-
-static TRACING_INIT: Once = Once::new();
-
-fn setup_tracing() {
-    TRACING_INIT.call_once(|| {
-        // Simple console writer for Web Workers
-        struct ConsoleWriter;
-
-        impl std::io::Write for ConsoleWriter {
-            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-                let message = String::from_utf8_lossy(buf);
-                web_sys::console::log_1(&JsValue::from_str(&message));
-                Ok(buf.len())
-            }
-
-            fn flush(&mut self) -> std::io::Result<()> {
-                Ok(())
-            }
-        }
-
-        // Try to set up a simple subscriber - if it fails, just continue
-        let _ = tracing_subscriber::fmt()
-            .with_writer(|| ConsoleWriter)
-            .without_time()
-            .with_target(false)
-            .with_max_level(tracing::Level::INFO)
-            .try_init();
-
-        console_log!("Tracing subscriber initialized for Web Worker");
-    });
-}
+mod utils;
 
 #[wasm_bindgen]
 pub struct Caching {
@@ -80,44 +43,52 @@ const INDEXER_RELAYS: &[&str] = &[
 
 #[wasm_bindgen]
 impl Caching {
-    /// new(inRings: SharedArrayBuffer[], outRings: SharedArrayBuffer[])
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub async fn new(
         max_buffer_size: usize,
-        ingest_ring: SharedArrayBuffer,
+        db_ring: SharedArrayBuffer,
         cache_request: SharedArrayBuffer,
         cache_response: SharedArrayBuffer,
         ws_request: SharedArrayBuffer,
-    ) -> Result<Caching, JsValue> {
-        setup_tracing();
+    ) -> Self {
+        init_with_component(tracing::Level::ERROR, "CACHE");
 
-        let cache_request = Rc::new(RefCell::new(SabRing::new(cache_request)?));
-        let cache_response = Rc::new(RefCell::new(SabRing::new(cache_response)?));
-        let ws_request = Rc::new(RefCell::new(SabRing::new(ws_request)?));
+        info!("instanciating cache");
+
+        let cache_request = Rc::new(RefCell::new(
+            SabRing::new(cache_request).expect("Failed to create SabRing for cache_request"),
+        ));
+        let cache_response = Rc::new(RefCell::new(
+            SabRing::new(cache_response).expect("Failed to create SabRing for cache_response"),
+        ));
+        let ws_request = Rc::new(RefCell::new(
+            SabRing::new(ws_request).expect("Failed to create SabRing for ws_request"),
+        ));
 
         let database = Arc::new(NostrDB::new_with_ringbuffer(
             "nostr".to_string(),
             max_buffer_size,
-            ingest_ring,
+            db_ring,
             DEFAULT_RELAYS.iter().map(|s| s.to_string()).collect(),
             INDEXER_RELAYS.iter().map(|s| s.to_string()).collect(),
         ));
 
-        let db_clone = database.clone();
-        spawn_local(async move {
-            if let Err(e) = db_clone.initialize().await {
-                warn!("Cache DB initialize failed: {}", e);
-            } else {
-                info!("Cache DB initialized");
-            }
-        });
+        database
+            .initialize()
+            .await
+            .map_err(|e| e)
+            .expect("Database initialization failed");
 
-        Ok(Caching {
+        let caching = Caching {
             cache_request,
             cache_response,
             ws_request,
             database,
-        })
+        };
+
+        caching.start();
+
+        caching
     }
 
     fn fb_request_to_req_filter_json(fb_req: &fb::Request<'_>) -> serde_json::Value {
@@ -185,7 +156,12 @@ impl Caching {
         Value::Object(filter)
     }
 
-    async fn process_local_requests(&self, bytes: &[u8]) {
+    async fn process_local_requests(
+        database: &Arc<NostrDB>,
+        cache_response: &Rc<RefCell<SabRing>>,
+        ws_request: &Rc<RefCell<SabRing>>,
+        bytes: &[u8],
+    ) {
         let cache_req = match flatbuffers::root::<fb::CacheRequest>(bytes) {
             Ok(r) => r,
             Err(e) => {
@@ -197,8 +173,7 @@ impl Caching {
         let sub_id = cache_req.sub_id().to_string();
 
         // Use DB helper to get cached events + indices to forward
-        let (remaining_idxs, cached_events) = match self
-            .database
+        let (remaining_idxs, cached_events) = match database
             .query_events_and_requests(cache_req.requests())
             .await
         {
@@ -209,28 +184,57 @@ impl Caching {
             }
         };
 
+        if !cached_events.is_empty() {
+            info!(
+                "Found {} cached events for subscription {}",
+                cached_events.len(),
+                sub_id
+            );
+        }
+
         // 1) Write cached WorkerMessage bytes to cache_response
         {
-            let mut out = self.cache_response.borrow_mut();
+            let mut out = cache_response.borrow_mut();
             for ev_bytes in cached_events {
-                out.write(&ev_bytes);
+                if let Some(wm) = wrap_event_with_worker_message(&sub_id, &ev_bytes) {
+                    out.write(&wm);
+                } else {
+                    warn!("Failed to wrap cached event into WorkerMessage");
+                }
             }
         }
 
         // 2) Write remaining requests as REQ frames to ws_request
         if let Some(vec) = cache_req.requests() {
+            let mut ws = ws_request.borrow_mut();
+            info!(
+                "sending {}/{} requests for {}",
+                remaining_idxs.len(),
+                vec.len(),
+                sub_id
+            );
             for idx in remaining_idxs {
                 let fb_req = vec.get(idx);
 
-                // relays: prefer request.relays; else default list
+                // relays: prefer request.relays; else get from kind 10002 events or appropriate fallback
                 let relays: Vec<String> = if let Some(rs) = fb_req.relays() {
-                    (0..rs.len()).map(|i| rs.get(i).to_string()).collect()
+                    let relay_list: Vec<String> =
+                        (0..rs.len()).map(|i| rs.get(i).to_string()).collect();
+                    if relay_list.is_empty() {
+                        // Get relays from kind 10002 events or appropriate fallback
+                        database.get_relays(&fb_req)
+                    } else {
+                        relay_list
+                    }
                 } else {
-                    DEFAULT_RELAYS.iter().map(|s| s.to_string()).collect()
+                    // Get relays from kind 10002 events or appropriate fallback
+                    database.get_relays(&fb_req)
                 };
 
+                info!("Using relays for {}: {:?}", sub_id, relays);
+
                 // Build filter JSON using the same tag mapping as Request::from_flatbuffer
-                let filter_json = Self::fb_request_to_req_filter_json(&fb_req);
+                let filter_json = Caching::fb_request_to_req_filter_json(&fb_req);
 
                 // Frame: ["REQ", sub_id, filter]
                 let frame_val = serde_json::Value::Array(vec![
@@ -247,9 +251,9 @@ impl Caching {
                     "frames": [frame_str],
                 });
 
-                self.ws_request
-                    .borrow_mut()
-                    .write(env.to_string().as_bytes());
+                let env_str = env.to_string();
+
+                ws.write(env_str.as_bytes());
             }
         }
 
@@ -265,6 +269,8 @@ impl Caching {
         let msg = fb::WorkerMessage::create(
             &mut builder,
             &fb::WorkerMessageArgs {
+                sub_id: Some(sid),
+                url: None,
                 type_: fb::MessageType::Eoce,
                 content_type: fb::Message::Eoce,
                 content: Some(eoce.as_union_value()),
@@ -273,39 +279,54 @@ impl Caching {
         builder.finish(msg, None);
         let eoce_bytes = builder.finished_data().to_vec();
 
-        let mut out = self.cache_response.borrow_mut();
-        out.write(&eoce_bytes);
+        {
+            let mut out = cache_response.borrow_mut();
+            let written = out.write(&eoce_bytes);
+        }
     }
 
-    /// Start one loop per inRing that reads JSON envelopes and calls send_to_relays
-    pub fn start(&self) {
-        let ring_rc = self.cache_request.clone();
-        let this = self as *const Caching;
+    /// Start multiple worker loops to process cache requests concurrently
+    fn start(&self) {
+        info!("starting cache");
 
-        spawn_local(async move {
-            // SAFETY: captured self pointer is only used to call an immutable method
-            let runner = unsafe { &*this };
-            let mut sleep_ms: u32 = 16;
-            let max_sleep_ms: u32 = 500;
+        const NUM_WORKERS: usize = 10;
 
-            loop {
-                let mut processed = 0usize;
+        for _ in 0..NUM_WORKERS {
+            // Clone the handles we need into the task
+            let cache_request = self.cache_request.clone();
+            let cache_response = self.cache_response.clone();
+            let ws_request = self.ws_request.clone();
+            let database = self.database.clone();
 
-                // Drain ring
+            spawn_local(async move {
+                let mut sleep_ms: u32 = 16;
+                let max_sleep_ms: u32 = 500;
+
                 loop {
-                    let bytes_opt = { ring_rc.borrow_mut().read_next() };
-                    let Some(bytes) = bytes_opt else { break };
-                    processed += 1;
-                    runner.process_local_requests(&bytes).await;
-                }
+                    let mut processed = 0usize;
 
-                if processed == 0 {
-                    TimeoutFuture::new(sleep_ms).await;
-                    sleep_ms = (sleep_ms.saturating_mul(2)).min(max_sleep_ms);
-                } else {
-                    sleep_ms = 16;
+                    // Drain ring
+                    loop {
+                        let bytes_opt = { cache_request.borrow_mut().read_next() };
+                        let Some(bytes) = bytes_opt else { break };
+                        processed += 1;
+                        Caching::process_local_requests(
+                            &database,
+                            &cache_response,
+                            &ws_request,
+                            &bytes,
+                        )
+                        .await;
+                    }
+
+                    if processed == 0 {
+                        TimeoutFuture::new(sleep_ms).await;
+                        sleep_ms = (sleep_ms.saturating_mul(2)).min(max_sleep_ms);
+                    } else {
+                        sleep_ms = 16;
+                    }
                 }
-            }
-        });
+            });
+        }
     }
 }

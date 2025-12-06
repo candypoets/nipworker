@@ -1,5 +1,3 @@
-use std::cell::RefCell;
-
 use js_sys::{SharedArrayBuffer, Uint8Array};
 use wasm_bindgen::prelude::*;
 
@@ -37,7 +35,6 @@ fn data_start() -> usize {
 /// This implementation copies to/from the SAB using Uint8Array views.
 /// It works in single-producer/single-consumer scenarios without Atomics.
 pub struct SabRing {
-    sab: SharedArrayBuffer,
     view: Uint8Array, // entire SAB
     capacity: usize,  // size in bytes of the data region (after header)
 }
@@ -76,7 +73,6 @@ impl SabRing {
         }
 
         Ok(Self {
-            sab,
             view,
             capacity: cap,
         })
@@ -185,60 +181,6 @@ impl SabRing {
 
         true
     }
-
-    /// Convenience: Write a JSON envelope for the WS worker:
-    /// { "relays": [ ... ], "frames": [ ... ] }
-    /// Each frame must be a valid Nostr client frame string (e.g., ["REQ", ...]).
-    pub fn write_json_envelope<S1: AsRef<str>, S2: AsRef<str>>(
-        &mut self,
-        relays: &[S1],
-        frames: &[S2],
-    ) -> bool {
-        let relays_str: Vec<&str> = relays.iter().map(|s| s.as_ref()).collect();
-        let frames_str: Vec<&str> = frames.iter().map(|s| s.as_ref()).collect();
-        let mut payload = String::from("{\"relays\":[");
-        for (i, relay) in relays_str.iter().enumerate() {
-            if i > 0 {
-                payload.push(',');
-            }
-            payload.push('"');
-            for c in relay.chars() {
-                match c {
-                    '"' => payload.push_str("\\\""),
-                    '\\' => payload.push_str("\\\\"),
-                    '\n' => payload.push_str("\\n"),
-                    '\r' => payload.push_str("\\r"),
-                    '\t' => payload.push_str("\\t"),
-                    _ => payload.push(c),
-                }
-            }
-            payload.push('"');
-        }
-        payload.push_str("],\"frames\":[");
-        for (i, frame) in frames_str.iter().enumerate() {
-            if i > 0 {
-                payload.push(',');
-            }
-            payload.push('"');
-            for c in frame.chars() {
-                match c {
-                    '"' => payload.push_str("\\\""),
-                    '\\' => payload.push_str("\\\\"),
-                    '\n' => payload.push_str("\\n"),
-                    '\r' => payload.push_str("\\r"),
-                    '\t' => payload.push_str("\\t"),
-                    _ => payload.push(c),
-                }
-            }
-            payload.push('"');
-        }
-        payload.push_str("]}");
-        self.write(payload.as_bytes())
-    }
-
-    // =======================
-    // Internal helpers
-    // =======================
 
     #[inline]
     fn head(&self) -> usize {

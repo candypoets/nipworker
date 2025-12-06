@@ -3,10 +3,10 @@ use crate::db::types::{
     intersect_event_sets, DatabaseConfig, DatabaseError, DatabaseIndexes, EventStorage,
     QueryFilter, QueryResult,
 };
-use crate::generated::nostr::fb;
-use crate::sab_ring::SabRing;
+use crate::generated::nostr::fb::{self, NostrEvent, ParsedEvent, Request};
 use js_sys::SharedArrayBuffer;
 use rustc_hash::{FxHashMap, FxHashSet};
+use shared::SabRing;
 
 type Result<T> = std::result::Result<T, DatabaseError>;
 
@@ -136,36 +136,50 @@ impl<S: EventStorage> NostrDB<S> {
         Ok(count)
     }
 
-    // Feed one WorkerMessage (serialized) coming from the ingest SAB.
-    // If it's a ParsedEvent, persist and index it.
     pub async fn add_worker_message_bytes(&self, bytes: &[u8]) -> Result<()> {
-        let wm = flatbuffers::root::<fb::WorkerMessage>(bytes)
-            .map_err(|e| DatabaseError::StorageError(format!("FB decode error: {:?}", e)))?;
+        // Try ParsedEvent first
+        if let Ok(parsed) = flatbuffers::root::<ParsedEvent>(bytes) {
+            let offset = if let Some(sharded) = self
+                .storage
+                .as_any()
+                .downcast_ref::<ShardedRingBufferStorage>()
+            {
+                sharded
+                    .add_event_for_kind(parsed.kind() as u32, bytes)
+                    .await?
+            } else {
+                self.storage.add_event_data(bytes).await?
+            };
 
-        let Some(parsed) = wm.content_as_parsed_event() else {
-            // Ignore non-event messages in the DB store
+            self.index_parsed_event(parsed, offset);
             return Ok(());
-        };
+        }
 
-        // Persist the exact bytes into ring storage (shard by kind if available)
-        let offset = if let Some(sharded) = self
-            .storage
-            .as_any()
-            .downcast_ref::<ShardedRingBufferStorage>()
-        {
-            sharded
-                .add_event_for_kind(parsed.kind() as u32, bytes)
-                .await?
-        } else {
-            self.storage.add_event_data(bytes).await?
-        };
+        // Fallback: NostrEvent
+        if let Ok(nostr) = flatbuffers::root::<NostrEvent>(bytes) {
+            let offset = if let Some(sharded) = self
+                .storage
+                .as_any()
+                .downcast_ref::<ShardedRingBufferStorage>()
+            {
+                sharded
+                    .add_event_for_kind(nostr.kind() as u32, bytes)
+                    .await?
+            } else {
+                self.storage.add_event_data(bytes).await?
+            };
 
-        // Index
-        self.index_event(parsed, offset);
-        Ok(())
+            // Index minimal fields
+            self.index_nostr_event(nostr, offset);
+            return Ok(());
+        }
+
+        Err(DatabaseError::StorageError(
+            "FB decode error: expected ParsedEvent or NostrEvent".to_string(),
+        ))
     }
 
-    fn query_filter_from_fb_request(fb_req: &fb::Request<'_>) -> Result<QueryFilter> {
+    fn query_filter_from_fb_request(fb_req: &Request<'_>) -> Result<QueryFilter> {
         let mut f = QueryFilter::new();
 
         // ids (strings)
@@ -260,47 +274,35 @@ impl<S: EventStorage> NostrDB<S> {
 
     /// Build indexes from a collection of events
     fn build_indexes_from_events(&self, events_offset: Vec<u64>) -> Result<()> {
-        // Pre-allocate maps based on event count for better performance
-        let event_count = events_offset.len();
-        let mut pubkey_frequency = FxHashMap::default();
-        let mut kind_frequency = FxHashMap::default();
-
-        // Convert all events to flatbuffer representation
-        let mut fb_events = Vec::with_capacity(event_count);
-
         let offsets = events_offset.clone();
         let mut raw_events: Vec<Vec<u8>> = Vec::new();
 
-        // Phase 1: fetch all bytes
         for event_offset in offsets {
             if let Ok(Some(bytes)) = self.storage.get_event(event_offset) {
                 raw_events.push(bytes);
             }
         }
 
-        // Phase 2: parse from stable backing storage
+        // Optional: pre-allocate based on frequencies
+        let mut pubkey_frequency = FxHashMap::default();
+        let mut kind_frequency = FxHashMap::default();
         for bytes in &raw_events {
-            if let Some(parsed_event_view) = Self::extract_parsed_event(bytes) {
-                fb_events.push(parsed_event_view);
+            if let Ok(p) = flatbuffers::root::<ParsedEvent>(bytes) {
+                *pubkey_frequency.entry(p.pubkey().to_string()).or_insert(0) += 1;
+                *kind_frequency.entry(p.kind()).or_insert(0) += 1;
+            } else if let Ok(n) = flatbuffers::root::<NostrEvent>(bytes) {
+                *pubkey_frequency.entry(n.pubkey().to_string()).or_insert(0) += 1;
+                *kind_frequency.entry(n.kind()).or_insert(0) += 1;
             }
         }
-
-        // First pass: count frequencies for optimal map sizing
-        for event in &fb_events {
-            *pubkey_frequency.entry(event.pubkey()).or_insert(0) += 1;
-            *kind_frequency.entry(event.kind()).or_insert(0) += 1;
-        }
-
-        // Pre-allocate maps for high-frequency items
         for (pubkey, count) in pubkey_frequency {
             if count > 5 {
                 self.indexes.events_by_pubkey.borrow_mut().insert(
-                    pubkey.to_string(),
+                    pubkey,
                     FxHashSet::with_capacity_and_hasher(count, Default::default()),
                 );
             }
         }
-
         for (kind, count) in kind_frequency {
             self.indexes.events_by_kind.borrow_mut().insert(
                 kind,
@@ -308,36 +310,46 @@ impl<S: EventStorage> NostrDB<S> {
             );
         }
 
-        // Second pass: build all indexes
-        for (i, event) in fb_events.iter().enumerate() {
-            self.index_event(*event, events_offset[i]);
+        // Index everything
+        for (i, bytes) in raw_events.iter().enumerate() {
+            if let Ok(p) = flatbuffers::root::<ParsedEvent>(bytes) {
+                self.index_parsed_event(p, events_offset[i]);
+            } else if let Ok(n) = flatbuffers::root::<NostrEvent>(bytes) {
+                self.index_nostr_event(n, events_offset[i]);
+            }
         }
 
         Ok(())
     }
 
-    /// Extract ParsedEvent from WorkerMessage
-    fn extract_parsed_event(worker_message: &Vec<u8>) -> Option<fb::ParsedEvent<'_>> {
-        if let Ok(message) = flatbuffers::root::<fb::WorkerMessage>(&worker_message) {
-            match message.content_type() {
-                fb::Message::ParsedEvent => message.content_as_parsed_event(),
-                _ => None,
-            }
-        } else {
-            None
+    /// Try to extract a ParsedEvent from raw bytes
+    fn extract_parsed_event(bytes: &Vec<u8>) -> Option<ParsedEvent<'_>> {
+        flatbuffers::root::<ParsedEvent>(bytes).ok()
+    }
+
+    /// Extract created_at regardless of format (ParsedEvent or NostrEvent)
+    fn extract_created_at(bytes: &Vec<u8>) -> Option<u32> {
+        if let Ok(p) = flatbuffers::root::<ParsedEvent>(bytes) {
+            return Some(p.created_at());
         }
+        if let Ok(n) = flatbuffers::root::<NostrEvent>(bytes) {
+            // NostrEvent.created_at is int; normalize to u32 for comparisons
+            return Some(n.created_at().max(0) as u32);
+        }
+        None
     }
 
     /// Add an event to all relevant indexes
-    fn index_event(&self, event: fb::ParsedEvent<'_>, offset: u64) {
+    fn index_parsed_event(&self, event: ParsedEvent<'_>, offset: u64) {
         let event_id = event.id();
-        // Primary index
+
+        // Primary
         self.indexes
             .events_by_id
             .borrow_mut()
             .insert(event_id.to_string(), offset);
 
-        // Kind index
+        // Kind
         self.indexes
             .events_by_kind
             .borrow_mut()
@@ -345,7 +357,7 @@ impl<S: EventStorage> NostrDB<S> {
             .or_insert_with(FxHashSet::default)
             .insert(event_id.to_string());
 
-        // Pubkey index
+        // Pubkey
         self.indexes
             .events_by_pubkey
             .borrow_mut()
@@ -353,15 +365,14 @@ impl<S: EventStorage> NostrDB<S> {
             .or_insert_with(FxHashSet::default)
             .insert(event_id.to_string());
 
+        // Tags
         let tags = event.tags();
-
         for i in 0..tags.len() {
             let tag = tags.get(i);
             if let Some(tag_vec) = tag.items() {
                 if tag_vec.len() >= 2 {
                     let tag_kind = tag_vec.get(0);
                     let tag_value = tag_vec.get(1);
-
                     match tag_kind {
                         "e" => {
                             self.indexes
@@ -400,22 +411,79 @@ impl<S: EventStorage> NostrDB<S> {
                 }
             }
         }
+    }
 
-        // // Special handling for profiles (kind 0)
-        // if event.kind() == 0 {
-        //     self.indexes
-        //         .profiles_by_pubkey
-        //         .borrow_mut()
-        //         .insert(event.pubkey(), event.clone());
-        // }
+    fn index_nostr_event(&self, event: NostrEvent<'_>, offset: u64) {
+        let event_id = event.id();
 
-        // // Special handling for relay lists (kind 10002)
-        // if event.kind() == 10002 {
-        //     self.indexes
-        //         .relays_by_pubkey
-        //         .borrow_mut()
-        //         .insert(event.pubkey(), event);
-        // }
+        // Primary
+        self.indexes
+            .events_by_id
+            .borrow_mut()
+            .insert(event_id.to_string(), offset);
+
+        // Kind
+        self.indexes
+            .events_by_kind
+            .borrow_mut()
+            .entry(event.kind())
+            .or_insert_with(FxHashSet::default)
+            .insert(event_id.to_string());
+
+        // Pubkey
+        self.indexes
+            .events_by_pubkey
+            .borrow_mut()
+            .entry(event.pubkey().to_string())
+            .or_insert_with(FxHashSet::default)
+            .insert(event_id.to_string());
+
+        // Tags
+        let tags = event.tags();
+        for i in 0..tags.len() {
+            let tag = tags.get(i);
+            if let Some(tag_vec) = tag.items() {
+                if tag_vec.len() >= 2 {
+                    let tag_kind = tag_vec.get(0);
+                    let tag_value = tag_vec.get(1);
+                    match tag_kind {
+                        "e" => {
+                            self.indexes
+                                .events_by_e_tag
+                                .borrow_mut()
+                                .entry(tag_value.to_string())
+                                .or_insert_with(FxHashSet::default)
+                                .insert(event_id.to_string());
+                        }
+                        "p" => {
+                            self.indexes
+                                .events_by_p_tag
+                                .borrow_mut()
+                                .entry(tag_value.to_string())
+                                .or_insert_with(FxHashSet::default)
+                                .insert(event_id.to_string());
+                        }
+                        "a" => {
+                            self.indexes
+                                .events_by_a_tag
+                                .borrow_mut()
+                                .entry(tag_value.to_string())
+                                .or_insert_with(FxHashSet::default)
+                                .insert(event_id.to_string());
+                        }
+                        "d" => {
+                            self.indexes
+                                .events_by_d_tag
+                                .borrow_mut()
+                                .entry(tag_value.to_string())
+                                .or_insert_with(FxHashSet::default)
+                                .insert(event_id.to_string());
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
     }
 
     pub fn query_events_with_filter(&self, filter: QueryFilter) -> Result<QueryResult> {
@@ -560,9 +628,9 @@ impl<S: EventStorage> NostrDB<S> {
 
         // Sort by created_at (newest first)
         results.sort_by(|a, b| {
-            let a_event = Self::extract_parsed_event(a).unwrap();
-            let b_event = Self::extract_parsed_event(b).unwrap();
-            b_event.created_at().cmp(&a_event.created_at())
+            let ca = Self::extract_created_at(a).unwrap_or_default();
+            let cb = Self::extract_created_at(b).unwrap_or_default();
+            cb.cmp(&ca)
         });
 
         // Apply limit
@@ -587,15 +655,16 @@ impl<S: EventStorage> NostrDB<S> {
     }
 
     /// Query events using the internal filter format
-    pub fn query_events(&self, fb_req: &fb::Request<'_>) -> Result<QueryResult> {
+    pub fn query_events(&self, fb_req: &Request<'_>) -> Result<QueryResult> {
         let filter = Self::query_filter_from_fb_request(fb_req)?;
         self.query_events_with_filter(filter)
     }
 
     pub async fn query_events_and_requests(
         &self,
-        fb_reqs: Option<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<fb::Request<'_>>>>,
+        fb_reqs: Option<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<Request<'_>>>>,
     ) -> Result<(Vec<usize>, Vec<Vec<u8>>)> {
+        self.sync_from_ingest_ring().await?;
         let mut remaining_indices: Vec<usize> = Vec::new();
         let mut all_events: Vec<Vec<u8>> = Vec::new();
 
@@ -631,9 +700,9 @@ impl<S: EventStorage> NostrDB<S> {
 
         // Sort newest-first (same as other paths)
         all_events.sort_by(|a, b| {
-            let a_event = Self::extract_parsed_event(a).unwrap();
-            let b_event = Self::extract_parsed_event(b).unwrap();
-            b_event.created_at().cmp(&a_event.created_at())
+            let ca = Self::extract_created_at(a).unwrap_or_default();
+            let cb = Self::extract_created_at(b).unwrap_or_default();
+            cb.cmp(&ca)
         });
 
         Ok((remaining_indices, all_events))
@@ -667,6 +736,127 @@ impl<S: EventStorage> NostrDB<S> {
                 }
             }
             Err(_) => None,
+        }
+    }
+
+    pub fn get_relays(&self, fb_req: &Request<'_>) -> Vec<String> {
+        let mut relay_counts: FxHashMap<String, usize> = FxHashMap::default();
+
+        // Collect all pubkeys we need to check relays for
+        let mut pubkeys_to_check = Vec::new();
+        let mut authors_set = FxHashSet::default();
+
+        // Add authors from the request (these will need write relays)
+        if let Some(authors) = fb_req.authors() {
+            for author in authors {
+                authors_set.insert(author.to_string());
+                pubkeys_to_check.push(author.to_string());
+            }
+        }
+
+        // Also check for pubkeys mentioned in tags (p tags) - these will need read relays
+        // This helps find relays for events we're querying about
+        if let Some(tags) = fb_req.tags() {
+            for tag in tags {
+                if let Some(items) = tag.items() {
+                    if items.len() > 1 && items.get(0) == "p" {
+                        let pubkey = items.get(1).to_string();
+                        if !authors_set.contains(&pubkey) {
+                            pubkeys_to_check.push(pubkey);
+                        }
+                    }
+                }
+            }
+        }
+
+        // If no pubkeys found, check if we need fallback relays
+        if pubkeys_to_check.is_empty() {
+            // Check if the request is for indexer kinds (0, 3, 10002)
+            if let Some(kinds) = fb_req.kinds() {
+                for kind in kinds {
+                    if kind == 0 || kind == 3 || kind == 10002 {
+                        return self.indexer_relays.clone();
+                    }
+                }
+            }
+            // Otherwise use default relays
+            return self.default_relays.clone();
+        }
+
+        // Make a single query for all pubkeys' kind 10002 events
+        let mut filter = QueryFilter::new();
+        filter.kinds = Some(vec![10002]);
+        filter.authors = Some(pubkeys_to_check);
+        // No limit since we want the latest 10002 for each author
+
+        if let Ok(result) = self.query_events_with_filter(filter) {
+            // Group events by pubkey and keep only the latest one for each
+            let mut latest_events: FxHashMap<String, Vec<u8>> = FxHashMap::default();
+
+            for event_bytes in result.events {
+                if let Some(event) = Self::extract_parsed_event(&event_bytes) {
+                    let pubkey = event.pubkey().to_string();
+
+                    // Check if we already have an event for this pubkey
+                    if let Some(existing) = latest_events.get(&pubkey) {
+                        if let Some(existing_event) = Self::extract_parsed_event(existing) {
+                            // Keep the newer event
+                            if event.created_at() > existing_event.created_at() {
+                                latest_events.insert(pubkey, event_bytes);
+                            }
+                        }
+                    } else {
+                        latest_events.insert(pubkey, event_bytes);
+                    }
+                }
+            }
+
+            // Process the latest events to extract relays
+            for (pubkey, event_bytes) in latest_events {
+                if let Some(event) = Self::extract_parsed_event(&event_bytes) {
+                    if let Some(kind10002) = event.parsed_as_kind_10002_parsed() {
+                        // Determine if this pubkey needs read or write relays
+                        let is_author = authors_set.contains(&pubkey);
+
+                        for relay in kind10002.relays() {
+                            // If pubkey is in authors filter, we need write relays (they're posting)
+                            // Otherwise, we need read relays (we're reading their events)
+                            if is_author {
+                                if relay.write() {
+                                    let url = relay.url().to_string();
+                                    *relay_counts.entry(url).or_insert(0) += 1;
+                                }
+                            } else {
+                                if relay.read() {
+                                    let url = relay.url().to_string();
+                                    *relay_counts.entry(url).or_insert(0) += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // If no relays found from 10002 events, use fallback based on kind
+        if relay_counts.is_empty() {
+            // Check if the request is for indexer kinds (0, 3, 10002)
+            if let Some(kinds) = fb_req.kinds() {
+                for kind in kinds {
+                    if kind == 0 || kind == 3 || kind == 10002 {
+                        return self.indexer_relays.clone();
+                    }
+                }
+            }
+            // Otherwise use default relays
+            self.default_relays.clone()
+        } else {
+            // Sort relays by count (descending) and then by URL (for stability)
+            let mut relay_vec: Vec<(String, usize)> = relay_counts.into_iter().collect();
+            relay_vec.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+
+            // Return just the relay URLs in sorted order, limited to 15 relays
+            relay_vec.into_iter().take(15).map(|(url, _)| url).collect()
         }
     }
 

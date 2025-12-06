@@ -272,9 +272,7 @@ impl Parser {
         requests.push(Request {
             authors: vec![event.pubkey.to_hex()],
             kinds: vec![0],
-            relays: self
-                .database
-                .find_relay_candidates(0, &event.pubkey.to_hex(), &false),
+            relays: vec![],
             cache_first: true,
             ..Default::default()
         });
@@ -362,13 +360,7 @@ impl Parser {
             authors: vec![event.pubkey.to_hex()],
             kinds: vec![0],
             limit: Some(1),
-            relays: {
-                let mut relays =
-                    self.database
-                        .find_relay_candidates(0, &event.pubkey.to_hex(), &false);
-                relays.extend(zapper_relay_hints);
-                relays
-            },
+            relays: zapper_relay_hints,
             cache_first: true,
             ..Default::default()
         });

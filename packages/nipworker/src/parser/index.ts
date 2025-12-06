@@ -1,19 +1,21 @@
-/* WASM-based WS worker runtime (dedicated Web Worker, module) */
-
 import initWasm, { NostrClient } from './pkg/rust_worker.js';
 import wasmUrl from './pkg/rust_worker_bg.wasm?url';
 
 export type InitParserMsg = {
 	type: 'init';
 	payload: {
-		inRing: SharedArrayBuffer;
-		outRing: SharedArrayBuffer;
 		ingestRing: SharedArrayBuffer;
+		cacheRequest: SharedArrayBuffer;
+		cacheResponse: SharedArrayBuffer;
+		wsResponse: SharedArrayBuffer;
 	};
 };
 
 let wasmReady: Promise<any> | null = null;
-let instance: any | null = null;
+let resolveInstance: ((c: NostrClient) => void) | null = null;
+const instanceReady: Promise<NostrClient> = new Promise<NostrClient>((resolve) => {
+	resolveInstance = resolve;
+});
 
 async function ensureWasm() {
 	if (!wasmReady) {
@@ -30,10 +32,16 @@ self.addEventListener('message', async (evt: MessageEvent<InitParserMsg | { type
 	if (msg?.type === 'init') {
 		await ensureWasm();
 
-		const { inRing, outRing, ingestRing } = msg.payload;
+		const { cacheRequest, cacheResponse, wsResponse, ingestRing } = msg.payload;
 
-		instance = new NostrClient(ingestRing, inRing, outRing);
+		console.log('[parser] cacheRequest.len', cacheRequest.byteLength);
+		console.log('[parser] cacheResponse.len', cacheResponse.byteLength);
+		console.log('[parser] wsResponse.len', wsResponse.byteLength);
+		console.log('[parser] ingestRing.len', ingestRing.byteLength);
 
+		const client = new NostrClient(ingestRing, cacheRequest, cacheResponse, wsResponse);
+		// Resolve the deferred so all queued .then handlers can run
+		resolveInstance?.(client);
 		return;
 	}
 
@@ -41,4 +49,9 @@ self.addEventListener('message', async (evt: MessageEvent<InitParserMsg | { type
 	if (msg?.type === 'wake') {
 		return;
 	}
+
+	// All non-init messages: await the client promise, then process
+	instanceReady.then((c) => {
+		c.handle_message(msg);
+	});
 });

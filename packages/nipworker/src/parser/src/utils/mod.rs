@@ -5,4 +5,3 @@ pub mod json;
 pub mod relay;
 pub mod request_deduplication;
 pub mod ring_buffer;
-pub mod sab_ring;

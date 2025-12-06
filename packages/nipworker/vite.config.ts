@@ -33,10 +33,6 @@ export default defineConfig({
 		},
 		rollupOptions: {
 			external: (id) => {
-				// Handle worker imports specifically
-				if (id.includes('@candypoets/rust-worker')) {
-					return true;
-				}
 				return ['flatbuffers', 'nostr-tools'].includes(id);
 			},
 			input: {
@@ -45,7 +41,9 @@ export default defineConfig({
 				utils: resolve(__dirname, 'src/utils.ts'),
 				hooks: resolve(__dirname, 'src/hooks.ts'),
 				ws: resolve(__dirname, 'src/ws/index.ts'),
-				'ws-rust': resolve(__dirname, 'src/ws-rust/index.ts')
+				connections: resolve(__dirname, 'src/connections/index.ts'),
+				cache: resolve(__dirname, 'src/cache/index.ts'),
+				parser: resolve(__dirname, 'src/parser/index.ts')
 			},
 			output: {
 				entryFileNames: (chunkInfo) => {
@@ -55,7 +53,9 @@ export default defineConfig({
 						utils: 'utils.js',
 						hooks: 'hooks.js',
 						ws: 'ws/index.js',
-						'ws-rust': 'ws-rust/index.js'
+						connections: 'connections/index.js',
+						cache: 'cache/index.js',
+						parser: 'parser/index.js'
 					};
 					return entryNameMap[chunkInfo.name as string] || '[name].js';
 				},
@@ -80,11 +80,5 @@ export default defineConfig({
 		sourcemap: true,
 		// Prevent inlining of assets - this is key!
 		assetsInlineLimit: 0 // This prevents base64 inlining
-	},
-	worker: {
-		format: 'es',
-		rollupOptions: {
-			external: ['@candypoets/rust-worker', '@candypoets/rust-worker/worker.js']
-		}
 	}
 });

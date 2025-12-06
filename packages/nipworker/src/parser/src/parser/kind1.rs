@@ -84,15 +84,7 @@ impl Parser {
             requests.push(Request {
                 ids: vec![reply.id.clone()],
                 limit: Some(3), // increase the limit to provide with a bigger buffer
-                relays: {
-                    let mut combined_relays = reply.relays.clone();
-                    combined_relays.extend(self.database.find_relay_candidates(
-                        1,
-                        reply.author.as_deref().unwrap_or(""),
-                        &true,
-                    ));
-                    combined_relays
-                },
+                relays: reply.relays.clone(),
                 close_on_eose: true,
                 cache_first: true,
                 ..Default::default()
@@ -105,15 +97,7 @@ impl Parser {
                 requests.push(Request {
                     ids: vec![root.id.clone()],
                     limit: Some(3), // increase the limit to provide with a bigger buffer
-                    relays: {
-                        let mut combined_relays = root.relays.clone();
-                        combined_relays.extend(self.database.find_relay_candidates(
-                            1,
-                            root.author.as_deref().unwrap_or(""),
-                            &true,
-                        ));
-                        combined_relays
-                    },
+                    relays: root.relays.clone(),
                     close_on_eose: true,
                     cache_first: true,
                     ..Default::default()
@@ -186,11 +170,7 @@ impl Parser {
                             authors: vec![pointer.public_key.clone()],
                             kinds: vec![0],
                             limit: Some(1),
-                            relays: self.database.find_relay_candidates(
-                                0,
-                                &pubkey.to_string(),
-                                &false,
-                            ),
+                            relays: Vec::new(),
                             close_on_eose: true,
                             cache_first: true,
                             ..Default::default()
@@ -225,11 +205,7 @@ impl Parser {
                             authors: vec![pointer.public_key.clone()],
                             kinds: vec![0],
                             limit: Some(1),
-                            relays: self.database.find_relay_candidates(
-                                0,
-                                &profile.public_key.to_string(),
-                                &false,
-                            ),
+                            relays: vec![],
                             close_on_eose: true,
                             cache_first: true,
                             ..Default::default()
@@ -267,7 +243,7 @@ impl Parser {
                         requests.push(Request {
                             ids: vec![id.clone()],
                             limit: Some(3), // increase the limit to provide with a bigger buffer
-                            relays: self.database.find_relay_candidates(1, "", &false),
+                            relays: vec![],
                             close_on_eose: true,
                             cache_first: true,
                             ..Default::default()
@@ -301,11 +277,7 @@ impl Parser {
                         requests.push(Request {
                             ids: vec![id.clone()],
                             limit: Some(3), // increase the limit to provide with a bigger buffer
-                            relays: self.database.find_relay_candidates(
-                                1,
-                                &author.as_deref().unwrap_or(""),
-                                &false,
-                            ),
+                            relays: vec![],
                             close_on_eose: true,
                             cache_first: true,
                             ..Default::default()

@@ -1,8 +1,8 @@
 import { Event, EventTemplate } from 'nostr-tools';
 import { SharedBufferReader } from 'src/lib/SharedBuffer';
-import { nipWorker, statusRing } from '.';
+// import { nipWorker, statusRing } from '.';
 import { WorkerMessage } from './generated/nostr/fb';
-import { RequestObject, type SubscriptionConfig } from './manager';
+import { RequestObject, statusRing, manager, type SubscriptionConfig } from '.';
 import { ByteRingBuffer } from './ws/ring-buffer'; // existing helper
 
 const decoder = new TextDecoder();
@@ -69,8 +69,8 @@ export function useSubscription(
 	let hasUnsubscribed = false;
 	let hasSubscribed = false;
 
-	subId = nipWorker.createShortId(subId);
-	const manager = nipWorker.getManager(subId);
+	// subId = nipWorker.createShortId(subId);
+	// const manager = nipWorker.getManager(subId);
 
 	// Reentrancy/coalescing flags
 	let scheduled = false;
@@ -145,16 +145,16 @@ export function usePublish(
 	let lastReadPos: number = 4;
 	let running = true;
 
-	pubId = nipWorker.createShortId(pubId);
+	// pubId = nipWorker.createShortId(pubId);
 
-	const manager = nipWorker.getManager(pubId);
+	// const manager = nipWorker.getManager(pubId);
 
 	const unsubscribe = (): void => {
 		running = false;
 		manager.removeEventListener(`publish:${pubId}`, processEvents);
 	};
 
-	buffer = manager.publish(pubId, event, options.defaultRelays);
+	buffer = manager.publish(pubId, event as any, options.defaultRelays);
 
 	const processEvents = (): void => {
 		if (!running || !buffer) {
@@ -178,7 +178,7 @@ export function usePublish(
 }
 
 export function useSignEvent(template: EventTemplate, callback: (event: Event) => void) {
-	const manager = nipWorker.getManager('');
+	// const manager = nipWorker.getManager('');
 
 	manager.signEvent(template, callback);
 }

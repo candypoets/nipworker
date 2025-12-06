@@ -1451,113 +1451,12 @@ impl MainContentT {
   }
 }
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MIN_MESSAGE_KIND: i8 = 0;
-#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MAX_MESSAGE_KIND: i8 = 5;
-#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-#[allow(non_camel_case_types)]
-pub const ENUM_VALUES_MESSAGE_KIND: [MessageKind; 6] = [
-  MessageKind::EVENT,
-  MessageKind::EOSE,
-  MessageKind::OK,
-  MessageKind::NOTICE,
-  MessageKind::AUTH,
-  MessageKind::CLOSED,
-];
-
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-#[repr(transparent)]
-pub struct MessageKind(pub i8);
-#[allow(non_upper_case_globals)]
-impl MessageKind {
-  pub const EVENT: Self = Self(0);
-  pub const EOSE: Self = Self(1);
-  pub const OK: Self = Self(2);
-  pub const NOTICE: Self = Self(3);
-  pub const AUTH: Self = Self(4);
-  pub const CLOSED: Self = Self(5);
-
-  pub const ENUM_MIN: i8 = 0;
-  pub const ENUM_MAX: i8 = 5;
-  pub const ENUM_VALUES: &'static [Self] = &[
-    Self::EVENT,
-    Self::EOSE,
-    Self::OK,
-    Self::NOTICE,
-    Self::AUTH,
-    Self::CLOSED,
-  ];
-  /// Returns the variant's name or "" if unknown.
-  pub fn variant_name(self) -> Option<&'static str> {
-    match self {
-      Self::EVENT => Some("EVENT"),
-      Self::EOSE => Some("EOSE"),
-      Self::OK => Some("OK"),
-      Self::NOTICE => Some("NOTICE"),
-      Self::AUTH => Some("AUTH"),
-      Self::CLOSED => Some("CLOSED"),
-      _ => None,
-    }
-  }
-}
-impl core::fmt::Debug for MessageKind {
-  fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-    if let Some(name) = self.variant_name() {
-      f.write_str(name)
-    } else {
-      f.write_fmt(format_args!("<UNKNOWN {:?}>", self.0))
-    }
-  }
-}
-impl<'a> flatbuffers::Follow<'a> for MessageKind {
-  type Inner = Self;
-  #[inline]
-  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
-    let b = flatbuffers::read_scalar_at::<i8>(buf, loc);
-    Self(b)
-  }
-}
-
-impl flatbuffers::Push for MessageKind {
-    type Output = MessageKind;
-    #[inline]
-    unsafe fn push(&self, dst: &mut [u8], _written_len: usize) {
-        flatbuffers::emplace_scalar::<i8>(dst, self.0);
-    }
-}
-
-impl flatbuffers::EndianScalar for MessageKind {
-  type Scalar = i8;
-  #[inline]
-  fn to_little_endian(self) -> i8 {
-    self.0.to_le()
-  }
-  #[inline]
-  #[allow(clippy::wrong_self_convention)]
-  fn from_little_endian(v: i8) -> Self {
-    let b = i8::from_le(v);
-    Self(b)
-  }
-}
-
-impl<'a> flatbuffers::Verifiable for MessageKind {
-  #[inline]
-  fn run_verifier(
-    v: &mut flatbuffers::Verifier, pos: usize
-  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
-    use self::flatbuffers::Verifiable;
-    i8::run_verifier(v, pos)
-  }
-}
-
-impl flatbuffers::SimpleToVerifyInSlice for MessageKind {}
-#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_MESSAGE_TYPE: u32 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MAX_MESSAGE_TYPE: u32 = 7;
+pub const ENUM_MAX_MESSAGE_TYPE: u32 = 8;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_MESSAGE_TYPE: [MessageType; 8] = [
+pub const ENUM_VALUES_MESSAGE_TYPE: [MessageType; 9] = [
   MessageType::ParsedNostrEvent,
   MessageType::ConnectionStatus,
   MessageType::CountResponse,
@@ -1566,6 +1465,7 @@ pub const ENUM_VALUES_MESSAGE_TYPE: [MessageType; 8] = [
   MessageType::ValidProofs,
   MessageType::SignedEvent,
   MessageType::Pubkey,
+  MessageType::Raw,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -1581,9 +1481,10 @@ impl MessageType {
   pub const ValidProofs: Self = Self(5);
   pub const SignedEvent: Self = Self(6);
   pub const Pubkey: Self = Self(7);
+  pub const Raw: Self = Self(8);
 
   pub const ENUM_MIN: u32 = 0;
-  pub const ENUM_MAX: u32 = 7;
+  pub const ENUM_MAX: u32 = 8;
   pub const ENUM_VALUES: &'static [Self] = &[
     Self::ParsedNostrEvent,
     Self::ConnectionStatus,
@@ -1593,6 +1494,7 @@ impl MessageType {
     Self::ValidProofs,
     Self::SignedEvent,
     Self::Pubkey,
+    Self::Raw,
   ];
   /// Returns the variant's name or "" if unknown.
   pub fn variant_name(self) -> Option<&'static str> {
@@ -1605,6 +1507,7 @@ impl MessageType {
       Self::ValidProofs => Some("ValidProofs"),
       Self::SignedEvent => Some("SignedEvent"),
       Self::Pubkey => Some("Pubkey"),
+      Self::Raw => Some("Raw"),
       _ => None,
     }
   }
@@ -2358,12 +2261,13 @@ impl ParsedDataT {
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_MESSAGE: u8 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MAX_MESSAGE: u8 = 8;
+pub const ENUM_MAX_MESSAGE: u8 = 10;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_MESSAGE: [Message; 9] = [
+pub const ENUM_VALUES_MESSAGE: [Message; 11] = [
   Message::NONE,
   Message::ParsedEvent,
+  Message::NostrEvent,
   Message::ConnectionStatus,
   Message::CountResponse,
   Message::Eoce,
@@ -2371,6 +2275,7 @@ pub const ENUM_VALUES_MESSAGE: [Message; 9] = [
   Message::ValidProofs,
   Message::SignedEvent,
   Message::Pubkey,
+  Message::Raw,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -2380,19 +2285,22 @@ pub struct Message(pub u8);
 impl Message {
   pub const NONE: Self = Self(0);
   pub const ParsedEvent: Self = Self(1);
-  pub const ConnectionStatus: Self = Self(2);
-  pub const CountResponse: Self = Self(3);
-  pub const Eoce: Self = Self(4);
-  pub const BufferFull: Self = Self(5);
-  pub const ValidProofs: Self = Self(6);
-  pub const SignedEvent: Self = Self(7);
-  pub const Pubkey: Self = Self(8);
+  pub const NostrEvent: Self = Self(2);
+  pub const ConnectionStatus: Self = Self(3);
+  pub const CountResponse: Self = Self(4);
+  pub const Eoce: Self = Self(5);
+  pub const BufferFull: Self = Self(6);
+  pub const ValidProofs: Self = Self(7);
+  pub const SignedEvent: Self = Self(8);
+  pub const Pubkey: Self = Self(9);
+  pub const Raw: Self = Self(10);
 
   pub const ENUM_MIN: u8 = 0;
-  pub const ENUM_MAX: u8 = 8;
+  pub const ENUM_MAX: u8 = 10;
   pub const ENUM_VALUES: &'static [Self] = &[
     Self::NONE,
     Self::ParsedEvent,
+    Self::NostrEvent,
     Self::ConnectionStatus,
     Self::CountResponse,
     Self::Eoce,
@@ -2400,12 +2308,14 @@ impl Message {
     Self::ValidProofs,
     Self::SignedEvent,
     Self::Pubkey,
+    Self::Raw,
   ];
   /// Returns the variant's name or "" if unknown.
   pub fn variant_name(self) -> Option<&'static str> {
     match self {
       Self::NONE => Some("NONE"),
       Self::ParsedEvent => Some("ParsedEvent"),
+      Self::NostrEvent => Some("NostrEvent"),
       Self::ConnectionStatus => Some("ConnectionStatus"),
       Self::CountResponse => Some("CountResponse"),
       Self::Eoce => Some("Eoce"),
@@ -2413,6 +2323,7 @@ impl Message {
       Self::ValidProofs => Some("ValidProofs"),
       Self::SignedEvent => Some("SignedEvent"),
       Self::Pubkey => Some("Pubkey"),
+      Self::Raw => Some("Raw"),
       _ => None,
     }
   }
@@ -2476,6 +2387,7 @@ pub struct MessageUnionTableOffset {}
 pub enum MessageT {
   NONE,
   ParsedEvent(Box<ParsedEventT>),
+  NostrEvent(Box<NostrEventT>),
   ConnectionStatus(Box<ConnectionStatusT>),
   CountResponse(Box<CountResponseT>),
   Eoce(Box<EoceT>),
@@ -2483,6 +2395,7 @@ pub enum MessageT {
   ValidProofs(Box<ValidProofsT>),
   SignedEvent(Box<SignedEventT>),
   Pubkey(Box<PubkeyT>),
+  Raw(Box<RawT>),
 }
 impl Default for MessageT {
   fn default() -> Self {
@@ -2494,6 +2407,7 @@ impl MessageT {
     match self {
       Self::NONE => Message::NONE,
       Self::ParsedEvent(_) => Message::ParsedEvent,
+      Self::NostrEvent(_) => Message::NostrEvent,
       Self::ConnectionStatus(_) => Message::ConnectionStatus,
       Self::CountResponse(_) => Message::CountResponse,
       Self::Eoce(_) => Message::Eoce,
@@ -2501,12 +2415,14 @@ impl MessageT {
       Self::ValidProofs(_) => Message::ValidProofs,
       Self::SignedEvent(_) => Message::SignedEvent,
       Self::Pubkey(_) => Message::Pubkey,
+      Self::Raw(_) => Message::Raw,
     }
   }
   pub fn pack<'b, A: flatbuffers::Allocator + 'b>(&self, fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>) -> Option<flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>> {
     match self {
       Self::NONE => None,
       Self::ParsedEvent(v) => Some(v.pack(fbb).as_union_value()),
+      Self::NostrEvent(v) => Some(v.pack(fbb).as_union_value()),
       Self::ConnectionStatus(v) => Some(v.pack(fbb).as_union_value()),
       Self::CountResponse(v) => Some(v.pack(fbb).as_union_value()),
       Self::Eoce(v) => Some(v.pack(fbb).as_union_value()),
@@ -2514,6 +2430,7 @@ impl MessageT {
       Self::ValidProofs(v) => Some(v.pack(fbb).as_union_value()),
       Self::SignedEvent(v) => Some(v.pack(fbb).as_union_value()),
       Self::Pubkey(v) => Some(v.pack(fbb).as_union_value()),
+      Self::Raw(v) => Some(v.pack(fbb).as_union_value()),
     }
   }
   /// If the union variant matches, return the owned ParsedEventT, setting the union to NONE.
@@ -2536,6 +2453,27 @@ impl MessageT {
   /// If the union variant matches, return a mutable reference to the ParsedEventT.
   pub fn as_parsed_event_mut(&mut self) -> Option<&mut ParsedEventT> {
     if let Self::ParsedEvent(v) = self { Some(v.as_mut()) } else { None }
+  }
+  /// If the union variant matches, return the owned NostrEventT, setting the union to NONE.
+  pub fn take_nostr_event(&mut self) -> Option<Box<NostrEventT>> {
+    if let Self::NostrEvent(_) = self {
+      let v = core::mem::replace(self, Self::NONE);
+      if let Self::NostrEvent(w) = v {
+        Some(w)
+      } else {
+        unreachable!()
+      }
+    } else {
+      None
+    }
+  }
+  /// If the union variant matches, return a reference to the NostrEventT.
+  pub fn as_nostr_event(&self) -> Option<&NostrEventT> {
+    if let Self::NostrEvent(v) = self { Some(v.as_ref()) } else { None }
+  }
+  /// If the union variant matches, return a mutable reference to the NostrEventT.
+  pub fn as_nostr_event_mut(&mut self) -> Option<&mut NostrEventT> {
+    if let Self::NostrEvent(v) = self { Some(v.as_mut()) } else { None }
   }
   /// If the union variant matches, return the owned ConnectionStatusT, setting the union to NONE.
   pub fn take_connection_status(&mut self) -> Option<Box<ConnectionStatusT>> {
@@ -2683,6 +2621,27 @@ impl MessageT {
   /// If the union variant matches, return a mutable reference to the PubkeyT.
   pub fn as_pubkey_mut(&mut self) -> Option<&mut PubkeyT> {
     if let Self::Pubkey(v) = self { Some(v.as_mut()) } else { None }
+  }
+  /// If the union variant matches, return the owned RawT, setting the union to NONE.
+  pub fn take_raw(&mut self) -> Option<Box<RawT>> {
+    if let Self::Raw(_) = self {
+      let v = core::mem::replace(self, Self::NONE);
+      if let Self::Raw(w) = v {
+        Some(w)
+      } else {
+        unreachable!()
+      }
+    } else {
+      None
+    }
+  }
+  /// If the union variant matches, return a reference to the RawT.
+  pub fn as_raw(&self) -> Option<&RawT> {
+    if let Self::Raw(v) = self { Some(v.as_ref()) } else { None }
+  }
+  /// If the union variant matches, return a mutable reference to the RawT.
+  pub fn as_raw_mut(&mut self) -> Option<&mut RawT> {
+    if let Self::Raw(v) = self { Some(v.as_mut()) } else { None }
   }
 }
 pub enum CodeDataOffset {}
@@ -11282,323 +11241,6 @@ impl MainMessageT {
     })
   }
 }
-pub enum OutEnvelopeOffset {}
-#[derive(Copy, Clone, PartialEq)]
-
-pub struct OutEnvelope<'a> {
-  pub _tab: flatbuffers::Table<'a>,
-}
-
-impl<'a> flatbuffers::Follow<'a> for OutEnvelope<'a> {
-  type Inner = OutEnvelope<'a>;
-  #[inline]
-  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
-    Self { _tab: flatbuffers::Table::new(buf, loc) }
-  }
-}
-
-impl<'a> OutEnvelope<'a> {
-  pub const VT_SUB_ID: flatbuffers::VOffsetT = 4;
-  pub const VT_URL: flatbuffers::VOffsetT = 6;
-  pub const VT_KIND: flatbuffers::VOffsetT = 8;
-  pub const VT_IS_EOSE: flatbuffers::VOffsetT = 10;
-  pub const VT_EVENT: flatbuffers::VOffsetT = 12;
-  pub const VT_PARSED_EVENT: flatbuffers::VOffsetT = 14;
-  pub const VT_MESSAGE: flatbuffers::VOffsetT = 16;
-  pub const VT_SUCCESS: flatbuffers::VOffsetT = 18;
-
-  #[inline]
-  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
-    OutEnvelope { _tab: table }
-  }
-  #[allow(unused_mut)]
-  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
-    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
-    args: &'args OutEnvelopeArgs<'args>
-  ) -> flatbuffers::WIPOffset<OutEnvelope<'bldr>> {
-    let mut builder = OutEnvelopeBuilder::new(_fbb);
-    if let Some(x) = args.message { builder.add_message(x); }
-    if let Some(x) = args.parsed_event { builder.add_parsed_event(x); }
-    if let Some(x) = args.event { builder.add_event(x); }
-    if let Some(x) = args.kind { builder.add_kind(x); }
-    if let Some(x) = args.url { builder.add_url(x); }
-    if let Some(x) = args.sub_id { builder.add_sub_id(x); }
-    builder.add_success(args.success);
-    builder.add_is_eose(args.is_eose);
-    builder.finish()
-  }
-
-  pub fn unpack(&self) -> OutEnvelopeT {
-    let sub_id = {
-      let x = self.sub_id();
-      x.to_string()
-    };
-    let url = self.url().map(|x| {
-      x.to_string()
-    });
-    let kind = {
-      let x = self.kind();
-      x.to_string()
-    };
-    let is_eose = self.is_eose();
-    let event = self.event().map(|x| {
-      Box::new(x.unpack())
-    });
-    let parsed_event = self.parsed_event().map(|x| {
-      Box::new(x.unpack())
-    });
-    let message = self.message().map(|x| {
-      x.to_string()
-    });
-    let success = self.success();
-    OutEnvelopeT {
-      sub_id,
-      url,
-      kind,
-      is_eose,
-      event,
-      parsed_event,
-      message,
-      success,
-    }
-  }
-
-  #[inline]
-  pub fn sub_id(&self) -> &'a str {
-    // Safety:
-    // Created from valid Table for this object
-    // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(OutEnvelope::VT_SUB_ID, None).unwrap()}
-  }
-  #[inline]
-  pub fn url(&self) -> Option<&'a str> {
-    // Safety:
-    // Created from valid Table for this object
-    // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(OutEnvelope::VT_URL, None)}
-  }
-  #[inline]
-  pub fn kind(&self) -> &'a str {
-    // Safety:
-    // Created from valid Table for this object
-    // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(OutEnvelope::VT_KIND, None).unwrap()}
-  }
-  #[inline]
-  pub fn is_eose(&self) -> bool {
-    // Safety:
-    // Created from valid Table for this object
-    // which contains a valid value in this slot
-    unsafe { self._tab.get::<bool>(OutEnvelope::VT_IS_EOSE, Some(false)).unwrap()}
-  }
-  #[inline]
-  pub fn event(&self) -> Option<NostrEvent<'a>> {
-    // Safety:
-    // Created from valid Table for this object
-    // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<NostrEvent>>(OutEnvelope::VT_EVENT, None)}
-  }
-  #[inline]
-  pub fn parsed_event(&self) -> Option<ParsedEvent<'a>> {
-    // Safety:
-    // Created from valid Table for this object
-    // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<ParsedEvent>>(OutEnvelope::VT_PARSED_EVENT, None)}
-  }
-  #[inline]
-  pub fn message(&self) -> Option<&'a str> {
-    // Safety:
-    // Created from valid Table for this object
-    // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(OutEnvelope::VT_MESSAGE, None)}
-  }
-  #[inline]
-  pub fn success(&self) -> bool {
-    // Safety:
-    // Created from valid Table for this object
-    // which contains a valid value in this slot
-    unsafe { self._tab.get::<bool>(OutEnvelope::VT_SUCCESS, Some(false)).unwrap()}
-  }
-}
-
-impl flatbuffers::Verifiable for OutEnvelope<'_> {
-  #[inline]
-  fn run_verifier(
-    v: &mut flatbuffers::Verifier, pos: usize
-  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
-    use self::flatbuffers::Verifiable;
-    v.visit_table(pos)?
-     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("sub_id", Self::VT_SUB_ID, true)?
-     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("url", Self::VT_URL, false)?
-     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("kind", Self::VT_KIND, true)?
-     .visit_field::<bool>("is_eose", Self::VT_IS_EOSE, false)?
-     .visit_field::<flatbuffers::ForwardsUOffset<NostrEvent>>("event", Self::VT_EVENT, false)?
-     .visit_field::<flatbuffers::ForwardsUOffset<ParsedEvent>>("parsed_event", Self::VT_PARSED_EVENT, false)?
-     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("message", Self::VT_MESSAGE, false)?
-     .visit_field::<bool>("success", Self::VT_SUCCESS, false)?
-     .finish();
-    Ok(())
-  }
-}
-pub struct OutEnvelopeArgs<'a> {
-    pub sub_id: Option<flatbuffers::WIPOffset<&'a str>>,
-    pub url: Option<flatbuffers::WIPOffset<&'a str>>,
-    pub kind: Option<flatbuffers::WIPOffset<&'a str>>,
-    pub is_eose: bool,
-    pub event: Option<flatbuffers::WIPOffset<NostrEvent<'a>>>,
-    pub parsed_event: Option<flatbuffers::WIPOffset<ParsedEvent<'a>>>,
-    pub message: Option<flatbuffers::WIPOffset<&'a str>>,
-    pub success: bool,
-}
-impl<'a> Default for OutEnvelopeArgs<'a> {
-  #[inline]
-  fn default() -> Self {
-    OutEnvelopeArgs {
-      sub_id: None, // required field
-      url: None,
-      kind: None, // required field
-      is_eose: false,
-      event: None,
-      parsed_event: None,
-      message: None,
-      success: false,
-    }
-  }
-}
-
-pub struct OutEnvelopeBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
-  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
-  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
-}
-impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> OutEnvelopeBuilder<'a, 'b, A> {
-  #[inline]
-  pub fn add_sub_id(&mut self, sub_id: flatbuffers::WIPOffset<&'b  str>) {
-    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(OutEnvelope::VT_SUB_ID, sub_id);
-  }
-  #[inline]
-  pub fn add_url(&mut self, url: flatbuffers::WIPOffset<&'b  str>) {
-    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(OutEnvelope::VT_URL, url);
-  }
-  #[inline]
-  pub fn add_kind(&mut self, kind: flatbuffers::WIPOffset<&'b  str>) {
-    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(OutEnvelope::VT_KIND, kind);
-  }
-  #[inline]
-  pub fn add_is_eose(&mut self, is_eose: bool) {
-    self.fbb_.push_slot::<bool>(OutEnvelope::VT_IS_EOSE, is_eose, false);
-  }
-  #[inline]
-  pub fn add_event(&mut self, event: flatbuffers::WIPOffset<NostrEvent<'b >>) {
-    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<NostrEvent>>(OutEnvelope::VT_EVENT, event);
-  }
-  #[inline]
-  pub fn add_parsed_event(&mut self, parsed_event: flatbuffers::WIPOffset<ParsedEvent<'b >>) {
-    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<ParsedEvent>>(OutEnvelope::VT_PARSED_EVENT, parsed_event);
-  }
-  #[inline]
-  pub fn add_message(&mut self, message: flatbuffers::WIPOffset<&'b  str>) {
-    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(OutEnvelope::VT_MESSAGE, message);
-  }
-  #[inline]
-  pub fn add_success(&mut self, success: bool) {
-    self.fbb_.push_slot::<bool>(OutEnvelope::VT_SUCCESS, success, false);
-  }
-  #[inline]
-  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> OutEnvelopeBuilder<'a, 'b, A> {
-    let start = _fbb.start_table();
-    OutEnvelopeBuilder {
-      fbb_: _fbb,
-      start_: start,
-    }
-  }
-  #[inline]
-  pub fn finish(self) -> flatbuffers::WIPOffset<OutEnvelope<'a>> {
-    let o = self.fbb_.end_table(self.start_);
-    self.fbb_.required(o, OutEnvelope::VT_SUB_ID,"sub_id");
-    self.fbb_.required(o, OutEnvelope::VT_KIND,"kind");
-    flatbuffers::WIPOffset::new(o.value())
-  }
-}
-
-impl core::fmt::Debug for OutEnvelope<'_> {
-  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-    let mut ds = f.debug_struct("OutEnvelope");
-      ds.field("sub_id", &self.sub_id());
-      ds.field("url", &self.url());
-      ds.field("kind", &self.kind());
-      ds.field("is_eose", &self.is_eose());
-      ds.field("event", &self.event());
-      ds.field("parsed_event", &self.parsed_event());
-      ds.field("message", &self.message());
-      ds.field("success", &self.success());
-      ds.finish()
-  }
-}
-#[non_exhaustive]
-#[derive(Debug, Clone, PartialEq)]
-pub struct OutEnvelopeT {
-  pub sub_id: String,
-  pub url: Option<String>,
-  pub kind: String,
-  pub is_eose: bool,
-  pub event: Option<Box<NostrEventT>>,
-  pub parsed_event: Option<Box<ParsedEventT>>,
-  pub message: Option<String>,
-  pub success: bool,
-}
-impl Default for OutEnvelopeT {
-  fn default() -> Self {
-    Self {
-      sub_id: "".to_string(),
-      url: None,
-      kind: "".to_string(),
-      is_eose: false,
-      event: None,
-      parsed_event: None,
-      message: None,
-      success: false,
-    }
-  }
-}
-impl OutEnvelopeT {
-  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
-    &self,
-    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
-  ) -> flatbuffers::WIPOffset<OutEnvelope<'b>> {
-    let sub_id = Some({
-      let x = &self.sub_id;
-      _fbb.create_string(x)
-    });
-    let url = self.url.as_ref().map(|x|{
-      _fbb.create_string(x)
-    });
-    let kind = Some({
-      let x = &self.kind;
-      _fbb.create_string(x)
-    });
-    let is_eose = self.is_eose;
-    let event = self.event.as_ref().map(|x|{
-      x.pack(_fbb)
-    });
-    let parsed_event = self.parsed_event.as_ref().map(|x|{
-      x.pack(_fbb)
-    });
-    let message = self.message.as_ref().map(|x|{
-      _fbb.create_string(x)
-    });
-    let success = self.success;
-    OutEnvelope::create(_fbb, &OutEnvelopeArgs{
-      sub_id,
-      url,
-      kind,
-      is_eose,
-      event,
-      parsed_event,
-      message,
-      success,
-    })
-  }
-}
 pub enum Kind0ParsedOffset {}
 #[derive(Copy, Clone, PartialEq)]
 
@@ -17786,6 +17428,139 @@ impl SignedEventT {
     })
   }
 }
+pub enum RawOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct Raw<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for Raw<'a> {
+  type Inner = Raw<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> Raw<'a> {
+  pub const VT_RAW: flatbuffers::VOffsetT = 4;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    Raw { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args RawArgs<'args>
+  ) -> flatbuffers::WIPOffset<Raw<'bldr>> {
+    let mut builder = RawBuilder::new(_fbb);
+    if let Some(x) = args.raw { builder.add_raw(x); }
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> RawT {
+    let raw = {
+      let x = self.raw();
+      x.to_string()
+    };
+    RawT {
+      raw,
+    }
+  }
+
+  #[inline]
+  pub fn raw(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Raw::VT_RAW, None).unwrap()}
+  }
+}
+
+impl flatbuffers::Verifiable for Raw<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("raw", Self::VT_RAW, true)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct RawArgs<'a> {
+    pub raw: Option<flatbuffers::WIPOffset<&'a str>>,
+}
+impl<'a> Default for RawArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    RawArgs {
+      raw: None, // required field
+    }
+  }
+}
+
+pub struct RawBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> RawBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_raw(&mut self, raw: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Raw::VT_RAW, raw);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> RawBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    RawBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<Raw<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, Raw::VT_RAW,"raw");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for Raw<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("Raw");
+      ds.field("raw", &self.raw());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct RawT {
+  pub raw: String,
+}
+impl Default for RawT {
+  fn default() -> Self {
+    Self {
+      raw: "".to_string(),
+    }
+  }
+}
+impl RawT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<Raw<'b>> {
+    let raw = Some({
+      let x = &self.raw;
+      _fbb.create_string(x)
+    });
+    Raw::create(_fbb, &RawArgs{
+      raw,
+    })
+  }
+}
 pub enum WorkerMessageOffset {}
 #[derive(Copy, Clone, PartialEq)]
 
@@ -17802,9 +17577,11 @@ impl<'a> flatbuffers::Follow<'a> for WorkerMessage<'a> {
 }
 
 impl<'a> WorkerMessage<'a> {
-  pub const VT_TYPE_: flatbuffers::VOffsetT = 4;
-  pub const VT_CONTENT_TYPE: flatbuffers::VOffsetT = 6;
-  pub const VT_CONTENT: flatbuffers::VOffsetT = 8;
+  pub const VT_SUB_ID: flatbuffers::VOffsetT = 4;
+  pub const VT_URL: flatbuffers::VOffsetT = 6;
+  pub const VT_TYPE_: flatbuffers::VOffsetT = 8;
+  pub const VT_CONTENT_TYPE: flatbuffers::VOffsetT = 10;
+  pub const VT_CONTENT: flatbuffers::VOffsetT = 12;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -17813,22 +17590,35 @@ impl<'a> WorkerMessage<'a> {
   #[allow(unused_mut)]
   pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
     _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
-    args: &'args WorkerMessageArgs
+    args: &'args WorkerMessageArgs<'args>
   ) -> flatbuffers::WIPOffset<WorkerMessage<'bldr>> {
     let mut builder = WorkerMessageBuilder::new(_fbb);
     if let Some(x) = args.content { builder.add_content(x); }
     builder.add_type_(args.type_);
+    if let Some(x) = args.url { builder.add_url(x); }
+    if let Some(x) = args.sub_id { builder.add_sub_id(x); }
     builder.add_content_type(args.content_type);
     builder.finish()
   }
 
   pub fn unpack(&self) -> WorkerMessageT {
+    let sub_id = self.sub_id().map(|x| {
+      x.to_string()
+    });
+    let url = self.url().map(|x| {
+      x.to_string()
+    });
     let type_ = self.type_();
     let content = match self.content_type() {
       Message::NONE => MessageT::NONE,
       Message::ParsedEvent => MessageT::ParsedEvent(Box::new(
         self.content_as_parsed_event()
             .expect("Invalid union table, expected `Message::ParsedEvent`.")
+            .unpack()
+      )),
+      Message::NostrEvent => MessageT::NostrEvent(Box::new(
+        self.content_as_nostr_event()
+            .expect("Invalid union table, expected `Message::NostrEvent`.")
             .unpack()
       )),
       Message::ConnectionStatus => MessageT::ConnectionStatus(Box::new(
@@ -17866,14 +17656,35 @@ impl<'a> WorkerMessage<'a> {
             .expect("Invalid union table, expected `Message::Pubkey`.")
             .unpack()
       )),
+      Message::Raw => MessageT::Raw(Box::new(
+        self.content_as_raw()
+            .expect("Invalid union table, expected `Message::Raw`.")
+            .unpack()
+      )),
       _ => MessageT::NONE,
     };
     WorkerMessageT {
+      sub_id,
+      url,
       type_,
       content,
     }
   }
 
+  #[inline]
+  pub fn sub_id(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(WorkerMessage::VT_SUB_ID, None)}
+  }
+  #[inline]
+  pub fn url(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(WorkerMessage::VT_URL, None)}
+  }
   #[inline]
   pub fn type_(&self) -> MessageType {
     // Safety:
@@ -17904,6 +17715,21 @@ impl<'a> WorkerMessage<'a> {
        // Created from a valid Table for this object
        // Which contains a valid union in this slot
        unsafe { ParsedEvent::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn content_as_nostr_event(&self) -> Option<NostrEvent<'a>> {
+    if self.content_type() == Message::NostrEvent {
+      self.content().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { NostrEvent::init_from_table(t) }
      })
     } else {
       None
@@ -18015,6 +17841,21 @@ impl<'a> WorkerMessage<'a> {
     }
   }
 
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn content_as_raw(&self) -> Option<Raw<'a>> {
+    if self.content_type() == Message::Raw {
+      self.content().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { Raw::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
 }
 
 impl flatbuffers::Verifiable for WorkerMessage<'_> {
@@ -18024,10 +17865,13 @@ impl flatbuffers::Verifiable for WorkerMessage<'_> {
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("sub_id", Self::VT_SUB_ID, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("url", Self::VT_URL, false)?
      .visit_field::<MessageType>("type_", Self::VT_TYPE_, false)?
      .visit_union::<Message, _>("content_type", Self::VT_CONTENT_TYPE, "content", Self::VT_CONTENT, false, |key, v, pos| {
         match key {
           Message::ParsedEvent => v.verify_union_variant::<flatbuffers::ForwardsUOffset<ParsedEvent>>("Message::ParsedEvent", pos),
+          Message::NostrEvent => v.verify_union_variant::<flatbuffers::ForwardsUOffset<NostrEvent>>("Message::NostrEvent", pos),
           Message::ConnectionStatus => v.verify_union_variant::<flatbuffers::ForwardsUOffset<ConnectionStatus>>("Message::ConnectionStatus", pos),
           Message::CountResponse => v.verify_union_variant::<flatbuffers::ForwardsUOffset<CountResponse>>("Message::CountResponse", pos),
           Message::Eoce => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Eoce>>("Message::Eoce", pos),
@@ -18035,6 +17879,7 @@ impl flatbuffers::Verifiable for WorkerMessage<'_> {
           Message::ValidProofs => v.verify_union_variant::<flatbuffers::ForwardsUOffset<ValidProofs>>("Message::ValidProofs", pos),
           Message::SignedEvent => v.verify_union_variant::<flatbuffers::ForwardsUOffset<SignedEvent>>("Message::SignedEvent", pos),
           Message::Pubkey => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Pubkey>>("Message::Pubkey", pos),
+          Message::Raw => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Raw>>("Message::Raw", pos),
           _ => Ok(()),
         }
      })?
@@ -18042,15 +17887,19 @@ impl flatbuffers::Verifiable for WorkerMessage<'_> {
     Ok(())
   }
 }
-pub struct WorkerMessageArgs {
+pub struct WorkerMessageArgs<'a> {
+    pub sub_id: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub url: Option<flatbuffers::WIPOffset<&'a str>>,
     pub type_: MessageType,
     pub content_type: Message,
     pub content: Option<flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>>,
 }
-impl<'a> Default for WorkerMessageArgs {
+impl<'a> Default for WorkerMessageArgs<'a> {
   #[inline]
   fn default() -> Self {
     WorkerMessageArgs {
+      sub_id: None,
+      url: None,
       type_: MessageType::ParsedNostrEvent,
       content_type: Message::NONE,
       content: None,
@@ -18063,6 +17912,14 @@ pub struct WorkerMessageBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
   start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
 }
 impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> WorkerMessageBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_sub_id(&mut self, sub_id: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(WorkerMessage::VT_SUB_ID, sub_id);
+  }
+  #[inline]
+  pub fn add_url(&mut self, url: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(WorkerMessage::VT_URL, url);
+  }
   #[inline]
   pub fn add_type_(&mut self, type_: MessageType) {
     self.fbb_.push_slot::<MessageType>(WorkerMessage::VT_TYPE_, type_, MessageType::ParsedNostrEvent);
@@ -18093,11 +17950,20 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> WorkerMessageBuilder<'a, 'b, A>
 impl core::fmt::Debug for WorkerMessage<'_> {
   fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
     let mut ds = f.debug_struct("WorkerMessage");
+      ds.field("sub_id", &self.sub_id());
+      ds.field("url", &self.url());
       ds.field("type_", &self.type_());
       ds.field("content_type", &self.content_type());
       match self.content_type() {
         Message::ParsedEvent => {
           if let Some(x) = self.content_as_parsed_event() {
+            ds.field("content", &x)
+          } else {
+            ds.field("content", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        Message::NostrEvent => {
+          if let Some(x) = self.content_as_nostr_event() {
             ds.field("content", &x)
           } else {
             ds.field("content", &"InvalidFlatbuffer: Union discriminant does not match value.")
@@ -18152,6 +18018,13 @@ impl core::fmt::Debug for WorkerMessage<'_> {
             ds.field("content", &"InvalidFlatbuffer: Union discriminant does not match value.")
           }
         },
+        Message::Raw => {
+          if let Some(x) = self.content_as_raw() {
+            ds.field("content", &x)
+          } else {
+            ds.field("content", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
         _ => {
           let x: Option<()> = None;
           ds.field("content", &x)
@@ -18163,12 +18036,16 @@ impl core::fmt::Debug for WorkerMessage<'_> {
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq)]
 pub struct WorkerMessageT {
+  pub sub_id: Option<String>,
+  pub url: Option<String>,
   pub type_: MessageType,
   pub content: MessageT,
 }
 impl Default for WorkerMessageT {
   fn default() -> Self {
     Self {
+      sub_id: None,
+      url: None,
       type_: MessageType::ParsedNostrEvent,
       content: MessageT::NONE,
     }
@@ -18179,10 +18056,18 @@ impl WorkerMessageT {
     &self,
     _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
   ) -> flatbuffers::WIPOffset<WorkerMessage<'b>> {
+    let sub_id = self.sub_id.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let url = self.url.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
     let type_ = self.type_;
     let content_type = self.content.message_type();
     let content = self.content.pack(_fbb);
     WorkerMessage::create(_fbb, &WorkerMessageArgs{
+      sub_id,
+      url,
       type_,
       content_type,
       content,

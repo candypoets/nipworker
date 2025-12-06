@@ -291,6 +291,45 @@ impl Event {
         Ok(())
     }
 
+    pub fn build_flatbuffer<'a>(
+        &self,
+        fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
+    ) -> flatbuffers::WIPOffset<fb::NostrEvent<'a>> {
+        // Required strings
+        let id_offset = fbb.create_string(&self.id.to_hex());
+        let pubkey_offset = fbb.create_string(&self.pubkey.to_hex());
+        let content_offset = fbb.create_string(&self.content);
+        let sig_offset = fbb.create_string(&self.sig);
+
+        // Tags -> [StringVec]
+        let mut string_vec_offsets = Vec::with_capacity(self.tags.len());
+        for tag in &self.tags {
+            let tag_strings: Vec<_> = tag.iter().map(|s| fbb.create_string(s)).collect();
+            let tag_vector = fbb.create_vector(&tag_strings);
+            let string_vec = fb::StringVec::create(
+                fbb,
+                &fb::StringVecArgs {
+                    items: Some(tag_vector),
+                },
+            );
+            string_vec_offsets.push(string_vec);
+        }
+        let tags_offset = fbb.create_vector(&string_vec_offsets);
+
+        // Assemble NostrEvent
+        let args = fb::NostrEventArgs {
+            id: Some(id_offset),
+            pubkey: Some(pubkey_offset),
+            kind: self.kind as u16,
+            content: Some(content_offset),
+            tags: Some(tags_offset),
+            created_at: self.created_at as i32, // schema uses `int`
+            sig: Some(sig_offset),
+        };
+
+        fb::NostrEvent::create(fbb, &args)
+    }
+
     pub fn as_json(&self) -> String {
         let mut result = String::with_capacity(self.calculate_json_size());
 

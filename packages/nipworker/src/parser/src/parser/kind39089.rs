@@ -195,7 +195,7 @@ impl Parser {
             requests.push(Request {
                 authors: result.people.clone(),
                 kinds: vec![0, 10002], // Profile metadata and relay lists
-                relays: self.database.find_relay_candidates(0, "", &false),
+                relays: vec![],
                 ..Default::default()
             });
         }

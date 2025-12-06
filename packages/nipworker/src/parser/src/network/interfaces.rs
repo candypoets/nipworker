@@ -39,7 +39,7 @@ pub trait CacheProcessor {
         requests: Vec<Request>,
     ) -> Result<(Vec<Request>, Vec<Vec<Vec<u8>>>)>;
 
-    async fn find_event_context(&self, event: &ParsedEvent, max_depth: usize) -> Vec<Vec<u8>>;
+    // async fn find_event_context(&self, event: &ParsedEvent, max_depth: usize) -> Vec<Vec<u8>>;
 }
 
 pub trait EventStagingManager {

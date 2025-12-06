@@ -2,9 +2,9 @@
 
 use flatbuffers::FlatBufferBuilder;
 use js_sys::SharedArrayBuffer;
+use shared::{telemetry, SabRing};
 use wasm_bindgen::prelude::*;
 
-pub mod db;
 pub mod generated;
 pub mod network;
 pub mod parser;
@@ -15,7 +15,6 @@ pub mod types;
 pub mod utils;
 
 // Re-export key types for external use
-pub use db::NostrDB;
 pub use network::NetworkManager;
 pub use parser::Parser;
 pub use signer::{PrivateKeySigner, SignerInterface, SignerManager, SignerManagerInterface};
@@ -29,8 +28,6 @@ pub type NostrEvent = Event;
 #[derive(Debug, thiserror::Error)]
 pub enum NostrError {
     #[error("Database error: {0}")]
-    Database(#[from] db::types::DatabaseError),
-    #[error("Network error: {0}")]
     Network(String),
     #[error("Parse error: {0}")]
     Parse(String),
@@ -63,94 +60,16 @@ impl Into<JsValue> for NostrError {
 // Common result type
 pub type NostrResult<T> = Result<T, NostrError>;
 
-// Common macros
-#[macro_export]
-macro_rules! console_log {
-    ($($t:tt)*) => {
-        web_sys::console::log_1(&format_args!($($t)*).to_string().into());
-    }
-}
-
-#[macro_export]
-macro_rules! console_error {
-    ($($t:tt)*) => {
-        web_sys::console::error_1(&format_args!($($t)*).to_string().into());
-    }
-}
-
 // Worker implementation
 use js_sys::Uint8Array;
-use std::sync::{Arc, Once};
+use std::{
+    cell::RefCell,
+    rc::Rc,
+    sync::{Arc, Once},
+};
 use tracing::info;
 
-use crate::{
-    generated::nostr::fb,
-    types::nostr::Template,
-    utils::{js_interop::post_worker_message, sab_ring::SabRing},
-};
-
-fn setup_panic_hook() {
-    std::panic::set_hook(Box::new(|panic_info| {
-        let mut message = String::new();
-
-        // Get location information
-        if let Some(location) = panic_info.location() {
-            message.push_str(&format!(
-                "RUST PANIC in '{}' at line {}, column {}: ",
-                location.file(),
-                location.line(),
-                location.column()
-            ));
-        } else {
-            message.push_str("RUST PANIC at unknown location: ");
-        }
-
-        // Get panic message
-        if let Some(payload) = panic_info.payload().downcast_ref::<&str>() {
-            message.push_str(payload);
-        } else if let Some(payload) = panic_info.payload().downcast_ref::<String>() {
-            message.push_str(payload);
-        } else {
-            message.push_str("Unknown panic payload");
-        }
-
-        console_error!("{}", message);
-
-        // Also use the console_error_panic_hook for browser integration
-        // console_error_panic_hook::hook(panic_info);
-    }));
-}
-
-static TRACING_INIT: Once = Once::new();
-
-fn setup_tracing() {
-    TRACING_INIT.call_once(|| {
-        // Simple console writer for Web Workers
-        struct ConsoleWriter;
-
-        impl std::io::Write for ConsoleWriter {
-            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-                let message = String::from_utf8_lossy(buf);
-                web_sys::console::log_1(&JsValue::from_str(&message));
-                Ok(buf.len())
-            }
-
-            fn flush(&mut self) -> std::io::Result<()> {
-                Ok(())
-            }
-        }
-
-        // Try to set up a simple subscriber - if it fails, just continue
-        let _ = tracing_subscriber::fmt()
-            .with_writer(|| ConsoleWriter)
-            .without_time()
-            .with_target(false)
-            .with_max_level(tracing::Level::INFO)
-            .try_init();
-
-        console_log!("Tracing subscriber initialized for Web Worker");
-    });
-}
+use crate::{generated::nostr::fb, types::nostr::Template, utils::js_interop::post_worker_message};
 
 // Default relay configurations to match Go implementation
 const DEFAULT_RELAYS: &[&str] = &[
@@ -176,49 +95,33 @@ pub struct NostrClient {
 impl NostrClient {
     #[wasm_bindgen(constructor)]
     pub async fn new(
-        ingestdb_ring: SharedArrayBuffer,
+        db_ring: SharedArrayBuffer,
         cache_request: SharedArrayBuffer, // ws request
         cache_response: SharedArrayBuffer,
         ws_response: SharedArrayBuffer, // ws response
     ) -> Self {
-        // Set up enhanced panic handling
-        setup_panic_hook();
-        setup_tracing();
+        telemetry::init(tracing::Level::INFO);
 
         info!("Initializing NostrClient...");
 
-        let database = Arc::new(NostrDB::new_with_ringbuffer(
-            "nostr".to_string(),
-            "buffer".to_string(),
-            5 * 1024 * 1024,
-            DEFAULT_RELAYS.iter().map(|s| s.to_string()).collect(),
-            INDEXER_RELAYS.iter().map(|s| s.to_string()).collect(),
-        ));
-
-        database
-            .initialize()
-            .await
-            .map_err(|e| {
-                console_error!("Failed to initialize database: {}", e);
-                e
-            })
-            .expect("Database initialization failed");
-
         let signer_manager = Arc::new(SignerManager::new());
 
-        let parser = Arc::new(Parser::new_with_signer(
-            signer_manager.clone(),
-            database.clone(),
-        ));
-
-        // Create WsRings from the two SharedArrayBuffers
+        let parser = Arc::new(Parser::new_with_signer(signer_manager.clone()));
 
         let network_manager = NetworkManager::new(
-            database,
             parser,
-            SabRing::new(cache_request).expect("Failed to create SabRing for ws_request"),
-            SabRing::new(cache_response).expect("Failed to create SabRing for ws_request"),
-            SabRing::new(ws_response).expect("Failed to create SabRing for ws_response"),
+            Rc::new(RefCell::new(
+                SabRing::new(cache_request).expect("Failed to create SabRing for ws_request"),
+            )),
+            Rc::new(RefCell::new(
+                SabRing::new(cache_response).expect("Failed to create SabRing for cache_response"),
+            )),
+            Rc::new(RefCell::new(
+                SabRing::new(ws_response).expect("Failed to create SabRing for ws_response"),
+            )),
+            Rc::new(RefCell::new(
+                SabRing::new(db_ring).expect("Failed to create SabRing for ws_response"),
+            )),
         );
 
         info!("NostrClient components initialized");

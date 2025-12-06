@@ -1,4 +1,3 @@
-use crate::db::NostrDB;
 use crate::generated::nostr::fb::{self};
 use crate::parsed_event::ParsedEvent;
 use crate::parser::Parser;
@@ -11,7 +10,9 @@ type Result<T> = std::result::Result<T, NostrError>;
 use crate::types::nostr::Event as NostrEvent;
 use hex::decode_to_slice;
 use rustc_hash::FxHashSet;
+use shared::SabRing;
 use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
 
@@ -217,7 +218,7 @@ impl Pipeline {
     /// Create default pipeline: parsing + save to db + serialize events
     pub fn default(
         parser: Arc<Parser>,
-        database: Arc<NostrDB>,
+        db_ring: Rc<RefCell<SabRing>>,
         subscription_id: String,
     ) -> Result<Self> {
         Self::new(
@@ -229,7 +230,7 @@ impl Pipeline {
                     vec![],
                 ))),
                 PipeType::Parse(ParsePipe::new(parser)),
-                PipeType::SaveToDb(SaveToDbPipe::new(database)),
+                PipeType::SaveToDb(SaveToDbPipe::new(db_ring)),
                 PipeType::SerializeEvents(SerializeEventsPipe::new(subscription_id.clone())),
             ],
             subscription_id,

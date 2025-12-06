@@ -29,6 +29,8 @@ impl Pipe for SerializeEventsPipe {
             let union_value = parsed_event_offset.as_union_value();
 
             let message_args = fb::WorkerMessageArgs {
+                sub_id: None,
+                url: None,
                 type_: fb::MessageType::ParsedNostrEvent,
                 content_type: fb::Message::ParsedEvent,
                 content: Some(union_value),

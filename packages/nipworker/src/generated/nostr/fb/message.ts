@@ -7,8 +7,10 @@ import { BufferFull, BufferFullT } from '../../nostr/fb/buffer-full.js';
 import { ConnectionStatus, ConnectionStatusT } from '../../nostr/fb/connection-status.js';
 import { CountResponse, CountResponseT } from '../../nostr/fb/count-response.js';
 import { Eoce, EoceT } from '../../nostr/fb/eoce.js';
+import { NostrEvent, NostrEventT } from '../../nostr/fb/nostr-event.js';
 import { ParsedEvent, ParsedEventT } from '../../nostr/fb/parsed-event.js';
 import { Pubkey, PubkeyT } from '../../nostr/fb/pubkey.js';
+import { Raw, RawT } from '../../nostr/fb/raw.js';
 import { SignedEvent, SignedEventT } from '../../nostr/fb/signed-event.js';
 import { ValidProofs, ValidProofsT } from '../../nostr/fb/valid-proofs.js';
 
@@ -16,22 +18,25 @@ import { ValidProofs, ValidProofsT } from '../../nostr/fb/valid-proofs.js';
 export enum Message {
   NONE = 0,
   ParsedEvent = 1,
-  ConnectionStatus = 2,
-  CountResponse = 3,
-  Eoce = 4,
-  BufferFull = 5,
-  ValidProofs = 6,
-  SignedEvent = 7,
-  Pubkey = 8
+  NostrEvent = 2,
+  ConnectionStatus = 3,
+  CountResponse = 4,
+  Eoce = 5,
+  BufferFull = 6,
+  ValidProofs = 7,
+  SignedEvent = 8,
+  Pubkey = 9,
+  Raw = 10
 }
 
 export function unionToMessage(
   type: Message,
-  accessor: (obj:BufferFull|ConnectionStatus|CountResponse|Eoce|ParsedEvent|Pubkey|SignedEvent|ValidProofs) => BufferFull|ConnectionStatus|CountResponse|Eoce|ParsedEvent|Pubkey|SignedEvent|ValidProofs|null
-): BufferFull|ConnectionStatus|CountResponse|Eoce|ParsedEvent|Pubkey|SignedEvent|ValidProofs|null {
+  accessor: (obj:BufferFull|ConnectionStatus|CountResponse|Eoce|NostrEvent|ParsedEvent|Pubkey|Raw|SignedEvent|ValidProofs) => BufferFull|ConnectionStatus|CountResponse|Eoce|NostrEvent|ParsedEvent|Pubkey|Raw|SignedEvent|ValidProofs|null
+): BufferFull|ConnectionStatus|CountResponse|Eoce|NostrEvent|ParsedEvent|Pubkey|Raw|SignedEvent|ValidProofs|null {
   switch(Message[type]) {
     case 'NONE': return null; 
     case 'ParsedEvent': return accessor(new ParsedEvent())! as ParsedEvent;
+    case 'NostrEvent': return accessor(new NostrEvent())! as NostrEvent;
     case 'ConnectionStatus': return accessor(new ConnectionStatus())! as ConnectionStatus;
     case 'CountResponse': return accessor(new CountResponse())! as CountResponse;
     case 'Eoce': return accessor(new Eoce())! as Eoce;
@@ -39,18 +44,20 @@ export function unionToMessage(
     case 'ValidProofs': return accessor(new ValidProofs())! as ValidProofs;
     case 'SignedEvent': return accessor(new SignedEvent())! as SignedEvent;
     case 'Pubkey': return accessor(new Pubkey())! as Pubkey;
+    case 'Raw': return accessor(new Raw())! as Raw;
     default: return null;
   }
 }
 
 export function unionListToMessage(
   type: Message, 
-  accessor: (index: number, obj:BufferFull|ConnectionStatus|CountResponse|Eoce|ParsedEvent|Pubkey|SignedEvent|ValidProofs) => BufferFull|ConnectionStatus|CountResponse|Eoce|ParsedEvent|Pubkey|SignedEvent|ValidProofs|null, 
+  accessor: (index: number, obj:BufferFull|ConnectionStatus|CountResponse|Eoce|NostrEvent|ParsedEvent|Pubkey|Raw|SignedEvent|ValidProofs) => BufferFull|ConnectionStatus|CountResponse|Eoce|NostrEvent|ParsedEvent|Pubkey|Raw|SignedEvent|ValidProofs|null, 
   index: number
-): BufferFull|ConnectionStatus|CountResponse|Eoce|ParsedEvent|Pubkey|SignedEvent|ValidProofs|null {
+): BufferFull|ConnectionStatus|CountResponse|Eoce|NostrEvent|ParsedEvent|Pubkey|Raw|SignedEvent|ValidProofs|null {
   switch(Message[type]) {
     case 'NONE': return null; 
     case 'ParsedEvent': return accessor(index, new ParsedEvent())! as ParsedEvent;
+    case 'NostrEvent': return accessor(index, new NostrEvent())! as NostrEvent;
     case 'ConnectionStatus': return accessor(index, new ConnectionStatus())! as ConnectionStatus;
     case 'CountResponse': return accessor(index, new CountResponse())! as CountResponse;
     case 'Eoce': return accessor(index, new Eoce())! as Eoce;
@@ -58,6 +65,7 @@ export function unionListToMessage(
     case 'ValidProofs': return accessor(index, new ValidProofs())! as ValidProofs;
     case 'SignedEvent': return accessor(index, new SignedEvent())! as SignedEvent;
     case 'Pubkey': return accessor(index, new Pubkey())! as Pubkey;
+    case 'Raw': return accessor(index, new Raw())! as Raw;
     default: return null;
   }
 }

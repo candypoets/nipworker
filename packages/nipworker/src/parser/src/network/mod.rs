@@ -1,41 +1,36 @@
-pub mod cache_processor;
 pub mod interfaces;
 pub mod publish;
 pub mod subscription;
 
-use crate::generated::nostr::fb::{self, WorkerMessage};
+use crate::generated::nostr::fb::{self};
 use crate::nostr::Template;
 use crate::parser::Parser;
-use crate::pipeline::{
-    CounterPipe, KindFilterPipe, NpubLimiterPipe, ParsePipe, PipeType, ProofVerificationPipe,
-    SaveToDbPipe, SerializeEventsPipe,
-};
-use crate::relays::ClientMessage;
+use crate::pipeline::Pipeline;
 use crate::types::network::Request;
 use crate::utils::buffer::SharedBufferManager;
 use crate::utils::js_interop::post_worker_message;
-use crate::utils::sab_ring::SabRing;
 use crate::NostrError;
-use crate::{db::NostrDB, pipeline::Pipeline};
 use flatbuffers::FlatBufferBuilder;
 use futures::lock::Mutex;
 use gloo_timers::future::TimeoutFuture;
 use js_sys::SharedArrayBuffer;
 use rustc_hash::FxHashMap;
+use shared::SabRing;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Arc, RwLock};
-use tracing::{info, warn};
+use tracing::{info, info_span, warn, Instrument, Span};
 use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::spawn_local;
 
 type Result<T> = std::result::Result<T, NostrError>;
 
 // Tunables
-const MAX_INFLIGHT: usize = 6;
-const STARTUP_DELAY_MS: u32 = 500;
-const INITIAL_BACKOFF_MS: u32 = 8;
-const MAX_BACKOFF_MS: u32 = 512;
+const MAX_INFLIGHT: usize = 24; // Increased from 6 to allow more parallel processing
+const STARTUP_DELAY_MS: u32 = 100; // Reduced from 500ms for faster startup
+const INITIAL_BACKOFF_MS: u32 = 1; // Reduced from 8ms for tighter polling
+const MAX_BACKOFF_MS: u32 = 128; // Reduced from 512ms for more responsive backoff
+const BATCH_SIZE: usize = 8; // Process multiple messages in one iteration
 
 struct Sub {
     pipeline: Arc<Mutex<Pipeline>>,
@@ -48,6 +43,7 @@ pub struct NetworkManager {
     ws_response: Rc<RefCell<SabRing>>,
     cache_response: Rc<RefCell<SabRing>>,
     cache_request: Rc<RefCell<SabRing>>,
+    db_ring: Rc<RefCell<SabRing>>,
     publish_manager: publish::PublishManager,
     subscription_manager: subscription::SubscriptionManager,
     subscriptions: Arc<RwLock<FxHashMap<String, Sub>>>,
@@ -66,20 +62,20 @@ fn unquote_simple(s: &str) -> &str {
 
 impl NetworkManager {
     pub fn new(
-        database: Arc<NostrDB>,
         parser: Arc<Parser>,
         cache_request: Rc<RefCell<SabRing>>,
         cache_response: Rc<RefCell<SabRing>>,
         ws_response: Rc<RefCell<SabRing>>,
+        db_ring: Rc<RefCell<SabRing>>,
     ) -> Self {
-        let publish_manager = publish::PublishManager::new(database.clone(), parser.clone());
-        let subscription_manager =
-            subscription::SubscriptionManager::new(database.clone(), parser.clone());
+        let publish_manager = publish::PublishManager::new(parser.clone());
+        let subscription_manager = subscription::SubscriptionManager::new(parser.clone());
 
         let manager = Self {
             ws_response,
             cache_request,
             cache_response,
+            db_ring,
             publish_manager,
             subscription_manager,
             subscriptions: Arc::new(RwLock::new(FxHashMap::default())),
@@ -104,7 +100,18 @@ impl NetworkManager {
         Some(Arc::new(fb_bytes.to_vec())) // Shared owned fb_bytes
     }
 
-    async fn handle_message_core(
+    async fn handle_message_batch(
+        subs: Arc<RwLock<FxHashMap<String, Sub>>>,
+        messages: Vec<(Arc<Vec<u8>>, Span)>,
+    ) {
+        // Process multiple messages with a single lock acquisition where possible
+        for (fb_bytes_arc, span) in messages {
+            let _guard = span.enter();
+            Self::handle_message_single(subs.clone(), fb_bytes_arc).await;
+        }
+    }
+
+    async fn handle_message_single(
         subs: Arc<RwLock<FxHashMap<String, Sub>>>,
         fb_bytes_arc: Arc<Vec<u8>>,
     ) {
@@ -165,7 +172,7 @@ impl NetworkManager {
                         info!("Sub closed {}, on relay {:?}", sid, url);
                     }
                     "EOSE" => {
-                        // EOSE: signal to UI/pipeline and mark subscription as eosed
+                        info!("EOSE received for sub {} on relay {:?}", sid, url);
                         SharedBufferManager::send_connection_status(&buffer, url, "EOSE", "").await;
                         post_worker_message(&JsValue::from_str(sid));
                         if let Ok(mut w) = subs.write() {
@@ -188,7 +195,13 @@ impl NetworkManager {
                     }
                 }
             }
+            fb::MessageType::Eoce => {
+                info!("EOCE received for sub {}", sid);
+                SharedBufferManager::send_eoce(&buffer).await;
+                post_worker_message(&JsValue::from_str(sid));
+            }
             fb::MessageType::Raw => {
+                // info!("Processing raw message for sub {}", sid);
                 // For now, keep the existing pipeline.process(&str) path
                 let Some(raw) = wm.content_as_raw() else {
                     warn!("WorkerMessage Raw missing content");
@@ -203,12 +216,16 @@ impl NetworkManager {
                 let mut pipeline_guard = pipeline_arc.lock().await;
                 match pipeline_guard.process(raw_msg).await {
                     Ok(Some(output)) => {
+                        // info!("Writing output to buffer for sub {}", sid);
+                        let _write_span = info_span!("buffer_write", sub_id = %sid).entered();
                         if let Err(e) = SharedBufferManager::write_to_buffer(&buffer, &output).await
                         {
                             warn!("Buffer write failed for sub {}: {:?}", sid, e);
                         }
                     }
-                    Ok(None) => { /* dropped by pipeline */ }
+                    Ok(None) => {
+                        // info!("Event dropped by pipeline for sub {}", sid); /* dropped by pipeline */
+                    }
                     Err(e) => {
                         warn!("Pipeline process failed for sub {}: {:?}", sid, e);
                     }
@@ -216,6 +233,32 @@ impl NetworkManager {
 
                 // Once Pipeline accepts bytes, replace with:
                 // match pipeline_guard.process_worker_message(&fb_bytes_arc).await { ... }
+            }
+            fb::MessageType::ParsedNostrEvent => {
+                info!("Processing ParsedNostrEvent for sub {}", sid);
+                let mut pipeline_guard = pipeline_arc.lock().await;
+
+                match pipeline_guard
+                    .process_cached_batch(&[fb_bytes_arc.as_ref().clone()])
+                    .await
+                {
+                    Ok(outputs) => {
+                        // Process each output in the vector
+                        for output in outputs {
+                            info!("Writing cache output to buffer for sub {}", sid);
+                            let _write_span =
+                                info_span!("cache_buffer_write", sub_id = %sid).entered();
+                            if let Err(e) =
+                                SharedBufferManager::write_to_buffer(&buffer, &output).await
+                            {
+                                warn!("Buffer write failed for sub {}: {:?}", sid, e);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        warn!("Pipeline process failed for sub {}: {:?}", sid, e);
+                    }
+                }
             }
             _ => {
                 // Ignore other message types in this reader
@@ -239,11 +282,12 @@ impl NetworkManager {
             let inflight = inflight.clone();
             let slot_tx_main = slot_tx.clone();
             async move {
-                TimeoutFuture::new(STARTUP_DELAY_MS).await;
-
                 let mut empty_backoff_ms: u32 = INITIAL_BACKOFF_MS;
                 let mut full_backoff_ms: u32 = INITIAL_BACKOFF_MS;
                 let mut prefer_cache: bool = true; // start with cache priority
+                let mut messages_batch: Vec<Vec<u8>> = Vec::with_capacity(BATCH_SIZE);
+                let mut messages_to_spawn: Vec<(Arc<Vec<u8>>, Span)> =
+                    Vec::with_capacity(BATCH_SIZE);
 
                 loop {
                     if inflight.get() >= MAX_INFLIGHT {
@@ -256,105 +300,132 @@ impl NetworkManager {
                         continue;
                     }
 
-                    // Fair, cache-preferred read: try preferred first, then the other
-                    let next_bytes = if prefer_cache {
-                        if let Some(bytes) = { cache_response.borrow_mut().read_next() } {
-                            prefer_cache = false; // alternate next loop
-                            Some(bytes)
-                        } else if let Some(bytes) = { ws_response.borrow_mut().read_next() } {
-                            prefer_cache = true; // alternate next loop
-                            Some(bytes)
-                        } else {
-                            None
-                        }
-                    } else {
-                        if let Some(bytes) = { ws_response.borrow_mut().read_next() } {
-                            prefer_cache = true; // alternate next loop
-                            Some(bytes)
-                        } else if let Some(bytes) = { cache_response.borrow_mut().read_next() } {
-                            prefer_cache = false; // alternate next loop
-                            Some(bytes)
-                        } else {
-                            None
-                        }
-                    };
+                    // Batch read: collect up to BATCH_SIZE messages
+                    messages_batch.clear();
+                    let mut batch_prefer_cache = prefer_cache;
 
-                    if let Some(bytes) = next_bytes {
+                    for _ in 0..BATCH_SIZE {
+                        if inflight.get() + messages_batch.len() >= MAX_INFLIGHT {
+                            break;
+                        }
+
+                        // Only read from cache_response for testing
+                        let next_bytes = cache_response.borrow_mut().read_next();
+
+                        if let Some(bytes) = next_bytes {
+                            messages_batch.push(bytes);
+                        } else {
+                            break; // No more messages available
+                        }
+                    }
+
+                    prefer_cache = batch_prefer_cache; // Update preference for next iteration
+
+                    if !messages_batch.is_empty() {
                         empty_backoff_ms = INITIAL_BACKOFF_MS;
 
-                        // Light-root directly from the Vec<u8> for cheap routing
-                        let wm = match flatbuffers::root::<fb::WorkerMessage>(&bytes) {
-                            Ok(w) => w,
-                            Err(_) => {
-                                warn!("WorkerMessage decode failed in reader; dropping frame");
-                                continue;
-                            }
-                        };
-
-                        let sid = wm.sub_id().unwrap_or("").to_string();
-                        if sid.is_empty() {
-                            warn!("Invalid message: Missing sub_id");
-                            continue;
-                        }
-
-                        // Early handling of non-heavy status lines (NOTICE/AUTH/CLOSED)
-                        if wm.type_() == fb::MessageType::ConnectionStatus {
-                            if let Some(cs) = wm.content_as_connection_status() {
-                                match cs.status() {
-                                    "NOTICE" => {
-                                        info!(
-                                            "Received notice from {:?}: {}",
-                                            wm.url(),
-                                            cs.message().unwrap_or("")
-                                        );
-                                        continue;
-                                    }
-                                    "AUTH" => {
-                                        info!("Auth needed on relay {:?}", wm.url());
-                                        continue;
-                                    }
-                                    "CLOSED" => {
-                                        info!("Sub closed {}, on relay {:?}", sid, wm.url());
-                                        continue;
-                                    }
-                                    _ => { /* fall through for EOSE/OK */ }
-                                }
-                            } else {
-                                continue;
-                            }
-                        }
-
-                        // For heavy processing (Raw, EOSE, OK), ensure sub exists
-                        let has_sub = {
-                            match subs.read() {
-                                Ok(g) => g.contains_key(&sid),
+                        // Process batch of messages
+                        for bytes in messages_batch.drain(..) {
+                            // Light-root directly from the Vec<u8> for cheap routing
+                            let wm = match flatbuffers::root::<fb::WorkerMessage>(&bytes) {
+                                Ok(w) => w,
                                 Err(_) => {
-                                    warn!("Subscriptions lock poisoned; dropping frame");
-                                    false
+                                    warn!("WorkerMessage decode failed in reader; dropping frame");
+                                    continue;
+                                }
+                            };
+
+                            let sid = wm.sub_id().unwrap_or("").to_string();
+                            if sid.is_empty() {
+                                warn!("Invalid message: Missing sub_id");
+                                continue;
+                            }
+
+                            // Create span for this sub_id early
+                            let sub_span = info_span!("sub_request", sub_id = %sid);
+                            let _enter = sub_span.enter();
+
+                            // Early handling of non-heavy status lines (NOTICE/AUTH/CLOSED)
+                            if wm.type_() == fb::MessageType::ConnectionStatus {
+                                if let Some(cs) = wm.content_as_connection_status() {
+                                    match cs.status() {
+                                        "NOTICE" => {
+                                            info!(
+                                                "Received notice from {:?}: {}",
+                                                wm.url(),
+                                                cs.message().unwrap_or("")
+                                            );
+                                            continue;
+                                        }
+                                        "AUTH" => {
+                                            info!("Auth needed on relay {:?}", wm.url());
+                                            continue;
+                                        }
+                                        "CLOSED" => {
+                                            info!("Sub closed {}, on relay {:?}", sid, wm.url());
+                                            drop(_enter); // Close span for CLOSED subscription
+                                            continue;
+                                        }
+                                        _ => { /* fall through for EOSE/OK */ }
+                                    }
+                                } else {
+                                    continue;
                                 }
                             }
-                        };
-                        if !has_sub {
-                            warn!("Subscription {} not found; dropping frame", sid);
-                            continue;
+
+                            // For heavy processing (Raw, EOSE, OK), ensure sub exists
+                            let has_sub = {
+                                match subs.read() {
+                                    Ok(g) => g.contains_key(&sid),
+                                    Err(_) => {
+                                        warn!("Subscriptions lock poisoned; dropping frame");
+                                        false
+                                    }
+                                }
+                            };
+                            if !has_sub {
+                                warn!("Subscription {} not found; dropping frame", sid);
+                                drop(_enter); // Close span for dropped subscription
+                                continue;
+                            }
+
+                            // Collect messages for batch processing
+                            let fb_arc = std::sync::Arc::new(bytes);
+                            drop(_enter); // Exit span before moving it
+                            messages_to_spawn.push((fb_arc, sub_span));
                         }
 
-                        // Move bytes into the task (Arc for cheap clone if needed)
-                        let fb_arc = std::sync::Arc::new(bytes);
+                        // Spawn tasks in batches for better scheduling
+                        if !messages_to_spawn.is_empty() {
+                            let batch_size = messages_to_spawn.len();
+                            inflight.set(inflight.get() + batch_size);
 
-                        inflight.set(inflight.get() + 1);
-                        let inflight_clone = inflight.clone();
-                        let subs_clone = subs.clone();
-                        let slot_tx = slot_tx_main.clone();
+                            // Process messages in smaller groups for better parallelism
+                            const SPAWN_GROUP_SIZE: usize = 4;
+                            for chunk in messages_to_spawn.chunks(SPAWN_GROUP_SIZE) {
+                                let chunk_vec = chunk.to_vec();
+                                let inflight_clone = inflight.clone();
+                                let subs_clone = subs.clone();
+                                let slot_tx = slot_tx_main.clone();
+                                let chunk_len = chunk_vec.len();
 
-                        spawn_local(async move {
-                            Self::handle_message_core(subs_clone, fb_arc).await;
+                                spawn_local(async move {
+                                    Self::handle_message_batch(subs_clone, chunk_vec).await;
 
-                            inflight_clone.set(inflight_clone.get().saturating_sub(1));
-                            let _ = slot_tx.unbounded_send(());
-                        });
+                                    inflight_clone
+                                        .set(inflight_clone.get().saturating_sub(chunk_len));
+                                    for _ in 0..chunk_len {
+                                        let _ = slot_tx.unbounded_send(());
+                                    }
+                                });
+                            }
+                            messages_to_spawn.clear();
+                        }
 
-                        TimeoutFuture::new(0).await;
+                        // Yield to prevent blocking the event loop too long
+                        if messages_batch.len() >= BATCH_SIZE / 2 {
+                            TimeoutFuture::new(0).await;
+                        }
                         full_backoff_ms = INITIAL_BACKOFF_MS;
                     } else {
                         TimeoutFuture::new(empty_backoff_ms).await;
@@ -372,6 +443,7 @@ impl NetworkManager {
         requests: &Vec<fb::Request<'_>>,
         config: &fb::SubscriptionConfig<'_>,
     ) -> Result<()> {
+        info!("open_subscription: {}", subscription_id);
         // early bailout if the sub already exist
         if self
             .subscriptions
@@ -386,7 +458,12 @@ impl NetworkManager {
 
         let pipeline = self
             .subscription_manager
-            .process_subscription(&subscription_id, parsed_requests, config)
+            .process_subscription(
+                &subscription_id,
+                self.db_ring.clone(),
+                parsed_requests,
+                config,
+            )
             .await?;
 
         if let Ok(mut w) = self.subscriptions.write() {

@@ -1,4 +1,3 @@
-use crate::db::index::NostrDB;
 use crate::nostr::Template;
 use crate::parsed_event::{ParsedData, ParsedEvent};
 use crate::signer::interface::SignerManagerInterface;
@@ -84,15 +83,11 @@ pub use kind9735::{Kind9735Parsed, ZapRequest};
 
 pub struct Parser {
     pub signer_manager: Arc<SignerManager>,
-    pub database: Arc<NostrDB>,
 }
 
 impl Parser {
-    pub fn new_with_signer(signer_manager: Arc<SignerManager>, database: Arc<NostrDB>) -> Self {
-        Self {
-            signer_manager,
-            database,
-        }
+    pub fn new_with_signer(signer_manager: Arc<SignerManager>) -> Self {
+        Self { signer_manager }
     }
 
     pub fn parse(&self, event: Event) -> Result<ParsedEvent> {

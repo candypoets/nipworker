@@ -1,4 +1,6 @@
 use serde_json::Value;
+use shared::{telemetry, SabRing};
+use tracing::{error, info, warn};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
@@ -11,11 +13,9 @@ mod connection;
 mod connection_registry;
 mod fb_utils;
 mod generated;
-mod sab_ring;
 mod types;
 
 use connection_registry::ConnectionRegistry;
-use sab_ring::SabRing;
 
 use crate::fb_utils::build_worker_message;
 
@@ -23,45 +23,6 @@ use crate::fb_utils::build_worker_message;
 struct Envelope {
     relays: Vec<String>,
     frames: Vec<String>,
-}
-
-// Common macros
-#[macro_export]
-macro_rules! console_log {
-    ($($t:tt)*) => {
-        web_sys::console::log_1(&format_args!($($t)*).to_string().into());
-    }
-}
-
-static TRACING_INIT: Once = Once::new();
-
-fn setup_tracing() {
-    TRACING_INIT.call_once(|| {
-        // Simple console writer for Web Workers
-        struct ConsoleWriter;
-
-        impl std::io::Write for ConsoleWriter {
-            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-                let message = String::from_utf8_lossy(buf);
-                web_sys::console::log_1(&JsValue::from_str(&message));
-                Ok(buf.len())
-            }
-
-            fn flush(&mut self) -> std::io::Result<()> {
-                Ok(())
-            }
-        }
-
-        // Try to set up a simple subscriber - if it fails, just continue
-        let _ = tracing_subscriber::fmt()
-            .with_writer(|| ConsoleWriter)
-            .without_time()
-            .with_target(false)
-            .with_max_level(tracing::Level::INFO)
-            .try_init();
-
-        console_log!("Tracing subscriber initialized for Web Worker");
-    });
 }
 
 fn write_status_line(status_ring: &mut SabRing, status: &str, url: &str) {
@@ -90,11 +51,13 @@ impl WSRust {
         ws_response: SharedArrayBuffer,
         status_ring: SharedArrayBuffer,
     ) -> Result<WSRust, JsValue> {
-        setup_tracing();
+        telemetry::init(tracing::Level::ERROR);
+
+        info!("instanciating connections");
         let ws_request = Rc::new(RefCell::new(SabRing::new(ws_request)?));
         let ws_response = Rc::new(RefCell::new(SabRing::new(ws_response)?));
         let status_ring = Rc::new(RefCell::new(SabRing::new(status_ring)?));
-        let out_ring_clone = ws_response.clone();
+        let ws_response_clone = ws_response.clone();
 
         let writer = Rc::new(move |url: &str, sub_id: &str, raw: &str| {
             // Build a WorkerMessage FlatBuffer and write its bytes
@@ -104,7 +67,7 @@ impl WSRust {
             let bytes = fbb.finished_data().to_vec();
 
             if !bytes.is_empty() {
-                out_ring_clone.borrow_mut().write(&bytes);
+                ws_response_clone.borrow_mut().write(&bytes);
             } else {
                 // Failure log (error handling) - now compiles with Value import
                 let raw_sub_id = if let Ok(parsed) = serde_json::from_str::<Value>(raw) {
@@ -116,7 +79,7 @@ impl WSRust {
                 } else {
                     None
                 };
-                console_log!(
+                warn!(
                     "Failed to serialize envelope for caller_sub_id='{}': raw_sub_id={:?}, raw='{}' (len={})",
                     sub_id, raw_sub_id, raw, raw.len()
                 );
@@ -133,16 +96,21 @@ impl WSRust {
         // Build registry and wire writer that routes by subId to the correct out ring
         let registry = ConnectionRegistry::new(writer, status_writer);
 
-        Ok(WSRust {
+        let connections = WSRust {
             ws_request,
             registry,
-        })
+        };
+
+        connections.start();
+
+        Ok(connections)
     }
 
     /// Start one loop per inRing that reads JSON envelopes and calls send_to_relays
-    pub fn start(&self) {
+    fn start(&self) {
+        info!("Starting WebSocket server");
         // Clone the Rc for the task so we don’t capture &self
-        let ring_rc = self.ws_request.clone();
+        let ws_request_clone = self.ws_request.clone();
         let reg = self.registry.clone();
 
         spawn_local(async move {
@@ -155,7 +123,7 @@ impl WSRust {
                 // Drain ring
                 loop {
                     let bytes_opt = {
-                        let mut ring = ring_rc.borrow_mut();
+                        let mut ring = ws_request_clone.borrow_mut();
                         ring.read_next()
                     };
 
@@ -163,11 +131,18 @@ impl WSRust {
 
                     processed += 1;
 
+                    info!("Processed message {}", processed);
+
                     if let Ok(env) = serde_json::from_slice::<Envelope>(&bytes) {
                         if !env.relays.is_empty() && !env.frames.is_empty() {
                             // Sync call to send_to_relays
+                            info!(
+                                "Sending frames to relays {}, {}",
+                                env.relays.join(", "),
+                                env.frames.len()
+                            );
                             if let Err(e) = reg.send_to_relays(&env.relays, &env.frames) {
-                                tracing::error!("send_to_relays failed: {:?}", e);
+                                error!("send_to_relays failed: {:?}", e);
                                 // No retry; just log
                             }
                         }

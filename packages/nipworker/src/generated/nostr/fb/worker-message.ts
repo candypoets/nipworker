@@ -11,8 +11,10 @@ import { CountResponse, CountResponseT } from '../../nostr/fb/count-response.js'
 import { Eoce, EoceT } from '../../nostr/fb/eoce.js';
 import { Message, unionToMessage, unionListToMessage } from '../../nostr/fb/message.js';
 import { MessageType } from '../../nostr/fb/message-type.js';
+import { NostrEvent, NostrEventT } from '../../nostr/fb/nostr-event.js';
 import { ParsedEvent, ParsedEventT } from '../../nostr/fb/parsed-event.js';
 import { Pubkey, PubkeyT } from '../../nostr/fb/pubkey.js';
+import { Raw, RawT } from '../../nostr/fb/raw.js';
 import { SignedEvent, SignedEventT } from '../../nostr/fb/signed-event.js';
 import { ValidProofs, ValidProofsT } from '../../nostr/fb/valid-proofs.js';
 
@@ -35,35 +37,57 @@ static getSizePrefixedRootAsWorkerMessage(bb:flatbuffers.ByteBuffer, obj?:Worker
   return (obj || new WorkerMessage()).__init(bb.readInt32(bb.position()) + bb.position(), bb);
 }
 
-type():MessageType {
+subId(): ByteString|null
+subId(optionalEncoding:flatbuffers.Encoding): ByteString|Uint8Array|null
+subId(optionalEncoding?:any): ByteString|Uint8Array|null {
   const offset = this.bb!.__offset(this.bb_pos, 4);
+  return offset ? this.bb!.__stringByteString(this.bb_pos + offset, optionalEncoding) : null;
+}
+
+url(): ByteString|null
+url(optionalEncoding:flatbuffers.Encoding): ByteString|Uint8Array|null
+url(optionalEncoding?:any): ByteString|Uint8Array|null {
+  const offset = this.bb!.__offset(this.bb_pos, 6);
+  return offset ? this.bb!.__stringByteString(this.bb_pos + offset, optionalEncoding) : null;
+}
+
+type():MessageType {
+  const offset = this.bb!.__offset(this.bb_pos, 8);
   return offset ? this.bb!.readUint32(this.bb_pos + offset) : MessageType.ParsedNostrEvent;
 }
 
 contentType():Message {
-  const offset = this.bb!.__offset(this.bb_pos, 6);
+  const offset = this.bb!.__offset(this.bb_pos, 10);
   return offset ? this.bb!.readUint8(this.bb_pos + offset) : Message.NONE;
 }
 
 content<T extends flatbuffers.Table>(obj:any):any|null {
-  const offset = this.bb!.__offset(this.bb_pos, 8);
+  const offset = this.bb!.__offset(this.bb_pos, 12);
   return offset ? this.bb!.__union(obj, this.bb_pos + offset) : null;
 }
 
 static startWorkerMessage(builder:flatbuffers.Builder) {
-  builder.startObject(3);
+  builder.startObject(5);
+}
+
+static addSubId(builder:flatbuffers.Builder, subIdOffset:flatbuffers.Offset) {
+  builder.addFieldOffset(0, subIdOffset, 0);
+}
+
+static addUrl(builder:flatbuffers.Builder, urlOffset:flatbuffers.Offset) {
+  builder.addFieldOffset(1, urlOffset, 0);
 }
 
 static addType(builder:flatbuffers.Builder, type:MessageType) {
-  builder.addFieldInt32(0, type, MessageType.ParsedNostrEvent);
+  builder.addFieldInt32(2, type, MessageType.ParsedNostrEvent);
 }
 
 static addContentType(builder:flatbuffers.Builder, contentType:Message) {
-  builder.addFieldInt8(1, contentType, Message.NONE);
+  builder.addFieldInt8(3, contentType, Message.NONE);
 }
 
 static addContent(builder:flatbuffers.Builder, contentOffset:flatbuffers.Offset) {
-  builder.addFieldOffset(2, contentOffset, 0);
+  builder.addFieldOffset(4, contentOffset, 0);
 }
 
 static endWorkerMessage(builder:flatbuffers.Builder):flatbuffers.Offset {
@@ -79,8 +103,10 @@ static finishSizePrefixedWorkerMessageBuffer(builder:flatbuffers.Builder, offset
   builder.finish(offset, undefined, true);
 }
 
-static createWorkerMessage(builder:flatbuffers.Builder, type:MessageType, contentType:Message, contentOffset:flatbuffers.Offset):flatbuffers.Offset {
+static createWorkerMessage(builder:flatbuffers.Builder, subIdOffset:flatbuffers.Offset, urlOffset:flatbuffers.Offset, type:MessageType, contentType:Message, contentOffset:flatbuffers.Offset):flatbuffers.Offset {
   WorkerMessage.startWorkerMessage(builder);
+  WorkerMessage.addSubId(builder, subIdOffset);
+  WorkerMessage.addUrl(builder, urlOffset);
   WorkerMessage.addType(builder, type);
   WorkerMessage.addContentType(builder, contentType);
   WorkerMessage.addContent(builder, contentOffset);
@@ -89,6 +115,8 @@ static createWorkerMessage(builder:flatbuffers.Builder, type:MessageType, conten
 
 unpack(): WorkerMessageT {
   return new WorkerMessageT(
+    this.subId(),
+    this.url(),
     this.type(),
     this.contentType(),
     (() => {
@@ -101,6 +129,8 @@ unpack(): WorkerMessageT {
 
 
 unpackTo(_o: WorkerMessageT): void {
+  _o.subId = this.subId();
+  _o.url = this.url();
   _o.type = this.type();
   _o.contentType = this.contentType();
   _o.content = (() => {
@@ -113,16 +143,22 @@ unpackTo(_o: WorkerMessageT): void {
 
 export class WorkerMessageT implements flatbuffers.IGeneratedObject {
 constructor(
+  public subId: ByteString|Uint8Array|null = null,
+  public url: ByteString|Uint8Array|null = null,
   public type: MessageType = MessageType.ParsedNostrEvent,
   public contentType: Message = Message.NONE,
-  public content: BufferFullT|ConnectionStatusT|CountResponseT|EoceT|ParsedEventT|PubkeyT|SignedEventT|ValidProofsT|null = null
+  public content: BufferFullT|ConnectionStatusT|CountResponseT|EoceT|NostrEventT|ParsedEventT|PubkeyT|RawT|SignedEventT|ValidProofsT|null = null
 ){}
 
 
 pack(builder:flatbuffers.Builder): flatbuffers.Offset {
+  const subId = (this.subId !== null ? builder.createString(this.subId!) : 0);
+  const url = (this.url !== null ? builder.createString(this.url!) : 0);
   const content = builder.createObjectOffset(this.content);
 
   return WorkerMessage.createWorkerMessage(builder,
+    subId,
+    url,
     this.type,
     this.contentType,
     content

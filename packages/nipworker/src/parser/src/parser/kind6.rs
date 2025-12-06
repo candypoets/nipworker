@@ -1,12 +1,10 @@
 use crate::parsed_event::ParsedData;
 use crate::parser::{ParserError, Result};
 use crate::types::network::Request;
-use crate::types::nostr::{Event, Kind, REPOST};
+use crate::types::nostr::{Event, REPOST};
 use crate::utils::request_deduplication::RequestDeduplicator;
 use crate::TEXT_NOTE;
 use crate::{parsed_event::ParsedEvent, parser::Parser};
-
-use tracing::debug;
 
 // NEW: Imports for FlatBuffers
 use crate::generated::nostr::*;
@@ -96,9 +94,7 @@ impl Parser {
 
         // If we couldn't parse the content or it was empty, request the original event
         if reposted_event.is_none() {
-            let mut relays = self
-                .database
-                .find_relay_candidates(1, &event.pubkey.to_hex(), &false);
+            let mut relays = vec![];
             relays.push(relay_hint);
 
             requests.push(Request {

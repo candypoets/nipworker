@@ -28,6 +28,7 @@ debug = false           # Disable debug info in release builds
 overflow-checks = false # Disable overflow checks in release
 
 [dependencies]
+shared = { path = "../shared" }
 # Lightweight async utilities (replacing tokio)
 futures = "0.3"
 

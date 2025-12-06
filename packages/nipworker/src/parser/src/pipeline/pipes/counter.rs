@@ -50,6 +50,8 @@ impl Pipe for CounterPipe {
 
             let worker_msg = {
                 let args = fb::WorkerMessageArgs {
+                    sub_id: None,
+                    url: None,
                     type_: fb::MessageType::CountResponse,
                     content_type: fb::Message::CountResponse,
                     content: Some(counter_offset.as_union_value()),
@@ -103,6 +105,8 @@ impl Pipe for CounterPipe {
 
             let worker_msg = {
                 let args = fb::WorkerMessageArgs {
+                    sub_id: None,
+                    url: None,
                     type_: fb::MessageType::CountResponse,
                     content_type: fb::Message::CountResponse,
                     content: Some(counter_offset.as_union_value()),

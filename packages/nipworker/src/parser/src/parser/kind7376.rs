@@ -50,11 +50,7 @@ impl Parser {
                 requests.push(Request {
                     ids: vec![tag[1].clone()],
                     kinds: vec![7375],
-                    relays: self.database.find_relay_candidates(
-                        7375,
-                        &event.pubkey.to_hex(),
-                        &false,
-                    ),
+                    relays: vec![],
                     cache_first: true,
                     ..Default::default()
                 });

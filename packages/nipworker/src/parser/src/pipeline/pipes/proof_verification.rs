@@ -422,6 +422,8 @@ impl ProofVerificationPipe {
         let union_value = valid_proofs_msg.as_union_value();
 
         let message_args = fb::WorkerMessageArgs {
+            sub_id: None,
+            url: None,
             type_: fb::MessageType::ValidProofs,
             content_type: fb::Message::ValidProofs,
             content: Some(union_value),

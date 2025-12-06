@@ -31,6 +31,8 @@ impl SharedBufferManager {
         let conn_status_offset = fb::ConnectionStatus::create(&mut builder, &conn_status_args);
 
         let message_args = fb::WorkerMessageArgs {
+            sub_id: None,
+            url: None,
             type_: fb::MessageType::ConnectionStatus,
             content_type: fb::Message::ConnectionStatus,
             content: Some(conn_status_offset.as_union_value()),
@@ -53,6 +55,8 @@ impl SharedBufferManager {
         let eoce_offset = fb::Eoce::create(&mut builder, &eoce_args);
 
         let message_args = fb::WorkerMessageArgs {
+            sub_id: None,
+            url: None,
             type_: fb::MessageType::Eoce,
             content_type: fb::Message::Eoce,
             content: Some(eoce_offset.as_union_value()),
@@ -84,6 +88,8 @@ impl SharedBufferManager {
             };
             let worker_msg = {
                 let args = fb::WorkerMessageArgs {
+                    sub_id: None,
+                    url: None,
                     type_: fb::MessageType::BufferFull,
                     content_type: fb::Message::BufferFull,
                     content: Some(buffer_full.as_union_value()),
@@ -192,6 +198,8 @@ impl SharedBufferManager {
                     };
                     let worker_msg = {
                         let args = fb::WorkerMessageArgs {
+                            sub_id: None,
+                            url: None,
                             type_: fb::MessageType::BufferFull,
                             content_type: fb::Message::BufferFull,
                             content: Some(buffer_full.as_union_value()),
