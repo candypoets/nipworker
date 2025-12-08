@@ -106,6 +106,11 @@ impl WSRust {
         Ok(connections)
     }
 
+    pub fn close(&self, sub_id: &str) {
+        let reg = self.registry.clone();
+        reg.close_all(sub_id);
+    }
+
     /// Start one loop per inRing that reads JSON envelopes and calls send_to_relays
     fn start(&self) {
         info!("Starting WebSocket server");

@@ -120,10 +120,13 @@ impl<S: EventStorage> NostrDB<S> {
         let Some(ring_rc) = &self.ingest_ring else {
             return Ok(0);
         };
-        let mut ring = ring_rc.borrow_mut();
         let mut count = 0usize;
         loop {
-            let Some(payload) = ring.read_next() else {
+            let payload_opt = {
+                let mut ring = ring_rc.borrow_mut();
+                ring.read_next()
+            };
+            let Some(payload) = payload_opt else {
                 break;
             };
             // Each payload is expected to be a WorkerMessage (serialized)
@@ -618,6 +621,29 @@ impl<S: EventStorage> NostrDB<S> {
                         // }
 
                         // Store the underlying bytes (event borrowing b prevents moving b)
+                        results.push(b);
+                    } else if let Ok(n) = flatbuffers::root::<NostrEvent>(&b) {
+                        // Time range filters for NostrEvent
+                        if let Some(since) = filter.since {
+                            if (n.created_at().max(0) as u32) < since as u32 {
+                                continue;
+                            }
+                        }
+
+                        if let Some(until) = filter.until {
+                            if (n.created_at().max(0) as u32) > until as u32 {
+                                continue;
+                            }
+                        }
+
+                        // Search filter
+                        // if let Some(search) = &search_lower {
+                        //     if !n.content().to_lowercase().contains(search) {
+                        //         continue;
+                        //     }
+                        // }
+
+                        // Store the underlying bytes
                         results.push(b);
                     }
                 }

@@ -32,6 +32,7 @@ enum MessageType : uint32 {
   SignedEvent = 6,
   Pubkey = 7,
   Raw = 8,
+  NostrEvent = 9,
 }
 
 enum ParsedDataUnion : uint32 {

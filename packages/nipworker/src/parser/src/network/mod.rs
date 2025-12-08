@@ -6,6 +6,7 @@ use crate::generated::nostr::fb::{self};
 use crate::nostr::Template;
 use crate::parser::Parser;
 use crate::pipeline::Pipeline;
+use crate::relays::ClientMessage;
 use crate::types::network::Request;
 use crate::utils::buffer::SharedBufferManager;
 use crate::utils::js_interop::post_worker_message;
@@ -235,7 +236,6 @@ impl NetworkManager {
                 // match pipeline_guard.process_worker_message(&fb_bytes_arc).await { ... }
             }
             fb::MessageType::ParsedNostrEvent => {
-                info!("Processing ParsedNostrEvent for sub {}", sid);
                 let mut pipeline_guard = pipeline_arc.lock().await;
 
                 match pipeline_guard
@@ -245,7 +245,6 @@ impl NetworkManager {
                     Ok(outputs) => {
                         // Process each output in the vector
                         for output in outputs {
-                            info!("Writing cache output to buffer for sub {}", sid);
                             let _write_span =
                                 info_span!("cache_buffer_write", sub_id = %sid).entered();
                             if let Err(e) =
@@ -260,6 +259,28 @@ impl NetworkManager {
                     }
                 }
             }
+            fb::MessageType::NostrEvent => {
+                let mut pipeline_guard = pipeline_arc.lock().await;
+                match pipeline_guard
+                    .process_bytes(fb_bytes_arc.as_ref().as_slice())
+                    .await
+                {
+                    Ok(Some(output)) => {
+                        // info!("Writing output to buffer for sub {}", sid);
+                        let _write_span = info_span!("buffer_write", sub_id = %sid).entered();
+                        if let Err(e) = SharedBufferManager::write_to_buffer(&buffer, &output).await
+                        {
+                            warn!("Buffer write failed for sub {}: {:?}", sid, e);
+                        }
+                    }
+                    Ok(None) => {
+                        // info!("Event dropped by pipeline for sub {}", sid); /* dropped by pipeline */
+                    }
+                    Err(e) => {
+                        warn!("Pipeline process failed for sub {}: {:?}", sid, e);
+                    }
+                }
+            }
             _ => {
                 // Ignore other message types in this reader
             }
@@ -267,170 +288,132 @@ impl NetworkManager {
     }
 
     fn start_response_reader(&self) {
-        use futures::{channel::mpsc, FutureExt, StreamExt};
-        use std::cell::Cell;
+        use futures::{channel::mpsc, FutureExt, SinkExt, StreamExt};
+        use gloo_timers::future::TimeoutFuture;
+        use std::hash::{Hash, Hasher};
+        use tracing::{info_span, warn};
 
         let subs = self.subscriptions.clone();
-
-        let inflight: Rc<Cell<usize>> = Rc::new(Cell::new(0));
-        let (slot_tx, mut slot_rx) = mpsc::unbounded::<()>();
 
         let ws_response = self.ws_response.clone();
         let cache_response = self.cache_response.clone();
 
-        spawn_local({
-            let inflight = inflight.clone();
-            let slot_tx_main = slot_tx.clone();
-            async move {
-                let mut empty_backoff_ms: u32 = INITIAL_BACKOFF_MS;
-                let mut full_backoff_ms: u32 = INITIAL_BACKOFF_MS;
-                let mut prefer_cache: bool = true; // start with cache priority
-                let mut messages_batch: Vec<Vec<u8>> = Vec::with_capacity(BATCH_SIZE);
-                let mut messages_to_spawn: Vec<(Arc<Vec<u8>>, Span)> =
+        // Sharded executors: fixed number of long-lived workers
+        const NUM_SHARDS: usize = 10;
+        const SHARD_CAP: usize = BATCH_SIZE * 4; // bounded for backpressure
+
+        // Create shard channels + workers
+        let mut shard_senders = Vec::with_capacity(NUM_SHARDS);
+        for shard_idx in 0..NUM_SHARDS {
+            let (tx, mut rx) = mpsc::channel::<(std::sync::Arc<Vec<u8>>, tracing::Span)>(SHARD_CAP);
+            let subs_clone = subs.clone();
+
+            spawn_local(async move {
+                let mut local_batch: Vec<(std::sync::Arc<Vec<u8>>, tracing::Span)> =
                     Vec::with_capacity(BATCH_SIZE);
 
                 loop {
-                    if inflight.get() >= MAX_INFLIGHT {
-                        let mut timeout = TimeoutFuture::new(full_backoff_ms).fuse();
-                        let mut slot = slot_rx.next().fuse();
-                        futures::select! {
-                            _ = timeout => full_backoff_ms = (full_backoff_ms.saturating_mul(2)).min(MAX_BACKOFF_MS),
-                            _ = slot => full_backoff_ms = INITIAL_BACKOFF_MS,
+                    local_batch.clear();
+
+                    // Drive progress by awaiting at least one message
+                    match rx.next().await {
+                        Some(item) => local_batch.push(item),
+                        None => {
+                            warn!("Shard {} exited (channel closed)", shard_idx);
+                            break;
                         }
+                    }
+
+                    // Opportunistically drain more without awaiting
+                    while local_batch.len() < BATCH_SIZE {
+                        match rx.next().now_or_never() {
+                            Some(Some(item)) => local_batch.push(item),
+                            Some(None) => break, // channel closed
+                            None => break,       // nothing ready
+                        }
+                    }
+
+                    // Process in-order within the shard to preserve per-sub ordering
+                    let batch = std::mem::take(&mut local_batch);
+                    NetworkManager::handle_message_batch(subs_clone.clone(), batch).await;
+                }
+            });
+
+            shard_senders.push(tx);
+        }
+
+        // Distributor task: alternate reads between cache and ws, route by sub_id to shards
+        spawn_local(async move {
+            let mut empty_backoff_ms: u32 = INITIAL_BACKOFF_MS;
+            let mut prefer_cache = true; // start by preferring cache, then alternate
+
+            loop {
+                // Try preferred source first, then fallback to the other
+                let mut took_cache = false;
+
+                let next_bytes = if prefer_cache {
+                    if let Some(bytes) = cache_response.borrow_mut().read_next() {
+                        took_cache = true;
+                        Some(bytes)
+                    } else {
+                        ws_response.borrow_mut().read_next()
+                    }
+                } else {
+                    if let Some(bytes) = ws_response.borrow_mut().read_next() {
+                        took_cache = false;
+                        Some(bytes)
+                    } else {
+                        if let Some(bytes) = cache_response.borrow_mut().read_next() {
+                            took_cache = true;
+                            Some(bytes)
+                        } else {
+                            None
+                        }
+                    }
+                };
+
+                if let Some(bytes) = next_bytes {
+                    empty_backoff_ms = INITIAL_BACKOFF_MS;
+
+                    // Decode minimally to route by sub_id
+                    let wm = match flatbuffers::root::<fb::WorkerMessage>(&bytes) {
+                        Ok(w) => w,
+                        Err(_) => {
+                            warn!("WorkerMessage decode failed in distributor; dropping frame");
+                            // Flip preference even on decode fail to keep fairness over time
+                            prefer_cache = !prefer_cache;
+                            continue;
+                        }
+                    };
+                    let sid = wm.sub_id().unwrap_or("");
+                    if sid.is_empty() {
+                        warn!("Invalid message: Missing sub_id");
+                        prefer_cache = !prefer_cache;
                         continue;
                     }
 
-                    // Batch read: collect up to BATCH_SIZE messages
-                    messages_batch.clear();
-                    let mut batch_prefer_cache = prefer_cache;
+                    // Sub span for downstream processing
+                    let sub_span = info_span!("sub_request", sub_id = %sid);
 
-                    for _ in 0..BATCH_SIZE {
-                        if inflight.get() + messages_batch.len() >= MAX_INFLIGHT {
-                            break;
-                        }
+                    // Compute shard index
+                    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                    sid.hash(&mut hasher);
+                    let shard_idx = (hasher.finish() as usize) % NUM_SHARDS;
 
-                        // Only read from cache_response for testing
-                        let next_bytes = cache_response.borrow_mut().read_next();
-
-                        if let Some(bytes) = next_bytes {
-                            messages_batch.push(bytes);
-                        } else {
-                            break; // No more messages available
-                        }
+                    // Send to shard (clone sender to avoid borrowing issues; awaits if full)
+                    let fb_arc = std::sync::Arc::new(bytes);
+                    let mut tx = shard_senders[shard_idx].clone();
+                    if let Err(e) = tx.send((fb_arc, sub_span)).await {
+                        warn!("Shard {} send failed: {:?}", shard_idx, e);
                     }
 
-                    prefer_cache = batch_prefer_cache; // Update preference for next iteration
-
-                    if !messages_batch.is_empty() {
-                        empty_backoff_ms = INITIAL_BACKOFF_MS;
-
-                        // Process batch of messages
-                        for bytes in messages_batch.drain(..) {
-                            // Light-root directly from the Vec<u8> for cheap routing
-                            let wm = match flatbuffers::root::<fb::WorkerMessage>(&bytes) {
-                                Ok(w) => w,
-                                Err(_) => {
-                                    warn!("WorkerMessage decode failed in reader; dropping frame");
-                                    continue;
-                                }
-                            };
-
-                            let sid = wm.sub_id().unwrap_or("").to_string();
-                            if sid.is_empty() {
-                                warn!("Invalid message: Missing sub_id");
-                                continue;
-                            }
-
-                            // Create span for this sub_id early
-                            let sub_span = info_span!("sub_request", sub_id = %sid);
-                            let _enter = sub_span.enter();
-
-                            // Early handling of non-heavy status lines (NOTICE/AUTH/CLOSED)
-                            if wm.type_() == fb::MessageType::ConnectionStatus {
-                                if let Some(cs) = wm.content_as_connection_status() {
-                                    match cs.status() {
-                                        "NOTICE" => {
-                                            info!(
-                                                "Received notice from {:?}: {}",
-                                                wm.url(),
-                                                cs.message().unwrap_or("")
-                                            );
-                                            continue;
-                                        }
-                                        "AUTH" => {
-                                            info!("Auth needed on relay {:?}", wm.url());
-                                            continue;
-                                        }
-                                        "CLOSED" => {
-                                            info!("Sub closed {}, on relay {:?}", sid, wm.url());
-                                            drop(_enter); // Close span for CLOSED subscription
-                                            continue;
-                                        }
-                                        _ => { /* fall through for EOSE/OK */ }
-                                    }
-                                } else {
-                                    continue;
-                                }
-                            }
-
-                            // For heavy processing (Raw, EOSE, OK), ensure sub exists
-                            let has_sub = {
-                                match subs.read() {
-                                    Ok(g) => g.contains_key(&sid),
-                                    Err(_) => {
-                                        warn!("Subscriptions lock poisoned; dropping frame");
-                                        false
-                                    }
-                                }
-                            };
-                            if !has_sub {
-                                warn!("Subscription {} not found; dropping frame", sid);
-                                drop(_enter); // Close span for dropped subscription
-                                continue;
-                            }
-
-                            // Collect messages for batch processing
-                            let fb_arc = std::sync::Arc::new(bytes);
-                            drop(_enter); // Exit span before moving it
-                            messages_to_spawn.push((fb_arc, sub_span));
-                        }
-
-                        // Spawn tasks in batches for better scheduling
-                        if !messages_to_spawn.is_empty() {
-                            let batch_size = messages_to_spawn.len();
-                            inflight.set(inflight.get() + batch_size);
-
-                            // Process messages in smaller groups for better parallelism
-                            const SPAWN_GROUP_SIZE: usize = 4;
-                            for chunk in messages_to_spawn.chunks(SPAWN_GROUP_SIZE) {
-                                let chunk_vec = chunk.to_vec();
-                                let inflight_clone = inflight.clone();
-                                let subs_clone = subs.clone();
-                                let slot_tx = slot_tx_main.clone();
-                                let chunk_len = chunk_vec.len();
-
-                                spawn_local(async move {
-                                    Self::handle_message_batch(subs_clone, chunk_vec).await;
-
-                                    inflight_clone
-                                        .set(inflight_clone.get().saturating_sub(chunk_len));
-                                    for _ in 0..chunk_len {
-                                        let _ = slot_tx.unbounded_send(());
-                                    }
-                                });
-                            }
-                            messages_to_spawn.clear();
-                        }
-
-                        // Yield to prevent blocking the event loop too long
-                        if messages_batch.len() >= BATCH_SIZE / 2 {
-                            TimeoutFuture::new(0).await;
-                        }
-                        full_backoff_ms = INITIAL_BACKOFF_MS;
-                    } else {
-                        TimeoutFuture::new(empty_backoff_ms).await;
-                        empty_backoff_ms = (empty_backoff_ms.saturating_mul(2)).min(MAX_BACKOFF_MS);
-                    }
+                    // Alternate preference after a successful read
+                    prefer_cache = !took_cache;
+                } else {
+                    // Nothing in either buffer -> backoff
+                    TimeoutFuture::new(empty_backoff_ms).await;
+                    empty_backoff_ms = (empty_backoff_ms.saturating_mul(2)).min(MAX_BACKOFF_MS);
+                    // Keep the same preference to try the same order next time
                 }
             }
         });
@@ -589,11 +572,11 @@ impl NetworkManager {
             );
         }
 
-        // for relay_url in &all_relays {
-        //     let event_message = ClientMessage::event(event.clone());
-        //     let frame = event_message.to_json()?;
-        //     self.send_frame_to_relay(relay_url, &frame);
-        // }
+        for relay_url in &all_relays {
+            let event_message = ClientMessage::event(event.clone());
+            let frame = event_message.to_json()?;
+            self.send_frame_to_relay(relay_url, &frame);
+        }
 
         Ok(())
     }

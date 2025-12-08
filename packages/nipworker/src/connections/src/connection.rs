@@ -21,6 +21,7 @@ use futures::lock::Mutex;
 use futures::stream::{SplitSink, SplitStream};
 use futures::{SinkExt, StreamExt};
 use gloo_net::websocket::{futures::WebSocket, Message};
+use std::collections::HashSet;
 use std::rc::Rc;
 use std::sync::{Arc, RwLock};
 use wasm_bindgen_futures::spawn_local;
@@ -37,7 +38,7 @@ pub struct RelayConnection {
     ws_sink: Arc<Mutex<Option<SplitSink<WebSocket, Message>>>>,
 
     stats: Arc<RwLock<ConnectionStats>>,
-    inflight_reqs: Arc<RwLock<i32>>,
+    active_subs: Arc<RwLock<HashSet<String>>>,
     backoff_attempts: Arc<RwLock<u32>>,
     next_retry_at_ms: Arc<RwLock<u64>>,
 
@@ -69,7 +70,7 @@ impl RelayConnection {
             websocket: Arc::new(RwLock::new(None)),
             ws_sink: Arc::new(Mutex::new(None)),
             stats: Arc::new(RwLock::new(ConnectionStats::default())),
-            inflight_reqs: Arc::new(RwLock::new(0)),
+            active_subs: Arc::new(RwLock::new(HashSet::new())),
             backoff_attempts: Arc::new(RwLock::new(0)),
             next_retry_at_ms: Arc::new(RwLock::new(0)),
             queue_tx: Arc::new(RwLock::new(Some(tx))),
@@ -267,32 +268,30 @@ impl RelayConnection {
                 let k = kind_raw.trim_matches('"');
                 match k {
                     "CLOSE" => {
-                        let sub_id = parts[1].map(|s| s.trim_matches('"').to_string());
-                        let should_close = {
-                            let mut cnt = self.inflight_reqs.write().unwrap();
-                            *cnt = cnt.saturating_sub(1);
-                            *cnt <= 0
-                        };
-                        if should_close {
-                            drop(sink_guard);
-                            let _ = Self::close(self).await;
-                        }
-                        if let Some(sub) = sub_id {
+                        if let Some(sub) = parts[1].map(|s| s.trim_matches('"').to_string()) {
+                            // New: use membership instead of a counter
+                            {
+                                let mut set = self.active_subs.write().unwrap();
+                                set.remove(&sub);
+                                if set.is_empty() {
+                                    // Preserve the existing “auto-close when no subs remain”
+                                    drop(sink_guard);
+                                    let _ = Self::close(self).await;
+                                }
+                            }
                             let raw_closed = format!(r#"["OK","{}","CLOSED"]"#, sub);
                             (self.out_writer)(&self.url, &sub, &raw_closed);
                         }
                     }
-                    _ => {
-                        // Increment inflight on successful REQ send and emit SUBSCRIBED synthetic
-                        {
-                            let mut cnt = self.inflight_reqs.write().unwrap();
-                            *cnt = cnt.saturating_add(1);
-                        }
+                    "REQ" => {
                         if let Some(sub_id) = parts[1].map(|s| s.trim_matches('"').to_string()) {
+                            self.active_subs.write().unwrap().insert(sub_id.clone());
+                            // optional: keep the synthetic notification
                             let raw_subscribed = format!(r#"["OK","{}", SUBSCRIBED]"#, sub_id);
                             (self.out_writer)(&self.url, &sub_id, &raw_subscribed);
                         }
                     }
+                    _ => {}
                 }
             }
         }
@@ -386,6 +385,34 @@ impl RelayConnection {
         self.init_queue_drainer();
 
         Ok(())
+    }
+
+    pub async fn close_sub(self: &Arc<Self>, sub_id: &str) -> bool {
+        // Fast membership check
+        let present = {
+            let mut set = self.active_subs.write().unwrap();
+            if set.contains(sub_id) {
+                set.remove(sub_id);
+                true
+            } else {
+                false
+            }
+        };
+        if !present {
+            return false;
+        }
+
+        // Send CLOSE only if currently connected; do not attempt reconnect.
+        if matches!(*self.status.read().unwrap(), ConnectionStatus::Connected) {
+            let mut sink_guard = self.ws_sink.lock().await;
+            if let Some(sink) = sink_guard.as_mut() {
+                // Best-effort; if it fails, we don’t reconnect here.
+                let frame = format!(r#"["CLOSE","{}"]"#, sub_id);
+                let _ = sink.send(Message::Text(frame)).await;
+            }
+        }
+
+        true
     }
 
     pub async fn close(self: &Arc<Self>) -> Result<(), RelayError> {

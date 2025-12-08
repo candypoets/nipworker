@@ -3,7 +3,7 @@ use std::rc::Rc;
 use super::super::*;
 use flatbuffers::FlatBufferBuilder;
 use shared::SabRing;
-use tracing::warn;
+use tracing::{info, warn};
 
 pub struct SaveToDbPipe {
     db_ring: Rc<RefCell<SabRing>>,
@@ -35,6 +35,7 @@ impl Pipe for SaveToDbPipe {
             let _ = self.db_ring.borrow_mut().write(bytes);
         }
         if let Some(ref nostr_event) = event.raw {
+            info!("Saving NostrEvent");
             let fb_raw_event = nostr_event.build_flatbuffer(&mut fbb);
             fbb.finish(fb_raw_event, None);
             let bytes = fbb.finished_data();

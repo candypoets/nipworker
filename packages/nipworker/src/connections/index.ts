@@ -48,5 +48,9 @@ self.addEventListener(
 		if (msg?.type === 'wake') {
 			return;
 		}
+
+		if (typeof msg == 'string') {
+			instance.close(msg);
+		}
 	}
 );

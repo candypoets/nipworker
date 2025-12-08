@@ -93,7 +93,7 @@ export class NostrManager {
 		const wsResponse = initializeRingHeader(5 * 1024 * 1024); // 2MB (ws response)
 
 		const cacheRequest = initializeRingHeader(1 * 1024 * 1024);
-		const cacheResponse = initializeRingHeader(2 * 1024 * 1024);
+		const cacheResponse = initializeRingHeader(10 * 1024 * 1024);
 
 		const dbRing = initializeRingHeader(2 * 1024 * 1024);
 
@@ -159,7 +159,6 @@ export class NostrManager {
 			}
 
 			if (!id) return;
-
 			// Prefer O(1) routing via your existing maps
 			if (this.subscriptions.has(id)) {
 				// Notify only the listeners for this subscription
@@ -317,6 +316,7 @@ export class NostrManager {
 		const subId = subscriptionId.length < 64 ? subscriptionId : this.createShortId(subscriptionId);
 		const subscription = this.subscriptions.get(subId);
 		if (subscription) {
+			this.connections.postMessage(subId);
 			subscription.refCount--;
 		}
 	}
@@ -412,32 +412,31 @@ export class NostrManager {
 	}
 
 	cleanup(): void {
+		console.trace('Cleanup called');
 		const subscriptionsToDelete: string[] = [];
-
 		for (const [subId, subscription] of this.subscriptions.entries()) {
 			if (subscription.refCount <= 0 && !this.PERPETUAL_SUBSCRIPTIONS.includes(subId)) {
 				subscriptionsToDelete.push(subId);
 			}
 		}
-
-		for (const subId of subscriptionsToDelete) {
-			const subscription = this.subscriptions.get(subId);
-			if (subscription) {
-				const mainT = new MainMessageT(
-					MainContent.Unsubscribe,
-					new UnsubscribeT(this.textEncoder.encode(subId))
-				);
-				// Serialize with FlatBuffers builder
-				const builder = new flatbuffers.Builder(2048);
-				const mainOffset = mainT.pack(builder);
-				builder.finish(mainOffset);
-				const serializedMessage = builder.asUint8Array();
-				// nipWorker.resetInputLoopBackoff();
-				this.postToWorker(serializedMessage);
-				subscription.closed = true;
-				this.subscriptions.delete(subId);
-			}
-		}
+		// for (const subId of subscriptionsToDelete) {
+		// 	const subscription = this.subscriptions.get(subId);
+		// 	if (subscription) {
+		// 		const mainT = new MainMessageT(
+		// 			MainContent.Unsubscribe,
+		// 			new UnsubscribeT(this.textEncoder.encode(subId))
+		// 		);
+		// 		// Serialize with FlatBuffers builder
+		// 		const builder = new flatbuffers.Builder(2048);
+		// 		const mainOffset = mainT.pack(builder);
+		// 		builder.finish(mainOffset);
+		// 		const serializedMessage = builder.asUint8Array();
+		// 		// nipWorker.resetInputLoopBackoff();
+		// 		this.postToWorker(serializedMessage);
+		// 		subscription.closed = true;
+		// 		this.subscriptions.delete(subId);
+		// 	}
+		// }
 	}
 }
 

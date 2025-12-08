@@ -10,6 +10,7 @@
 
 use crate::generated::nostr::fb;
 use flatbuffers::{FlatBufferBuilder, ForwardsUOffset, Vector, WIPOffset};
+use tracing::info;
 
 //
 // Generic helpers
@@ -1139,7 +1140,7 @@ pub fn wrap_event_with_worker_message(sub_id: &str, bytes: &[u8]) -> Option<Vec<
             &fb::WorkerMessageArgs {
                 sub_id: Some(sid),
                 url: None,
-                type_: fb::MessageType::ParsedNostrEvent,
+                type_: fb::MessageType::NostrEvent,
                 content_type: fb::Message::NostrEvent,
                 content: Some(nostr_event.as_union_value()),
             },

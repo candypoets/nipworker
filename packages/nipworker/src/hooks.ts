@@ -68,8 +68,8 @@ export function useSubscription(
 	let running = true;
 	let hasUnsubscribed = false;
 	let hasSubscribed = false;
-
-	// subId = nipWorker.createShortId(subId);
+	let originId = subId;
+	subId = manager.createShortId(subId);
 	// const manager = nipWorker.getManager(subId);
 
 	// Reentrancy/coalescing flags
@@ -115,12 +115,14 @@ export function useSubscription(
 
 		return () => {};
 	};
-
 	buffer = manager.subscribe(subId, requests, options);
 	hasSubscribed = true;
 
-	manager.addEventListener(`subscription:${subId}`, scheduleProcess);
+	manager.addEventListener(`subscription:${subId}`, () => {
+		scheduleProcess();
+	});
 
+	// setInterval(scheduleProcess, 1000);
 	// Prime initial drain
 	scheduleProcess();
 

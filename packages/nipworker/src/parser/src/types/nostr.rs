@@ -422,6 +422,97 @@ impl Event {
         let parser = NostrEventParser::new(json_bytes);
         parser.parse()
     }
+
+    pub fn from_worker_message(bytes: &[u8]) -> Result<Self> {
+        let wm = flatbuffers::root::<fb::WorkerMessage>(bytes)?;
+
+        match wm.content_type() {
+            fb::Message::NostrEvent => {
+                if let Some(ne) = wm.content_as_nostr_event() {
+                    // Required fields
+                    let id = EventId::from_hex(ne.id())?;
+                    let pubkey = PublicKey::from_hex(ne.pubkey())?;
+                    let content = ne.content().to_string();
+                    let sig = ne.sig().to_string();
+
+                    // Numeric fields
+                    let created_at = ne.created_at().max(0) as u64;
+                    let kind = ne.kind();
+
+                    // Tags: [StringVec] -> Vec<Vec<String>>
+                    let fb_tags = ne.tags();
+                    let mut tags: Vec<Vec<String>> = Vec::with_capacity(fb_tags.len());
+                    for i in 0..fb_tags.len() {
+                        let sv = fb_tags.get(i);
+                        let mut tag_vec = Vec::new();
+                        if let Some(items) = sv.items() {
+                            for s in items.iter() {
+                                tag_vec.push(s.to_string());
+                            }
+                        }
+                        tags.push(tag_vec);
+                    }
+
+                    Ok(Event {
+                        id,
+                        pubkey,
+                        created_at,
+                        kind,
+                        tags,
+                        content,
+                        sig,
+                    })
+                } else {
+                    Err(TypesError::InvalidFormat(
+                        "WorkerMessage content missing NostrEvent".to_string(),
+                    ))
+                }
+            }
+            _ => Err(TypesError::InvalidFormat(
+                "WorkerMessage does not contain a NostrEvent".to_string(),
+            )),
+        }
+    }
+
+    /// Parse an Event from a FlatBuffer-encoded `nostr.fb.NostrEvent`.
+    pub fn from_flatbuffer(bytes: &[u8]) -> Result<Self> {
+        // Decode FlatBuffer root
+        let ne = flatbuffers::root::<fb::NostrEvent>(bytes)?;
+
+        // Required fields (schema enforces presence)
+        let id = EventId::from_hex(ne.id())?;
+        let pubkey = PublicKey::from_hex(ne.pubkey())?;
+        let content = ne.content().to_string();
+        let sig = ne.sig().to_string();
+
+        // Numeric fields
+        let created_at = ne.created_at().max(0) as u64;
+        let kind = ne.kind();
+
+        // Tags: [StringVec] -> Vec<Vec<String>>
+        let fb_tags = ne.tags();
+        let mut tags: Vec<Vec<String>> = Vec::with_capacity(fb_tags.len());
+        for i in 0..fb_tags.len() {
+            let sv = fb_tags.get(i);
+            let mut tag_vec = Vec::new();
+            if let Some(items) = sv.items() {
+                for s in items.iter() {
+                    tag_vec.push(s.to_string());
+                }
+            }
+            tags.push(tag_vec);
+        }
+
+        Ok(Event {
+            id,
+            pubkey,
+            created_at,
+            kind,
+            tags,
+            content,
+            sig,
+        })
+    }
 }
 
 // Custom high-performance Nostr event parser

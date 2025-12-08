@@ -5,6 +5,8 @@
 //! - `process_incoming_message` reconstructs raw JSON and forwards it with (url, subId) so
 //!   the caller can hash subId to the correct outRing (TS parity).
 
+use wasm_bindgen_futures::spawn_local;
+
 use crate::connection::RelayConnection;
 use crate::types::{RelayConfig, RelayError};
 use crate::utils::normalize_relay_url;
@@ -84,6 +86,17 @@ impl ConnectionRegistry {
         }
 
         Ok(())
+    }
+    pub fn close_all(&self, sub_id: &str) {
+        let conns: Vec<Arc<RelayConnection>> =
+            self.connections.read().unwrap().values().cloned().collect();
+        for c in conns {
+            let sub = sub_id.to_string();
+            spawn_local(async move {
+                // No reconnect attempts inside this call.
+                let _ = c.close_sub(&sub).await;
+            });
+        }
     }
 }
 

@@ -14,6 +14,7 @@ use shared::SabRing;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
+use tracing::info;
 use wasm_bindgen::prelude::*;
 
 pub mod pipes;
@@ -289,6 +290,57 @@ impl Pipeline {
                 return Ok(None);
             }
         };
+
+        let mut event = PipelineEvent::from_raw(nostr_event, None);
+
+        // 5️⃣ Run through pipes
+        let pipes_len = self.pipes.len();
+
+        for (i, pipe) in self.pipes.iter_mut().enumerate() {
+            let is_last = i == pipes_len - 1;
+            match pipe.process(event).await? {
+                PipeOutput::Event(e) => event = e,
+                PipeOutput::Drop => return Ok(None),
+                PipeOutput::DirectOutput(data) => {
+                    if !is_last {
+                        return Err(NostrError::Other(format!(
+                            "Non-terminal pipe '{}' produced DirectOutput",
+                            pipe.name()
+                        )));
+                    }
+                    return Ok(Some(data));
+                }
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Process a single event through the pipeline from FlatBuffer bytes
+    pub async fn process_bytes(&mut self, raw_event_bytes: &[u8]) -> Result<Option<Vec<u8>>> {
+        info!("Processing event bytes");
+
+        let nostr_event = match NostrEvent::from_worker_message(raw_event_bytes) {
+            Ok(ev) => ev,
+            Err(_) => {
+                tracing::warn!("Failed to parse event from worker message bytes");
+                return Ok(None);
+            }
+        };
+
+        // 2️⃣ Use EventId bytes directly
+        let id_bytes = nostr_event.id.to_bytes();
+
+        // 3️⃣ Deduplicate
+        {
+            let mut seen = self.seen_ids.borrow_mut();
+            if seen.contains(&id_bytes) {
+                return Ok(None); // already processed
+            }
+            if seen.len() < self.dedup_max_size {
+                seen.insert(id_bytes);
+            }
+        }
 
         let mut event = PipelineEvent::from_raw(nostr_event, None);
 

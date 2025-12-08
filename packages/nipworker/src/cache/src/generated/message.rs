@@ -1453,10 +1453,10 @@ impl MainContentT {
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_MESSAGE_TYPE: u32 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MAX_MESSAGE_TYPE: u32 = 8;
+pub const ENUM_MAX_MESSAGE_TYPE: u32 = 9;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_MESSAGE_TYPE: [MessageType; 9] = [
+pub const ENUM_VALUES_MESSAGE_TYPE: [MessageType; 10] = [
   MessageType::ParsedNostrEvent,
   MessageType::ConnectionStatus,
   MessageType::CountResponse,
@@ -1466,6 +1466,7 @@ pub const ENUM_VALUES_MESSAGE_TYPE: [MessageType; 9] = [
   MessageType::SignedEvent,
   MessageType::Pubkey,
   MessageType::Raw,
+  MessageType::NostrEvent,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -1482,9 +1483,10 @@ impl MessageType {
   pub const SignedEvent: Self = Self(6);
   pub const Pubkey: Self = Self(7);
   pub const Raw: Self = Self(8);
+  pub const NostrEvent: Self = Self(9);
 
   pub const ENUM_MIN: u32 = 0;
-  pub const ENUM_MAX: u32 = 8;
+  pub const ENUM_MAX: u32 = 9;
   pub const ENUM_VALUES: &'static [Self] = &[
     Self::ParsedNostrEvent,
     Self::ConnectionStatus,
@@ -1495,6 +1497,7 @@ impl MessageType {
     Self::SignedEvent,
     Self::Pubkey,
     Self::Raw,
+    Self::NostrEvent,
   ];
   /// Returns the variant's name or "" if unknown.
   pub fn variant_name(self) -> Option<&'static str> {
@@ -1508,6 +1511,7 @@ impl MessageType {
       Self::SignedEvent => Some("SignedEvent"),
       Self::Pubkey => Some("Pubkey"),
       Self::Raw => Some("Raw"),
+      Self::NostrEvent => Some("NostrEvent"),
       _ => None,
     }
   }
