@@ -572,11 +572,11 @@ impl NetworkManager {
             );
         }
 
-        for relay_url in &all_relays {
-            let event_message = ClientMessage::event(event.clone());
-            let frame = event_message.to_json()?;
-            self.send_frame_to_relay(relay_url, &frame);
-        }
+        // for relay_url in &all_relays {
+        //     let event_message = ClientMessage::event(event.clone());
+        //     let frame = event_message.to_json()?;
+        //     self.send_frame_to_relay(relay_url, &frame);
+        // }
 
         Ok(())
     }

@@ -1,7 +1,7 @@
 #packages/rust-worker/target
-packages/**/target
-packages/*/node_modules
-packages/*/dist
-packages/*/pkg
+src/**/target
+src/*/node_modules
+src/*/dist
+src/*/pkg
 node_modules
 dist
