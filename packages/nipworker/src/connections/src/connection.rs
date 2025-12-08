@@ -291,6 +291,34 @@ impl RelayConnection {
                             (self.out_writer)(&self.url, &sub_id, &raw_subscribed);
                         }
                     }
+                    "EVENT" => {
+                        // parts[1] is the event JSON object; extract "id":"<hex>"
+                        if let Some(event_obj) = parts[1] {
+                            // Minimal, allocation-light extraction of the id field
+                            let mut event_id: Option<String> = None;
+                            if let Some(pos) = event_obj.find("\"id\"") {
+                                if let Some(colon) = event_obj[pos..].find(':') {
+                                    let rest = &event_obj[pos + colon + 1..];
+                                    let rest = rest.trim_start();
+                                    if rest.starts_with('"') {
+                                        if let Some(endq) = rest[1..].find('"') {
+                                            let id = &rest[1..1 + endq];
+                                            if !id.is_empty() {
+                                                event_id = Some(id.to_string());
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            if let Some(id) = event_id {
+                                // Synthetic OK to indicate the publish has been sent
+                                // This routes by event_id (used as sub_id for publish tracking)
+                                let raw_sent = format!(r#"["OK","{}","SENT"]"#, id);
+                                (self.out_writer)(&self.url, &id, &raw_sent);
+                            }
+                        }
+                    }
                     _ => {}
                 }
             }
