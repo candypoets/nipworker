@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Release script for nipworker monorepo
+# Release script for @candypoets/nipworker
 # Usage: ./release.sh <version>
 # Example: ./release.sh 0.0.5
 
@@ -49,7 +49,7 @@ fi
 print_status "Starting release process for version $NEW_VERSION"
 
 # Check if we're in the right directory
-if [ ! -f "packages/nipworker/package.json" ]; then
+if [ ! -f "package.json" ]; then
     print_error "This script must be run from the root of the nipworker repository"
     exit 1
 fi
@@ -68,7 +68,7 @@ if [ -n "$(git status --porcelain)" ]; then
 fi
 
 # Get current version
-CURRENT_VERSION=$(node -p "require('./packages/nipworker/package.json').version")
+CURRENT_VERSION=$(node -p "require('./package.json').version")
 print_status "Current version: $CURRENT_VERSION"
 print_status "New version: $NEW_VERSION"
 
@@ -78,19 +78,19 @@ if git rev-parse "v$NEW_VERSION" >/dev/null 2>&1; then
     exit 1
 fi
 
-# Update nipworker package.json version
+# Update package.json version
 print_status "Updating @candypoets/nipworker version to $NEW_VERSION"
 node -e "
 const fs = require('fs');
-const pkg = require('./packages/nipworker/package.json');
+const pkg = require('./package.json');
 pkg.version = '$NEW_VERSION';
-fs.writeFileSync('./packages/nipworker/package.json', JSON.stringify(pkg, null, 2) + '\n');
+fs.writeFileSync('./package.json', JSON.stringify(pkg, null, 2) + '\n');
 "
 
-print_success "Updated nipworker version"
+print_success "Updated package version"
 
 # Stage the changes
-git add packages/nipworker/package.json
+git add package.json
 
 # Commit the version bump
 print_status "Committing version bump"

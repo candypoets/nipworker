@@ -20,7 +20,6 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
-          ref: ${{ github.event.repository.default_branch }}
 
       # Setup Node.js
       - uses: actions/setup-node@v4
@@ -40,7 +39,7 @@ jobs:
       - name: Install wasm-pack
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
-      # Replace the apt-get install step with this:
+      # Install latest Binaryen (wasm-opt)
       - name: Install latest Binaryen (wasm-opt)
         run: |
           BINARYEN_VERSION=version_121
@@ -66,77 +65,27 @@ jobs:
       # Install dependencies
       - run: npm ci
 
-      # Sync all package versions to match nipworker version
-      - name: Sync package versions
-        id: sync_versions
-        run: |
-          # Read version from main nipworker package
-          MAIN_VERSION=$(node -p "require('./packages/nipworker/package.json').version")
-          echo "version=$MAIN_VERSION" >> $GITHUB_OUTPUT
-          echo "Syncing all packages to version: $MAIN_VERSION"
-
-          # Update rust-worker package.json version
-          node -e "
-            const fs = require('fs');
-            const pkg = require('./packages/rust-worker/package.json');
-            pkg.version = '$MAIN_VERSION';
-            fs.writeFileSync('./packages/rust-worker/package.json', JSON.stringify(pkg, null, 2) + '\n');
-          "
-
-          # Update nipworker dependencies to use exact versions
-          node -e "
-            const fs = require('fs');
-            const pkg = require('./packages/nipworker/package.json');
-            pkg.dependencies['@candypoets/rust-worker'] = '$MAIN_VERSION';
-            fs.writeFileSync('./packages/nipworker/package.json', JSON.stringify(pkg, null, 2) + '\n');
-          "
-
-          echo "✅ All packages synced to version $MAIN_VERSION"
-
-      # Commit version sync changes back to repository
-      - name: Commit version sync
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-
-          # Check if there are changes to commit
-          if [ -n "$(git status --porcelain)" ]; then
-            git add packages/*/package.json
-            git commit -m "Sync all packages to version ${{ steps.sync_versions.outputs.version }}"
-            git push origin ${{ github.event.repository.default_branch }}
-            echo "✅ Committed and pushed version sync changes"
-          else
-            echo "No changes to commit"
-          fi
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # Build all packages
-      - name: Build all packages
+      # Build package
+      - name: Build package
         run: npm run build
 
-      # Create single GitHub release for all packages
-      - name: Create Release
+      # Create GitHub Release
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ github.ref_name }}
-          name: Release ${{ steps.sync_versions.outputs.version }}
+          name: Release ${{ github.ref_name }}
           generate_release_notes: true
           body: |
-            🚀 **Release ${{ steps.sync_versions.outputs.version }}**
+            🚀 **Release ${{ github.ref_name }}**
 
-            This release includes all packages synchronized to version `${{ steps.sync_versions.outputs.version }}`:
-
-            ## 📦 Published Packages
-            - **[@candypoets/nipworker](https://www.npmjs.com/package/@candypoets/nipworker)** - `${{ steps.sync_versions.outputs.version }}`
-            - **[@candypoets/rust-worker](https://www.npmjs.com/package/@candypoets/rust-worker)** - `${{ steps.sync_versions.outputs.version }}`
-
-            ## 🔗 Dependencies
-            All internal dependencies are synchronized to use exact version `${{ steps.sync_versions.outputs.version }}`.
+            ## 📦 Published Package
+            - **[@candypoets/nipworker](https://www.npmjs.com/package/@candypoets/nipworker)** - `${{ github.ref_name }}`
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # Publish all packages to npm
-      - run: npm run publish:all --access public
+      # Publish package to npm
+      - name: Publish package to npm
+        run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{secrets.NPM_TOKEN}}
