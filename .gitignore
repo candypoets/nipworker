@@ -4,4 +4,3 @@ src/*/node_modules
 src/*/dist
 src/*/pkg
 node_modules
-dist
