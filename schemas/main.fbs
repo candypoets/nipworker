@@ -82,6 +82,7 @@ table SubscriptionConfig {
   skip_cache: bool = false;
   force: bool = false;
   bytes_per_event: uint;
+  is_slow: bool = false;
 }
 
 table Subscribe {

@@ -66,8 +66,13 @@ bytesPerEvent():number {
   return offset ? this.bb!.readUint32(this.bb_pos + offset) : 0;
 }
 
+isSlow():boolean {
+  const offset = this.bb!.__offset(this.bb_pos, 20);
+  return offset ? !!this.bb!.readInt8(this.bb_pos + offset) : false;
+}
+
 static startSubscriptionConfig(builder:flatbuffers.Builder) {
-  builder.startObject(8);
+  builder.startObject(9);
 }
 
 static addPipeline(builder:flatbuffers.Builder, pipelineOffset:flatbuffers.Offset) {
@@ -102,12 +107,16 @@ static addBytesPerEvent(builder:flatbuffers.Builder, bytesPerEvent:number) {
   builder.addFieldInt32(7, bytesPerEvent, 0);
 }
 
+static addIsSlow(builder:flatbuffers.Builder, isSlow:boolean) {
+  builder.addFieldInt8(8, +isSlow, +false);
+}
+
 static endSubscriptionConfig(builder:flatbuffers.Builder):flatbuffers.Offset {
   const offset = builder.endObject();
   return offset;
 }
 
-static createSubscriptionConfig(builder:flatbuffers.Builder, pipelineOffset:flatbuffers.Offset, closeOnEose:boolean, cacheFirst:boolean, timeoutMs:bigint, maxEvents:number, skipCache:boolean, force:boolean, bytesPerEvent:number):flatbuffers.Offset {
+static createSubscriptionConfig(builder:flatbuffers.Builder, pipelineOffset:flatbuffers.Offset, closeOnEose:boolean, cacheFirst:boolean, timeoutMs:bigint, maxEvents:number, skipCache:boolean, force:boolean, bytesPerEvent:number, isSlow:boolean):flatbuffers.Offset {
   SubscriptionConfig.startSubscriptionConfig(builder);
   SubscriptionConfig.addPipeline(builder, pipelineOffset);
   SubscriptionConfig.addCloseOnEose(builder, closeOnEose);
@@ -117,6 +126,7 @@ static createSubscriptionConfig(builder:flatbuffers.Builder, pipelineOffset:flat
   SubscriptionConfig.addSkipCache(builder, skipCache);
   SubscriptionConfig.addForce(builder, force);
   SubscriptionConfig.addBytesPerEvent(builder, bytesPerEvent);
+  SubscriptionConfig.addIsSlow(builder, isSlow);
   return SubscriptionConfig.endSubscriptionConfig(builder);
 }
 
@@ -129,7 +139,8 @@ unpack(): SubscriptionConfigT {
     this.maxEvents(),
     this.skipCache(),
     this.force(),
-    this.bytesPerEvent()
+    this.bytesPerEvent(),
+    this.isSlow()
   );
 }
 
@@ -143,6 +154,7 @@ unpackTo(_o: SubscriptionConfigT): void {
   _o.skipCache = this.skipCache();
   _o.force = this.force();
   _o.bytesPerEvent = this.bytesPerEvent();
+  _o.isSlow = this.isSlow();
 }
 }
 
@@ -155,7 +167,8 @@ constructor(
   public maxEvents: number = 0,
   public skipCache: boolean = false,
   public force: boolean = false,
-  public bytesPerEvent: number = 0
+  public bytesPerEvent: number = 0,
+  public isSlow: boolean = false
 ){}
 
 
@@ -170,7 +183,8 @@ pack(builder:flatbuffers.Builder): flatbuffers.Offset {
     this.maxEvents,
     this.skipCache,
     this.force,
-    this.bytesPerEvent
+    this.bytesPerEvent,
+    this.isSlow
   );
 }
 }

@@ -12,5 +12,6 @@ export enum MessageType {
   ValidProofs = 5,
   SignedEvent = 6,
   Pubkey = 7,
-  Raw = 8
+  Raw = 8,
+  NostrEvent = 9
 }

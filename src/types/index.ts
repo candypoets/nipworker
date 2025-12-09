@@ -59,4 +59,5 @@ export type SubscriptionConfig = {
 	skipCache?: boolean;
 	force?: boolean;
 	bytesPerEvent?: number;
+	isSlow?: boolean;
 };

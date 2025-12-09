@@ -5,6 +5,7 @@ import { ByteString } from "src/lib/ByteString";
 
 import * as flatbuffers from 'flatbuffers';
 
+import { NostrEvent, NostrEventT } from '../../nostr/fb/nostr-event.js';
 import { Request, RequestT } from '../../nostr/fb/request.js';
 
 
@@ -43,8 +44,25 @@ requestsLength():number {
   return offset ? this.bb!.__vector_len(this.bb_pos + offset) : 0;
 }
 
+event(obj?:NostrEvent):NostrEvent|null {
+  const offset = this.bb!.__offset(this.bb_pos, 8);
+  return offset ? (obj || new NostrEvent()).__init(this.bb!.__indirect(this.bb_pos + offset), this.bb!) : null;
+}
+
+relays(index: number): ByteString
+relays(index: number,optionalEncoding:flatbuffers.Encoding): ByteString|Uint8Array
+relays(index: number,optionalEncoding?:any): ByteString|Uint8Array|null {
+  const offset = this.bb!.__offset(this.bb_pos, 10);
+  return offset ? this.bb!.__stringByteString(this.bb!.__vector(this.bb_pos + offset) + index * 4, optionalEncoding) : null;
+}
+
+relaysLength():number {
+  const offset = this.bb!.__offset(this.bb_pos, 10);
+  return offset ? this.bb!.__vector_len(this.bb_pos + offset) : 0;
+}
+
 static startCacheRequest(builder:flatbuffers.Builder) {
-  builder.startObject(2);
+  builder.startObject(4);
 }
 
 static addSubId(builder:flatbuffers.Builder, subIdOffset:flatbuffers.Offset) {
@@ -67,23 +85,39 @@ static startRequestsVector(builder:flatbuffers.Builder, numElems:number) {
   builder.startVector(4, numElems, 4);
 }
 
+static addEvent(builder:flatbuffers.Builder, eventOffset:flatbuffers.Offset) {
+  builder.addFieldOffset(2, eventOffset, 0);
+}
+
+static addRelays(builder:flatbuffers.Builder, relaysOffset:flatbuffers.Offset) {
+  builder.addFieldOffset(3, relaysOffset, 0);
+}
+
+static createRelaysVector(builder:flatbuffers.Builder, data:flatbuffers.Offset[]):flatbuffers.Offset {
+  builder.startVector(4, data.length, 4);
+  for (let i = data.length - 1; i >= 0; i--) {
+    builder.addOffset(data[i]!);
+  }
+  return builder.endVector();
+}
+
+static startRelaysVector(builder:flatbuffers.Builder, numElems:number) {
+  builder.startVector(4, numElems, 4);
+}
+
 static endCacheRequest(builder:flatbuffers.Builder):flatbuffers.Offset {
   const offset = builder.endObject();
   builder.requiredField(offset, 4) // sub_id
   return offset;
 }
 
-static createCacheRequest(builder:flatbuffers.Builder, subIdOffset:flatbuffers.Offset, requestsOffset:flatbuffers.Offset):flatbuffers.Offset {
-  CacheRequest.startCacheRequest(builder);
-  CacheRequest.addSubId(builder, subIdOffset);
-  CacheRequest.addRequests(builder, requestsOffset);
-  return CacheRequest.endCacheRequest(builder);
-}
 
 unpack(): CacheRequestT {
   return new CacheRequestT(
     this.subId(),
-    this.bb!.createObjList<Request, RequestT>(this.requests.bind(this), this.requestsLength())
+    this.bb!.createObjList<Request, RequestT>(this.requests.bind(this), this.requestsLength()),
+    (this.event() !== null ? this.event()!.unpack() : null),
+    this.bb!.createScalarList<string>(this.relays.bind(this), this.relaysLength())
   );
 }
 
@@ -91,23 +125,32 @@ unpack(): CacheRequestT {
 unpackTo(_o: CacheRequestT): void {
   _o.subId = this.subId();
   _o.requests = this.bb!.createObjList<Request, RequestT>(this.requests.bind(this), this.requestsLength());
+  _o.event = (this.event() !== null ? this.event()!.unpack() : null);
+  _o.relays = this.bb!.createScalarList<string>(this.relays.bind(this), this.relaysLength());
 }
 }
 
 export class CacheRequestT implements flatbuffers.IGeneratedObject {
 constructor(
   public subId: ByteString|Uint8Array|null = null,
-  public requests: (RequestT)[] = []
+  public requests: (RequestT)[] = [],
+  public event: NostrEventT|null = null,
+  public relays: (string)[] = []
 ){}
 
 
 pack(builder:flatbuffers.Builder): flatbuffers.Offset {
   const subId = (this.subId !== null ? builder.createString(this.subId!) : 0);
   const requests = CacheRequest.createRequestsVector(builder, builder.createObjectOffsetList(this.requests));
+  const event = (this.event !== null ? this.event!.pack(builder) : 0);
+  const relays = CacheRequest.createRelaysVector(builder, builder.createObjectOffsetList(this.relays));
 
-  return CacheRequest.createCacheRequest(builder,
-    subId,
-    requests
-  );
+  CacheRequest.startCacheRequest(builder);
+  CacheRequest.addSubId(builder, subId);
+  CacheRequest.addRequests(builder, requests);
+  CacheRequest.addEvent(builder, event);
+  CacheRequest.addRelays(builder, relays);
+
+  return CacheRequest.endCacheRequest(builder);
 }
 }

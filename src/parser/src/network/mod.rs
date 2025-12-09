@@ -32,12 +32,16 @@ const STARTUP_DELAY_MS: u32 = 100; // Reduced from 500ms for faster startup
 const INITIAL_BACKOFF_MS: u32 = 1; // Reduced from 8ms for tighter polling
 const MAX_BACKOFF_MS: u32 = 128; // Reduced from 512ms for more responsive backoff
 const BATCH_SIZE: usize = 8; // Process multiple messages in one iteration
+const NUM_SHARDS: usize = 10; // Number of shard workers
+const SHARD_CAP: usize = BATCH_SIZE * 4; // bounded for backpressure
+const SLOW_SHARDS: usize = 2; // last N shards reserved for slow subs
 
 struct Sub {
     pipeline: Arc<Mutex<Pipeline>>,
     buffer: SharedArrayBuffer,
     eosed: bool,
     publish_id: Option<String>,
+    forced_shard: Option<usize>, // Optional forced shard routing
 }
 
 pub struct NetworkManager {
@@ -48,6 +52,7 @@ pub struct NetworkManager {
     publish_manager: publish::PublishManager,
     subscription_manager: subscription::SubscriptionManager,
     subscriptions: Arc<RwLock<FxHashMap<String, Sub>>>,
+    slow_rr: Rc<RefCell<usize>>, // round-robin index for reserved slow shards
 }
 
 // Fast, zero-allocation unquote: removes a single pair of "..." if present.
@@ -80,6 +85,7 @@ impl NetworkManager {
             publish_manager,
             subscription_manager,
             subscriptions: Arc::new(RwLock::new(FxHashMap::default())),
+            slow_rr: Rc::new(RefCell::new(0)),
         };
 
         manager.start_response_reader();
@@ -132,7 +138,7 @@ impl NetworkManager {
 
         // Extract pipeline and buffer with short-lived lock
         let (pipeline_arc, buffer, publish_id) = {
-            let guard = match subs.write() {
+            let guard = match subs.read() {
                 Ok(g) => g,
                 Err(_) => {
                     warn!("Subscriptions lock poisoned");
@@ -310,8 +316,7 @@ impl NetworkManager {
         let cache_response = self.cache_response.clone();
 
         // Sharded executors: fixed number of long-lived workers
-        const NUM_SHARDS: usize = 10;
-        const SHARD_CAP: usize = BATCH_SIZE * 4; // bounded for backpressure
+        // Using module-level NUM_SHARDS and SHARD_CAP
 
         // Create shard channels + workers
         let mut shard_senders = Vec::with_capacity(NUM_SHARDS);
@@ -406,16 +411,35 @@ impl NetworkManager {
                     // Sub span for downstream processing
                     let sub_span = info_span!("sub_request", sub_id = %sid);
 
-                    // Compute shard index
-                    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-                    sid.hash(&mut hasher);
-                    let shard_idx = (hasher.finish() as usize) % NUM_SHARDS;
+                    // Compute shard index (respect forced shard if set)
+                    let shard_idx = {
+                        let forced = subs
+                            .read()
+                            .ok()
+                            .and_then(|g| g.get(sid).and_then(|s| s.forced_shard));
+                        if let Some(idx) = forced {
+                            idx.min(NUM_SHARDS - 1)
+                        } else {
+                            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                            sid.hash(&mut hasher);
+                            // Route non-forced subs only to fast shards (exclude reserved slow shards at the end)
+                            let fast_count = NUM_SHARDS.saturating_sub(SLOW_SHARDS);
+                            if fast_count > 0 {
+                                (hasher.finish() as usize) % fast_count
+                            } else {
+                                // Fallback: if all shards are reserved as slow, spread across all
+                                (hasher.finish() as usize) % NUM_SHARDS
+                            }
+                        }
+                    };
 
-                    // Send to shard (clone sender to avoid borrowing issues; awaits if full)
+                    // Send to shard with try_send first to avoid stalling distributor; fall back to await to preserve ordering
                     let fb_arc = std::sync::Arc::new(bytes);
                     let mut tx = shard_senders[shard_idx].clone();
-                    if let Err(e) = tx.send((fb_arc, sub_span)).await {
-                        warn!("Shard {} send failed: {:?}", shard_idx, e);
+                    if let Err(_e) = tx.try_send((fb_arc.clone(), sub_span.clone())) {
+                        if let Err(e) = tx.send((fb_arc, sub_span)).await {
+                            warn!("Shard {} send failed: {:?}", shard_idx, e);
+                        }
                     }
 
                     // Alternate preference after a successful read
@@ -461,6 +485,21 @@ impl NetworkManager {
             .await?;
 
         if let Ok(mut w) = self.subscriptions.write() {
+            // Determine forced shard based on config.is_slow
+            let forced_shard = if config.is_slow() {
+                let slow_count = if SLOW_SHARDS == 0 { 1 } else { SLOW_SHARDS };
+                let slow_start = NUM_SHARDS.saturating_sub(slow_count);
+                let idx = {
+                    let mut rr = self.slow_rr.borrow_mut();
+                    let v = slow_start + (*rr % slow_count);
+                    *rr = rr.wrapping_add(1);
+                    v
+                };
+                Some(idx)
+            } else {
+                None
+            };
+
             w.insert(
                 subscription_id.clone(),
                 Sub {
@@ -469,6 +508,7 @@ impl NetworkManager {
                     eosed: false,
                     // relay_urls: relay_filters.keys().cloned().collect(),
                     publish_id: None,
+                    forced_shard,
                 },
             );
         } else {
@@ -558,6 +598,7 @@ impl NetworkManager {
                     eosed: false,
                     // relay_urls: all_relays.clone(),
                     publish_id: Some(publish_id.clone()),
+                    forced_shard: None,
                 },
             );
         } else {

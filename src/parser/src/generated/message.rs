@@ -9721,6 +9721,7 @@ impl<'a> SubscriptionConfig<'a> {
   pub const VT_SKIP_CACHE: flatbuffers::VOffsetT = 14;
   pub const VT_FORCE: flatbuffers::VOffsetT = 16;
   pub const VT_BYTES_PER_EVENT: flatbuffers::VOffsetT = 18;
+  pub const VT_IS_SLOW: flatbuffers::VOffsetT = 20;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -9736,6 +9737,7 @@ impl<'a> SubscriptionConfig<'a> {
     builder.add_bytes_per_event(args.bytes_per_event);
     builder.add_max_events(args.max_events);
     if let Some(x) = args.pipeline { builder.add_pipeline(x); }
+    builder.add_is_slow(args.is_slow);
     builder.add_force(args.force);
     builder.add_skip_cache(args.skip_cache);
     builder.add_cache_first(args.cache_first);
@@ -9754,6 +9756,7 @@ impl<'a> SubscriptionConfig<'a> {
     let skip_cache = self.skip_cache();
     let force = self.force();
     let bytes_per_event = self.bytes_per_event();
+    let is_slow = self.is_slow();
     SubscriptionConfigT {
       pipeline,
       close_on_eose,
@@ -9763,6 +9766,7 @@ impl<'a> SubscriptionConfig<'a> {
       skip_cache,
       force,
       bytes_per_event,
+      is_slow,
     }
   }
 
@@ -9822,6 +9826,13 @@ impl<'a> SubscriptionConfig<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<u32>(SubscriptionConfig::VT_BYTES_PER_EVENT, Some(0)).unwrap()}
   }
+  #[inline]
+  pub fn is_slow(&self) -> bool {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<bool>(SubscriptionConfig::VT_IS_SLOW, Some(false)).unwrap()}
+  }
 }
 
 impl flatbuffers::Verifiable for SubscriptionConfig<'_> {
@@ -9839,6 +9850,7 @@ impl flatbuffers::Verifiable for SubscriptionConfig<'_> {
      .visit_field::<bool>("skip_cache", Self::VT_SKIP_CACHE, false)?
      .visit_field::<bool>("force", Self::VT_FORCE, false)?
      .visit_field::<u32>("bytes_per_event", Self::VT_BYTES_PER_EVENT, false)?
+     .visit_field::<bool>("is_slow", Self::VT_IS_SLOW, false)?
      .finish();
     Ok(())
   }
@@ -9852,6 +9864,7 @@ pub struct SubscriptionConfigArgs<'a> {
     pub skip_cache: bool,
     pub force: bool,
     pub bytes_per_event: u32,
+    pub is_slow: bool,
 }
 impl<'a> Default for SubscriptionConfigArgs<'a> {
   #[inline]
@@ -9865,6 +9878,7 @@ impl<'a> Default for SubscriptionConfigArgs<'a> {
       skip_cache: false,
       force: false,
       bytes_per_event: 0,
+      is_slow: false,
     }
   }
 }
@@ -9907,6 +9921,10 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> SubscriptionConfigBuilder<'a, '
     self.fbb_.push_slot::<u32>(SubscriptionConfig::VT_BYTES_PER_EVENT, bytes_per_event, 0);
   }
   #[inline]
+  pub fn add_is_slow(&mut self, is_slow: bool) {
+    self.fbb_.push_slot::<bool>(SubscriptionConfig::VT_IS_SLOW, is_slow, false);
+  }
+  #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> SubscriptionConfigBuilder<'a, 'b, A> {
     let start = _fbb.start_table();
     SubscriptionConfigBuilder {
@@ -9932,6 +9950,7 @@ impl core::fmt::Debug for SubscriptionConfig<'_> {
       ds.field("skip_cache", &self.skip_cache());
       ds.field("force", &self.force());
       ds.field("bytes_per_event", &self.bytes_per_event());
+      ds.field("is_slow", &self.is_slow());
       ds.finish()
   }
 }
@@ -9946,6 +9965,7 @@ pub struct SubscriptionConfigT {
   pub skip_cache: bool,
   pub force: bool,
   pub bytes_per_event: u32,
+  pub is_slow: bool,
 }
 impl Default for SubscriptionConfigT {
   fn default() -> Self {
@@ -9958,6 +9978,7 @@ impl Default for SubscriptionConfigT {
       skip_cache: false,
       force: false,
       bytes_per_event: 0,
+      is_slow: false,
     }
   }
 }
@@ -9976,6 +9997,7 @@ impl SubscriptionConfigT {
     let skip_cache = self.skip_cache;
     let force = self.force;
     let bytes_per_event = self.bytes_per_event;
+    let is_slow = self.is_slow;
     SubscriptionConfig::create(_fbb, &SubscriptionConfigArgs{
       pipeline,
       close_on_eose,
@@ -9985,6 +10007,7 @@ impl SubscriptionConfigT {
       skip_cache,
       force,
       bytes_per_event,
+      is_slow,
     })
   }
 }

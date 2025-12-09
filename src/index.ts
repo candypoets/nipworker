@@ -256,7 +256,8 @@ export class NostrManager {
 			options.maxEvents,
 			options.skipCache,
 			options.force,
-			options.bytesPerEvent
+			options.bytesPerEvent,
+			options.isSlow
 		);
 
 		const subscribeT = new SubscribeT(
