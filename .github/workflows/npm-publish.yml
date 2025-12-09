@@ -62,15 +62,54 @@ jobs:
           echo "=== Swap ==="
           swapon --show
 
+      # Read package version
+      - name: Read package version
+        id: pkg
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      # Ensure tag matches package.json version
+      - name: Ensure tag matches package.json version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          if [ "$TAG" != "${{ steps.pkg.outputs.version }}" ]; then
+            echo "Tag ($GITHUB_REF_NAME) does not match package.json version (${{ steps.pkg.outputs.version }})"
+            exit 1
+          fi
+
+      # Check if version already published on npm
+      - name: Check if version already published on npm
+        id: check_publish
+        run: |
+          VERSION="${{ steps.pkg.outputs.version }}"
+          if npm view @candypoets/nipworker@"$VERSION" version >/dev/null 2>&1; then
+            echo "should_publish=false" >> $GITHUB_OUTPUT
+            echo "Version $VERSION already exists on npm. Skipping publish."
+          else
+            echo "should_publish=true" >> $GITHUB_OUTPUT
+          fi
+
       # Install dependencies
       - run: npm ci
+        if: ${{ steps.check_publish.outputs.should_publish == 'true' }}
 
       # Build package
       - name: Build package
+        if: ${{ steps.check_publish.outputs.should_publish == 'true' }}
         run: npm run build
 
-      # Create GitHub Release
+      # Publish package to npm
+      - name: Publish package to npm
+        if: ${{ steps.check_publish.outputs.should_publish == 'true' }}
+        id: publish
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{secrets.NPM_TOKEN}}
+
+      # Create GitHub Release (only if publish succeeded)
       - name: Create GitHub Release
+        if: ${{ steps.publish.outcome == 'success' }}
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ github.ref_name }}
@@ -83,9 +122,3 @@ jobs:
             - **[@candypoets/nipworker](https://www.npmjs.com/package/@candypoets/nipworker)** - `${{ github.ref_name }}`
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # Publish package to npm
-      - name: Publish package to npm
-        run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{secrets.NPM_TOKEN}}
