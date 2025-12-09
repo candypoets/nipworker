@@ -11,6 +11,7 @@ use shared::SabRing;
 type Result<T> = std::result::Result<T, DatabaseError>;
 
 use std::cell::RefCell;
+use std::future::Future;
 use std::rc::Rc;
 use std::sync::{Arc, RwLock};
 use tracing::{info, warn};
@@ -952,5 +953,68 @@ impl<S: EventStorage> NostrDB<S> {
             }
             Err(_) => return None,
         }
+    }
+
+    async fn join_all_seq<I, F, T>(futs: I) -> Vec<T>
+    where
+        I: IntoIterator<Item = F>,
+        F: Future<Output = T>,
+    {
+        let mut results = Vec::new();
+        for fut in futs {
+            results.push(fut.await);
+        }
+        results
+    }
+
+    pub async fn determine_target_relays(&self, event: NostrEvent<'_>) -> Result<Vec<String>> {
+        let mut relay_set = FxHashSet::default();
+        let mut write_pubkeys = Vec::new();
+        let mut read_pubkeys = Vec::new();
+
+        // Always add the event author's pubkey as a write pubkey
+        write_pubkeys.push(event.pubkey().to_string());
+
+        // Skip extracting mentioned pubkeys for kind 3 (contact list) events
+        if event.kind() != 3 && event.kind() < 10000 {
+            let tags = event.tags();
+            for i in 0..tags.len() {
+                let tag = tags.get(i);
+                if let Some(tag_vec) = tag.items() {
+                    if tag_vec.len() >= 2 {
+                        let tag_kind = tag_vec.get(0);
+                        if tag_kind == "p" {
+                            let tag_value = tag_vec.get(1);
+                            read_pubkeys.push(tag_value.to_string());
+                        }
+                    }
+                }
+            }
+        }
+
+        // Get relays for all mentioned pubkeys (read relays)
+        let read_tasks: Vec<_> = read_pubkeys
+            .into_iter()
+            .map(|pubkey| async move { self.get_read_relays(&pubkey).unwrap_or_default() })
+            .collect();
+
+        // Get relays for author pubkeys (write relays)
+        let write_tasks: Vec<_> = write_pubkeys
+            .into_iter()
+            .map(|pubkey| async move { self.get_write_relays(&pubkey).unwrap_or_default() })
+            .collect();
+
+        // Wait for all tasks to complete
+        let read_results = Self::join_all_seq(read_tasks).await;
+        let write_results = Self::join_all_seq(write_tasks).await;
+
+        // Collect all relay URLs
+        for relays in read_results.into_iter().chain(write_results.into_iter()) {
+            for relay in relays {
+                relay_set.insert(relay);
+            }
+        }
+
+        Ok(relay_set.into_iter().collect())
     }
 }

@@ -18096,6 +18096,8 @@ impl<'a> flatbuffers::Follow<'a> for CacheRequest<'a> {
 impl<'a> CacheRequest<'a> {
   pub const VT_SUB_ID: flatbuffers::VOffsetT = 4;
   pub const VT_REQUESTS: flatbuffers::VOffsetT = 6;
+  pub const VT_EVENT: flatbuffers::VOffsetT = 8;
+  pub const VT_RELAYS: flatbuffers::VOffsetT = 10;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -18107,6 +18109,8 @@ impl<'a> CacheRequest<'a> {
     args: &'args CacheRequestArgs<'args>
   ) -> flatbuffers::WIPOffset<CacheRequest<'bldr>> {
     let mut builder = CacheRequestBuilder::new(_fbb);
+    if let Some(x) = args.relays { builder.add_relays(x); }
+    if let Some(x) = args.event { builder.add_event(x); }
     if let Some(x) = args.requests { builder.add_requests(x); }
     if let Some(x) = args.sub_id { builder.add_sub_id(x); }
     builder.finish()
@@ -18120,9 +18124,17 @@ impl<'a> CacheRequest<'a> {
     let requests = self.requests().map(|x| {
       x.iter().map(|t| t.unpack()).collect()
     });
+    let event = self.event().map(|x| {
+      Box::new(x.unpack())
+    });
+    let relays = self.relays().map(|x| {
+      x.iter().map(|s| s.to_string()).collect()
+    });
     CacheRequestT {
       sub_id,
       requests,
+      event,
+      relays,
     }
   }
 
@@ -18140,6 +18152,20 @@ impl<'a> CacheRequest<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Request>>>>(CacheRequest::VT_REQUESTS, None)}
   }
+  #[inline]
+  pub fn event(&self) -> Option<NostrEvent<'a>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<NostrEvent>>(CacheRequest::VT_EVENT, None)}
+  }
+  #[inline]
+  pub fn relays(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>(CacheRequest::VT_RELAYS, None)}
+  }
 }
 
 impl flatbuffers::Verifiable for CacheRequest<'_> {
@@ -18151,6 +18177,8 @@ impl flatbuffers::Verifiable for CacheRequest<'_> {
     v.visit_table(pos)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("sub_id", Self::VT_SUB_ID, true)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<Request>>>>("requests", Self::VT_REQUESTS, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<NostrEvent>>("event", Self::VT_EVENT, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("relays", Self::VT_RELAYS, false)?
      .finish();
     Ok(())
   }
@@ -18158,6 +18186,8 @@ impl flatbuffers::Verifiable for CacheRequest<'_> {
 pub struct CacheRequestArgs<'a> {
     pub sub_id: Option<flatbuffers::WIPOffset<&'a str>>,
     pub requests: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Request<'a>>>>>,
+    pub event: Option<flatbuffers::WIPOffset<NostrEvent<'a>>>,
+    pub relays: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>,
 }
 impl<'a> Default for CacheRequestArgs<'a> {
   #[inline]
@@ -18165,6 +18195,8 @@ impl<'a> Default for CacheRequestArgs<'a> {
     CacheRequestArgs {
       sub_id: None, // required field
       requests: None,
+      event: None,
+      relays: None,
     }
   }
 }
@@ -18181,6 +18213,14 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> CacheRequestBuilder<'a, 'b, A> 
   #[inline]
   pub fn add_requests(&mut self, requests: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<Request<'b >>>>) {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(CacheRequest::VT_REQUESTS, requests);
+  }
+  #[inline]
+  pub fn add_event(&mut self, event: flatbuffers::WIPOffset<NostrEvent<'b >>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<NostrEvent>>(CacheRequest::VT_EVENT, event);
+  }
+  #[inline]
+  pub fn add_relays(&mut self, relays: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<&'b  str>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(CacheRequest::VT_RELAYS, relays);
   }
   #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> CacheRequestBuilder<'a, 'b, A> {
@@ -18203,6 +18243,8 @@ impl core::fmt::Debug for CacheRequest<'_> {
     let mut ds = f.debug_struct("CacheRequest");
       ds.field("sub_id", &self.sub_id());
       ds.field("requests", &self.requests());
+      ds.field("event", &self.event());
+      ds.field("relays", &self.relays());
       ds.finish()
   }
 }
@@ -18211,12 +18253,16 @@ impl core::fmt::Debug for CacheRequest<'_> {
 pub struct CacheRequestT {
   pub sub_id: String,
   pub requests: Option<Vec<RequestT>>,
+  pub event: Option<Box<NostrEventT>>,
+  pub relays: Option<Vec<String>>,
 }
 impl Default for CacheRequestT {
   fn default() -> Self {
     Self {
       sub_id: "".to_string(),
       requests: None,
+      event: None,
+      relays: None,
     }
   }
 }
@@ -18232,9 +18278,17 @@ impl CacheRequestT {
     let requests = self.requests.as_ref().map(|x|{
       let w: Vec<_> = x.iter().map(|t| t.pack(_fbb)).collect();_fbb.create_vector(&w)
     });
+    let event = self.event.as_ref().map(|x|{
+      x.pack(_fbb)
+    });
+    let relays = self.relays.as_ref().map(|x|{
+      let w: Vec<_> = x.iter().map(|s| _fbb.create_string(s)).collect();_fbb.create_vector(&w)
+    });
     CacheRequest::create(_fbb, &CacheRequestArgs{
       sub_id,
       requests,
+      event,
+      relays,
     })
   }
 }

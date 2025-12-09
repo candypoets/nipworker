@@ -17,11 +17,7 @@ impl PublishManager {
         Self { parser }
     }
 
-    pub async fn publish_event(
-        &self,
-        publish_id: String,
-        template: &Template,
-    ) -> Result<(Event, Vec<String>)> {
+    pub async fn publish_event(&self, publish_id: String, template: &Template) -> Result<Event> {
         info!("Publishing event with ID {}", publish_id);
 
         // Prepare the event using parser
@@ -43,15 +39,8 @@ impl PublishManager {
         //     }
         // };
         //
-        let relays: Vec<String> = Vec::new();
 
-        info!(
-            "Selected {} relays for publishing: {:?}",
-            relays.len(),
-            relays
-        );
-
-        Ok((event, relays))
+        Ok(event)
     }
 
     // async fn determine_target_relays(&self, event: &Event) -> Result<Vec<String>> {

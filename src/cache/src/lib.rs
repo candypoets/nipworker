@@ -204,8 +204,8 @@ impl Caching {
             }
         }
 
-        // 2) Write remaining requests as REQ frames to ws_request
         if let Some(vec) = cache_req.requests() {
+            // 2) Write remaining requests as REQ frames to ws_request
             let mut ws = ws_request.borrow_mut();
             info!(
                 "sending {}/{} requests for {}",
@@ -255,33 +255,96 @@ impl Caching {
 
                 ws.write(env_str.as_bytes());
             }
-        }
 
-        // 3) Emit EOCE to cache_response
-        let mut builder = FlatBufferBuilder::new();
-        let sid = builder.create_string(&sub_id);
-        let eoce = fb::Eoce::create(
-            &mut builder,
-            &fb::EoceArgs {
-                subscription_id: Some(sid),
-            },
-        );
-        let msg = fb::WorkerMessage::create(
-            &mut builder,
-            &fb::WorkerMessageArgs {
-                sub_id: Some(sid),
-                url: None,
-                type_: fb::MessageType::Eoce,
-                content_type: fb::Message::Eoce,
-                content: Some(eoce.as_union_value()),
-            },
-        );
-        builder.finish(msg, None);
-        let eoce_bytes = builder.finished_data().to_vec();
+            // 3) Emit EOCE to cache_response
+            let mut builder = FlatBufferBuilder::new();
+            let sid = builder.create_string(&sub_id);
+            let eoce = fb::Eoce::create(
+                &mut builder,
+                &fb::EoceArgs {
+                    subscription_id: Some(sid),
+                },
+            );
+            let msg = fb::WorkerMessage::create(
+                &mut builder,
+                &fb::WorkerMessageArgs {
+                    sub_id: Some(sid),
+                    url: None,
+                    type_: fb::MessageType::Eoce,
+                    content_type: fb::Message::Eoce,
+                    content: Some(eoce.as_union_value()),
+                },
+            );
+            builder.finish(msg, None);
+            let eoce_bytes = builder.finished_data().to_vec();
 
-        {
-            let mut out = cache_response.borrow_mut();
-            let written = out.write(&eoce_bytes);
+            {
+                let mut out = cache_response.borrow_mut();
+                let written = out.write(&eoce_bytes);
+            }
+        } else if let Some(fb_event) = cache_req.event() {
+            // we are trying to publish a new event
+
+            // Determine relays to publish to
+            let mut relays: Vec<String> = database
+                .determine_target_relays(fb_event)
+                .await
+                .unwrap_or_default();
+
+            if let Some(rs) = cache_req.relays() {
+                for i in 0..rs.len() {
+                    relays.push(rs.get(i).to_string());
+                }
+            }
+
+            // Deduplicate relays
+            relays.sort();
+            relays.dedup();
+
+            // Build Nostr event JSON from flatbuffer
+            let tags_vec = fb_event.tags();
+            let mut tags_json: Vec<serde_json::Value> = Vec::with_capacity(tags_vec.len());
+            for i in 0..tags_vec.len() {
+                let sv = tags_vec.get(i);
+                if let Some(items) = sv.items() {
+                    let arr: Vec<serde_json::Value> = (0..items.len())
+                        .map(|j| serde_json::Value::String(items.get(j).to_string()))
+                        .collect();
+                    tags_json.push(serde_json::Value::Array(arr));
+                } else {
+                    tags_json.push(serde_json::Value::Array(vec![]));
+                }
+            }
+
+            let event_json = serde_json::json!({
+                "id": fb_event.id(),
+                "pubkey": fb_event.pubkey(),
+                "kind": fb_event.kind(),
+                "content": fb_event.content(),
+                "tags": tags_json,
+                "created_at": fb_event.created_at(),
+                "sig": fb_event.sig(),
+            });
+
+            // Frame: ["EVENT", event]
+            let frame_val = serde_json::Value::Array(vec![
+                serde_json::Value::String("EVENT".to_string()),
+                event_json,
+            ]);
+
+            let frame_str = serde_json::to_string(&frame_val).unwrap_or_else(|_| "[]".to_string());
+
+            let env = serde_json::json!({
+                "relays": relays,
+                "frames": [frame_str],
+            });
+
+            let env_str = env.to_string();
+
+            info!("Publishing event to relays: {:?}", relays);
+
+            let mut ws = ws_request.borrow_mut();
+            ws.write(env_str.as_bytes());
         }
     }
 

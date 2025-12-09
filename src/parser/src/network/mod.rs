@@ -223,6 +223,17 @@ impl NetworkManager {
                         {
                             warn!("Buffer write failed for sub {}: {:?}", sid, e);
                         }
+                        // Retrieve sub by sid and notify only if it's already EOSEd
+                        let should_notify = match subs.read() {
+                            Ok(g) => g.get(sid).map(|s| s.eosed).unwrap_or(false),
+                            Err(_) => false,
+                        };
+
+                        info!("Notifying after EOSE for sub {}", sid);
+
+                        if should_notify {
+                            post_worker_message(&JsValue::from_str(sid));
+                        }
                     }
                     Ok(None) => {
                         // info!("Event dropped by pipeline for sub {}", sid); /* dropped by pipeline */
@@ -501,6 +512,8 @@ impl NetworkManager {
                 &fb::CacheRequestArgs {
                     sub_id: Some(sid),
                     requests: req_vec,
+                    event: None,
+                    relays: None,
                 },
             );
 
@@ -516,23 +529,11 @@ impl NetworkManager {
 
     // deprecated, should be called on connections directly
     pub async fn close_subscription(&self, subscription_id: String) -> Result<()> {
-        // if let Ok(g) = self.subscriptions.read() {
-        //     if let Some(sub) = g.get(&subscription_id) {
-        //         // Write a CLOSE frame to each relay
-        //         for relay_url in &sub.relay_urls {
-        //             let close_message = ClientMessage::close(subscription_id.clone());
-        //             let frame = close_message.to_json()?;
-        //             self.send_frame_to_relay(relay_url, &frame);
-        //         }
-        //     }
-        // }
+        // Remove the subscription from the map
+        if let Ok(mut w) = self.subscriptions.write() {
+            w.remove(&subscription_id);
+        }
 
-        // // Remove the subscription from the map
-        // if let Ok(mut w) = self.subscriptions.write() {
-        //     w.remove(&subscription_id);
-        // }
-
-        // Ok(())
         Ok(())
     }
 
@@ -543,16 +544,10 @@ impl NetworkManager {
         default_relays: &Vec<String>,
         shared_buffer: SharedArrayBuffer,
     ) -> Result<()> {
-        let (event, relays) = self
+        let event = self
             .publish_manager
             .publish_event(publish_id.clone(), template)
             .await?;
-
-        let mut all_relays = relays.clone();
-
-        all_relays.extend(default_relays.iter().cloned());
-        all_relays.sort();
-        all_relays.dedup();
 
         if let Ok(mut w) = self.subscriptions.write() {
             w.insert(
@@ -570,6 +565,40 @@ impl NetworkManager {
                 "Subscriptions lock poisoned while publishing {}",
                 publish_id
             );
+        }
+
+        {
+            let mut builder = FlatBufferBuilder::new();
+
+            let sid = builder.create_string(&event.id.to_string());
+
+            let fb_event = event.build_flatbuffer(&mut builder);
+
+            let relay_offsets: Vec<_> = default_relays
+                .iter()
+                .map(|r| builder.create_string(r))
+                .collect();
+            let relay_vec = if relay_offsets.is_empty() {
+                None
+            } else {
+                Some(builder.create_vector(&relay_offsets))
+            };
+
+            let cache_req = fb::CacheRequest::create(
+                &mut builder,
+                &fb::CacheRequestArgs {
+                    sub_id: Some(sid),
+                    requests: None,
+                    event: Some(fb_event),
+                    relays: relay_vec,
+                },
+            );
+
+            builder.finish(cache_req, None);
+            let bytes = builder.finished_data().to_vec();
+
+            // Write raw CacheRequest bytes to the cache_request ring
+            self.cache_request.borrow_mut().write(&bytes);
         }
 
         // for relay_url in &all_relays {

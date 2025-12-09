@@ -100,7 +100,7 @@ impl NostrClient {
         cache_response: SharedArrayBuffer,
         ws_response: SharedArrayBuffer, // ws response
     ) -> Self {
-        telemetry::init(tracing::Level::INFO);
+        telemetry::init(tracing::Level::ERROR);
 
         info!("Initializing NostrClient...");
 

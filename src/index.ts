@@ -316,8 +316,8 @@ export class NostrManager {
 		const subId = subscriptionId.length < 64 ? subscriptionId : this.createShortId(subscriptionId);
 		const subscription = this.subscriptions.get(subId);
 		if (subscription) {
-			this.connections.postMessage(subId);
 			subscription.refCount--;
+			// this.connections.postMessage(subId);
 		}
 	}
 
@@ -412,7 +412,7 @@ export class NostrManager {
 	}
 
 	cleanup(): void {
-		console.trace('Cleanup called');
+		// console.trace('Cleanup called');
 		const subscriptionsToDelete: string[] = [];
 		for (const [subId, subscription] of this.subscriptions.entries()) {
 			if (subscription.refCount <= 0 && !this.PERPETUAL_SUBSCRIPTIONS.includes(subId)) {

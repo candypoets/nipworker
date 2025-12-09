@@ -153,6 +153,8 @@ table WorkerMessage {
 table CacheRequest {
     sub_id: string (required);
     requests: [Request];
+    event: NostrEvent;
+    relays: [string];
 }
 
 root_type WorkerMessage;
