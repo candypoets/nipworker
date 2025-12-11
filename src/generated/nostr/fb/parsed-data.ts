@@ -20,6 +20,7 @@ import { Kind7376Parsed, Kind7376ParsedT } from '../../nostr/fb/kind7376-parsed.
 import { Kind7Parsed, Kind7ParsedT } from '../../nostr/fb/kind7-parsed.js';
 import { Kind9321Parsed, Kind9321ParsedT } from '../../nostr/fb/kind9321-parsed.js';
 import { Kind9735Parsed, Kind9735ParsedT } from '../../nostr/fb/kind9735-parsed.js';
+import { ListParsed, ListParsedT } from '../../nostr/fb/list-parsed.js';
 
 
 export enum ParsedData {
@@ -40,13 +41,14 @@ export enum ParsedData {
   Kind7376Parsed = 14,
   Kind9321Parsed = 15,
   Kind9735Parsed = 16,
-  Kind30023Parsed = 17
+  Kind30023Parsed = 17,
+  ListParsed = 18
 }
 
 export function unionToParsedData(
   type: ParsedData,
-  accessor: (obj:Kind0Parsed|Kind10002Parsed|Kind10019Parsed|Kind17375Parsed|Kind17Parsed|Kind1Parsed|Kind30023Parsed|Kind39089Parsed|Kind3Parsed|Kind4Parsed|Kind6Parsed|Kind7374Parsed|Kind7375Parsed|Kind7376Parsed|Kind7Parsed|Kind9321Parsed|Kind9735Parsed) => Kind0Parsed|Kind10002Parsed|Kind10019Parsed|Kind17375Parsed|Kind17Parsed|Kind1Parsed|Kind30023Parsed|Kind39089Parsed|Kind3Parsed|Kind4Parsed|Kind6Parsed|Kind7374Parsed|Kind7375Parsed|Kind7376Parsed|Kind7Parsed|Kind9321Parsed|Kind9735Parsed|null
-): Kind0Parsed|Kind10002Parsed|Kind10019Parsed|Kind17375Parsed|Kind17Parsed|Kind1Parsed|Kind30023Parsed|Kind39089Parsed|Kind3Parsed|Kind4Parsed|Kind6Parsed|Kind7374Parsed|Kind7375Parsed|Kind7376Parsed|Kind7Parsed|Kind9321Parsed|Kind9735Parsed|null {
+  accessor: (obj:Kind0Parsed|Kind10002Parsed|Kind10019Parsed|Kind17375Parsed|Kind17Parsed|Kind1Parsed|Kind30023Parsed|Kind39089Parsed|Kind3Parsed|Kind4Parsed|Kind6Parsed|Kind7374Parsed|Kind7375Parsed|Kind7376Parsed|Kind7Parsed|Kind9321Parsed|Kind9735Parsed|ListParsed) => Kind0Parsed|Kind10002Parsed|Kind10019Parsed|Kind17375Parsed|Kind17Parsed|Kind1Parsed|Kind30023Parsed|Kind39089Parsed|Kind3Parsed|Kind4Parsed|Kind6Parsed|Kind7374Parsed|Kind7375Parsed|Kind7376Parsed|Kind7Parsed|Kind9321Parsed|Kind9735Parsed|ListParsed|null
+): Kind0Parsed|Kind10002Parsed|Kind10019Parsed|Kind17375Parsed|Kind17Parsed|Kind1Parsed|Kind30023Parsed|Kind39089Parsed|Kind3Parsed|Kind4Parsed|Kind6Parsed|Kind7374Parsed|Kind7375Parsed|Kind7376Parsed|Kind7Parsed|Kind9321Parsed|Kind9735Parsed|ListParsed|null {
   switch(ParsedData[type]) {
     case 'NONE': return null; 
     case 'Kind0Parsed': return accessor(new Kind0Parsed())! as Kind0Parsed;
@@ -66,15 +68,16 @@ export function unionToParsedData(
     case 'Kind9321Parsed': return accessor(new Kind9321Parsed())! as Kind9321Parsed;
     case 'Kind9735Parsed': return accessor(new Kind9735Parsed())! as Kind9735Parsed;
     case 'Kind30023Parsed': return accessor(new Kind30023Parsed())! as Kind30023Parsed;
+    case 'ListParsed': return accessor(new ListParsed())! as ListParsed;
     default: return null;
   }
 }
 
 export function unionListToParsedData(
   type: ParsedData, 
-  accessor: (index: number, obj:Kind0Parsed|Kind10002Parsed|Kind10019Parsed|Kind17375Parsed|Kind17Parsed|Kind1Parsed|Kind30023Parsed|Kind39089Parsed|Kind3Parsed|Kind4Parsed|Kind6Parsed|Kind7374Parsed|Kind7375Parsed|Kind7376Parsed|Kind7Parsed|Kind9321Parsed|Kind9735Parsed) => Kind0Parsed|Kind10002Parsed|Kind10019Parsed|Kind17375Parsed|Kind17Parsed|Kind1Parsed|Kind30023Parsed|Kind39089Parsed|Kind3Parsed|Kind4Parsed|Kind6Parsed|Kind7374Parsed|Kind7375Parsed|Kind7376Parsed|Kind7Parsed|Kind9321Parsed|Kind9735Parsed|null, 
+  accessor: (index: number, obj:Kind0Parsed|Kind10002Parsed|Kind10019Parsed|Kind17375Parsed|Kind17Parsed|Kind1Parsed|Kind30023Parsed|Kind39089Parsed|Kind3Parsed|Kind4Parsed|Kind6Parsed|Kind7374Parsed|Kind7375Parsed|Kind7376Parsed|Kind7Parsed|Kind9321Parsed|Kind9735Parsed|ListParsed) => Kind0Parsed|Kind10002Parsed|Kind10019Parsed|Kind17375Parsed|Kind17Parsed|Kind1Parsed|Kind30023Parsed|Kind39089Parsed|Kind3Parsed|Kind4Parsed|Kind6Parsed|Kind7374Parsed|Kind7375Parsed|Kind7376Parsed|Kind7Parsed|Kind9321Parsed|Kind9735Parsed|ListParsed|null, 
   index: number
-): Kind0Parsed|Kind10002Parsed|Kind10019Parsed|Kind17375Parsed|Kind17Parsed|Kind1Parsed|Kind30023Parsed|Kind39089Parsed|Kind3Parsed|Kind4Parsed|Kind6Parsed|Kind7374Parsed|Kind7375Parsed|Kind7376Parsed|Kind7Parsed|Kind9321Parsed|Kind9735Parsed|null {
+): Kind0Parsed|Kind10002Parsed|Kind10019Parsed|Kind17375Parsed|Kind17Parsed|Kind1Parsed|Kind30023Parsed|Kind39089Parsed|Kind3Parsed|Kind4Parsed|Kind6Parsed|Kind7374Parsed|Kind7375Parsed|Kind7376Parsed|Kind7Parsed|Kind9321Parsed|Kind9735Parsed|ListParsed|null {
   switch(ParsedData[type]) {
     case 'NONE': return null; 
     case 'Kind0Parsed': return accessor(index, new Kind0Parsed())! as Kind0Parsed;
@@ -94,6 +97,7 @@ export function unionListToParsedData(
     case 'Kind9321Parsed': return accessor(index, new Kind9321Parsed())! as Kind9321Parsed;
     case 'Kind9735Parsed': return accessor(index, new Kind9735Parsed())! as Kind9735Parsed;
     case 'Kind30023Parsed': return accessor(index, new Kind30023Parsed())! as Kind30023Parsed;
+    case 'ListParsed': return accessor(index, new ListParsed())! as ListParsed;
     default: return null;
   }
 }

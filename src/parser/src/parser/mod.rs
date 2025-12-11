@@ -62,6 +62,7 @@ pub mod kind7375;
 pub mod kind7376;
 pub mod kind9321;
 pub mod kind9735;
+pub mod kind_list;
 
 // Re-export commonly used types
 pub use content::{parse_content, ContentBlock, ContentParser};
@@ -82,6 +83,7 @@ pub use kind7375::Kind7375Parsed;
 pub use kind7376::{HistoryTag, Kind7376Parsed};
 pub use kind9321::Kind9321Parsed;
 pub use kind9735::{Kind9735Parsed, ZapRequest};
+pub use kind_list::{Coordinate, ListParsed};
 
 pub struct Parser {
     pub signer_manager: Arc<SignerManager>,
@@ -160,9 +162,13 @@ impl Parser {
                 let (parsed, requests) = self.parse_kind_30023(&event)?;
                 (Some(ParsedData::Kind30023(parsed)), requests)
             }
+            k if (10000..20000).contains(&k) || (30000..40000).contains(&k) => {
+                let (parsed, requests) = self.parse_kind_list(&event)?;
+                (Some(ParsedData::List(parsed)), requests)
+            }
             39089 => {
-                let (parsed, requests) = self.parse_kind_39089(&event)?;
-                (Some(ParsedData::Kind39089(parsed)), requests)
+                let (parsed, requests) = self.parse_kind_list(&event)?;
+                (Some(ParsedData::List(parsed)), requests)
             }
             _ => {
                 return Err(ParserError::InvalidKind(kind as u32));

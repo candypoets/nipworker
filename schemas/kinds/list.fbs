@@ -1,0 +1,35 @@
+include "../common.fbs";
+
+namespace nostr.fb;
+
+// Generic NIP-51 List/Set schema used for both 10000- and 30000-range kinds,
+// and compatible custom kinds (e.g., follow packs).
+//
+// This captures the shared structure across list-like events:
+// - Optional metadata (title/summary/image/topics)
+// - Entries via tags: p (pubkeys), e (event ids), a (coordinates)
+// - The original kind (list_kind) and optional PRE identifier (d)
+//
+// Note: This schema intentionally excludes any body/content field, since NIP-51
+// lists are driven by tags rather than markdown content.
+
+// Coordinate for "a" tags: kind:pubkey:d plus optional relay(s)
+table Coordinate {
+  kind: ulong;              // target kind for the address (e.g., 30000)
+  pubkey: string (required);
+  d: string (required);
+  relays: [string];
+}
+
+// Unified parsed representation of NIP-51 lists/sets
+table ListParsed {
+  list_kind: ushort;        // original event kind (e.g., 10000..19999, 30000..39999, 39089)
+  d: string;                // PRE id (present for 30000-range)
+  title: string;            // optional display name/title
+  summary: string;          // optional description/summary
+  image: string;            // optional image/cover URL
+  topics: [string];         // from repeated "t" tags
+  people: [string];         // from "p" tags (pubkeys)
+  events: [string];         // from "e" tags (event ids)
+  addresses: [Coordinate];  // from "a" tags (coordinates)
+}

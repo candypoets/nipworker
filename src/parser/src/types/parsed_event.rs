@@ -1,3 +1,4 @@
+use crate::parser::kind_list::ListParsed;
 use crate::parser::Kind30023Parsed;
 use crate::types::nostr::Event;
 
@@ -29,6 +30,7 @@ pub enum ParsedData {
     Kind10019(Kind10019Parsed),
     Kind17375(Kind17375Parsed),
     Kind30023(Kind30023Parsed),
+    List(ListParsed),
     Kind39089(crate::parser::Kind39089Parsed),
 }
 
@@ -110,6 +112,10 @@ impl ParsedData {
             ParsedData::Kind30023(data) => {
                 let offset = crate::parser::kind30023::build_flatbuffer(data, builder)?;
                 Ok((fb::ParsedData::Kind30023Parsed, offset.as_union_value()))
+            }
+            ParsedData::List(data) => {
+                let offset = crate::parser::kind_list::build_flatbuffer(data, builder)?;
+                Ok((fb::ParsedData::ListParsed, offset.as_union_value()))
             }
             ParsedData::Kind39089(data) => {
                 let offset = crate::parser::kind39089::build_flatbuffer(data, builder)?;
