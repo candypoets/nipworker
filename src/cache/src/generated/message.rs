@@ -1573,7 +1573,7 @@ pub const ENUM_MIN_PARSED_DATA_UNION: u32 = 0;
 pub const ENUM_MAX_PARSED_DATA_UNION: u32 = 39089;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_PARSED_DATA_UNION: [ParsedDataUnion; 16] = [
+pub const ENUM_VALUES_PARSED_DATA_UNION: [ParsedDataUnion; 17] = [
   ParsedDataUnion::Kind0Parsed,
   ParsedDataUnion::Kind1Parsed,
   ParsedDataUnion::Kind3Parsed,
@@ -1589,6 +1589,7 @@ pub const ENUM_VALUES_PARSED_DATA_UNION: [ParsedDataUnion; 16] = [
   ParsedDataUnion::Kind10002Parsed,
   ParsedDataUnion::Kind10019Parsed,
   ParsedDataUnion::Kind17375Parsed,
+  ParsedDataUnion::Kind30023Parsed,
   ParsedDataUnion::Kind39089Parsed,
 ];
 
@@ -1612,6 +1613,7 @@ impl ParsedDataUnion {
   pub const Kind10002Parsed: Self = Self(10002);
   pub const Kind10019Parsed: Self = Self(10019);
   pub const Kind17375Parsed: Self = Self(17375);
+  pub const Kind30023Parsed: Self = Self(30023);
   pub const Kind39089Parsed: Self = Self(39089);
 
   pub const ENUM_MIN: u32 = 0;
@@ -1632,6 +1634,7 @@ impl ParsedDataUnion {
     Self::Kind10002Parsed,
     Self::Kind10019Parsed,
     Self::Kind17375Parsed,
+    Self::Kind30023Parsed,
     Self::Kind39089Parsed,
   ];
   /// Returns the variant's name or "" if unknown.
@@ -1652,6 +1655,7 @@ impl ParsedDataUnion {
       Self::Kind10002Parsed => Some("Kind10002Parsed"),
       Self::Kind10019Parsed => Some("Kind10019Parsed"),
       Self::Kind17375Parsed => Some("Kind17375Parsed"),
+      Self::Kind30023Parsed => Some("Kind30023Parsed"),
       Self::Kind39089Parsed => Some("Kind39089Parsed"),
       _ => None,
     }
@@ -1711,10 +1715,10 @@ impl flatbuffers::SimpleToVerifyInSlice for ParsedDataUnion {}
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_PARSED_DATA: u8 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MAX_PARSED_DATA: u8 = 16;
+pub const ENUM_MAX_PARSED_DATA: u8 = 17;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_PARSED_DATA: [ParsedData; 17] = [
+pub const ENUM_VALUES_PARSED_DATA: [ParsedData; 18] = [
   ParsedData::NONE,
   ParsedData::Kind0Parsed,
   ParsedData::Kind1Parsed,
@@ -1732,6 +1736,7 @@ pub const ENUM_VALUES_PARSED_DATA: [ParsedData; 17] = [
   ParsedData::Kind7376Parsed,
   ParsedData::Kind9321Parsed,
   ParsedData::Kind9735Parsed,
+  ParsedData::Kind30023Parsed,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -1756,9 +1761,10 @@ impl ParsedData {
   pub const Kind7376Parsed: Self = Self(14);
   pub const Kind9321Parsed: Self = Self(15);
   pub const Kind9735Parsed: Self = Self(16);
+  pub const Kind30023Parsed: Self = Self(17);
 
   pub const ENUM_MIN: u8 = 0;
-  pub const ENUM_MAX: u8 = 16;
+  pub const ENUM_MAX: u8 = 17;
   pub const ENUM_VALUES: &'static [Self] = &[
     Self::NONE,
     Self::Kind0Parsed,
@@ -1777,6 +1783,7 @@ impl ParsedData {
     Self::Kind7376Parsed,
     Self::Kind9321Parsed,
     Self::Kind9735Parsed,
+    Self::Kind30023Parsed,
   ];
   /// Returns the variant's name or "" if unknown.
   pub fn variant_name(self) -> Option<&'static str> {
@@ -1798,6 +1805,7 @@ impl ParsedData {
       Self::Kind7376Parsed => Some("Kind7376Parsed"),
       Self::Kind9321Parsed => Some("Kind9321Parsed"),
       Self::Kind9735Parsed => Some("Kind9735Parsed"),
+      Self::Kind30023Parsed => Some("Kind30023Parsed"),
       _ => None,
     }
   }
@@ -1876,6 +1884,7 @@ pub enum ParsedDataT {
   Kind7376Parsed(Box<Kind7376ParsedT>),
   Kind9321Parsed(Box<Kind9321ParsedT>),
   Kind9735Parsed(Box<Kind9735ParsedT>),
+  Kind30023Parsed(Box<Kind30023ParsedT>),
 }
 impl Default for ParsedDataT {
   fn default() -> Self {
@@ -1902,6 +1911,7 @@ impl ParsedDataT {
       Self::Kind7376Parsed(_) => ParsedData::Kind7376Parsed,
       Self::Kind9321Parsed(_) => ParsedData::Kind9321Parsed,
       Self::Kind9735Parsed(_) => ParsedData::Kind9735Parsed,
+      Self::Kind30023Parsed(_) => ParsedData::Kind30023Parsed,
     }
   }
   pub fn pack<'b, A: flatbuffers::Allocator + 'b>(&self, fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>) -> Option<flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>> {
@@ -1923,6 +1933,7 @@ impl ParsedDataT {
       Self::Kind7376Parsed(v) => Some(v.pack(fbb).as_union_value()),
       Self::Kind9321Parsed(v) => Some(v.pack(fbb).as_union_value()),
       Self::Kind9735Parsed(v) => Some(v.pack(fbb).as_union_value()),
+      Self::Kind30023Parsed(v) => Some(v.pack(fbb).as_union_value()),
     }
   }
   /// If the union variant matches, return the owned Kind0ParsedT, setting the union to NONE.
@@ -2260,6 +2271,27 @@ impl ParsedDataT {
   /// If the union variant matches, return a mutable reference to the Kind9735ParsedT.
   pub fn as_kind_9735_parsed_mut(&mut self) -> Option<&mut Kind9735ParsedT> {
     if let Self::Kind9735Parsed(v) = self { Some(v.as_mut()) } else { None }
+  }
+  /// If the union variant matches, return the owned Kind30023ParsedT, setting the union to NONE.
+  pub fn take_kind_30023_parsed(&mut self) -> Option<Box<Kind30023ParsedT>> {
+    if let Self::Kind30023Parsed(_) = self {
+      let v = core::mem::replace(self, Self::NONE);
+      if let Self::Kind30023Parsed(w) = v {
+        Some(w)
+      } else {
+        unreachable!()
+      }
+    } else {
+      None
+    }
+  }
+  /// If the union variant matches, return a reference to the Kind30023ParsedT.
+  pub fn as_kind_30023_parsed(&self) -> Option<&Kind30023ParsedT> {
+    if let Self::Kind30023Parsed(v) = self { Some(v.as_ref()) } else { None }
+  }
+  /// If the union variant matches, return a mutable reference to the Kind30023ParsedT.
+  pub fn as_kind_30023_parsed_mut(&mut self) -> Option<&mut Kind30023ParsedT> {
+    if let Self::Kind30023Parsed(v) = self { Some(v.as_mut()) } else { None }
   }
 }
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
@@ -15478,6 +15510,321 @@ impl Kind9735ParsedT {
     })
   }
 }
+pub enum Kind30023ParsedOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct Kind30023Parsed<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for Kind30023Parsed<'a> {
+  type Inner = Kind30023Parsed<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> Kind30023Parsed<'a> {
+  pub const VT_SLUG: flatbuffers::VOffsetT = 4;
+  pub const VT_TITLE: flatbuffers::VOffsetT = 6;
+  pub const VT_SUMMARY: flatbuffers::VOffsetT = 8;
+  pub const VT_IMAGE: flatbuffers::VOffsetT = 10;
+  pub const VT_CANONICAL: flatbuffers::VOffsetT = 12;
+  pub const VT_TOPICS: flatbuffers::VOffsetT = 14;
+  pub const VT_PUBLISHED_AT: flatbuffers::VOffsetT = 16;
+  pub const VT_NADDR: flatbuffers::VOffsetT = 18;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    Kind30023Parsed { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args Kind30023ParsedArgs<'args>
+  ) -> flatbuffers::WIPOffset<Kind30023Parsed<'bldr>> {
+    let mut builder = Kind30023ParsedBuilder::new(_fbb);
+    builder.add_published_at(args.published_at);
+    if let Some(x) = args.naddr { builder.add_naddr(x); }
+    if let Some(x) = args.topics { builder.add_topics(x); }
+    if let Some(x) = args.canonical { builder.add_canonical(x); }
+    if let Some(x) = args.image { builder.add_image(x); }
+    if let Some(x) = args.summary { builder.add_summary(x); }
+    if let Some(x) = args.title { builder.add_title(x); }
+    if let Some(x) = args.slug { builder.add_slug(x); }
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> Kind30023ParsedT {
+    let slug = self.slug().map(|x| {
+      x.to_string()
+    });
+    let title = self.title().map(|x| {
+      x.to_string()
+    });
+    let summary = self.summary().map(|x| {
+      x.to_string()
+    });
+    let image = self.image().map(|x| {
+      x.to_string()
+    });
+    let canonical = self.canonical().map(|x| {
+      x.to_string()
+    });
+    let topics = self.topics().map(|x| {
+      x.iter().map(|s| s.to_string()).collect()
+    });
+    let published_at = self.published_at();
+    let naddr = self.naddr().map(|x| {
+      x.to_string()
+    });
+    Kind30023ParsedT {
+      slug,
+      title,
+      summary,
+      image,
+      canonical,
+      topics,
+      published_at,
+      naddr,
+    }
+  }
+
+  #[inline]
+  pub fn slug(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Kind30023Parsed::VT_SLUG, None)}
+  }
+  #[inline]
+  pub fn title(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Kind30023Parsed::VT_TITLE, None)}
+  }
+  #[inline]
+  pub fn summary(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Kind30023Parsed::VT_SUMMARY, None)}
+  }
+  #[inline]
+  pub fn image(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Kind30023Parsed::VT_IMAGE, None)}
+  }
+  #[inline]
+  pub fn canonical(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Kind30023Parsed::VT_CANONICAL, None)}
+  }
+  #[inline]
+  pub fn topics(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>(Kind30023Parsed::VT_TOPICS, None)}
+  }
+  #[inline]
+  pub fn published_at(&self) -> u64 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u64>(Kind30023Parsed::VT_PUBLISHED_AT, Some(0)).unwrap()}
+  }
+  #[inline]
+  pub fn naddr(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Kind30023Parsed::VT_NADDR, None)}
+  }
+}
+
+impl flatbuffers::Verifiable for Kind30023Parsed<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("slug", Self::VT_SLUG, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("title", Self::VT_TITLE, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("summary", Self::VT_SUMMARY, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("image", Self::VT_IMAGE, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("canonical", Self::VT_CANONICAL, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("topics", Self::VT_TOPICS, false)?
+     .visit_field::<u64>("published_at", Self::VT_PUBLISHED_AT, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("naddr", Self::VT_NADDR, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct Kind30023ParsedArgs<'a> {
+    pub slug: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub title: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub summary: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub image: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub canonical: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub topics: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>,
+    pub published_at: u64,
+    pub naddr: Option<flatbuffers::WIPOffset<&'a str>>,
+}
+impl<'a> Default for Kind30023ParsedArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    Kind30023ParsedArgs {
+      slug: None,
+      title: None,
+      summary: None,
+      image: None,
+      canonical: None,
+      topics: None,
+      published_at: 0,
+      naddr: None,
+    }
+  }
+}
+
+pub struct Kind30023ParsedBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> Kind30023ParsedBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_slug(&mut self, slug: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind30023Parsed::VT_SLUG, slug);
+  }
+  #[inline]
+  pub fn add_title(&mut self, title: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind30023Parsed::VT_TITLE, title);
+  }
+  #[inline]
+  pub fn add_summary(&mut self, summary: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind30023Parsed::VT_SUMMARY, summary);
+  }
+  #[inline]
+  pub fn add_image(&mut self, image: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind30023Parsed::VT_IMAGE, image);
+  }
+  #[inline]
+  pub fn add_canonical(&mut self, canonical: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind30023Parsed::VT_CANONICAL, canonical);
+  }
+  #[inline]
+  pub fn add_topics(&mut self, topics: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<&'b  str>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind30023Parsed::VT_TOPICS, topics);
+  }
+  #[inline]
+  pub fn add_published_at(&mut self, published_at: u64) {
+    self.fbb_.push_slot::<u64>(Kind30023Parsed::VT_PUBLISHED_AT, published_at, 0);
+  }
+  #[inline]
+  pub fn add_naddr(&mut self, naddr: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind30023Parsed::VT_NADDR, naddr);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> Kind30023ParsedBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    Kind30023ParsedBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<Kind30023Parsed<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for Kind30023Parsed<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("Kind30023Parsed");
+      ds.field("slug", &self.slug());
+      ds.field("title", &self.title());
+      ds.field("summary", &self.summary());
+      ds.field("image", &self.image());
+      ds.field("canonical", &self.canonical());
+      ds.field("topics", &self.topics());
+      ds.field("published_at", &self.published_at());
+      ds.field("naddr", &self.naddr());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct Kind30023ParsedT {
+  pub slug: Option<String>,
+  pub title: Option<String>,
+  pub summary: Option<String>,
+  pub image: Option<String>,
+  pub canonical: Option<String>,
+  pub topics: Option<Vec<String>>,
+  pub published_at: u64,
+  pub naddr: Option<String>,
+}
+impl Default for Kind30023ParsedT {
+  fn default() -> Self {
+    Self {
+      slug: None,
+      title: None,
+      summary: None,
+      image: None,
+      canonical: None,
+      topics: None,
+      published_at: 0,
+      naddr: None,
+    }
+  }
+}
+impl Kind30023ParsedT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<Kind30023Parsed<'b>> {
+    let slug = self.slug.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let title = self.title.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let summary = self.summary.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let image = self.image.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let canonical = self.canonical.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let topics = self.topics.as_ref().map(|x|{
+      let w: Vec<_> = x.iter().map(|s| _fbb.create_string(s)).collect();_fbb.create_vector(&w)
+    });
+    let published_at = self.published_at;
+    let naddr = self.naddr.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    Kind30023Parsed::create(_fbb, &Kind30023ParsedArgs{
+      slug,
+      title,
+      summary,
+      image,
+      canonical,
+      topics,
+      published_at,
+      naddr,
+    })
+  }
+}
 pub enum ParsedEventOffset {}
 #[derive(Copy, Clone, PartialEq)]
 
@@ -15617,6 +15964,11 @@ impl<'a> ParsedEvent<'a> {
       ParsedData::Kind9735Parsed => ParsedDataT::Kind9735Parsed(Box::new(
         self.parsed_as_kind_9735_parsed()
             .expect("Invalid union table, expected `ParsedData::Kind9735Parsed`.")
+            .unpack()
+      )),
+      ParsedData::Kind30023Parsed => ParsedDataT::Kind30023Parsed(Box::new(
+        self.parsed_as_kind_30023_parsed()
+            .expect("Invalid union table, expected `ParsedData::Kind30023Parsed`.")
             .unpack()
       )),
       _ => ParsedDataT::NONE,
@@ -15946,6 +16298,21 @@ impl<'a> ParsedEvent<'a> {
     }
   }
 
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn parsed_as_kind_30023_parsed(&self) -> Option<Kind30023Parsed<'a>> {
+    if self.parsed_type() == ParsedData::Kind30023Parsed {
+      self.parsed().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { Kind30023Parsed::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
 }
 
 impl flatbuffers::Verifiable for ParsedEvent<'_> {
@@ -15977,6 +16344,7 @@ impl flatbuffers::Verifiable for ParsedEvent<'_> {
           ParsedData::Kind7376Parsed => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Kind7376Parsed>>("ParsedData::Kind7376Parsed", pos),
           ParsedData::Kind9321Parsed => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Kind9321Parsed>>("ParsedData::Kind9321Parsed", pos),
           ParsedData::Kind9735Parsed => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Kind9735Parsed>>("ParsedData::Kind9735Parsed", pos),
+          ParsedData::Kind30023Parsed => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Kind30023Parsed>>("ParsedData::Kind30023Parsed", pos),
           _ => Ok(()),
         }
      })?
@@ -16190,6 +16558,13 @@ impl core::fmt::Debug for ParsedEvent<'_> {
         },
         ParsedData::Kind9735Parsed => {
           if let Some(x) = self.parsed_as_kind_9735_parsed() {
+            ds.field("parsed", &x)
+          } else {
+            ds.field("parsed", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        ParsedData::Kind30023Parsed => {
+          if let Some(x) = self.parsed_as_kind_30023_parsed() {
             ds.field("parsed", &x)
           } else {
             ds.field("parsed", &"InvalidFlatbuffer: Union discriminant does not match value.")

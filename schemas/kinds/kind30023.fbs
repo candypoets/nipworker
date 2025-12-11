@@ -1,0 +1,17 @@
+include "../common.fbs";
+
+namespace nostr.fb;
+
+// Long-form content metadata (NIP-23 / kind 30023).
+// This schema intentionally excludes the markdown body; the frontend renders it.
+// All string fields are optional. Scalars default to 0 when unset.
+table Kind30023Parsed {
+  slug: string;         // "d" tag (unique identifier / slug)
+  title: string;        // "title" tag
+  summary: string;      // "summary" tag
+  image: string;        // "image" tag (cover image URL)
+  canonical: string;    // "canonical" tag (canonical URL)
+  topics: [string];     // repeated "t" tags (topics)
+  published_at: ulong;  // "published_at" tag (unix seconds; 0 if absent)
+  naddr: string;        // convenience: "30023:<pubkey_hex>:<d>"
+}

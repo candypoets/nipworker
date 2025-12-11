@@ -17,7 +17,7 @@ include "kinds/kind7375.fbs";
 include "kinds/kind7376.fbs";
 include "kinds/kind9321.fbs";
 include "kinds/kind9735.fbs";
-
+include "kinds/kind30023.fbs";
 
 namespace nostr.fb;
 
@@ -51,7 +51,8 @@ enum ParsedDataUnion : uint32 {
   Kind7375Parsed = 7375,
   Kind7376Parsed = 7376,
   Kind9321Parsed = 9321,
-  Kind9735Parsed = 9735
+  Kind9735Parsed = 9735,
+  Kind30023Parsed = 30023
 }
 
 // -- Core Structures --
@@ -71,7 +72,8 @@ union ParsedData {
   Kind7375Parsed,
   Kind7376Parsed,
   Kind9321Parsed,
-  Kind9735Parsed
+  Kind9735Parsed,
+  Kind30023Parsed
 }
 
 table ParsedEvent {

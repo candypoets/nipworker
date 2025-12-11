@@ -52,6 +52,7 @@ pub mod kind10019;
 pub mod kind17;
 pub mod kind17375;
 pub mod kind3;
+pub mod kind30023;
 pub mod kind39089;
 pub mod kind4;
 pub mod kind6;
@@ -71,6 +72,7 @@ pub use kind10019::{Kind10019Parsed, MintInfo};
 pub use kind17::Kind17Parsed;
 pub use kind17375::Kind17375Parsed;
 pub use kind3::{Contact, Kind3Parsed};
+pub use kind30023::Kind30023Parsed;
 pub use kind39089::Kind39089Parsed;
 pub use kind4::Kind4Parsed;
 pub use kind6::Kind6Parsed;
@@ -153,6 +155,10 @@ impl Parser {
             17375 => {
                 let (parsed, requests) = self.parse_kind_17375(&event)?;
                 (Some(ParsedData::Kind17375(parsed)), requests)
+            }
+            30023 => {
+                let (parsed, requests) = self.parse_kind_30023(&event)?;
+                (Some(ParsedData::Kind30023(parsed)), requests)
             }
             39089 => {
                 let (parsed, requests) = self.parse_kind_39089(&event)?;

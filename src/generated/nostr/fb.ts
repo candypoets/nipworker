@@ -28,6 +28,7 @@ export { Kind10019Parsed, Kind10019ParsedT } from './fb/kind10019-parsed.js';
 export { Kind17375Parsed, Kind17375ParsedT } from './fb/kind17375-parsed.js';
 export { Kind17Parsed, Kind17ParsedT } from './fb/kind17-parsed.js';
 export { Kind1Parsed, Kind1ParsedT } from './fb/kind1-parsed.js';
+export { Kind30023Parsed, Kind30023ParsedT } from './fb/kind30023-parsed.js';
 export { Kind39089Parsed, Kind39089ParsedT } from './fb/kind39089-parsed.js';
 export { Kind3Parsed, Kind3ParsedT } from './fb/kind3-parsed.js';
 export { Kind4Parsed, Kind4ParsedT } from './fb/kind4-parsed.js';
