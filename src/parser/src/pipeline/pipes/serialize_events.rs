@@ -52,8 +52,40 @@ impl Pipe for SerializeEventsPipe {
             }
 
             Ok(PipeOutput::DirectOutput(flatbuffer_data))
+        } else if let Some(ref nostr_event) = event.raw {
+            let mut builder = FlatBufferBuilder::new();
+
+            // Build NostrEvent table
+            let nostr_event_offset = nostr_event.build_flatbuffer(&mut builder);
+            let union_value = nostr_event_offset.as_union_value();
+
+            // Wrap into WorkerMessage as a NostrEvent
+            let message_args = fb::WorkerMessageArgs {
+                sub_id: None,
+                url: None,
+                type_: fb::MessageType::NostrEvent,
+                content_type: fb::Message::NostrEvent,
+                content: Some(union_value),
+            };
+
+            let root = fb::WorkerMessage::create(&mut builder, &message_args);
+            builder.finish(root, None);
+
+            let flatbuffer_data = builder.finished_data().to_vec();
+
+            // Safety check: prevent excessive data
+            if flatbuffer_data.len() > 512 * 1024 {
+                warn!(
+                    "FlatBuffer data too large: {} bytes for subscription {}",
+                    flatbuffer_data.len(),
+                    self.subscription_id
+                );
+                return Ok(PipeOutput::Drop);
+            }
+
+            Ok(PipeOutput::DirectOutput(flatbuffer_data))
         } else {
-            // Can't serialize unparsed events
+            // Can't serialize if neither parsed nor raw is available
             Ok(PipeOutput::Drop)
         }
     }

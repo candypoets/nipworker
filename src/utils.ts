@@ -47,7 +47,8 @@ export function fbArray<T, K extends FlatBufferKeys<T>>(
 	fieldName: K
 ): Array<NonNullable<ReturnType<Extract<T[K], (i: number) => any>>>> {
 	if (!obj) return [];
-	const lengthGetter = (obj as any)[`${String(fieldName)}Length`].bind(obj);
+	const lengthGetter = (obj as any)[`${String(fieldName)}Length`]?.bind(obj);
+	if (!lengthGetter) return [];
 	const length = lengthGetter();
 
 	const result: Array<NonNullable<ReturnType<Extract<T[K], (i: number) => any>>>> = [];

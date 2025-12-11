@@ -149,15 +149,15 @@ impl ContentParser {
                 processor: process_video,
             },
             Pattern {
+                name: "link".to_string(),
+                regex: Regex::new(r"(?i)https?://[^\s\]\)\\]+").unwrap(),
+                processor: process_link,
+            },
+            Pattern {
                 name: "nostr".to_string(),
                 regex: Regex::new(r"(?i)(nostr:([a-z0-9]+)|n(event|prof|pub|addr|note)1[a-z0-9]+)")
                     .unwrap(),
                 processor: process_nostr,
-            },
-            Pattern {
-                name: "link".to_string(),
-                regex: Regex::new(r"(?i)https?://[^\s\]\)\\]+").unwrap(),
-                processor: process_link,
             },
         ];
 
@@ -385,154 +385,200 @@ impl ContentParser {
         max_images: usize,
         max_lines: usize,
     ) -> Vec<ContentBlock> {
-        // 1) Classify helpers
+        // Media/Quote text penalty is half of X
+        let media_text_penalty: usize = max_length / 2;
+
+        // Helpers
         let is_textish = |b: &ContentBlock| -> bool {
-            if b.block_type == "text" || b.block_type == "hashtag" || b.block_type == "link" {
-                return true;
-            }
-            // Consider Nostr mentions as textish
-            matches!(b.data, Some(ContentData::Nostr { .. }))
+            b.block_type == "text"
+                || b.block_type == "hashtag"
+                || matches!(b.data, Some(ContentData::Nostr { .. }))
+        };
+        let is_quote_block = |b: &ContentBlock| -> bool {
+            // Treat Nostr event references as quoted notes
+            (b.block_type == "note" || b.block_type == "nevent" || b.block_type == "naddr")
+                && matches!(b.data, Some(ContentData::Nostr { .. }))
         };
 
-        // 2) Collect images everywhere (including from mediaGrid) and collect textish in original order
-        let mut collected_images: Vec<Image> = Vec::new();
+        // Partition: collect textish, media (image+video), single quote (tail), and last link (tail)
         let mut textish_blocks: Vec<ContentBlock> = Vec::new();
+        let mut media_items: Vec<MediaItem> = Vec::new();
+        let mut tail_quote: Option<ContentBlock> = None;
+        let mut tail_link: Option<ContentBlock> = None;
 
         for b in &blocks {
             match (&b.block_type[..], &b.data) {
                 ("image", Some(ContentData::Image { url, alt })) => {
-                    collected_images.push(Image {
-                        url: url.clone(),
-                        alt: alt.clone(),
+                    media_items.push(MediaItem {
+                        image: Some(Image {
+                            url: url.clone(),
+                            alt: alt.clone(),
+                        }),
+                        video: None,
+                    });
+                }
+                ("video", Some(ContentData::Video { url, thumbnail })) => {
+                    media_items.push(MediaItem {
+                        image: None,
+                        video: Some(Video {
+                            url: url.clone(),
+                            thumbnail: thumbnail.clone(),
+                        }),
                     });
                 }
                 ("mediaGrid", Some(ContentData::MediaGroup { items })) => {
                     for it in items {
                         if let Some(img) = &it.image {
-                            collected_images.push(Image {
-                                url: img.url.clone(),
-                                alt: img.alt.clone(),
+                            media_items.push(MediaItem {
+                                image: Some(Image {
+                                    url: img.url.clone(),
+                                    alt: img.alt.clone(),
+                                }),
+                                video: None,
+                            });
+                        } else if let Some(v) = &it.video {
+                            media_items.push(MediaItem {
+                                image: None,
+                                video: Some(Video {
+                                    url: v.url.clone(),
+                                    thumbnail: v.thumbnail.clone(),
+                                }),
                             });
                         }
                     }
                 }
+                ("link", _) => {
+                    // Keep the last link; it will be placed at the tail only if no media/quote tail exists
+                    tail_link = Some(b.clone());
+                }
                 _ => {
-                    if is_textish(b) {
+                    if is_quote_block(b) {
+                        // Keep only the first quote; ignore subsequent quotes
+                        if tail_quote.is_none() {
+                            tail_quote = Some(b.clone());
+                        }
+                        // Do NOT include quotes in the text budget
+                    } else if is_textish(b) {
                         textish_blocks.push(b.clone());
                     }
                 }
             }
         }
 
-        // 3) Aggregated textish size; if it fits, no shortening needed → return empty vec
+        // Budgets
+        let has_media = !media_items.is_empty();
+        let has_quote = tail_quote.is_some();
+        let text_budget = if has_media || has_quote {
+            max_length.saturating_sub(media_text_penalty)
+        } else {
+            max_length
+        };
+
+        // Aggregate current text size
         let mut total_chars = 0usize;
         let mut total_lines = 0usize;
         for b in &textish_blocks {
             total_chars += b.text.len();
             total_lines += b.text.lines().count();
         }
-        if total_chars <= max_length && total_lines <= max_lines {
+
+        // If text fits and no tail (media/quote/link), caller can use full content
+        if !has_media
+            && !has_quote
+            && tail_link.is_none()
+            && total_chars <= text_budget
+            && total_lines <= max_lines
+        {
             return Vec::new();
         }
 
-        // 4) Decide which block is the "last text" block; if none, fallback to last textish
-        let last_text_idx = textish_blocks
-            .iter()
-            .rposition(|b| b.block_type == "text")
-            .unwrap_or_else(|| textish_blocks.len() - 1);
-
-        // 5) Compute pre-last sums
-        let mut pre_last_chars = 0usize;
-        let mut pre_last_lines = 0usize;
-        for (i, b) in textish_blocks.iter().enumerate() {
-            if i == last_text_idx {
-                break;
-            }
-            pre_last_chars += b.text.len();
-            pre_last_lines += b.text.lines().count();
-        }
-
-        // 6) Build preview: everything up to last text block intact; truncate only last text block
+        // Build text preview up to budgets (truncate last included block if needed)
         let mut out: Vec<ContentBlock> = Vec::new();
+        let mut used_chars = 0usize;
+        let mut used_lines = 0usize;
 
-        for (i, b) in textish_blocks.iter().enumerate() {
-            if i < last_text_idx {
-                out.push(b.clone());
-            } else if i == last_text_idx {
-                // Budget for last text block
-                let mut rem_chars = max_length.saturating_sub(pre_last_chars);
-                let mut rem_lines = max_lines.saturating_sub(pre_last_lines);
+        for b in textish_blocks.into_iter() {
+            if used_chars >= text_budget || used_lines >= max_lines {
+                break;
+            }
 
-                // If this isn't a "text" block but some other textish (hashtag/link), we still ensure we don't overflow.
-                let mut text = b.text.clone();
-                let orig_len = text.len();
-                let orig_lines = text.lines().count();
-                let mut truncated = false;
+            let mut text = b.text.clone();
+            let mut truncated = false;
 
-                if rem_chars == 0 || rem_lines == 0 {
-                    text = "...".to_string();
-                    truncated = true;
+            // Trim by remaining line budget
+            let rem_lines = max_lines.saturating_sub(used_lines);
+            let lines = text.lines().count();
+            if lines > rem_lines {
+                text = text.lines().take(rem_lines).collect::<Vec<_>>().join("\n");
+                truncated = true;
+            }
+
+            // Trim by remaining char budget
+            let rem_chars = text_budget.saturating_sub(used_chars);
+            if text.len() > rem_chars {
+                let budget = rem_chars.saturating_sub(3);
+                let t = safe_truncate(&text, budget).to_string();
+                text = if t.is_empty() {
+                    "...".to_string()
                 } else {
-                    // First trim by lines
-                    if orig_lines > rem_lines {
-                        text = text.lines().take(rem_lines).collect::<Vec<_>>().join("\n");
-                        truncated = true;
-                    }
-                    // Then trim by chars (reserve 3 for "...")
-                    if text.len() > rem_chars {
-                        let budget = rem_chars.saturating_sub(3);
-                        let t = safe_truncate(&text, budget).to_string();
-                        text = if t.is_empty() {
-                            "...".to_string()
-                        } else {
-                            format!("{}...", t)
-                        };
-                        truncated = true;
-                    } else if truncated {
-                        // If only lines triggered truncation, ensure ellipsis
-                        if !text.ends_with("...") {
-                            text.push_str("...");
-                        }
-                    }
-                }
+                    format!("{}...", t)
+                };
+                truncated = true;
+            } else if truncated && !text.ends_with("...") {
+                text.push_str("...");
+            }
 
-                out.push(ContentBlock {
-                    block_type: b.block_type.clone(),
-                    text,
-                    data: b.data.clone(),
-                });
+            let mut block = b.clone();
+            block.text = text;
+            out.push(block);
 
-                // We cut the preview here: do not include any further textish blocks
+            used_chars = used_chars.saturating_add(out.last().unwrap().text.len());
+            used_lines = used_lines.saturating_add(out.last().unwrap().text.lines().count());
+
+            if truncated {
                 break;
             }
         }
 
-        // 7) Append exactly one image or one mediaGrid at the end (images do not count toward budget)
-        if !collected_images.is_empty() && max_images > 0 {
-            if collected_images.len() == 1 || max_images == 1 {
-                // Single image
-                let img = &collected_images[0];
-                out.push(
-                    ContentBlock::new("image".to_string(), img.url.clone()).with_data(
-                        ContentData::Image {
-                            url: img.url.clone(),
-                            alt: img.alt.clone(),
-                        },
-                    ),
-                );
+        // Tail: prefer media; else one quote; else one link. Only one tail block is appended.
+        if has_media && max_images > 0 {
+            let take = media_items.len().min(max_images);
+            if take == 1 {
+                // Single item → single image/video block
+                let it = media_items.into_iter().next().unwrap();
+                if let Some(img) = it.image {
+                    out.push(
+                        ContentBlock::new("image".to_string(), img.url.clone()).with_data(
+                            ContentData::Image {
+                                url: img.url,
+                                alt: img.alt,
+                            },
+                        ),
+                    );
+                } else if let Some(v) = it.video {
+                    out.push(
+                        ContentBlock::new("video".to_string(), v.url.clone()).with_data(
+                            ContentData::Video {
+                                url: v.url,
+                                thumbnail: v.thumbnail,
+                            },
+                        ),
+                    );
+                }
             } else {
-                // Aggregate into mediaGrid (cap by max_images)
-                let items: Vec<MediaItem> = collected_images
-                    .into_iter()
-                    .take(max_images)
-                    .map(|img| MediaItem {
-                        image: Some(img),
-                        video: None,
-                    })
-                    .collect();
+                // More than one → exactly one mediaGrid block
+                let items: Vec<MediaItem> = media_items.into_iter().take(take).collect();
                 let grid_text = items
                     .iter()
-                    .filter_map(|it| it.image.as_ref().map(|img| img.url.clone()))
+                    .map(|it| {
+                        if let Some(img) = &it.image {
+                            img.url.clone()
+                        } else if let Some(v) = &it.video {
+                            v.url.clone()
+                        } else {
+                            String::new()
+                        }
+                    })
                     .collect::<Vec<_>>()
                     .join("\n");
 
@@ -541,6 +587,12 @@ impl ContentParser {
                         .with_data(ContentData::MediaGroup { items }),
                 );
             }
+        } else if let Some(q) = tail_quote {
+            // Append exactly one quote
+            out.push(q);
+        } else if let Some(link) = tail_link {
+            // Only when there is no media or quote tail do we append a link
+            out.push(link);
         }
 
         out

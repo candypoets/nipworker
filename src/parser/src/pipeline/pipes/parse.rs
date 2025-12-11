@@ -24,15 +24,16 @@ impl Pipe for ParsePipe {
         }
 
         // Parse the raw event
-        if let Some(raw_event) = event.raw.take() {
+        if let Some(raw_event) = event.raw.clone() {
             match self.parser.parse(raw_event) {
                 Ok(parsed_event) => {
+                    event.raw = None;
                     event.parsed = Some(parsed_event);
                     Ok(PipeOutput::Event(event))
                 }
                 Err(e) => {
                     warn!("Failed to parse event {}: {}", hex::encode(event.id), e);
-                    Ok(PipeOutput::Drop)
+                    Ok(PipeOutput::Event(event))
                 }
             }
         } else {
