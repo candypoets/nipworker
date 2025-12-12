@@ -6,7 +6,7 @@ use crate::types::network::Request;
 use crate::types::nostr::Event;
 use tracing::{info, warn};
 
-use crate::generated::nostr::*;
+use shared::generated::nostr::*;
 
 pub struct Kind17375Parsed {
     pub mints: Vec<String>,

@@ -1,6 +1,6 @@
 use super::super::*;
-use crate::utils::cashu::filter_valid_dleq_proofs_with_mint;
-use crate::{generated::nostr::fb, parsed_event::ParsedData, types::proof::Proof, NostrError};
+use crate::{parsed_event::ParsedData, utils::cashu::filter_valid_dleq_proofs_with_mint};
+use shared::generated::nostr::fb;
 
 type Result<T> = std::result::Result<T, NostrError>;
 use crate::utils::json::BaseJsonParser;

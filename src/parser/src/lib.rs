@@ -5,7 +5,6 @@ use js_sys::SharedArrayBuffer;
 use shared::{telemetry, SabRing};
 use wasm_bindgen::prelude::*;
 
-pub mod generated;
 pub mod network;
 pub mod parser;
 pub mod pipeline;
@@ -69,7 +68,8 @@ use std::{
 };
 use tracing::info;
 
-use crate::{generated::nostr::fb, types::nostr::Template, utils::js_interop::post_worker_message};
+use crate::{types::nostr::Template, utils::js_interop::post_worker_message};
+use shared::generated::nostr::fb;
 
 // Default relay configurations to match Go implementation
 const DEFAULT_RELAYS: &[&str] = &[

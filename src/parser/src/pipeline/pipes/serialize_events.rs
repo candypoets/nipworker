@@ -1,5 +1,5 @@
 use super::super::*;
-use crate::generated::nostr::fb;
+use shared::generated::nostr::fb;
 use flatbuffers::FlatBufferBuilder;
 use tracing::warn;
 

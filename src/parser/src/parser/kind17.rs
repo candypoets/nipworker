@@ -4,7 +4,7 @@ use crate::types::nostr::Event;
 use crate::parser::{ParserError, Result};
 
 // NEW: Imports for FlatBuffers
-use crate::generated::nostr::*;
+use shared::generated::nostr::*;
 
 pub enum ReactionType {
     Like,

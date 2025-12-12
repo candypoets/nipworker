@@ -3,9 +3,9 @@ use crate::db::types::{
     intersect_event_sets, DatabaseConfig, DatabaseError, DatabaseIndexes, EventStorage,
     QueryFilter, QueryResult,
 };
-use crate::generated::nostr::fb::{self, NostrEvent, ParsedEvent, Request};
 use js_sys::SharedArrayBuffer;
 use rustc_hash::{FxHashMap, FxHashSet};
+use shared::generated::nostr::fb::{self, NostrEvent, ParsedEvent, Request};
 use shared::SabRing;
 
 type Result<T> = std::result::Result<T, DatabaseError>;

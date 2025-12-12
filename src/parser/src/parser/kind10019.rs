@@ -7,7 +7,7 @@ use crate::types::nostr::Event;
 use tracing::info;
 
 // NEW: Imports for FlatBuffers
-use crate::generated::nostr::*;
+use shared::generated::nostr::*;
 use flatbuffers::FlatBufferBuilder;
 
 pub struct MintInfo {

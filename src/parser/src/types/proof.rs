@@ -4,7 +4,7 @@ use crate::utils::json::BaseJsonParser;
 use flatbuffers::{FlatBufferBuilder, WIPOffset};
 use std::fmt::Write;
 
-use crate::generated::nostr::fb;
+use shared::generated::nostr::fb;
 
 /// DLEQ (Discrete Log Equality) proof for offline signature validation (NUT-12)
 #[derive(Debug, Clone, PartialEq)]

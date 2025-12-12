@@ -80,6 +80,9 @@ export { SerializeEventsPipeConfig, SerializeEventsPipeConfigT } from './fb/seri
 export { SetSigner, SetSignerT } from './fb/set-signer.js';
 export { SignEvent, SignEventT } from './fb/sign-event.js';
 export { SignedEvent, SignedEventT } from './fb/signed-event.js';
+export { SignerOp } from './fb/signer-op.js';
+export { SignerRequest, SignerRequestT } from './fb/signer-request.js';
+export { SignerResponse, SignerResponseT } from './fb/signer-response.js';
 export { SignerType } from './fb/signer-type.js';
 export { StringVec, StringVecT } from './fb/string-vec.js';
 export { Subscribe, SubscribeT } from './fb/subscribe.js';

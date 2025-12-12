@@ -1,12 +1,9 @@
-use crate::{
-    generated::nostr::fb::{
-        ConnectionStatus, ConnectionStatusArgs, Message, MessageType, Raw, RawArgs, WorkerMessage,
-        WorkerMessageArgs,
-    },
-    utils::extract_first_three,
-};
-
-use serde_json::Value; // Adjust namespace if needed
+use crate::utils::extract_first_three;
+use serde_json::Value;
+use shared::generated::nostr::fb::{
+    ConnectionStatus, ConnectionStatusArgs, Message, MessageType, Raw, RawArgs, WorkerMessage,
+    WorkerMessageArgs,
+}; // Adjust namespace if needed
 
 fn unquote_simple(s: &str) -> &str {
     let b = s.as_bytes();

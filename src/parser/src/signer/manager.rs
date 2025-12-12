@@ -1,4 +1,4 @@
-use crate::generated::nostr::fb;
+use shared::generated::nostr::fb;
 use crate::signer::SignerError;
 use crate::types::nostr::{Event, Template};
 

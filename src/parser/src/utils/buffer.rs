@@ -4,7 +4,7 @@ use flatbuffers::FlatBufferBuilder;
 use js_sys::{SharedArrayBuffer, Uint8Array};
 use tracing::{debug, error, info, warn};
 
-use crate::generated::nostr::fb;
+use shared::generated::nostr::fb;
 
 static BUFFER_FULL_MARKER: OnceLock<Vec<u8>> = OnceLock::new();
 

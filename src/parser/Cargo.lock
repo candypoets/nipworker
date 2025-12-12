@@ -883,6 +883,7 @@ name = "shared"
 version = "0.1.0"
 dependencies = [
  "console_error_panic_hook",
+ "flatbuffers",
  "js-sys",
  "tracing",
  "tracing-wasm",

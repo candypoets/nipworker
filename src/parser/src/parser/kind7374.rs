@@ -6,7 +6,7 @@ use crate::types::network::Request;
 use crate::types::nostr::{Event, UnsignedEvent};
 
 // NEW: Imports for FlatBuffers
-use crate::generated::nostr::*;
+use shared::generated::nostr::*;
 use flatbuffers::FlatBufferBuilder;
 
 pub struct Kind7374Parsed {

@@ -2,7 +2,7 @@ pub mod interfaces;
 pub mod publish;
 pub mod subscription;
 
-use crate::generated::nostr::fb::{self};
+use shared::generated::nostr::fb::{self};
 use crate::nostr::Template;
 use crate::parser::Parser;
 use crate::pipeline::Pipeline;

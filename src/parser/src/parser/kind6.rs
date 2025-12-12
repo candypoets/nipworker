@@ -7,7 +7,7 @@ use crate::TEXT_NOTE;
 use crate::{parsed_event::ParsedEvent, parser::Parser};
 
 // NEW: Imports for FlatBuffers
-use crate::generated::nostr::*;
+use shared::generated::nostr::*;
 
 pub struct Kind6Parsed {
     pub reposted_event: Option<Event>,

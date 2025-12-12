@@ -1,4 +1,4 @@
-use crate::generated::nostr::fb;
+use shared::generated::nostr::fb;
 use crate::parser::Parser;
 use crate::pipeline::pipes::*;
 use crate::pipeline::{PipeType, Pipeline};

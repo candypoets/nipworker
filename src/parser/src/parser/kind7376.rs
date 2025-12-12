@@ -6,7 +6,7 @@ use crate::types::network::Request;
 use crate::types::nostr::Event;
 
 // NEW: Imports for FlatBuffers
-use crate::generated::nostr::*;
+use shared::generated::nostr::*;
 
 pub struct HistoryTag {
     pub name: String,

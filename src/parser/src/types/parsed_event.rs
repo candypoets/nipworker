@@ -2,9 +2,9 @@ use crate::parser::nip51::ListParsed;
 use crate::parser::pre_generic::PreGenericParsed;
 use crate::parser::Kind30023Parsed;
 use crate::types::nostr::Event;
+use shared::generated::nostr::fb;
 
 use crate::{
-    generated::nostr::fb,
     parser::{
         Kind0Parsed, Kind10002Parsed, Kind10019Parsed, Kind17375Parsed, Kind17Parsed, Kind1Parsed,
         Kind3Parsed, Kind4Parsed, Kind6Parsed, Kind7374Parsed, Kind7375Parsed, Kind7376Parsed,
@@ -43,12 +43,12 @@ impl ParsedData {
         builder: &mut flatbuffers::FlatBufferBuilder<'a, A>,
     ) -> Result<
         (
-            crate::generated::nostr::fb::ParsedData,
+            shared::generated::nostr::fb::ParsedData,
             flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>,
         ),
         crate::types::TypesError,
     > {
-        use crate::generated::nostr::fb;
+        use shared::generated::nostr::fb;
 
         match self {
             ParsedData::Kind0(data) => {

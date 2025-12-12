@@ -1,4 +1,4 @@
-use crate::generated::nostr::*; // brings `fb::...` into scope
+use shared::generated::nostr::*; // brings `fb::...` into scope
 use crate::parser::{Parser, ParserError, Result};
 use crate::types::network::Request;
 use crate::types::nostr::Event;

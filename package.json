@@ -1,78 +1,77 @@
 {
-  "name": "@candypoets/nipworker",
-  "version": "0.0.75",
-  "description": "Nostr client library with worker-based architecture using Rust WASM",
-  "type": "module",
-  "module": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
-    },
-    "./hooks": {
-      "import": "./dist/hooks.js",
-      "types": "./dist/hooks.d.ts"
-    },
-    "./utils": {
-      "import": "./dist/utils.js",
-      "types": "./dist/utils.d.ts"
-    }
-  },
-  "files": [
-    "dist",
-    "README.md"
-  ],
-  "scripts": {
-    "build": "npm run build:connections && npm run build:cache && npm run build:parser && vite build",
-    "build:connections": "wasm-pack build ./src/connections --release --target web",
-    "build:cache": "wasm-pack build ./src/cache --release --target web",
-    "build:parser": "wasm-pack build ./src/parser --release --target web",
-    "flatc": "npm run flatc:connections && npm run flatc:cache && npm run flatc:parser && npm run flatc:ts",
-    "flatc:connections": "flatc --rust --gen-object-api --gen-all --filename-suffix '' -o ./src/connections/src/generated ./schemas/message.fbs",
-    "flatc:cache": "flatc --rust --gen-object-api --gen-all --filename-suffix '' -o ./src/cache/src/generated ./schemas/message.fbs",
-    "flatc:parser": "flatc --rust --gen-object-api --gen-all --filename-suffix '' -o ./src/parser/src/generated ./schemas/message.fbs",
-    "flatc:ts": "flatc --ts --gen-object-api --gen-all --filename-suffix '' -o ./src/generated ./schemas/message.fbs && node ./scripts/patch-strings.js",
-    "build:types": "tsc --emitDeclarationOnly --outDir dist",
-    "publish": "npm publish --access public",
-    "prepublishOnly": "npm run build"
-  },
-  "keywords": [
-    "nostr",
-    "protocol",
-    "web-worker",
-    "wasm",
-    "rust"
-  ],
-  "author": "So Tachi <sotachi@proton.me>",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/candypoets/nipworker.git",
-    "directory": "packages/nipworker"
-  },
-  "bugs": {
-    "url": "https://github.com/candypoets/nipworker/issues"
-  },
-  "homepage": "https://github.com/candypoets/nipworker#readme",
-  "peerDependencies": {
-    "flatbuffers": "^25.2.10"
-  },
-  "devDependencies": {
-    "@types/node": "^20.19.17",
-    "prettier": "^3.6.2",
-    "typescript": "^5.0.0",
-    "vite": "^5.0.0",
-    "vite-plugin-dts": "^3.0.0",
-    "vite-plugin-static-copy": "^3.1.1",
-    "vite-plugin-top-level-await": "^1.6.0",
-    "vite-plugin-wasm": "^3.0.0"
-  },
-  "dependencies": {
-    "@candypoets/rust-worker": "0.0.69",
-    "nostr-tools": "^2.0.0"
-  },
-  "engines": {
-    "node": ">=18.0.0"
-  }
+	"name": "@candypoets/nipworker",
+	"version": "0.0.75",
+	"description": "Nostr client library with worker-based architecture using Rust WASM",
+	"type": "module",
+	"module": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"import": "./dist/index.js",
+			"types": "./dist/index.d.ts"
+		},
+		"./hooks": {
+			"import": "./dist/hooks.js",
+			"types": "./dist/hooks.d.ts"
+		},
+		"./utils": {
+			"import": "./dist/utils.js",
+			"types": "./dist/utils.d.ts"
+		}
+	},
+	"files": [
+		"dist",
+		"README.md"
+	],
+	"scripts": {
+		"build": "npm run build:connections && npm run build:cache && npm run build:parser && vite build",
+		"build:connections": "wasm-pack build ./src/connections --release --target web",
+		"build:cache": "wasm-pack build ./src/cache --release --target web",
+		"build:parser": "wasm-pack build ./src/parser --release --target web",
+		"build:signer": "wasm-pack build ./src/signer --release --target web",
+		"flatc": "npm run flatc:rust && npm run flatc:ts",
+		"flatc:rust": "flatc --rust --gen-object-api --gen-all --filename-suffix '' -o ./src/shared/src/generated ./schemas/message.fbs",
+		"flatc:ts": "flatc --ts --gen-object-api --gen-all --filename-suffix '' -o ./src/generated ./schemas/message.fbs && node ./scripts/patch-strings.js",
+		"build:types": "tsc --emitDeclarationOnly --outDir dist",
+		"publish": "npm publish --access public",
+		"prepublishOnly": "npm run build"
+	},
+	"keywords": [
+		"nostr",
+		"protocol",
+		"web-worker",
+		"wasm",
+		"rust"
+	],
+	"author": "So Tachi <sotachi@proton.me>",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/candypoets/nipworker.git",
+		"directory": "packages/nipworker"
+	},
+	"bugs": {
+		"url": "https://github.com/candypoets/nipworker/issues"
+	},
+	"homepage": "https://github.com/candypoets/nipworker#readme",
+	"peerDependencies": {
+		"flatbuffers": "^25.2.10"
+	},
+	"devDependencies": {
+		"@types/node": "^20.19.17",
+		"prettier": "^3.6.2",
+		"typescript": "^5.0.0",
+		"vite": "^5.0.0",
+		"vite-plugin-dts": "^3.0.0",
+		"vite-plugin-static-copy": "^3.1.1",
+		"vite-plugin-top-level-await": "^1.6.0",
+		"vite-plugin-wasm": "^3.0.0"
+	},
+	"dependencies": {
+		"@candypoets/rust-worker": "0.0.69",
+		"nostr-tools": "^2.0.0"
+	},
+	"engines": {
+		"node": ">=18.0.0"
+	}
 }

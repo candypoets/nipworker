@@ -10,7 +10,7 @@ use rustc_hash::FxHashMap;
 use tracing::{debug, error, info, warn};
 
 // NEW: Imports for FlatBuffers
-use crate::generated::nostr::*;
+use shared::generated::nostr::*;
 
 pub struct Kind9321Parsed {
     pub id: String,

@@ -3,7 +3,7 @@ use crate::types::nostr::nips::nip19::{self, Nip19};
 use regex::Regex;
 use tracing::info;
 
-use crate::generated::nostr::fb;
+use shared::generated::nostr::fb;
 
 #[derive(Debug, Clone)]
 pub struct MediaItem {

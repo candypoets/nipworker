@@ -2,7 +2,7 @@ use rustc_hash::FxHashMap;
 
 use crate::types::nostr::Filter;
 
-use crate::generated::nostr::fb;
+use shared::generated::nostr::fb;
 
 #[derive(Default)]
 pub struct Request {

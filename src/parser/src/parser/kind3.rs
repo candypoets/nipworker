@@ -4,7 +4,7 @@ use crate::types::network::Request;
 use crate::types::nostr::Event;
 
 // NEW: Imports for FlatBuffers
-use crate::generated::nostr::*;
+use shared::generated::nostr::*;
 use crate::utils::relay::RelayUtils;
 
 pub struct Contact {

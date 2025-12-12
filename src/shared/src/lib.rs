@@ -1,3 +1,4 @@
+pub mod generated;
 pub mod sab_ring;
 pub mod telemetry;
 

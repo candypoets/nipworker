@@ -5,7 +5,7 @@ use crate::types::nostr::Event;
 use crate::utils::request_deduplication::RequestDeduplicator;
 
 // NEW: Imports for FlatBuffers
-use crate::generated::nostr::*;
+use shared::generated::nostr::*;
 
 pub enum ReactionType {
     Like,

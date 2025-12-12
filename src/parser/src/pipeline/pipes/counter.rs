@@ -1,4 +1,4 @@
-use crate::generated::nostr::fb;
+use shared::generated::nostr::fb;
 
 use super::super::*;
 use flatbuffers::FlatBufferBuilder;

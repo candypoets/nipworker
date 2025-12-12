@@ -12,7 +12,6 @@ use std::sync::Once;
 mod connection;
 mod connection_registry;
 mod fb_utils;
-mod generated;
 mod types;
 
 use connection_registry::ConnectionRegistry;

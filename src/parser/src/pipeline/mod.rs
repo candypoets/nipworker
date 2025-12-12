@@ -1,4 +1,4 @@
-use crate::generated::nostr::fb::{self};
+use shared::generated::nostr::fb::{self};
 use crate::parsed_event::ParsedEvent;
 use crate::parser::Parser;
 use crate::types::*;

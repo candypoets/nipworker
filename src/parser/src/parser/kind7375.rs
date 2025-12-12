@@ -9,7 +9,7 @@ use crate::{parser::Parser, Proof};
 use tracing::warn;
 
 // NEW: Imports for FlatBuffers
-use crate::generated::nostr::*;
+use shared::generated::nostr::*;
 
 pub struct Kind7375Parsed {
     pub mint_url: String,

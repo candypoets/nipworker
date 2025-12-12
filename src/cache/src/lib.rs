@@ -1,11 +1,11 @@
 #![allow(async_fn_in_trait)]
 
 use crate::db::NostrDB;
-use crate::generated::nostr::fb;
 use crate::utils::wrap_event_with_worker_message;
 use flatbuffers::FlatBufferBuilder;
 use gloo_timers::future::TimeoutFuture;
 use serde_json::{Map, Value};
+use shared::generated::nostr::fb;
 use shared::{init_with_component, SabRing};
 use tracing::{info, warn};
 use wasm_bindgen::prelude::*;
@@ -17,7 +17,6 @@ use std::rc::Rc;
 use std::sync::{Arc, Once};
 
 mod db;
-mod generated;
 mod utils;
 
 #[wasm_bindgen]

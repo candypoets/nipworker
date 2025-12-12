@@ -6,7 +6,7 @@ use crate::utils::json::BaseJsonParser;
 use std::fmt::Write;
 
 // NEW: Imports for FlatBuffers
-use crate::generated::nostr::*;
+use shared::generated::nostr::*;
 
 pub struct Kind39089Parsed {
     pub list_identifier: String,

@@ -10,7 +10,7 @@ use crate::utils::request_deduplication::RequestDeduplicator;
 use tracing::warn;
 
 // NEW: Imports for FlatBuffers
-use crate::generated::nostr::*;
+use shared::generated::nostr::*;
 
 pub struct Kind4Parsed {
     pub parsed_content: Vec<ContentBlock>,

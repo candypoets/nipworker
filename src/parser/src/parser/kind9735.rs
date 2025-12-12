@@ -9,7 +9,7 @@ use crate::utils::request_deduplication::RequestDeduplicator;
 use std::fmt::Write;
 
 // NEW: Imports for FlatBuffers
-use crate::generated::nostr::*;
+use shared::generated::nostr::*;
 
 /// ZapRequest for Nostr kind 9735 zap receipts
 #[derive(Debug, Clone)]
