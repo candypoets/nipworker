@@ -21,6 +21,7 @@ import { Kind7Parsed, Kind7ParsedT } from '../../nostr/fb/kind7-parsed.js';
 import { Kind9321Parsed, Kind9321ParsedT } from '../../nostr/fb/kind9321-parsed.js';
 import { Kind9735Parsed, Kind9735ParsedT } from '../../nostr/fb/kind9735-parsed.js';
 import { ListParsed, ListParsedT } from '../../nostr/fb/list-parsed.js';
+import { PreGenericParsed, PreGenericParsedT } from '../../nostr/fb/pre-generic-parsed.js';
 
 
 export enum ParsedData {
@@ -42,13 +43,14 @@ export enum ParsedData {
   Kind9321Parsed = 15,
   Kind9735Parsed = 16,
   Kind30023Parsed = 17,
-  ListParsed = 18
+  ListParsed = 18,
+  PreGenericParsed = 19
 }
 
 export function unionToParsedData(
   type: ParsedData,
-  accessor: (obj:Kind0Parsed|Kind10002Parsed|Kind10019Parsed|Kind17375Parsed|Kind17Parsed|Kind1Parsed|Kind30023Parsed|Kind39089Parsed|Kind3Parsed|Kind4Parsed|Kind6Parsed|Kind7374Parsed|Kind7375Parsed|Kind7376Parsed|Kind7Parsed|Kind9321Parsed|Kind9735Parsed|ListParsed) => Kind0Parsed|Kind10002Parsed|Kind10019Parsed|Kind17375Parsed|Kind17Parsed|Kind1Parsed|Kind30023Parsed|Kind39089Parsed|Kind3Parsed|Kind4Parsed|Kind6Parsed|Kind7374Parsed|Kind7375Parsed|Kind7376Parsed|Kind7Parsed|Kind9321Parsed|Kind9735Parsed|ListParsed|null
-): Kind0Parsed|Kind10002Parsed|Kind10019Parsed|Kind17375Parsed|Kind17Parsed|Kind1Parsed|Kind30023Parsed|Kind39089Parsed|Kind3Parsed|Kind4Parsed|Kind6Parsed|Kind7374Parsed|Kind7375Parsed|Kind7376Parsed|Kind7Parsed|Kind9321Parsed|Kind9735Parsed|ListParsed|null {
+  accessor: (obj:Kind0Parsed|Kind10002Parsed|Kind10019Parsed|Kind17375Parsed|Kind17Parsed|Kind1Parsed|Kind30023Parsed|Kind39089Parsed|Kind3Parsed|Kind4Parsed|Kind6Parsed|Kind7374Parsed|Kind7375Parsed|Kind7376Parsed|Kind7Parsed|Kind9321Parsed|Kind9735Parsed|ListParsed|PreGenericParsed) => Kind0Parsed|Kind10002Parsed|Kind10019Parsed|Kind17375Parsed|Kind17Parsed|Kind1Parsed|Kind30023Parsed|Kind39089Parsed|Kind3Parsed|Kind4Parsed|Kind6Parsed|Kind7374Parsed|Kind7375Parsed|Kind7376Parsed|Kind7Parsed|Kind9321Parsed|Kind9735Parsed|ListParsed|PreGenericParsed|null
+): Kind0Parsed|Kind10002Parsed|Kind10019Parsed|Kind17375Parsed|Kind17Parsed|Kind1Parsed|Kind30023Parsed|Kind39089Parsed|Kind3Parsed|Kind4Parsed|Kind6Parsed|Kind7374Parsed|Kind7375Parsed|Kind7376Parsed|Kind7Parsed|Kind9321Parsed|Kind9735Parsed|ListParsed|PreGenericParsed|null {
   switch(ParsedData[type]) {
     case 'NONE': return null; 
     case 'Kind0Parsed': return accessor(new Kind0Parsed())! as Kind0Parsed;
@@ -69,15 +71,16 @@ export function unionToParsedData(
     case 'Kind9735Parsed': return accessor(new Kind9735Parsed())! as Kind9735Parsed;
     case 'Kind30023Parsed': return accessor(new Kind30023Parsed())! as Kind30023Parsed;
     case 'ListParsed': return accessor(new ListParsed())! as ListParsed;
+    case 'PreGenericParsed': return accessor(new PreGenericParsed())! as PreGenericParsed;
     default: return null;
   }
 }
 
 export function unionListToParsedData(
   type: ParsedData, 
-  accessor: (index: number, obj:Kind0Parsed|Kind10002Parsed|Kind10019Parsed|Kind17375Parsed|Kind17Parsed|Kind1Parsed|Kind30023Parsed|Kind39089Parsed|Kind3Parsed|Kind4Parsed|Kind6Parsed|Kind7374Parsed|Kind7375Parsed|Kind7376Parsed|Kind7Parsed|Kind9321Parsed|Kind9735Parsed|ListParsed) => Kind0Parsed|Kind10002Parsed|Kind10019Parsed|Kind17375Parsed|Kind17Parsed|Kind1Parsed|Kind30023Parsed|Kind39089Parsed|Kind3Parsed|Kind4Parsed|Kind6Parsed|Kind7374Parsed|Kind7375Parsed|Kind7376Parsed|Kind7Parsed|Kind9321Parsed|Kind9735Parsed|ListParsed|null, 
+  accessor: (index: number, obj:Kind0Parsed|Kind10002Parsed|Kind10019Parsed|Kind17375Parsed|Kind17Parsed|Kind1Parsed|Kind30023Parsed|Kind39089Parsed|Kind3Parsed|Kind4Parsed|Kind6Parsed|Kind7374Parsed|Kind7375Parsed|Kind7376Parsed|Kind7Parsed|Kind9321Parsed|Kind9735Parsed|ListParsed|PreGenericParsed) => Kind0Parsed|Kind10002Parsed|Kind10019Parsed|Kind17375Parsed|Kind17Parsed|Kind1Parsed|Kind30023Parsed|Kind39089Parsed|Kind3Parsed|Kind4Parsed|Kind6Parsed|Kind7374Parsed|Kind7375Parsed|Kind7376Parsed|Kind7Parsed|Kind9321Parsed|Kind9735Parsed|ListParsed|PreGenericParsed|null, 
   index: number
-): Kind0Parsed|Kind10002Parsed|Kind10019Parsed|Kind17375Parsed|Kind17Parsed|Kind1Parsed|Kind30023Parsed|Kind39089Parsed|Kind3Parsed|Kind4Parsed|Kind6Parsed|Kind7374Parsed|Kind7375Parsed|Kind7376Parsed|Kind7Parsed|Kind9321Parsed|Kind9735Parsed|ListParsed|null {
+): Kind0Parsed|Kind10002Parsed|Kind10019Parsed|Kind17375Parsed|Kind17Parsed|Kind1Parsed|Kind30023Parsed|Kind39089Parsed|Kind3Parsed|Kind4Parsed|Kind6Parsed|Kind7374Parsed|Kind7375Parsed|Kind7376Parsed|Kind7Parsed|Kind9321Parsed|Kind9735Parsed|ListParsed|PreGenericParsed|null {
   switch(ParsedData[type]) {
     case 'NONE': return null; 
     case 'Kind0Parsed': return accessor(index, new Kind0Parsed())! as Kind0Parsed;
@@ -98,6 +101,7 @@ export function unionListToParsedData(
     case 'Kind9735Parsed': return accessor(index, new Kind9735Parsed())! as Kind9735Parsed;
     case 'Kind30023Parsed': return accessor(index, new Kind30023Parsed())! as Kind30023Parsed;
     case 'ListParsed': return accessor(index, new ListParsed())! as ListParsed;
+    case 'PreGenericParsed': return accessor(index, new PreGenericParsed())! as PreGenericParsed;
     default: return null;
   }
 }

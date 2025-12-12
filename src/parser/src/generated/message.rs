@@ -1570,10 +1570,10 @@ impl flatbuffers::SimpleToVerifyInSlice for MessageType {}
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_PARSED_DATA_UNION: u32 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MAX_PARSED_DATA_UNION: u32 = 51000;
+pub const ENUM_MAX_PARSED_DATA_UNION: u32 = 52000;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_PARSED_DATA_UNION: [ParsedDataUnion; 18] = [
+pub const ENUM_VALUES_PARSED_DATA_UNION: [ParsedDataUnion; 19] = [
   ParsedDataUnion::Kind0Parsed,
   ParsedDataUnion::Kind1Parsed,
   ParsedDataUnion::Kind3Parsed,
@@ -1592,6 +1592,7 @@ pub const ENUM_VALUES_PARSED_DATA_UNION: [ParsedDataUnion; 18] = [
   ParsedDataUnion::Kind30023Parsed,
   ParsedDataUnion::Kind39089Parsed,
   ParsedDataUnion::ListParsed,
+  ParsedDataUnion::PreGenericParsed,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -1617,9 +1618,10 @@ impl ParsedDataUnion {
   pub const Kind30023Parsed: Self = Self(30023);
   pub const Kind39089Parsed: Self = Self(39089);
   pub const ListParsed: Self = Self(51000);
+  pub const PreGenericParsed: Self = Self(52000);
 
   pub const ENUM_MIN: u32 = 0;
-  pub const ENUM_MAX: u32 = 51000;
+  pub const ENUM_MAX: u32 = 52000;
   pub const ENUM_VALUES: &'static [Self] = &[
     Self::Kind0Parsed,
     Self::Kind1Parsed,
@@ -1639,6 +1641,7 @@ impl ParsedDataUnion {
     Self::Kind30023Parsed,
     Self::Kind39089Parsed,
     Self::ListParsed,
+    Self::PreGenericParsed,
   ];
   /// Returns the variant's name or "" if unknown.
   pub fn variant_name(self) -> Option<&'static str> {
@@ -1661,6 +1664,7 @@ impl ParsedDataUnion {
       Self::Kind30023Parsed => Some("Kind30023Parsed"),
       Self::Kind39089Parsed => Some("Kind39089Parsed"),
       Self::ListParsed => Some("ListParsed"),
+      Self::PreGenericParsed => Some("PreGenericParsed"),
       _ => None,
     }
   }
@@ -1719,10 +1723,10 @@ impl flatbuffers::SimpleToVerifyInSlice for ParsedDataUnion {}
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_PARSED_DATA: u8 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MAX_PARSED_DATA: u8 = 18;
+pub const ENUM_MAX_PARSED_DATA: u8 = 19;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_PARSED_DATA: [ParsedData; 19] = [
+pub const ENUM_VALUES_PARSED_DATA: [ParsedData; 20] = [
   ParsedData::NONE,
   ParsedData::Kind0Parsed,
   ParsedData::Kind1Parsed,
@@ -1742,6 +1746,7 @@ pub const ENUM_VALUES_PARSED_DATA: [ParsedData; 19] = [
   ParsedData::Kind9735Parsed,
   ParsedData::Kind30023Parsed,
   ParsedData::ListParsed,
+  ParsedData::PreGenericParsed,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -1768,9 +1773,10 @@ impl ParsedData {
   pub const Kind9735Parsed: Self = Self(16);
   pub const Kind30023Parsed: Self = Self(17);
   pub const ListParsed: Self = Self(18);
+  pub const PreGenericParsed: Self = Self(19);
 
   pub const ENUM_MIN: u8 = 0;
-  pub const ENUM_MAX: u8 = 18;
+  pub const ENUM_MAX: u8 = 19;
   pub const ENUM_VALUES: &'static [Self] = &[
     Self::NONE,
     Self::Kind0Parsed,
@@ -1791,6 +1797,7 @@ impl ParsedData {
     Self::Kind9735Parsed,
     Self::Kind30023Parsed,
     Self::ListParsed,
+    Self::PreGenericParsed,
   ];
   /// Returns the variant's name or "" if unknown.
   pub fn variant_name(self) -> Option<&'static str> {
@@ -1814,6 +1821,7 @@ impl ParsedData {
       Self::Kind9735Parsed => Some("Kind9735Parsed"),
       Self::Kind30023Parsed => Some("Kind30023Parsed"),
       Self::ListParsed => Some("ListParsed"),
+      Self::PreGenericParsed => Some("PreGenericParsed"),
       _ => None,
     }
   }
@@ -1894,6 +1902,7 @@ pub enum ParsedDataT {
   Kind9735Parsed(Box<Kind9735ParsedT>),
   Kind30023Parsed(Box<Kind30023ParsedT>),
   ListParsed(Box<ListParsedT>),
+  PreGenericParsed(Box<PreGenericParsedT>),
 }
 impl Default for ParsedDataT {
   fn default() -> Self {
@@ -1922,6 +1931,7 @@ impl ParsedDataT {
       Self::Kind9735Parsed(_) => ParsedData::Kind9735Parsed,
       Self::Kind30023Parsed(_) => ParsedData::Kind30023Parsed,
       Self::ListParsed(_) => ParsedData::ListParsed,
+      Self::PreGenericParsed(_) => ParsedData::PreGenericParsed,
     }
   }
   pub fn pack<'b, A: flatbuffers::Allocator + 'b>(&self, fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>) -> Option<flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>> {
@@ -1945,6 +1955,7 @@ impl ParsedDataT {
       Self::Kind9735Parsed(v) => Some(v.pack(fbb).as_union_value()),
       Self::Kind30023Parsed(v) => Some(v.pack(fbb).as_union_value()),
       Self::ListParsed(v) => Some(v.pack(fbb).as_union_value()),
+      Self::PreGenericParsed(v) => Some(v.pack(fbb).as_union_value()),
     }
   }
   /// If the union variant matches, return the owned Kind0ParsedT, setting the union to NONE.
@@ -2324,6 +2335,27 @@ impl ParsedDataT {
   /// If the union variant matches, return a mutable reference to the ListParsedT.
   pub fn as_list_parsed_mut(&mut self) -> Option<&mut ListParsedT> {
     if let Self::ListParsed(v) = self { Some(v.as_mut()) } else { None }
+  }
+  /// If the union variant matches, return the owned PreGenericParsedT, setting the union to NONE.
+  pub fn take_pre_generic_parsed(&mut self) -> Option<Box<PreGenericParsedT>> {
+    if let Self::PreGenericParsed(_) = self {
+      let v = core::mem::replace(self, Self::NONE);
+      if let Self::PreGenericParsed(w) = v {
+        Some(w)
+      } else {
+        unreachable!()
+      }
+    } else {
+      None
+    }
+  }
+  /// If the union variant matches, return a reference to the PreGenericParsedT.
+  pub fn as_pre_generic_parsed(&self) -> Option<&PreGenericParsedT> {
+    if let Self::PreGenericParsed(v) = self { Some(v.as_ref()) } else { None }
+  }
+  /// If the union variant matches, return a mutable reference to the PreGenericParsedT.
+  pub fn as_pre_generic_parsed_mut(&mut self) -> Option<&mut PreGenericParsedT> {
+    if let Self::PreGenericParsed(v) = self { Some(v.as_mut()) } else { None }
   }
 }
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
@@ -16089,7 +16121,7 @@ impl<'a> ListParsed<'a> {
   pub const VT_LIST_KIND: flatbuffers::VOffsetT = 4;
   pub const VT_D: flatbuffers::VOffsetT = 6;
   pub const VT_TITLE: flatbuffers::VOffsetT = 8;
-  pub const VT_SUMMARY: flatbuffers::VOffsetT = 10;
+  pub const VT_DESCRIPTION: flatbuffers::VOffsetT = 10;
   pub const VT_IMAGE: flatbuffers::VOffsetT = 12;
   pub const VT_TOPICS: flatbuffers::VOffsetT = 14;
   pub const VT_PEOPLE: flatbuffers::VOffsetT = 16;
@@ -16111,7 +16143,7 @@ impl<'a> ListParsed<'a> {
     if let Some(x) = args.people { builder.add_people(x); }
     if let Some(x) = args.topics { builder.add_topics(x); }
     if let Some(x) = args.image { builder.add_image(x); }
-    if let Some(x) = args.summary { builder.add_summary(x); }
+    if let Some(x) = args.description { builder.add_description(x); }
     if let Some(x) = args.title { builder.add_title(x); }
     if let Some(x) = args.d { builder.add_d(x); }
     builder.add_list_kind(args.list_kind);
@@ -16126,7 +16158,7 @@ impl<'a> ListParsed<'a> {
     let title = self.title().map(|x| {
       x.to_string()
     });
-    let summary = self.summary().map(|x| {
+    let description = self.description().map(|x| {
       x.to_string()
     });
     let image = self.image().map(|x| {
@@ -16148,7 +16180,7 @@ impl<'a> ListParsed<'a> {
       list_kind,
       d,
       title,
-      summary,
+      description,
       image,
       topics,
       people,
@@ -16179,11 +16211,11 @@ impl<'a> ListParsed<'a> {
     unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(ListParsed::VT_TITLE, None)}
   }
   #[inline]
-  pub fn summary(&self) -> Option<&'a str> {
+  pub fn description(&self) -> Option<&'a str> {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(ListParsed::VT_SUMMARY, None)}
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(ListParsed::VT_DESCRIPTION, None)}
   }
   #[inline]
   pub fn image(&self) -> Option<&'a str> {
@@ -16232,7 +16264,7 @@ impl flatbuffers::Verifiable for ListParsed<'_> {
      .visit_field::<u16>("list_kind", Self::VT_LIST_KIND, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("d", Self::VT_D, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("title", Self::VT_TITLE, false)?
-     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("summary", Self::VT_SUMMARY, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("description", Self::VT_DESCRIPTION, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("image", Self::VT_IMAGE, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("topics", Self::VT_TOPICS, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("people", Self::VT_PEOPLE, false)?
@@ -16246,7 +16278,7 @@ pub struct ListParsedArgs<'a> {
     pub list_kind: u16,
     pub d: Option<flatbuffers::WIPOffset<&'a str>>,
     pub title: Option<flatbuffers::WIPOffset<&'a str>>,
-    pub summary: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub description: Option<flatbuffers::WIPOffset<&'a str>>,
     pub image: Option<flatbuffers::WIPOffset<&'a str>>,
     pub topics: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>,
     pub people: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>,
@@ -16260,7 +16292,7 @@ impl<'a> Default for ListParsedArgs<'a> {
       list_kind: 0,
       d: None,
       title: None,
-      summary: None,
+      description: None,
       image: None,
       topics: None,
       people: None,
@@ -16288,8 +16320,8 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> ListParsedBuilder<'a, 'b, A> {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(ListParsed::VT_TITLE, title);
   }
   #[inline]
-  pub fn add_summary(&mut self, summary: flatbuffers::WIPOffset<&'b  str>) {
-    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(ListParsed::VT_SUMMARY, summary);
+  pub fn add_description(&mut self, description: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(ListParsed::VT_DESCRIPTION, description);
   }
   #[inline]
   pub fn add_image(&mut self, image: flatbuffers::WIPOffset<&'b  str>) {
@@ -16332,7 +16364,7 @@ impl core::fmt::Debug for ListParsed<'_> {
       ds.field("list_kind", &self.list_kind());
       ds.field("d", &self.d());
       ds.field("title", &self.title());
-      ds.field("summary", &self.summary());
+      ds.field("description", &self.description());
       ds.field("image", &self.image());
       ds.field("topics", &self.topics());
       ds.field("people", &self.people());
@@ -16347,7 +16379,7 @@ pub struct ListParsedT {
   pub list_kind: u16,
   pub d: Option<String>,
   pub title: Option<String>,
-  pub summary: Option<String>,
+  pub description: Option<String>,
   pub image: Option<String>,
   pub topics: Option<Vec<String>>,
   pub people: Option<Vec<String>>,
@@ -16360,7 +16392,7 @@ impl Default for ListParsedT {
       list_kind: 0,
       d: None,
       title: None,
-      summary: None,
+      description: None,
       image: None,
       topics: None,
       people: None,
@@ -16381,7 +16413,7 @@ impl ListParsedT {
     let title = self.title.as_ref().map(|x|{
       _fbb.create_string(x)
     });
-    let summary = self.summary.as_ref().map(|x|{
+    let description = self.description.as_ref().map(|x|{
       _fbb.create_string(x)
     });
     let image = self.image.as_ref().map(|x|{
@@ -16403,10 +16435,1088 @@ impl ListParsedT {
       list_kind,
       d,
       title,
-      summary,
+      description,
       image,
       topics,
       people,
+      events,
+      addresses,
+    })
+  }
+}
+pub enum PreParticipantOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct PreParticipant<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for PreParticipant<'a> {
+  type Inner = PreParticipant<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> PreParticipant<'a> {
+  pub const VT_PUBKEY: flatbuffers::VOffsetT = 4;
+  pub const VT_RELAY: flatbuffers::VOffsetT = 6;
+  pub const VT_ROLE: flatbuffers::VOffsetT = 8;
+  pub const VT_PROOF: flatbuffers::VOffsetT = 10;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    PreParticipant { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args PreParticipantArgs<'args>
+  ) -> flatbuffers::WIPOffset<PreParticipant<'bldr>> {
+    let mut builder = PreParticipantBuilder::new(_fbb);
+    if let Some(x) = args.proof { builder.add_proof(x); }
+    if let Some(x) = args.role { builder.add_role(x); }
+    if let Some(x) = args.relay { builder.add_relay(x); }
+    if let Some(x) = args.pubkey { builder.add_pubkey(x); }
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> PreParticipantT {
+    let pubkey = {
+      let x = self.pubkey();
+      x.to_string()
+    };
+    let relay = self.relay().map(|x| {
+      x.to_string()
+    });
+    let role = self.role().map(|x| {
+      x.to_string()
+    });
+    let proof = self.proof().map(|x| {
+      x.to_string()
+    });
+    PreParticipantT {
+      pubkey,
+      relay,
+      role,
+      proof,
+    }
+  }
+
+  #[inline]
+  pub fn pubkey(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(PreParticipant::VT_PUBKEY, None).unwrap()}
+  }
+  #[inline]
+  pub fn relay(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(PreParticipant::VT_RELAY, None)}
+  }
+  #[inline]
+  pub fn role(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(PreParticipant::VT_ROLE, None)}
+  }
+  #[inline]
+  pub fn proof(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(PreParticipant::VT_PROOF, None)}
+  }
+}
+
+impl flatbuffers::Verifiable for PreParticipant<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("pubkey", Self::VT_PUBKEY, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("relay", Self::VT_RELAY, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("role", Self::VT_ROLE, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("proof", Self::VT_PROOF, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct PreParticipantArgs<'a> {
+    pub pubkey: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub relay: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub role: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub proof: Option<flatbuffers::WIPOffset<&'a str>>,
+}
+impl<'a> Default for PreParticipantArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    PreParticipantArgs {
+      pubkey: None, // required field
+      relay: None,
+      role: None,
+      proof: None,
+    }
+  }
+}
+
+pub struct PreParticipantBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> PreParticipantBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_pubkey(&mut self, pubkey: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(PreParticipant::VT_PUBKEY, pubkey);
+  }
+  #[inline]
+  pub fn add_relay(&mut self, relay: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(PreParticipant::VT_RELAY, relay);
+  }
+  #[inline]
+  pub fn add_role(&mut self, role: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(PreParticipant::VT_ROLE, role);
+  }
+  #[inline]
+  pub fn add_proof(&mut self, proof: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(PreParticipant::VT_PROOF, proof);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> PreParticipantBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    PreParticipantBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<PreParticipant<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, PreParticipant::VT_PUBKEY,"pubkey");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for PreParticipant<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("PreParticipant");
+      ds.field("pubkey", &self.pubkey());
+      ds.field("relay", &self.relay());
+      ds.field("role", &self.role());
+      ds.field("proof", &self.proof());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct PreParticipantT {
+  pub pubkey: String,
+  pub relay: Option<String>,
+  pub role: Option<String>,
+  pub proof: Option<String>,
+}
+impl Default for PreParticipantT {
+  fn default() -> Self {
+    Self {
+      pubkey: "".to_string(),
+      relay: None,
+      role: None,
+      proof: None,
+    }
+  }
+}
+impl PreParticipantT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<PreParticipant<'b>> {
+    let pubkey = Some({
+      let x = &self.pubkey;
+      _fbb.create_string(x)
+    });
+    let relay = self.relay.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let role = self.role.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let proof = self.proof.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    PreParticipant::create(_fbb, &PreParticipantArgs{
+      pubkey,
+      relay,
+      role,
+      proof,
+    })
+  }
+}
+pub enum PreRefEventOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct PreRefEvent<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for PreRefEvent<'a> {
+  type Inner = PreRefEvent<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> PreRefEvent<'a> {
+  pub const VT_ID: flatbuffers::VOffsetT = 4;
+  pub const VT_RELAY: flatbuffers::VOffsetT = 6;
+  pub const VT_MARKER: flatbuffers::VOffsetT = 8;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    PreRefEvent { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args PreRefEventArgs<'args>
+  ) -> flatbuffers::WIPOffset<PreRefEvent<'bldr>> {
+    let mut builder = PreRefEventBuilder::new(_fbb);
+    if let Some(x) = args.marker { builder.add_marker(x); }
+    if let Some(x) = args.relay { builder.add_relay(x); }
+    if let Some(x) = args.id { builder.add_id(x); }
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> PreRefEventT {
+    let id = {
+      let x = self.id();
+      x.to_string()
+    };
+    let relay = self.relay().map(|x| {
+      x.to_string()
+    });
+    let marker = self.marker().map(|x| {
+      x.to_string()
+    });
+    PreRefEventT {
+      id,
+      relay,
+      marker,
+    }
+  }
+
+  #[inline]
+  pub fn id(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(PreRefEvent::VT_ID, None).unwrap()}
+  }
+  #[inline]
+  pub fn relay(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(PreRefEvent::VT_RELAY, None)}
+  }
+  #[inline]
+  pub fn marker(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(PreRefEvent::VT_MARKER, None)}
+  }
+}
+
+impl flatbuffers::Verifiable for PreRefEvent<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("id", Self::VT_ID, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("relay", Self::VT_RELAY, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("marker", Self::VT_MARKER, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct PreRefEventArgs<'a> {
+    pub id: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub relay: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub marker: Option<flatbuffers::WIPOffset<&'a str>>,
+}
+impl<'a> Default for PreRefEventArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    PreRefEventArgs {
+      id: None, // required field
+      relay: None,
+      marker: None,
+    }
+  }
+}
+
+pub struct PreRefEventBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> PreRefEventBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_id(&mut self, id: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(PreRefEvent::VT_ID, id);
+  }
+  #[inline]
+  pub fn add_relay(&mut self, relay: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(PreRefEvent::VT_RELAY, relay);
+  }
+  #[inline]
+  pub fn add_marker(&mut self, marker: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(PreRefEvent::VT_MARKER, marker);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> PreRefEventBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    PreRefEventBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<PreRefEvent<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, PreRefEvent::VT_ID,"id");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for PreRefEvent<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("PreRefEvent");
+      ds.field("id", &self.id());
+      ds.field("relay", &self.relay());
+      ds.field("marker", &self.marker());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct PreRefEventT {
+  pub id: String,
+  pub relay: Option<String>,
+  pub marker: Option<String>,
+}
+impl Default for PreRefEventT {
+  fn default() -> Self {
+    Self {
+      id: "".to_string(),
+      relay: None,
+      marker: None,
+    }
+  }
+}
+impl PreRefEventT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<PreRefEvent<'b>> {
+    let id = Some({
+      let x = &self.id;
+      _fbb.create_string(x)
+    });
+    let relay = self.relay.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let marker = self.marker.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    PreRefEvent::create(_fbb, &PreRefEventArgs{
+      id,
+      relay,
+      marker,
+    })
+  }
+}
+pub enum PreGenericParsedOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct PreGenericParsed<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for PreGenericParsed<'a> {
+  type Inner = PreGenericParsed<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> PreGenericParsed<'a> {
+  pub const VT_KIND: flatbuffers::VOffsetT = 4;
+  pub const VT_D: flatbuffers::VOffsetT = 6;
+  pub const VT_TITLE: flatbuffers::VOffsetT = 8;
+  pub const VT_DESCRIPTION: flatbuffers::VOffsetT = 10;
+  pub const VT_IMAGE: flatbuffers::VOffsetT = 12;
+  pub const VT_STREAMING: flatbuffers::VOffsetT = 14;
+  pub const VT_RECORDING: flatbuffers::VOffsetT = 16;
+  pub const VT_SERVICE: flatbuffers::VOffsetT = 18;
+  pub const VT_ENDPOINT: flatbuffers::VOffsetT = 20;
+  pub const VT_ROOM: flatbuffers::VOffsetT = 22;
+  pub const VT_STATUS: flatbuffers::VOffsetT = 24;
+  pub const VT_STARTS: flatbuffers::VOffsetT = 26;
+  pub const VT_ENDS: flatbuffers::VOffsetT = 28;
+  pub const VT_CURRENT_PARTICIPANTS: flatbuffers::VOffsetT = 30;
+  pub const VT_TOTAL_PARTICIPANTS: flatbuffers::VOffsetT = 32;
+  pub const VT_PINNED: flatbuffers::VOffsetT = 34;
+  pub const VT_TOPICS: flatbuffers::VOffsetT = 36;
+  pub const VT_LINKS: flatbuffers::VOffsetT = 38;
+  pub const VT_RELAYS: flatbuffers::VOffsetT = 40;
+  pub const VT_PARTICIPANTS: flatbuffers::VOffsetT = 42;
+  pub const VT_EVENTS: flatbuffers::VOffsetT = 44;
+  pub const VT_ADDRESSES: flatbuffers::VOffsetT = 46;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    PreGenericParsed { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args PreGenericParsedArgs<'args>
+  ) -> flatbuffers::WIPOffset<PreGenericParsed<'bldr>> {
+    let mut builder = PreGenericParsedBuilder::new(_fbb);
+    builder.add_total_participants(args.total_participants);
+    builder.add_current_participants(args.current_participants);
+    builder.add_ends(args.ends);
+    builder.add_starts(args.starts);
+    if let Some(x) = args.addresses { builder.add_addresses(x); }
+    if let Some(x) = args.events { builder.add_events(x); }
+    if let Some(x) = args.participants { builder.add_participants(x); }
+    if let Some(x) = args.relays { builder.add_relays(x); }
+    if let Some(x) = args.links { builder.add_links(x); }
+    if let Some(x) = args.topics { builder.add_topics(x); }
+    if let Some(x) = args.pinned { builder.add_pinned(x); }
+    if let Some(x) = args.status { builder.add_status(x); }
+    if let Some(x) = args.room { builder.add_room(x); }
+    if let Some(x) = args.endpoint { builder.add_endpoint(x); }
+    if let Some(x) = args.service { builder.add_service(x); }
+    if let Some(x) = args.recording { builder.add_recording(x); }
+    if let Some(x) = args.streaming { builder.add_streaming(x); }
+    if let Some(x) = args.image { builder.add_image(x); }
+    if let Some(x) = args.description { builder.add_description(x); }
+    if let Some(x) = args.title { builder.add_title(x); }
+    if let Some(x) = args.d { builder.add_d(x); }
+    builder.add_kind(args.kind);
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> PreGenericParsedT {
+    let kind = self.kind();
+    let d = self.d().map(|x| {
+      x.to_string()
+    });
+    let title = self.title().map(|x| {
+      x.to_string()
+    });
+    let description = self.description().map(|x| {
+      x.to_string()
+    });
+    let image = self.image().map(|x| {
+      x.to_string()
+    });
+    let streaming = self.streaming().map(|x| {
+      x.to_string()
+    });
+    let recording = self.recording().map(|x| {
+      x.to_string()
+    });
+    let service = self.service().map(|x| {
+      x.to_string()
+    });
+    let endpoint = self.endpoint().map(|x| {
+      x.to_string()
+    });
+    let room = self.room().map(|x| {
+      x.to_string()
+    });
+    let status = self.status().map(|x| {
+      x.to_string()
+    });
+    let starts = self.starts();
+    let ends = self.ends();
+    let current_participants = self.current_participants();
+    let total_participants = self.total_participants();
+    let pinned = self.pinned().map(|x| {
+      x.to_string()
+    });
+    let topics = self.topics().map(|x| {
+      x.iter().map(|s| s.to_string()).collect()
+    });
+    let links = self.links().map(|x| {
+      x.iter().map(|s| s.to_string()).collect()
+    });
+    let relays = self.relays().map(|x| {
+      x.iter().map(|s| s.to_string()).collect()
+    });
+    let participants = self.participants().map(|x| {
+      x.iter().map(|t| t.unpack()).collect()
+    });
+    let events = self.events().map(|x| {
+      x.iter().map(|t| t.unpack()).collect()
+    });
+    let addresses = self.addresses().map(|x| {
+      x.iter().map(|t| t.unpack()).collect()
+    });
+    PreGenericParsedT {
+      kind,
+      d,
+      title,
+      description,
+      image,
+      streaming,
+      recording,
+      service,
+      endpoint,
+      room,
+      status,
+      starts,
+      ends,
+      current_participants,
+      total_participants,
+      pinned,
+      topics,
+      links,
+      relays,
+      participants,
+      events,
+      addresses,
+    }
+  }
+
+  #[inline]
+  pub fn kind(&self) -> u16 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u16>(PreGenericParsed::VT_KIND, Some(0)).unwrap()}
+  }
+  #[inline]
+  pub fn d(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(PreGenericParsed::VT_D, None)}
+  }
+  #[inline]
+  pub fn title(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(PreGenericParsed::VT_TITLE, None)}
+  }
+  #[inline]
+  pub fn description(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(PreGenericParsed::VT_DESCRIPTION, None)}
+  }
+  #[inline]
+  pub fn image(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(PreGenericParsed::VT_IMAGE, None)}
+  }
+  #[inline]
+  pub fn streaming(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(PreGenericParsed::VT_STREAMING, None)}
+  }
+  #[inline]
+  pub fn recording(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(PreGenericParsed::VT_RECORDING, None)}
+  }
+  #[inline]
+  pub fn service(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(PreGenericParsed::VT_SERVICE, None)}
+  }
+  #[inline]
+  pub fn endpoint(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(PreGenericParsed::VT_ENDPOINT, None)}
+  }
+  #[inline]
+  pub fn room(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(PreGenericParsed::VT_ROOM, None)}
+  }
+  #[inline]
+  pub fn status(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(PreGenericParsed::VT_STATUS, None)}
+  }
+  #[inline]
+  pub fn starts(&self) -> u64 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u64>(PreGenericParsed::VT_STARTS, Some(0)).unwrap()}
+  }
+  #[inline]
+  pub fn ends(&self) -> u64 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u64>(PreGenericParsed::VT_ENDS, Some(0)).unwrap()}
+  }
+  #[inline]
+  pub fn current_participants(&self) -> u64 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u64>(PreGenericParsed::VT_CURRENT_PARTICIPANTS, Some(0)).unwrap()}
+  }
+  #[inline]
+  pub fn total_participants(&self) -> u64 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u64>(PreGenericParsed::VT_TOTAL_PARTICIPANTS, Some(0)).unwrap()}
+  }
+  #[inline]
+  pub fn pinned(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(PreGenericParsed::VT_PINNED, None)}
+  }
+  #[inline]
+  pub fn topics(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>(PreGenericParsed::VT_TOPICS, None)}
+  }
+  #[inline]
+  pub fn links(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>(PreGenericParsed::VT_LINKS, None)}
+  }
+  #[inline]
+  pub fn relays(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>(PreGenericParsed::VT_RELAYS, None)}
+  }
+  #[inline]
+  pub fn participants(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<PreParticipant<'a>>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<PreParticipant>>>>(PreGenericParsed::VT_PARTICIPANTS, None)}
+  }
+  #[inline]
+  pub fn events(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<PreRefEvent<'a>>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<PreRefEvent>>>>(PreGenericParsed::VT_EVENTS, None)}
+  }
+  #[inline]
+  pub fn addresses(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Coordinate<'a>>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Coordinate>>>>(PreGenericParsed::VT_ADDRESSES, None)}
+  }
+}
+
+impl flatbuffers::Verifiable for PreGenericParsed<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<u16>("kind", Self::VT_KIND, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("d", Self::VT_D, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("title", Self::VT_TITLE, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("description", Self::VT_DESCRIPTION, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("image", Self::VT_IMAGE, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("streaming", Self::VT_STREAMING, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("recording", Self::VT_RECORDING, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("service", Self::VT_SERVICE, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("endpoint", Self::VT_ENDPOINT, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("room", Self::VT_ROOM, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("status", Self::VT_STATUS, false)?
+     .visit_field::<u64>("starts", Self::VT_STARTS, false)?
+     .visit_field::<u64>("ends", Self::VT_ENDS, false)?
+     .visit_field::<u64>("current_participants", Self::VT_CURRENT_PARTICIPANTS, false)?
+     .visit_field::<u64>("total_participants", Self::VT_TOTAL_PARTICIPANTS, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("pinned", Self::VT_PINNED, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("topics", Self::VT_TOPICS, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("links", Self::VT_LINKS, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("relays", Self::VT_RELAYS, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<PreParticipant>>>>("participants", Self::VT_PARTICIPANTS, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<PreRefEvent>>>>("events", Self::VT_EVENTS, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<Coordinate>>>>("addresses", Self::VT_ADDRESSES, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct PreGenericParsedArgs<'a> {
+    pub kind: u16,
+    pub d: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub title: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub description: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub image: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub streaming: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub recording: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub service: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub endpoint: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub room: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub status: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub starts: u64,
+    pub ends: u64,
+    pub current_participants: u64,
+    pub total_participants: u64,
+    pub pinned: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub topics: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>,
+    pub links: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>,
+    pub relays: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>,
+    pub participants: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<PreParticipant<'a>>>>>,
+    pub events: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<PreRefEvent<'a>>>>>,
+    pub addresses: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Coordinate<'a>>>>>,
+}
+impl<'a> Default for PreGenericParsedArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    PreGenericParsedArgs {
+      kind: 0,
+      d: None,
+      title: None,
+      description: None,
+      image: None,
+      streaming: None,
+      recording: None,
+      service: None,
+      endpoint: None,
+      room: None,
+      status: None,
+      starts: 0,
+      ends: 0,
+      current_participants: 0,
+      total_participants: 0,
+      pinned: None,
+      topics: None,
+      links: None,
+      relays: None,
+      participants: None,
+      events: None,
+      addresses: None,
+    }
+  }
+}
+
+pub struct PreGenericParsedBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> PreGenericParsedBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_kind(&mut self, kind: u16) {
+    self.fbb_.push_slot::<u16>(PreGenericParsed::VT_KIND, kind, 0);
+  }
+  #[inline]
+  pub fn add_d(&mut self, d: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(PreGenericParsed::VT_D, d);
+  }
+  #[inline]
+  pub fn add_title(&mut self, title: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(PreGenericParsed::VT_TITLE, title);
+  }
+  #[inline]
+  pub fn add_description(&mut self, description: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(PreGenericParsed::VT_DESCRIPTION, description);
+  }
+  #[inline]
+  pub fn add_image(&mut self, image: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(PreGenericParsed::VT_IMAGE, image);
+  }
+  #[inline]
+  pub fn add_streaming(&mut self, streaming: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(PreGenericParsed::VT_STREAMING, streaming);
+  }
+  #[inline]
+  pub fn add_recording(&mut self, recording: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(PreGenericParsed::VT_RECORDING, recording);
+  }
+  #[inline]
+  pub fn add_service(&mut self, service: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(PreGenericParsed::VT_SERVICE, service);
+  }
+  #[inline]
+  pub fn add_endpoint(&mut self, endpoint: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(PreGenericParsed::VT_ENDPOINT, endpoint);
+  }
+  #[inline]
+  pub fn add_room(&mut self, room: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(PreGenericParsed::VT_ROOM, room);
+  }
+  #[inline]
+  pub fn add_status(&mut self, status: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(PreGenericParsed::VT_STATUS, status);
+  }
+  #[inline]
+  pub fn add_starts(&mut self, starts: u64) {
+    self.fbb_.push_slot::<u64>(PreGenericParsed::VT_STARTS, starts, 0);
+  }
+  #[inline]
+  pub fn add_ends(&mut self, ends: u64) {
+    self.fbb_.push_slot::<u64>(PreGenericParsed::VT_ENDS, ends, 0);
+  }
+  #[inline]
+  pub fn add_current_participants(&mut self, current_participants: u64) {
+    self.fbb_.push_slot::<u64>(PreGenericParsed::VT_CURRENT_PARTICIPANTS, current_participants, 0);
+  }
+  #[inline]
+  pub fn add_total_participants(&mut self, total_participants: u64) {
+    self.fbb_.push_slot::<u64>(PreGenericParsed::VT_TOTAL_PARTICIPANTS, total_participants, 0);
+  }
+  #[inline]
+  pub fn add_pinned(&mut self, pinned: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(PreGenericParsed::VT_PINNED, pinned);
+  }
+  #[inline]
+  pub fn add_topics(&mut self, topics: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<&'b  str>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(PreGenericParsed::VT_TOPICS, topics);
+  }
+  #[inline]
+  pub fn add_links(&mut self, links: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<&'b  str>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(PreGenericParsed::VT_LINKS, links);
+  }
+  #[inline]
+  pub fn add_relays(&mut self, relays: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<&'b  str>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(PreGenericParsed::VT_RELAYS, relays);
+  }
+  #[inline]
+  pub fn add_participants(&mut self, participants: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<PreParticipant<'b >>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(PreGenericParsed::VT_PARTICIPANTS, participants);
+  }
+  #[inline]
+  pub fn add_events(&mut self, events: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<PreRefEvent<'b >>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(PreGenericParsed::VT_EVENTS, events);
+  }
+  #[inline]
+  pub fn add_addresses(&mut self, addresses: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<Coordinate<'b >>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(PreGenericParsed::VT_ADDRESSES, addresses);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> PreGenericParsedBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    PreGenericParsedBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<PreGenericParsed<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for PreGenericParsed<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("PreGenericParsed");
+      ds.field("kind", &self.kind());
+      ds.field("d", &self.d());
+      ds.field("title", &self.title());
+      ds.field("description", &self.description());
+      ds.field("image", &self.image());
+      ds.field("streaming", &self.streaming());
+      ds.field("recording", &self.recording());
+      ds.field("service", &self.service());
+      ds.field("endpoint", &self.endpoint());
+      ds.field("room", &self.room());
+      ds.field("status", &self.status());
+      ds.field("starts", &self.starts());
+      ds.field("ends", &self.ends());
+      ds.field("current_participants", &self.current_participants());
+      ds.field("total_participants", &self.total_participants());
+      ds.field("pinned", &self.pinned());
+      ds.field("topics", &self.topics());
+      ds.field("links", &self.links());
+      ds.field("relays", &self.relays());
+      ds.field("participants", &self.participants());
+      ds.field("events", &self.events());
+      ds.field("addresses", &self.addresses());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct PreGenericParsedT {
+  pub kind: u16,
+  pub d: Option<String>,
+  pub title: Option<String>,
+  pub description: Option<String>,
+  pub image: Option<String>,
+  pub streaming: Option<String>,
+  pub recording: Option<String>,
+  pub service: Option<String>,
+  pub endpoint: Option<String>,
+  pub room: Option<String>,
+  pub status: Option<String>,
+  pub starts: u64,
+  pub ends: u64,
+  pub current_participants: u64,
+  pub total_participants: u64,
+  pub pinned: Option<String>,
+  pub topics: Option<Vec<String>>,
+  pub links: Option<Vec<String>>,
+  pub relays: Option<Vec<String>>,
+  pub participants: Option<Vec<PreParticipantT>>,
+  pub events: Option<Vec<PreRefEventT>>,
+  pub addresses: Option<Vec<CoordinateT>>,
+}
+impl Default for PreGenericParsedT {
+  fn default() -> Self {
+    Self {
+      kind: 0,
+      d: None,
+      title: None,
+      description: None,
+      image: None,
+      streaming: None,
+      recording: None,
+      service: None,
+      endpoint: None,
+      room: None,
+      status: None,
+      starts: 0,
+      ends: 0,
+      current_participants: 0,
+      total_participants: 0,
+      pinned: None,
+      topics: None,
+      links: None,
+      relays: None,
+      participants: None,
+      events: None,
+      addresses: None,
+    }
+  }
+}
+impl PreGenericParsedT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<PreGenericParsed<'b>> {
+    let kind = self.kind;
+    let d = self.d.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let title = self.title.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let description = self.description.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let image = self.image.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let streaming = self.streaming.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let recording = self.recording.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let service = self.service.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let endpoint = self.endpoint.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let room = self.room.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let status = self.status.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let starts = self.starts;
+    let ends = self.ends;
+    let current_participants = self.current_participants;
+    let total_participants = self.total_participants;
+    let pinned = self.pinned.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let topics = self.topics.as_ref().map(|x|{
+      let w: Vec<_> = x.iter().map(|s| _fbb.create_string(s)).collect();_fbb.create_vector(&w)
+    });
+    let links = self.links.as_ref().map(|x|{
+      let w: Vec<_> = x.iter().map(|s| _fbb.create_string(s)).collect();_fbb.create_vector(&w)
+    });
+    let relays = self.relays.as_ref().map(|x|{
+      let w: Vec<_> = x.iter().map(|s| _fbb.create_string(s)).collect();_fbb.create_vector(&w)
+    });
+    let participants = self.participants.as_ref().map(|x|{
+      let w: Vec<_> = x.iter().map(|t| t.pack(_fbb)).collect();_fbb.create_vector(&w)
+    });
+    let events = self.events.as_ref().map(|x|{
+      let w: Vec<_> = x.iter().map(|t| t.pack(_fbb)).collect();_fbb.create_vector(&w)
+    });
+    let addresses = self.addresses.as_ref().map(|x|{
+      let w: Vec<_> = x.iter().map(|t| t.pack(_fbb)).collect();_fbb.create_vector(&w)
+    });
+    PreGenericParsed::create(_fbb, &PreGenericParsedArgs{
+      kind,
+      d,
+      title,
+      description,
+      image,
+      streaming,
+      recording,
+      service,
+      endpoint,
+      room,
+      status,
+      starts,
+      ends,
+      current_participants,
+      total_participants,
+      pinned,
+      topics,
+      links,
+      relays,
+      participants,
       events,
       addresses,
     })
@@ -16561,6 +17671,11 @@ impl<'a> ParsedEvent<'a> {
       ParsedData::ListParsed => ParsedDataT::ListParsed(Box::new(
         self.parsed_as_list_parsed()
             .expect("Invalid union table, expected `ParsedData::ListParsed`.")
+            .unpack()
+      )),
+      ParsedData::PreGenericParsed => ParsedDataT::PreGenericParsed(Box::new(
+        self.parsed_as_pre_generic_parsed()
+            .expect("Invalid union table, expected `ParsedData::PreGenericParsed`.")
             .unpack()
       )),
       _ => ParsedDataT::NONE,
@@ -16920,6 +18035,21 @@ impl<'a> ParsedEvent<'a> {
     }
   }
 
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn parsed_as_pre_generic_parsed(&self) -> Option<PreGenericParsed<'a>> {
+    if self.parsed_type() == ParsedData::PreGenericParsed {
+      self.parsed().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { PreGenericParsed::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
 }
 
 impl flatbuffers::Verifiable for ParsedEvent<'_> {
@@ -16953,6 +18083,7 @@ impl flatbuffers::Verifiable for ParsedEvent<'_> {
           ParsedData::Kind9735Parsed => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Kind9735Parsed>>("ParsedData::Kind9735Parsed", pos),
           ParsedData::Kind30023Parsed => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Kind30023Parsed>>("ParsedData::Kind30023Parsed", pos),
           ParsedData::ListParsed => v.verify_union_variant::<flatbuffers::ForwardsUOffset<ListParsed>>("ParsedData::ListParsed", pos),
+          ParsedData::PreGenericParsed => v.verify_union_variant::<flatbuffers::ForwardsUOffset<PreGenericParsed>>("ParsedData::PreGenericParsed", pos),
           _ => Ok(()),
         }
      })?
@@ -17180,6 +18311,13 @@ impl core::fmt::Debug for ParsedEvent<'_> {
         },
         ParsedData::ListParsed => {
           if let Some(x) = self.parsed_as_list_parsed() {
+            ds.field("parsed", &x)
+          } else {
+            ds.field("parsed", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        ParsedData::PreGenericParsed => {
+          if let Some(x) = self.parsed_as_pre_generic_parsed() {
             ds.field("parsed", &x)
           } else {
             ds.field("parsed", &"InvalidFlatbuffer: Union discriminant does not match value.")

@@ -1,4 +1,5 @@
-use crate::parser::kind_list::ListParsed;
+use crate::parser::nip51::ListParsed;
+use crate::parser::pre_generic::PreGenericParsed;
 use crate::parser::Kind30023Parsed;
 use crate::types::nostr::Event;
 
@@ -31,6 +32,7 @@ pub enum ParsedData {
     Kind17375(Kind17375Parsed),
     Kind30023(Kind30023Parsed),
     List(ListParsed),
+    PreGeneric(PreGenericParsed),
     Kind39089(crate::parser::Kind39089Parsed),
 }
 
@@ -114,8 +116,12 @@ impl ParsedData {
                 Ok((fb::ParsedData::Kind30023Parsed, offset.as_union_value()))
             }
             ParsedData::List(data) => {
-                let offset = crate::parser::kind_list::build_flatbuffer(data, builder)?;
+                let offset = crate::parser::nip51::build_flatbuffer(data, builder)?;
                 Ok((fb::ParsedData::ListParsed, offset.as_union_value()))
+            }
+            ParsedData::PreGeneric(data) => {
+                let offset = crate::parser::pre_generic::build_flatbuffer(data, builder)?;
+                Ok((fb::ParsedData::PreGenericParsed, offset.as_union_value()))
             }
             ParsedData::Kind39089(data) => {
                 let offset = crate::parser::kind39089::build_flatbuffer(data, builder)?;

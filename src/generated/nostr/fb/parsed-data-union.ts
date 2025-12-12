@@ -21,5 +21,6 @@ export enum ParsedDataUnion {
   Kind17375Parsed = 17375,
   Kind30023Parsed = 30023,
   Kind39089Parsed = 39089,
-  ListParsed = 51000
+  ListParsed = 51000,
+  PreGenericParsed = 52000
 }

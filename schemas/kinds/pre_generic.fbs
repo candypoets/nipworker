@@ -1,0 +1,66 @@
+include "../common.fbs";
+include "list.fbs"; // reuse Coordinate (kind:pubkey:d + relays)
+
+namespace nostr.fb;
+
+// Participant from a "p" tag:
+// ["p", "<pubkey>", "<relay?>", "<role?>", "<proof?>"]
+table PreParticipant {
+  pubkey: string (required);
+  relay: string;
+  role: string;
+  proof: string;
+}
+
+// Event reference from an "e" tag:
+// ["e", "<id>", "<relay?>", "<marker?>"]
+table PreRefEvent {
+  id: string (required);
+  relay: string;
+  marker: string;
+}
+
+// Generic PRE (Parameterized Replaceable Event) output for non-NIP-51 30k kinds.
+// Tag-only representation (no encrypted content payload). Designed to cover:
+// - NIP-53 (30311/30312/30313): live activities, spaces, sessions
+// - NIP-58 (30009/30008): badge definition and profile badges
+// - NIP-52 (31922/31923/31924/31925): calendar events, calendars, RSVP
+// - NIP-54 (30818/30819): wiki article and redirects
+// - NIP-78 (30078): arbitrary app data (tags only)
+table PreGenericParsed {
+  // Identity
+  kind: ushort;       // original kind (e.g., 30311, 30009, 31922, ...)
+  d: string;          // PRE id ("d" tag) when present
+
+  // Common metadata
+  title: string;
+  description: string;
+  image: string;
+
+  // Media / service / room (NIP-53 and similar)
+  streaming: string;
+  recording: string;
+  service: string;
+  endpoint: string;
+  room: string;
+
+  // Status and timing
+  status: string;     // e.g., planned|live|ended|open|private|closed
+  starts: ulong;      // unix seconds (0 if absent)
+  ends: ulong;        // unix seconds (0 if absent)
+
+  // Counters / pinned
+  current_participants: ulong;
+  total_participants: ulong;
+  pinned: string;
+
+  // Collections
+  topics: [string];   // "t"
+  links: [string];    // "r"
+  relays: [string];   // combined from "relay" and "relays" tags
+
+  // References (tag-derived)
+  participants: [PreParticipant]; // from "p"
+  events: [PreRefEvent];          // from "e"
+  addresses: [Coordinate];        // from "a" (reuse Coordinate from list.fbs)
+}

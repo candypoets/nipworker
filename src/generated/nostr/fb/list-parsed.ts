@@ -45,9 +45,9 @@ title(optionalEncoding?:any): ByteString|Uint8Array|null {
   return offset ? this.bb!.__stringByteString(this.bb_pos + offset, optionalEncoding) : null;
 }
 
-summary(): ByteString|null
-summary(optionalEncoding:flatbuffers.Encoding): ByteString|Uint8Array|null
-summary(optionalEncoding?:any): ByteString|Uint8Array|null {
+description(): ByteString|null
+description(optionalEncoding:flatbuffers.Encoding): ByteString|Uint8Array|null
+description(optionalEncoding?:any): ByteString|Uint8Array|null {
   const offset = this.bb!.__offset(this.bb_pos, 10);
   return offset ? this.bb!.__stringByteString(this.bb_pos + offset, optionalEncoding) : null;
 }
@@ -121,8 +121,8 @@ static addTitle(builder:flatbuffers.Builder, titleOffset:flatbuffers.Offset) {
   builder.addFieldOffset(2, titleOffset, 0);
 }
 
-static addSummary(builder:flatbuffers.Builder, summaryOffset:flatbuffers.Offset) {
-  builder.addFieldOffset(3, summaryOffset, 0);
+static addDescription(builder:flatbuffers.Builder, descriptionOffset:flatbuffers.Offset) {
+  builder.addFieldOffset(3, descriptionOffset, 0);
 }
 
 static addImage(builder:flatbuffers.Builder, imageOffset:flatbuffers.Offset) {
@@ -198,12 +198,12 @@ static endListParsed(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createListParsed(builder:flatbuffers.Builder, listKind:number, dOffset:flatbuffers.Offset, titleOffset:flatbuffers.Offset, summaryOffset:flatbuffers.Offset, imageOffset:flatbuffers.Offset, topicsOffset:flatbuffers.Offset, peopleOffset:flatbuffers.Offset, eventsOffset:flatbuffers.Offset, addressesOffset:flatbuffers.Offset):flatbuffers.Offset {
+static createListParsed(builder:flatbuffers.Builder, listKind:number, dOffset:flatbuffers.Offset, titleOffset:flatbuffers.Offset, descriptionOffset:flatbuffers.Offset, imageOffset:flatbuffers.Offset, topicsOffset:flatbuffers.Offset, peopleOffset:flatbuffers.Offset, eventsOffset:flatbuffers.Offset, addressesOffset:flatbuffers.Offset):flatbuffers.Offset {
   ListParsed.startListParsed(builder);
   ListParsed.addListKind(builder, listKind);
   ListParsed.addD(builder, dOffset);
   ListParsed.addTitle(builder, titleOffset);
-  ListParsed.addSummary(builder, summaryOffset);
+  ListParsed.addDescription(builder, descriptionOffset);
   ListParsed.addImage(builder, imageOffset);
   ListParsed.addTopics(builder, topicsOffset);
   ListParsed.addPeople(builder, peopleOffset);
@@ -217,7 +217,7 @@ unpack(): ListParsedT {
     this.listKind(),
     this.d(),
     this.title(),
-    this.summary(),
+    this.description(),
     this.image(),
     this.bb!.createScalarList<string>(this.topics.bind(this), this.topicsLength()),
     this.bb!.createScalarList<string>(this.people.bind(this), this.peopleLength()),
@@ -231,7 +231,7 @@ unpackTo(_o: ListParsedT): void {
   _o.listKind = this.listKind();
   _o.d = this.d();
   _o.title = this.title();
-  _o.summary = this.summary();
+  _o.description = this.description();
   _o.image = this.image();
   _o.topics = this.bb!.createScalarList<string>(this.topics.bind(this), this.topicsLength());
   _o.people = this.bb!.createScalarList<string>(this.people.bind(this), this.peopleLength());
@@ -245,7 +245,7 @@ constructor(
   public listKind: number = 0,
   public d: ByteString|Uint8Array|null = null,
   public title: ByteString|Uint8Array|null = null,
-  public summary: ByteString|Uint8Array|null = null,
+  public description: ByteString|Uint8Array|null = null,
   public image: ByteString|Uint8Array|null = null,
   public topics: (string)[] = [],
   public people: (string)[] = [],
@@ -257,7 +257,7 @@ constructor(
 pack(builder:flatbuffers.Builder): flatbuffers.Offset {
   const d = (this.d !== null ? builder.createString(this.d!) : 0);
   const title = (this.title !== null ? builder.createString(this.title!) : 0);
-  const summary = (this.summary !== null ? builder.createString(this.summary!) : 0);
+  const description = (this.description !== null ? builder.createString(this.description!) : 0);
   const image = (this.image !== null ? builder.createString(this.image!) : 0);
   const topics = ListParsed.createTopicsVector(builder, builder.createObjectOffsetList(this.topics));
   const people = ListParsed.createPeopleVector(builder, builder.createObjectOffsetList(this.people));
@@ -268,7 +268,7 @@ pack(builder:flatbuffers.Builder): flatbuffers.Offset {
     this.listKind,
     d,
     title,
-    summary,
+    description,
     image,
     topics,
     people,

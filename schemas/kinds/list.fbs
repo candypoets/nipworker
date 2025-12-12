@@ -26,7 +26,7 @@ table ListParsed {
   list_kind: ushort;        // original event kind (e.g., 10000..19999, 30000..39999, 39089)
   d: string;                // PRE id (present for 30000-range)
   title: string;            // optional display name/title
-  summary: string;          // optional description/summary
+  description: string;      // optional description
   image: string;            // optional image/cover URL
   topics: [string];         // from repeated "t" tags
   people: [string];         // from "p" tags (pubkeys)

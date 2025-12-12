@@ -62,7 +62,9 @@ pub mod kind7375;
 pub mod kind7376;
 pub mod kind9321;
 pub mod kind9735;
-pub mod kind_list;
+pub mod nip51;
+pub mod pre_adapters;
+pub mod pre_generic;
 
 // Re-export commonly used types
 pub use content::{parse_content, ContentBlock, ContentParser};
@@ -83,7 +85,11 @@ pub use kind7375::Kind7375Parsed;
 pub use kind7376::{HistoryTag, Kind7376Parsed};
 pub use kind9321::Kind9321Parsed;
 pub use kind9735::{Kind9735Parsed, ZapRequest};
-pub use kind_list::{Coordinate, ListParsed};
+pub use nip51::{Coordinate, ListParsed};
+pub use pre_adapters::{
+    compute_a_pointer, compute_naddr_like, try_compute_naddr, BadgeDefinition, Calendar,
+    CalendarEvent, LiveActivity, LiveSession, LiveSpace, ProfileBadges, WikiArticle, WikiRedirect,
+};
 
 pub struct Parser {
     pub signer_manager: Arc<SignerManager>,
@@ -162,12 +168,34 @@ impl Parser {
                 let (parsed, requests) = self.parse_kind_30023(&event)?;
                 (Some(ParsedData::Kind30023(parsed)), requests)
             }
-            k if (10000..20000).contains(&k) || (30000..40000).contains(&k) => {
-                let (parsed, requests) = self.parse_kind_list(&event)?;
+            k if (10000..20000).contains(&k) => {
+                let (parsed, requests) = self.parse_nip51(&event)?;
                 (Some(ParsedData::List(parsed)), requests)
             }
-            39089 => {
-                let (parsed, requests) = self.parse_kind_list(&event)?;
+            k if matches!(
+                k,
+                30000
+                    | 30002
+                    | 30003
+                    | 30004
+                    | 30005
+                    | 30007
+                    | 30015
+                    | 30030
+                    | 30063
+                    | 30267
+                    | 31924
+            ) =>
+            {
+                let (parsed, requests) = self.parse_nip51(&event)?;
+                (Some(ParsedData::List(parsed)), requests)
+            }
+            k if (30000..40000).contains(&k) => {
+                let (parsed, requests) = self.parse_pre_generic(&event)?;
+                (Some(ParsedData::PreGeneric(parsed)), requests)
+            }
+            39089 | 39092 => {
+                let (parsed, requests) = self.parse_nip51(&event)?;
                 (Some(ParsedData::List(parsed)), requests)
             }
             _ => {
