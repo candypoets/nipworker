@@ -165,4 +165,33 @@ table CacheRequest {
     relays: [string];
 }
 
+// Signer service messages
+// These are used over the signer_service_request/signer_service_response SABs.
+// Payload/result are JSON-encoded strings for flexibility; can be replaced by
+// dedicated FlatBuffer tables later without breaking the union types elsewhere.
+enum SignerOp : uint32 {
+  GetPubkey = 0,
+  SignEvent = 1,
+  Nip04Encrypt = 2,
+  Nip04Decrypt = 3,
+  Nip44Encrypt = 4,
+  Nip44Decrypt = 5
+}
+
+table SignerRequest {
+  request_id: ulong;
+  op: SignerOp;
+  // Template, parameters, etc., encoded as JSON for now.
+  payload_json: string;
+}
+
+table SignerResponse {
+  request_id: ulong;
+  ok: bool = true;
+  // When ok=true, carries the result (e.g., signed event) as JSON.
+  result_json: string;
+  // When ok=false, carries an error message.
+  error: string;
+}
+
 root_type WorkerMessage;

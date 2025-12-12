@@ -1,5 +1,7 @@
+use flatbuffers::FlatBufferBuilder;
 use gloo_timers::future::TimeoutFuture;
 use js_sys::SharedArrayBuffer;
+use shared::generated::nostr::fb;
 use shared::SabRing;
 use std::cell::Cell;
 use std::cell::RefCell;
@@ -73,23 +75,32 @@ impl SignerClient {
                 if let Some(bytes) = maybe {
                     sleep_ms = 8;
 
-                    // Placeholder decode: JSON envelope
-                    match serde_json::from_slice::<serde_json::Value>(&bytes) {
-                        Ok(v) => {
-                            // Route by request_id, if present
-                            if let Some(rid) = v.get("request_id").and_then(|x| x.as_u64()) {
-                                if let Some(tx) = pending.borrow_mut().remove(&rid) {
-                                    // Ignore send failures (caller dropped)
-                                    let _ = tx.send(v);
-                                } else {
-                                    warn!("[signer-client] response for unknown request_id={rid}");
-                                }
+                    // Decode FlatBuffers SignerResponse and forward JSON-shaped payload to callers
+                    match flatbuffers::root::<fb::SignerResponse>(&bytes) {
+                        Ok(resp) => {
+                            let rid = resp.request_id();
+                            let ok_flag = resp.ok();
+                            let result_json = resp.result_json().unwrap_or("");
+                            let error_str = resp.error().unwrap_or("");
+
+                            let body = serde_json::json!({
+                                "request_id": rid,
+                                "ok": ok_flag,
+                                "result_json": result_json,
+                                "error": if error_str.is_empty() { serde_json::Value::Null } else { serde_json::Value::String(error_str.to_string()) }
+                            });
+
+                            if let Some(tx) = pending.borrow_mut().remove(&rid) {
+                                let _ = tx.send(body);
                             } else {
-                                warn!("[signer-client] response lacks request_id; dropping");
+                                warn!("[signer-client] response for unknown request_id={rid}");
                             }
                         }
                         Err(e) => {
-                            warn!("[signer-client] failed to parse response JSON: {e}");
+                            warn!(
+                                "[signer-client] failed to decode SignerResponse FB: {:?}",
+                                e
+                            );
                         }
                     }
                     continue;
@@ -124,23 +135,41 @@ impl SignerClient {
         let (tx, rx) = futures_channel::oneshot::channel::<serde_json::Value>();
         self.pending.borrow_mut().insert(rid, tx);
 
-        // Build placeholder JSON envelope
-        let req_obj = serde_json::json!({
-            "request_id": rid,
-            "op": op,
-            "payload": payload
-        });
+        // Build FlatBuffers SignerRequest
+        let mut fbb = FlatBufferBuilder::new();
 
-        // Write to ring
-        let buf = match serde_json::to_vec(&req_obj) {
-            Ok(b) => b,
+        let payload_str = match serde_json::to_string(&payload) {
+            Ok(s) => s,
             Err(e) => {
                 self.pending.borrow_mut().remove(&rid);
-                return Err(format!("serialize request: {}", e));
+                return Err(format!("serialize payload: {}", e));
             }
         };
 
-        let ok = self.req.borrow_mut().write(&buf);
+        let payload_off = fbb.create_string(&payload_str);
+        let op_enum = match op {
+            "get_pubkey" => fb::SignerOp::GetPubkey,
+            "sign_event" => fb::SignerOp::SignEvent,
+            "nip04_encrypt" => fb::SignerOp::Nip04Encrypt,
+            "nip04_decrypt" => fb::SignerOp::Nip04Decrypt,
+            "nip44_encrypt" => fb::SignerOp::Nip44Encrypt,
+            "nip44_decrypt" => fb::SignerOp::Nip44Decrypt,
+            _ => fb::SignerOp::GetPubkey,
+        };
+
+        let req = fb::SignerRequest::create(
+            &mut fbb,
+            &fb::SignerRequestArgs {
+                request_id: rid,
+                op: op_enum,
+                payload_json: Some(payload_off),
+            },
+        );
+        fbb.finish(req, None);
+        let out = fbb.finished_data();
+
+        // Write to ring
+        let ok = self.req.borrow_mut().write(out);
         if !ok {
             self.pending.borrow_mut().remove(&rid);
             return Err("signer_service_request ring full (write dropped)".to_string());

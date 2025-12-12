@@ -22,7 +22,7 @@ tracing = "0.1"
 thiserror = "1"
 
 # Messaging
-flatbuffers = "23"
+flatbuffers = "25.2.10"
 
 # Optional JSON interop for direct methods (frontend convenience)
 serde = { version = "1", features = ["derive"] }
@@ -35,5 +35,33 @@ futures-channel = "0.3"
 # Workspace-local shared utilities (SAB ring, telemetry)
 shared = { path = "../shared" }
 
+
+# Cryptography
+k256 = { version = "0.13", features = ["schnorr", "ecdsa", "sha256", "ecdh"] }
+sha2 = "0.10"
+hex = "0.4"
+rustc-hash = "2.0"
+chacha20 = "0.9"
+hmac = "0.12"
+hkdf = "0.12"
+base64 = "0.22"
+aes = "0.8"        # Required for NIP-04 AES-256-CBC
+cbc = { version = "0.1", features = ["alloc"] }
+signature = "2"
+getrandom = { version = "0.2", features = ["js"] }
+
+
 [features]
 default = []
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = [
+    "-O3",
+    "--strip-debug",
+    "--strip-producers",
+    "--enable-bulk-memory",
+    "--enable-sign-ext",
+    "--enable-mutable-globals",
+    "--enable-nontrapping-float-to-int",
+    "--enable-simd"
+]

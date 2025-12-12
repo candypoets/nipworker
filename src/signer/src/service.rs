@@ -1,5 +1,5 @@
 use gloo_timers::future::TimeoutFuture;
-use shared::SabRing;
+use shared::{generated::nostr::fb, SabRing};
 use std::{cell::RefCell, rc::Rc};
 use tracing::{info, warn};
 use wasm_bindgen::prelude::*;
@@ -62,20 +62,37 @@ impl ServiceLoop {
                 if let Some(bytes) = maybe {
                     sleep_ms = 8;
 
-                    // Placeholder behavior:
-                    // - In the final version, decode FB::SignerRequest, dispatch to active signer,
-                    //   and encode FB::SignerResponse.
-                    // - For now, we echo the payload back so the caller can validate the pipe.
-                    if !bytes.is_empty() {
-                        let ok = svc_resp.borrow_mut().write(&bytes);
-                        if !ok {
-                            warn!("[signer][service] svc_resp ring full, response dropped");
+                    // Decode FlatBuffer SignerRequest and build FlatBuffer SignerResponse
+                    match flatbuffers::root::<fb::SignerRequest>(&bytes) {
+                        Ok(req) => {
+                            let rid = req.request_id();
+                            let payload = req.payload_json().unwrap_or("");
+                            // For now, echo payload as result_json to validate the pipe
+                            let res_str = if payload.is_empty() { "{}" } else { payload };
+
+                            let mut fbb = flatbuffers::FlatBufferBuilder::new();
+                            let res_off = fbb.create_string(res_str);
+                            let resp = fb::SignerResponse::create(
+                                &mut fbb,
+                                &fb::SignerResponseArgs {
+                                    request_id: rid,
+                                    ok: true,
+                                    result_json: Some(res_off),
+                                    error: None,
+                                },
+                            );
+                            fbb.finish(resp, None);
+                            let out = fbb.finished_data();
+                            let ok = svc_resp.borrow_mut().write(out);
+                            if !ok {
+                                warn!("[signer][service] svc_resp ring full, response dropped");
+                            }
                         }
-                    } else {
-                        let fallback = br#"{"ok":true}"#;
-                        let ok = svc_resp.borrow_mut().write(fallback);
-                        if !ok {
-                            warn!("[signer][service] svc_resp ring full, fallback dropped");
+                        Err(e) => {
+                            warn!(
+                                "[signer][service] failed to decode SignerRequest FB: {:?}",
+                                e
+                            );
                         }
                     }
 
@@ -145,132 +162,6 @@ impl ServiceLoop {
 // ----------------------
 // Placeholder submodules
 // ----------------------
-
-/// Placeholder NIP-07 module (browser signer via window.nostr)
-pub mod nip07 {
-    use super::*;
-    use js_sys::{Object, Promise, Reflect};
-    use wasm_bindgen::JsCast;
-
-    pub struct Nip07Signer;
-
-    impl Nip07Signer {
-        pub fn new() -> Self {
-            Self
-        }
-
-        pub async fn get_public_key(&self) -> Result<String, JsValue> {
-            let win = web_sys::window().ok_or_else(|| JsValue::from_str("no window"))?;
-            let nostr = Reflect::get(&win, &JsValue::from_str("nostr"))
-                .map_err(|_| JsValue::from_str("window.nostr missing"))?;
-            let get_pk = Reflect::get(&nostr, &JsValue::from_str("getPublicKey"))
-                .map_err(|_| JsValue::from_str("nostr.getPublicKey missing"))?
-                .dyn_into::<js_sys::Function>()
-                .map_err(|_| JsValue::from_str("getPublicKey not a function"))?;
-            let p = get_pk
-                .call0(&nostr)
-                .map_err(|_| JsValue::from_str("getPublicKey call failed"))?;
-            let js = wasm_bindgen_futures::JsFuture::from(
-                p.dyn_into::<Promise>()
-                    .map_err(|_| JsValue::from_str("not a Promise"))?,
-            )
-            .await
-            .map_err(|_| JsValue::from_str("getPublicKey rejected"))?;
-            js.as_string()
-                .ok_or_else(|| JsValue::from_str("invalid pk"))
-        }
-
-        pub async fn sign_event_json(&self, template_json: &str) -> Result<String, JsValue> {
-            let tmpl_val: serde_json::Value = serde_json::from_str(template_json)
-                .map_err(|e| JsValue::from_str(&format!("invalid template: {e}")))?;
-            let win = web_sys::window().ok_or_else(|| JsValue::from_str("no window"))?;
-            let nostr = Reflect::get(&win, &JsValue::from_str("nostr"))
-                .map_err(|_| JsValue::from_str("window.nostr missing"))?;
-            let sign_fn = Reflect::get(&nostr, &JsValue::from_str("signEvent"))
-                .map_err(|_| JsValue::from_str("nostr.signEvent missing"))?
-                .dyn_into::<js_sys::Function>()
-                .map_err(|_| JsValue::from_str("signEvent not a function"))?;
-            let js_evt = serde_wasm_bindgen::to_value(&tmpl_val)
-                .map_err(|e| JsValue::from_str(&format!("serde_wasm_bindgen: {e}")))?;
-            let p = sign_fn
-                .call1(&nostr, &js_evt)
-                .map_err(|_| JsValue::from_str("signEvent call failed"))?;
-            let signed = wasm_bindgen_futures::JsFuture::from(
-                p.dyn_into::<Promise>()
-                    .map_err(|_| JsValue::from_str("not a Promise"))?,
-            )
-            .await
-            .map_err(|_| JsValue::from_str("signEvent rejected"))?;
-            let out: serde_json::Value = serde_wasm_bindgen::from_value(signed)
-                .map_err(|e| JsValue::from_str(&e.to_string()))?;
-            serde_json::to_string(&out).map_err(|e| JsValue::from_str(&e.to_string()))
-        }
-    }
-}
-
-/// Placeholder NIP-46 module (remote signer over relays)
-pub mod nip46 {
-    use super::*;
-
-    #[derive(Clone)]
-    pub struct Config {
-        pub remote_signer_pubkey: String,
-        pub relays: Vec<String>,
-        pub use_nip44: bool,
-        pub app_name: Option<String>,
-    }
-
-    /// Minimal skeleton for a NIP-46 signer.
-    /// In the complete version, this will:
-    /// - generate an ephemeral client keypair
-    /// - open a REQ on relays and maintain a sub_id
-    /// - encrypt/decrypt payloads (NIP-44 preferred, fallback NIP-04)
-    /// - correlate JSON-RPC by id with a pending map
-    pub struct Signer {
-        cfg: Config,
-        ws_req: Rc<RefCell<SabRing>>,
-        ws_resp: Rc<RefCell<SabRing>>,
-        sub_id: String,
-    }
-
-    impl Signer {
-        pub fn new(cfg: Config, ws_req: SabRing, ws_resp: SabRing) -> Self {
-            // Placeholder sub_id based on remote pubkey
-            let sub_id = format!("n46:{}", cfg.remote_signer_pubkey);
-            Self {
-                cfg,
-                ws_req: Rc::new(RefCell::new(ws_req)),
-                ws_resp: Rc::new(RefCell::new(ws_resp)),
-                sub_id,
-            }
-        }
-
-        pub fn start(&self) {
-            // In the full version, send a REQ with filter:
-            // kinds: [24133], "#p": [client_pubkey]
-            info!("[signer][nip46] start() placeholder (no-op)");
-        }
-
-        pub async fn get_public_key(&self) -> Result<String, JsValue> {
-            Err(JsValue::from_str("NIP-46 get_public_key not implemented"))
-        }
-
-        pub async fn sign_event_json(&self, _template_json: &str) -> Result<String, JsValue> {
-            Err(JsValue::from_str("NIP-46 sign_event not implemented"))
-        }
-
-        #[allow(unused)]
-        fn publish_frames(&self, frames: &[String]) {
-            let env = serde_json::json!({ "relays": self.cfg.relays, "frames": frames });
-            if let Ok(buf) = serde_json::to_vec(&env) {
-                let ok = self.ws_req.borrow_mut().write(&buf);
-                if !ok {
-                    warn!("[signer][nip46] ws_req ring full, frame dropped");
-                }
-            }
-        }
-    }
-}
 
 // -------------
 // Small helpers
