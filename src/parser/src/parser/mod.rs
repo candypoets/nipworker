@@ -53,7 +53,6 @@ pub mod kind17;
 pub mod kind17375;
 pub mod kind3;
 pub mod kind30023;
-pub mod kind39089;
 pub mod kind4;
 pub mod kind6;
 pub mod kind7;
@@ -76,7 +75,6 @@ pub use kind17::Kind17Parsed;
 pub use kind17375::Kind17375Parsed;
 pub use kind3::{Contact, Kind3Parsed};
 pub use kind30023::Kind30023Parsed;
-pub use kind39089::Kind39089Parsed;
 pub use kind4::Kind4Parsed;
 pub use kind6::Kind6Parsed;
 pub use kind7::{Emoji, Kind7Parsed, ReactionType};
@@ -185,6 +183,7 @@ impl Parser {
                     | 30063
                     | 30267
                     | 31924
+                    | 39089
             ) =>
             {
                 let (parsed, requests) = self.parse_nip51(&event)?;
@@ -193,10 +192,6 @@ impl Parser {
             k if (30000..40000).contains(&k) => {
                 let (parsed, requests) = self.parse_pre_generic(&event)?;
                 (Some(ParsedData::PreGeneric(parsed)), requests)
-            }
-            39089 | 39092 => {
-                let (parsed, requests) = self.parse_nip51(&event)?;
-                (Some(ParsedData::List(parsed)), requests)
             }
             _ => {
                 return Err(ParserError::InvalidKind(kind as u32));

@@ -33,7 +33,6 @@ pub enum ParsedData {
     Kind30023(Kind30023Parsed),
     List(ListParsed),
     PreGeneric(PreGenericParsed),
-    Kind39089(crate::parser::Kind39089Parsed),
 }
 
 impl ParsedData {
@@ -122,10 +121,6 @@ impl ParsedData {
             ParsedData::PreGeneric(data) => {
                 let offset = crate::parser::pre_generic::build_flatbuffer(data, builder)?;
                 Ok((fb::ParsedData::PreGenericParsed, offset.as_union_value()))
-            }
-            ParsedData::Kind39089(data) => {
-                let offset = crate::parser::kind39089::build_flatbuffer(data, builder)?;
-                Ok((fb::ParsedData::Kind39089Parsed, offset.as_union_value()))
             }
         }
     }

@@ -32,7 +32,8 @@ import {
 	MediaGroupData,
 	NostrData,
 	VideoData,
-	NostrEvent
+	NostrEvent,
+	ListParsed
 } from 'src/generated/nostr/fb';
 import { unionToContentData } from 'src/generated/nostr/fb/content-data';
 import { unionToMessage } from 'src/generated/nostr/fb/message';
@@ -171,13 +172,6 @@ export function asKind17375(ev: ParsedEvent): Kind17375Parsed | null {
 	if (ev?.parsedType?.() !== ParsedData.Kind17375Parsed) return null;
 	return unionToParsedData(ParsedData.Kind17375Parsed, ev.parsed.bind(ev)) as Kind17375Parsed;
 }
-export function isKind39089(msg: WorkerMessage): Kind39089Parsed | null {
-	return parsedKind<Kind39089Parsed>(msg, ParsedData.Kind39089Parsed);
-}
-export function asKind39089(ev: ParsedEvent): Kind39089Parsed | null {
-	if (ev?.parsedType?.() !== ParsedData.Kind39089Parsed) return null;
-	return unionToParsedData(ParsedData.Kind39089Parsed, ev.parsed.bind(ev)) as Kind39089Parsed;
-}
 
 export function isKind7374(msg: WorkerMessage): Kind7374Parsed | null {
 	return parsedKind<Kind7374Parsed>(msg, ParsedData.Kind7374Parsed);
@@ -217,6 +211,15 @@ export function isKind9735(msg: WorkerMessage): Kind9735Parsed | null {
 export function asKind9735(ev: ParsedEvent): Kind9735Parsed | null {
 	if (ev?.parsedType?.() !== ParsedData.Kind9735Parsed) return null;
 	return unionToParsedData(ParsedData.Kind9735Parsed, ev.parsed.bind(ev)) as Kind9735Parsed;
+}
+
+export function isNip51(msg: WorkerMessage): ListParsed | null {
+	return parsedKind<ListParsed>(msg, ParsedData.ListParsed);
+}
+
+export function asNip51(ev: ParsedEvent): ListParsed | null {
+	if (ev?.parsedType?.() !== ParsedData.ListParsed) return null;
+	return unionToParsedData(ParsedData.ListParsed, ev.parsed.bind(ev)) as ListParsed;
 }
 
 export function asCodeData(block: ContentBlock): CodeData | null {

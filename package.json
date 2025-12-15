@@ -24,7 +24,7 @@
 		"README.md"
 	],
 	"scripts": {
-		"build": "npm run build:connections && npm run build:cache && npm run build:parser && vite build",
+		"build": "npm run build:connections && npm run build:cache && npm run build:parser && npm run build:signer && vite build",
 		"build:connections": "wasm-pack build ./src/connections --release --target web",
 		"build:cache": "wasm-pack build ./src/cache --release --target web",
 		"build:parser": "wasm-pack build ./src/parser --release --target web",
@@ -68,7 +68,6 @@
 		"vite-plugin-wasm": "^3.0.0"
 	},
 	"dependencies": {
-		"@candypoets/rust-worker": "0.0.69",
 		"nostr-tools": "^2.0.0"
 	},
 	"engines": {

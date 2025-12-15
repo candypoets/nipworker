@@ -24,6 +24,7 @@ import {
 import { InitConnectionsMsg } from './connections';
 import { InitCacheMsg } from './cache';
 import { InitParserMsg } from './parser';
+export * from './lib/nostrUtils';
 
 // Idempotent header initializer for rings created on the TS side.
 // If capacity (u32 at offset 0) is 0, we set it to (byteLength - 32)

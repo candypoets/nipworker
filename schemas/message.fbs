@@ -11,7 +11,6 @@ include "kinds/kind17.fbs";
 include "kinds/kind10002.fbs";
 include "kinds/kind10019.fbs";
 include "kinds/kind17375.fbs";
-include "kinds/kind39089.fbs";
 include "kinds/kind7374.fbs";
 include "kinds/kind7375.fbs";
 include "kinds/kind7376.fbs";
@@ -71,7 +70,6 @@ union ParsedData {
   Kind10002Parsed,
   Kind10019Parsed,
   Kind17375Parsed,
-  Kind39089Parsed,
   Kind7374Parsed,
   Kind7375Parsed,
   Kind7376Parsed,
@@ -150,7 +148,6 @@ union Message {
   Raw
 }
 
-// NEW: Wrapper table
 table WorkerMessage {
   sub_id: string;
   url: string;
