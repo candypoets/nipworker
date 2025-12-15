@@ -1,4 +1,4 @@
-#packages/rust-worker/target
+**/.DS_STORE
 src/**/target
 src/*/node_modules
 src/*/dist

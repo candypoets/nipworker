@@ -190,11 +190,9 @@ impl SignerClient {
 
     /// Convenience: sign an event Template represented as JSON.
     /// The payload should be a JSON object with fields expected by your Template.
-    pub async fn sign_event(
-        &self,
-        template: serde_json::Value,
-    ) -> Result<serde_json::Value, String> {
-        self.call("sign_event", template).await
+    pub async fn sign_event(&self, template: String) -> Result<serde_json::Value, String> {
+        self.call("sign_event", serde_json::Value::String(template))
+            .await
     }
 
     /// Convenience: NIP-04 encrypt via signer.

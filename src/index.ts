@@ -24,6 +24,7 @@ import {
 import { InitConnectionsMsg } from './connections';
 import { InitCacheMsg } from './cache';
 import { InitParserMsg } from './parser';
+import { InitSignerMsg } from './signer';
 export * from './lib/nostrUtils';
 
 // Idempotent header initializer for rings created on the TS side.
@@ -71,6 +72,7 @@ export class NostrManager {
 	private connections: Worker;
 	private cache: Worker;
 	private parser: Worker;
+	private signer: Worker;
 	private textEncoder = new TextEncoder();
 	private subscriptions = new Map<
 		string,
@@ -93,22 +95,30 @@ export class NostrManager {
 		const wsRequest = initializeRingHeader(1 * 1024 * 1024); // 1MB (ws request)
 		const wsResponse = initializeRingHeader(5 * 1024 * 1024); // 2MB (ws response)
 
+		const wsSignerRequest = initializeRingHeader(512 * 1024);
+		const wsSignerResponse = initializeRingHeader(512 * 1024);
+
 		const cacheRequest = initializeRingHeader(1 * 1024 * 1024);
 		const cacheResponse = initializeRingHeader(10 * 1024 * 1024);
 
 		const dbRing = initializeRingHeader(2 * 1024 * 1024);
+
+		const signerRequest = initializeRingHeader(512 * 1024);
+		const signerResponse = initializeRingHeader(512 * 1024);
 
 		// console.log('connection.url', import.meta.url);
 
 		const connectionURL = new URL('./connections/index.js', import.meta.url);
 		const cacheURL = new URL('./cache/index.js', import.meta.url);
 		const parserURL = new URL('./parser/index.js', import.meta.url);
+		const signerURL = new URL('./signer/index.js', import.meta.url);
 
 		this.connections = new Worker(connectionURL, {
 			type: 'module'
 		});
 		this.cache = new Worker(cacheURL, { type: 'module' });
 		this.parser = new Worker(parserURL, { type: 'module' });
+		this.signer = new Worker(signerURL, { type: 'module' });
 
 		this.connections.postMessage({
 			type: 'init',
@@ -129,6 +139,11 @@ export class NostrManager {
 			type: 'init',
 			payload: { ingestRing: dbRing, cacheRequest, cacheResponse, wsResponse }
 		} as InitParserMsg);
+
+		this.signer.postMessage({
+			type: 'init',
+			payload: { signerRequest, signerResponse, wsSignerRequest, wsSignerResponse }
+		} as InitSignerMsg);
 
 		this.setupWorkerListener();
 	}

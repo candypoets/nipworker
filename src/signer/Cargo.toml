@@ -35,7 +35,6 @@ futures-channel = "0.3"
 # Workspace-local shared utilities (SAB ring, telemetry)
 shared = { path = "../shared" }
 
-
 # Cryptography
 k256 = { version = "0.13", features = ["schnorr", "ecdsa", "sha256", "ecdh"] }
 sha2 = "0.10"

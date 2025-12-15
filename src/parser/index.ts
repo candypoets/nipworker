@@ -7,6 +7,8 @@ export type InitParserMsg = {
 		ingestRing: SharedArrayBuffer;
 		cacheRequest: SharedArrayBuffer;
 		cacheResponse: SharedArrayBuffer;
+		signerRequest: SharedArrayBuffer;
+		signerResponse: SharedArrayBuffer;
 		wsResponse: SharedArrayBuffer;
 	};
 };
@@ -32,14 +34,17 @@ self.addEventListener('message', async (evt: MessageEvent<InitParserMsg | { type
 	if (msg?.type === 'init') {
 		await ensureWasm();
 
-		const { cacheRequest, cacheResponse, wsResponse, ingestRing } = msg.payload;
+		const { cacheRequest, cacheResponse, signerRequest, signerResponse, wsResponse, ingestRing } =
+			msg.payload;
 
-		console.log('[parser] cacheRequest.len', cacheRequest.byteLength);
-		console.log('[parser] cacheResponse.len', cacheResponse.byteLength);
-		console.log('[parser] wsResponse.len', wsResponse.byteLength);
-		console.log('[parser] ingestRing.len', ingestRing.byteLength);
-
-		const client = new NostrClient(ingestRing, cacheRequest, cacheResponse, wsResponse);
+		const client = new NostrClient(
+			ingestRing,
+			cacheRequest,
+			cacheResponse,
+			signerRequest,
+			signerResponse,
+			wsResponse
+		);
 		// Resolve the deferred so all queued .then handlers can run
 		resolveInstance?.(client);
 		return;

@@ -3,20 +3,20 @@
 use flatbuffers::FlatBufferBuilder;
 use js_sys::SharedArrayBuffer;
 use shared::{telemetry, SabRing};
+use signer::SignerClient;
 use wasm_bindgen::prelude::*;
 
 pub mod network;
 pub mod parser;
 pub mod pipeline;
 pub mod relays;
-pub mod signer;
 pub mod types;
 pub mod utils;
 
 // Re-export key types for external use
 pub use network::NetworkManager;
 pub use parser::Parser;
-pub use signer::{PrivateKeySigner, SignerInterface, SignerManager, SignerManagerInterface};
+// pub use signer::{PrivateKeySigner, SignerInterface, SignerManager, SignerManagerInterface};
 
 pub use types::*;
 
@@ -88,7 +88,7 @@ const INDEXER_RELAYS: &[&str] = &[
 #[wasm_bindgen]
 pub struct NostrClient {
     network_manager: NetworkManager,
-    signer_manager: Arc<SignerManager>,
+    signer_client: Arc<SignerClient>,
 }
 
 #[wasm_bindgen]
@@ -98,15 +98,22 @@ impl NostrClient {
         db_ring: SharedArrayBuffer,
         cache_request: SharedArrayBuffer, // ws request
         cache_response: SharedArrayBuffer,
+        signer_request: SharedArrayBuffer,
+        signer_response: SharedArrayBuffer,
         ws_response: SharedArrayBuffer, // ws response
     ) -> Self {
         telemetry::init(tracing::Level::ERROR);
 
         info!("Initializing NostrClient...");
 
-        let signer_manager = Arc::new(SignerManager::new());
+        // let signer_manager = Arc::new(SignerManager::new());
 
-        let parser = Arc::new(Parser::new_with_signer(signer_manager.clone()));
+        let signer_client = Arc::new(
+            SignerClient::new(signer_request, signer_response)
+                .expect("Failed to initialize signer client"),
+        );
+
+        let parser = Arc::new(Parser::new_with_signer(signer_client.clone()));
 
         let network_manager = NetworkManager::new(
             parser,
@@ -128,7 +135,7 @@ impl NostrClient {
 
         Self {
             network_manager,
-            signer_manager,
+            signer_client,
         }
     }
 
@@ -139,13 +146,15 @@ impl NostrClient {
             .map_err(|e| JsValue::from_str(&format!("Failed to close subscription: {}", e)))
     }
 
-    fn sign_event(&self, template: Template) -> Result<(), JsValue> {
+    async fn sign_event(&self, template: String) -> Result<(), JsValue> {
         // Sign the event using the signer manager
         let signed_event = self
-            .signer_manager
-            .sign_event(&template)
+            .signer_client
+            .sign_event(template.clone())
+            .await
             .map_err(|e| JsValue::from_str(&format!("Failed to sign event: {}", e)))?;
-        let json_str = signed_event.as_json();
+        let json_str = serde_json::to_string(&signed_event)
+            .map_err(|e| JsValue::from_str(&format!("Failed to serialize signed event: {}", e)))?;
         let js_value = JsValue::from_str(&json_str);
         info!("Event signed and ready for posting: {}", json_str);
         post_worker_message(&js_value);
