@@ -810,27 +810,6 @@ fn build_kind17375<'a>(
     )
 }
 
-fn build_kind39089<'a>(
-    builder: &mut FlatBufferBuilder<'a>,
-    v: fb::Kind39089Parsed<'_>,
-) -> WIPOffset<fb::Kind39089Parsed<'a>> {
-    let list_identifier = builder.create_string(v.list_identifier());
-    let people = build_string_vector(builder, v.people());
-    let title = v.title().map(|s| builder.create_string(s));
-    let description = v.description().map(|s| builder.create_string(s));
-    let image = v.image().map(|s| builder.create_string(s));
-    fb::Kind39089Parsed::create(
-        builder,
-        &fb::Kind39089ParsedArgs {
-            list_identifier: Some(list_identifier),
-            people: Some(people),
-            title,
-            description,
-            image,
-        },
-    )
-}
-
 fn build_kind7374<'a>(
     builder: &mut FlatBufferBuilder<'a>,
     v: fb::Kind7374Parsed<'_>,
@@ -1013,11 +992,6 @@ fn build_parsed_union<'a>(
             let v = pe.parsed_as_kind_17375_parsed().unwrap();
             let off = build_kind17375(builder, v);
             (fb::ParsedData::Kind17375Parsed, Some(off.as_union_value()))
-        }
-        fb::ParsedData::Kind39089Parsed => {
-            let v = pe.parsed_as_kind_39089_parsed().unwrap();
-            let off = build_kind39089(builder, v);
-            (fb::ParsedData::Kind39089Parsed, Some(off.as_union_value()))
         }
         fb::ParsedData::Kind7374Parsed => {
             let v = pe.parsed_as_kind_7374_parsed().unwrap();
