@@ -36,15 +36,36 @@ op():SignerOp {
   return offset ? this.bb!.readUint32(this.bb_pos + offset) : SignerOp.GetPubkey;
 }
 
-payloadJson(): ByteString|null
-payloadJson(optionalEncoding:flatbuffers.Encoding): ByteString|Uint8Array|null
-payloadJson(optionalEncoding?:any): ByteString|Uint8Array|null {
+payload(): ByteString|null
+payload(optionalEncoding:flatbuffers.Encoding): ByteString|Uint8Array|null
+payload(optionalEncoding?:any): ByteString|Uint8Array|null {
   const offset = this.bb!.__offset(this.bb_pos, 8);
   return offset ? this.bb!.__stringByteString(this.bb_pos + offset, optionalEncoding) : null;
 }
 
+pubkey(): ByteString|null
+pubkey(optionalEncoding:flatbuffers.Encoding): ByteString|Uint8Array|null
+pubkey(optionalEncoding?:any): ByteString|Uint8Array|null {
+  const offset = this.bb!.__offset(this.bb_pos, 10);
+  return offset ? this.bb!.__stringByteString(this.bb_pos + offset, optionalEncoding) : null;
+}
+
+senderPubkey(): ByteString|null
+senderPubkey(optionalEncoding:flatbuffers.Encoding): ByteString|Uint8Array|null
+senderPubkey(optionalEncoding?:any): ByteString|Uint8Array|null {
+  const offset = this.bb!.__offset(this.bb_pos, 12);
+  return offset ? this.bb!.__stringByteString(this.bb_pos + offset, optionalEncoding) : null;
+}
+
+recipientPubkey(): ByteString|null
+recipientPubkey(optionalEncoding:flatbuffers.Encoding): ByteString|Uint8Array|null
+recipientPubkey(optionalEncoding?:any): ByteString|Uint8Array|null {
+  const offset = this.bb!.__offset(this.bb_pos, 14);
+  return offset ? this.bb!.__stringByteString(this.bb_pos + offset, optionalEncoding) : null;
+}
+
 static startSignerRequest(builder:flatbuffers.Builder) {
-  builder.startObject(3);
+  builder.startObject(6);
 }
 
 static addRequestId(builder:flatbuffers.Builder, requestId:bigint) {
@@ -55,8 +76,20 @@ static addOp(builder:flatbuffers.Builder, op:SignerOp) {
   builder.addFieldInt32(1, op, SignerOp.GetPubkey);
 }
 
-static addPayloadJson(builder:flatbuffers.Builder, payloadJsonOffset:flatbuffers.Offset) {
-  builder.addFieldOffset(2, payloadJsonOffset, 0);
+static addPayload(builder:flatbuffers.Builder, payloadOffset:flatbuffers.Offset) {
+  builder.addFieldOffset(2, payloadOffset, 0);
+}
+
+static addPubkey(builder:flatbuffers.Builder, pubkeyOffset:flatbuffers.Offset) {
+  builder.addFieldOffset(3, pubkeyOffset, 0);
+}
+
+static addSenderPubkey(builder:flatbuffers.Builder, senderPubkeyOffset:flatbuffers.Offset) {
+  builder.addFieldOffset(4, senderPubkeyOffset, 0);
+}
+
+static addRecipientPubkey(builder:flatbuffers.Builder, recipientPubkeyOffset:flatbuffers.Offset) {
+  builder.addFieldOffset(5, recipientPubkeyOffset, 0);
 }
 
 static endSignerRequest(builder:flatbuffers.Builder):flatbuffers.Offset {
@@ -64,11 +97,14 @@ static endSignerRequest(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createSignerRequest(builder:flatbuffers.Builder, requestId:bigint, op:SignerOp, payloadJsonOffset:flatbuffers.Offset):flatbuffers.Offset {
+static createSignerRequest(builder:flatbuffers.Builder, requestId:bigint, op:SignerOp, payloadOffset:flatbuffers.Offset, pubkeyOffset:flatbuffers.Offset, senderPubkeyOffset:flatbuffers.Offset, recipientPubkeyOffset:flatbuffers.Offset):flatbuffers.Offset {
   SignerRequest.startSignerRequest(builder);
   SignerRequest.addRequestId(builder, requestId);
   SignerRequest.addOp(builder, op);
-  SignerRequest.addPayloadJson(builder, payloadJsonOffset);
+  SignerRequest.addPayload(builder, payloadOffset);
+  SignerRequest.addPubkey(builder, pubkeyOffset);
+  SignerRequest.addSenderPubkey(builder, senderPubkeyOffset);
+  SignerRequest.addRecipientPubkey(builder, recipientPubkeyOffset);
   return SignerRequest.endSignerRequest(builder);
 }
 
@@ -76,7 +112,10 @@ unpack(): SignerRequestT {
   return new SignerRequestT(
     this.requestId(),
     this.op(),
-    this.payloadJson()
+    this.payload(),
+    this.pubkey(),
+    this.senderPubkey(),
+    this.recipientPubkey()
   );
 }
 
@@ -84,7 +123,10 @@ unpack(): SignerRequestT {
 unpackTo(_o: SignerRequestT): void {
   _o.requestId = this.requestId();
   _o.op = this.op();
-  _o.payloadJson = this.payloadJson();
+  _o.payload = this.payload();
+  _o.pubkey = this.pubkey();
+  _o.senderPubkey = this.senderPubkey();
+  _o.recipientPubkey = this.recipientPubkey();
 }
 }
 
@@ -92,17 +134,26 @@ export class SignerRequestT implements flatbuffers.IGeneratedObject {
 constructor(
   public requestId: bigint = BigInt('0'),
   public op: SignerOp = SignerOp.GetPubkey,
-  public payloadJson: ByteString|Uint8Array|null = null
+  public payload: ByteString|Uint8Array|null = null,
+  public pubkey: ByteString|Uint8Array|null = null,
+  public senderPubkey: ByteString|Uint8Array|null = null,
+  public recipientPubkey: ByteString|Uint8Array|null = null
 ){}
 
 
 pack(builder:flatbuffers.Builder): flatbuffers.Offset {
-  const payloadJson = (this.payloadJson !== null ? builder.createString(this.payloadJson!) : 0);
+  const payload = (this.payload !== null ? builder.createString(this.payload!) : 0);
+  const pubkey = (this.pubkey !== null ? builder.createString(this.pubkey!) : 0);
+  const senderPubkey = (this.senderPubkey !== null ? builder.createString(this.senderPubkey!) : 0);
+  const recipientPubkey = (this.recipientPubkey !== null ? builder.createString(this.recipientPubkey!) : 0);
 
   return SignerRequest.createSignerRequest(builder,
     this.requestId,
     this.op,
-    payloadJson
+    payload,
+    pubkey,
+    senderPubkey,
+    recipientPubkey
   );
 }
 }

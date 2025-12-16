@@ -120,7 +120,7 @@ union MainContent {
   Publish,
   SignEvent,
   SetSigner,
-  GetPublicKey
+  GetPublicKey,
 }
 
 // Wrapper for main to worker messages

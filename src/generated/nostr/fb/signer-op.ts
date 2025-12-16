@@ -9,5 +9,7 @@ export enum SignerOp {
   Nip04Encrypt = 2,
   Nip04Decrypt = 3,
   Nip44Encrypt = 4,
-  Nip44Decrypt = 5
+  Nip44Decrypt = 5,
+  Nip04DecryptBetween = 6,
+  Nip44DecryptBetween = 7
 }

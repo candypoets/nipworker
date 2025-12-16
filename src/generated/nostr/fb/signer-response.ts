@@ -30,43 +30,34 @@ requestId():bigint {
   return offset ? this.bb!.readUint64(this.bb_pos + offset) : BigInt('0');
 }
 
-ok():boolean {
+result(): ByteString|null
+result(optionalEncoding:flatbuffers.Encoding): ByteString|Uint8Array|null
+result(optionalEncoding?:any): ByteString|Uint8Array|null {
   const offset = this.bb!.__offset(this.bb_pos, 6);
-  return offset ? !!this.bb!.readInt8(this.bb_pos + offset) : true;
-}
-
-resultJson(): ByteString|null
-resultJson(optionalEncoding:flatbuffers.Encoding): ByteString|Uint8Array|null
-resultJson(optionalEncoding?:any): ByteString|Uint8Array|null {
-  const offset = this.bb!.__offset(this.bb_pos, 8);
   return offset ? this.bb!.__stringByteString(this.bb_pos + offset, optionalEncoding) : null;
 }
 
 error(): ByteString|null
 error(optionalEncoding:flatbuffers.Encoding): ByteString|Uint8Array|null
 error(optionalEncoding?:any): ByteString|Uint8Array|null {
-  const offset = this.bb!.__offset(this.bb_pos, 10);
+  const offset = this.bb!.__offset(this.bb_pos, 8);
   return offset ? this.bb!.__stringByteString(this.bb_pos + offset, optionalEncoding) : null;
 }
 
 static startSignerResponse(builder:flatbuffers.Builder) {
-  builder.startObject(4);
+  builder.startObject(3);
 }
 
 static addRequestId(builder:flatbuffers.Builder, requestId:bigint) {
   builder.addFieldInt64(0, requestId, BigInt('0'));
 }
 
-static addOk(builder:flatbuffers.Builder, ok:boolean) {
-  builder.addFieldInt8(1, +ok, +true);
-}
-
-static addResultJson(builder:flatbuffers.Builder, resultJsonOffset:flatbuffers.Offset) {
-  builder.addFieldOffset(2, resultJsonOffset, 0);
+static addResult(builder:flatbuffers.Builder, resultOffset:flatbuffers.Offset) {
+  builder.addFieldOffset(1, resultOffset, 0);
 }
 
 static addError(builder:flatbuffers.Builder, errorOffset:flatbuffers.Offset) {
-  builder.addFieldOffset(3, errorOffset, 0);
+  builder.addFieldOffset(2, errorOffset, 0);
 }
 
 static endSignerResponse(builder:flatbuffers.Builder):flatbuffers.Offset {
@@ -74,11 +65,10 @@ static endSignerResponse(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createSignerResponse(builder:flatbuffers.Builder, requestId:bigint, ok:boolean, resultJsonOffset:flatbuffers.Offset, errorOffset:flatbuffers.Offset):flatbuffers.Offset {
+static createSignerResponse(builder:flatbuffers.Builder, requestId:bigint, resultOffset:flatbuffers.Offset, errorOffset:flatbuffers.Offset):flatbuffers.Offset {
   SignerResponse.startSignerResponse(builder);
   SignerResponse.addRequestId(builder, requestId);
-  SignerResponse.addOk(builder, ok);
-  SignerResponse.addResultJson(builder, resultJsonOffset);
+  SignerResponse.addResult(builder, resultOffset);
   SignerResponse.addError(builder, errorOffset);
   return SignerResponse.endSignerResponse(builder);
 }
@@ -86,8 +76,7 @@ static createSignerResponse(builder:flatbuffers.Builder, requestId:bigint, ok:bo
 unpack(): SignerResponseT {
   return new SignerResponseT(
     this.requestId(),
-    this.ok(),
-    this.resultJson(),
+    this.result(),
     this.error()
   );
 }
@@ -95,8 +84,7 @@ unpack(): SignerResponseT {
 
 unpackTo(_o: SignerResponseT): void {
   _o.requestId = this.requestId();
-  _o.ok = this.ok();
-  _o.resultJson = this.resultJson();
+  _o.result = this.result();
   _o.error = this.error();
 }
 }
@@ -104,20 +92,18 @@ unpackTo(_o: SignerResponseT): void {
 export class SignerResponseT implements flatbuffers.IGeneratedObject {
 constructor(
   public requestId: bigint = BigInt('0'),
-  public ok: boolean = true,
-  public resultJson: ByteString|Uint8Array|null = null,
+  public result: ByteString|Uint8Array|null = null,
   public error: ByteString|Uint8Array|null = null
 ){}
 
 
 pack(builder:flatbuffers.Builder): flatbuffers.Offset {
-  const resultJson = (this.resultJson !== null ? builder.createString(this.resultJson!) : 0);
+  const result = (this.result !== null ? builder.createString(this.result!) : 0);
   const error = (this.error !== null ? builder.createString(this.error!) : 0);
 
   return SignerResponse.createSignerResponse(builder,
     this.requestId,
-    this.ok,
-    resultJson,
+    result,
     error
   );
 }

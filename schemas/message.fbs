@@ -164,30 +164,51 @@ table CacheRequest {
 
 // Signer service messages
 // These are used over the signer_service_request/signer_service_response SABs.
-// Payload/result are JSON-encoded strings for flexibility; can be replaced by
-// dedicated FlatBuffer tables later without breaking the union types elsewhere.
+// Payload/result are raw strings. For structured data we may adopt dedicated
+// FlatBuffer tables later without breaking the SAB protocol.
 enum SignerOp : uint32 {
   GetPubkey = 0,
   SignEvent = 1,
+  // Single-peer ops:
+  // - Nip04Encrypt/Nip44Encrypt: plaintext + recipient (pubkey)
+  // - Nip04Decrypt/Nip44Decrypt: ciphertext + sender (pubkey)
   Nip04Encrypt = 2,
   Nip04Decrypt = 3,
   Nip44Encrypt = 4,
-  Nip44Decrypt = 5
+  Nip44Decrypt = 5,
+  // Between-ops accept both participants (sender and recipient).
+  // The signer will fetch its own pubkey and choose the correct peer.
+  Nip04DecryptBetween = 6,
+  Nip44DecryptBetween = 7
 }
 
 table SignerRequest {
   request_id: ulong;
   op: SignerOp;
-  // Template, parameters, etc., encoded as JSON for now.
-  payload_json: string;
+
+  // Raw string payload:
+  // - SignEvent: template JSON
+  // - Nip04/Nip44 Encrypt: plaintext
+  // - Nip04/Nip44 Decrypt: ciphertext
+  // - Nip04DecryptBetween/Nip44DecryptBetween: ciphertext
+  payload: string;
+
+  // For single-peer ops:
+  // - Encrypt: recipient pubkey (hex)
+  // - Decrypt: sender pubkey (hex)
+  pubkey: string;
+
+  // For DecryptBetween ops (required there, ignored otherwise):
+  // Both participants, role-labeled for clarity.
+  sender_pubkey: string;
+  recipient_pubkey: string;
 }
 
 table SignerResponse {
   request_id: ulong;
-  ok: bool = true;
-  // When ok=true, carries the result (e.g., signed event) as JSON.
-  result_json: string;
-  // When ok=false, carries an error message.
+  // Raw string result: pubkey hex, signed event JSON, ciphertext, or plaintext.
+  result: string;
+  // Error message when a request fails; empty when success.
   error: string;
 }
 

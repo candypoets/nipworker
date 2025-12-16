@@ -5,6 +5,7 @@ import { ByteString } from "src/lib/ByteString";
 
 import { GetPublicKey, GetPublicKeyT } from '../../nostr/fb/get-public-key.js';
 import { Publish, PublishT } from '../../nostr/fb/publish.js';
+import { SetPubKey, SetPubKeyT } from '../../nostr/fb/set-pub-key.js';
 import { SetSigner, SetSignerT } from '../../nostr/fb/set-signer.js';
 import { SignEvent, SignEventT } from '../../nostr/fb/sign-event.js';
 import { Subscribe, SubscribeT } from '../../nostr/fb/subscribe.js';
@@ -18,13 +19,14 @@ export enum MainContent {
   Publish = 3,
   SignEvent = 4,
   SetSigner = 5,
-  GetPublicKey = 6
+  GetPublicKey = 6,
+  SetPubKey = 7
 }
 
 export function unionToMainContent(
   type: MainContent,
-  accessor: (obj:GetPublicKey|Publish|SetSigner|SignEvent|Subscribe|Unsubscribe) => GetPublicKey|Publish|SetSigner|SignEvent|Subscribe|Unsubscribe|null
-): GetPublicKey|Publish|SetSigner|SignEvent|Subscribe|Unsubscribe|null {
+  accessor: (obj:GetPublicKey|Publish|SetPubKey|SetSigner|SignEvent|Subscribe|Unsubscribe) => GetPublicKey|Publish|SetPubKey|SetSigner|SignEvent|Subscribe|Unsubscribe|null
+): GetPublicKey|Publish|SetPubKey|SetSigner|SignEvent|Subscribe|Unsubscribe|null {
   switch(MainContent[type]) {
     case 'NONE': return null; 
     case 'Subscribe': return accessor(new Subscribe())! as Subscribe;
@@ -33,15 +35,16 @@ export function unionToMainContent(
     case 'SignEvent': return accessor(new SignEvent())! as SignEvent;
     case 'SetSigner': return accessor(new SetSigner())! as SetSigner;
     case 'GetPublicKey': return accessor(new GetPublicKey())! as GetPublicKey;
+    case 'SetPubKey': return accessor(new SetPubKey())! as SetPubKey;
     default: return null;
   }
 }
 
 export function unionListToMainContent(
   type: MainContent, 
-  accessor: (index: number, obj:GetPublicKey|Publish|SetSigner|SignEvent|Subscribe|Unsubscribe) => GetPublicKey|Publish|SetSigner|SignEvent|Subscribe|Unsubscribe|null, 
+  accessor: (index: number, obj:GetPublicKey|Publish|SetPubKey|SetSigner|SignEvent|Subscribe|Unsubscribe) => GetPublicKey|Publish|SetPubKey|SetSigner|SignEvent|Subscribe|Unsubscribe|null, 
   index: number
-): GetPublicKey|Publish|SetSigner|SignEvent|Subscribe|Unsubscribe|null {
+): GetPublicKey|Publish|SetPubKey|SetSigner|SignEvent|Subscribe|Unsubscribe|null {
   switch(MainContent[type]) {
     case 'NONE': return null; 
     case 'Subscribe': return accessor(index, new Subscribe())! as Subscribe;
@@ -50,6 +53,7 @@ export function unionListToMainContent(
     case 'SignEvent': return accessor(index, new SignEvent())! as SignEvent;
     case 'SetSigner': return accessor(index, new SetSigner())! as SetSigner;
     case 'GetPublicKey': return accessor(index, new GetPublicKey())! as GetPublicKey;
+    case 'SetPubKey': return accessor(index, new SetPubKey())! as SetPubKey;
     default: return null;
   }
 }
