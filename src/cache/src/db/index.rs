@@ -701,6 +701,7 @@ impl<S: EventStorage> NostrDB<S> {
 
                 // Respect no_cache in request
                 if req.no_cache() {
+                    remaining_indices.push(i);
                     continue;
                 }
 
