@@ -1,6 +1,6 @@
-use shared::generated::nostr::*; // brings `fb::...` into scope
 use crate::parser::{Parser, ParserError, Result};
-use crate::signer::interface::SignerManagerInterface;
+use shared::generated::nostr::*; // brings `fb::...` into scope
+
 use crate::types::network::Request;
 use crate::types::nostr::Event;
 use tracing::warn;
@@ -41,7 +41,7 @@ impl Parser {
     /// - 10000..19999 (replaceable lists)
     /// - 30000..39999 (parameterized replaceable lists, utilize "d" tag)
     /// - 39089 (follow packs; treated as list-compatible)
-    pub fn parse_nip51(&self, event: &Event) -> Result<(ListParsed, Option<Vec<Request>>)> {
+    pub async fn parse_nip51(&self, event: &Event) -> Result<(ListParsed, Option<Vec<Request>>)> {
         let kind_u32 = event.kind as u32;
         let is_1000x = (10000..20000).contains(&kind_u32);
         let is_3000x = (30000..40000).contains(&kind_u32);
@@ -91,33 +91,19 @@ impl Parser {
 
         // Decrypt private content when specified by tags and merge entries parsed like tags
         if let Some(enc) = tag_value(&event.tags, "encryption").map(|s| s.to_ascii_lowercase()) {
-            if !event.content.trim().is_empty() && self.signer_manager.has_signer() {
+            if !event.content.trim().is_empty() {
                 // Determine the correct counterparty like kind4 does
                 let sender_pubkey = event.pubkey.to_string();
-                let decryption_pubkey = if self.signer_manager.has_signer() {
-                    match self.signer_manager.get_public_key() {
-                        Ok(our_pubkey) => {
-                            if our_pubkey == sender_pubkey {
-                                // For lists, encrypted content is typically to self; decrypt with our key
-                                our_pubkey
-                            } else {
-                                // We are not the author; decrypt against sender
-                                sender_pubkey.clone()
-                            }
-                        }
-                        Err(_) => sender_pubkey.clone(),
-                    }
-                } else {
-                    sender_pubkey.clone()
-                };
                 let decrypted = match enc.as_str() {
                     "nip04" | "nip-04" => self
-                        .signer_manager
-                        .nip04_decrypt(&decryption_pubkey, &event.content)
+                        .signer_client
+                        .nip04_decrypt(&sender_pubkey, &event.content)
+                        .await
                         .ok(),
                     "nip44" | "nip-44" => self
-                        .signer_manager
-                        .nip44_decrypt(&decryption_pubkey, &event.content)
+                        .signer_client
+                        .nip44_decrypt(&sender_pubkey, &event.content)
+                        .await
                         .ok(),
                     _ => None,
                 };

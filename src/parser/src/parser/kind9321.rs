@@ -1,7 +1,7 @@
 use crate::nostr::Template;
 use crate::parser::Parser;
 use crate::parser::{ParserError, Result};
-use crate::signer::interface::SignerManagerInterface;
+
 use crate::types::network::Request;
 use crate::types::nostr::Event;
 use crate::types::proof::Proof;
@@ -166,7 +166,7 @@ impl Parser {
         Ok((result, Some(deduplicated_requests)))
     }
 
-    pub fn prepare_kind_9321(&self, template: &Template) -> Result<Event> {
+    pub async fn prepare_kind_9321(&self, template: &Template) -> Result<Event> {
         if template.kind != 9321 {
             return Err(ParserError::Other("event is not kind 9321".to_string()));
         }
@@ -205,9 +205,15 @@ impl Parser {
             ));
         }
 
-        self.signer_manager
-            .sign_event(template)
-            .map_err(|e| ParserError::Other(format!("failed to sign event: {}", e)))
+        let template_json = template.to_json();
+        let signed_event_json = self
+            .signer_client
+            .sign_event(template_json)
+            .await
+            .map_err(|e| ParserError::Crypto(format!("Signer error: {}", e)))?;
+
+        let new_event = Event::from_json(&signed_event_json)?;
+        Ok(new_event)
     }
 }
 

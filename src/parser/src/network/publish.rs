@@ -21,7 +21,7 @@ impl PublishManager {
         info!("Publishing event with ID {}", publish_id);
 
         // Prepare the event using parser
-        let event = match self.parser.prepare(template) {
+        let event = match self.parser.prepare(template).await {
             Ok(parsed) => parsed,
             Err(e) => return Err(NostrError::Other(format!("failed to prepare event: {}", e))),
         };

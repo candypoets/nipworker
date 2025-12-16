@@ -1,10 +1,8 @@
 use crate::nostr::{NostrTags, Template};
-use crate::parser::Parser;
-use crate::parser::{ParserError, Result};
-use crate::signer::interface::SignerManagerInterface;
+use crate::parser::{Parser, ParserError, Result};
 use crate::types::network::Request;
 use crate::types::nostr::Event;
-use tracing::{info, warn};
+use tracing::warn;
 
 use shared::generated::nostr::*;
 
@@ -16,7 +14,7 @@ pub struct Kind17375Parsed {
 }
 
 impl Parser {
-    pub fn parse_kind_17375(
+    pub async fn parse_kind_17375(
         &self,
         event: &Event,
     ) -> Result<(Kind17375Parsed, Option<Vec<Request>>)> {
@@ -31,58 +29,54 @@ impl Parser {
             decrypted: false,
         };
 
-        let signer = &self.signer_manager;
+        // Attempt to decrypt using the sender's pubkey
+        let sender_pubkey = event.pubkey.to_string();
+        match self
+            .signer_client
+            .nip44_decrypt(&sender_pubkey, &event.content)
+            .await
+        {
+            Ok(decrypted) => {
+                if !decrypted.is_empty() {
+                    match NostrTags::from_json(&decrypted) {
+                        Ok(tags) => {
+                            parsed.decrypted = true;
 
-        if signer.has_signer() {
-            let pubkey = signer.get_public_key()?;
-            match signer.nip44_decrypt(&pubkey, &event.content) {
-                Ok(decrypted) => {
-                    if !decrypted.is_empty() {
-                        match NostrTags::from_json(&decrypted) {
-                            Ok(tags) => {
-                                parsed.decrypted = true;
-
-                                // Process decrypted tags
-                                for tag in tags.0 {
-                                    if tag.len() >= 2 {
-                                        match tag[0].as_str() {
-                                            "mint" => {
-                                                parsed.mints.push(tag[1].clone());
-                                            }
-                                            "privkey" => {
-                                                parsed.p2pk_priv_key = Some(tag[1].clone());
-                                                // Derive public key from private key
-                                                if let Ok(secret_key) =
-                                                    crate::types::nostr::SecretKey::from_hex(
-                                                        &tag[1],
-                                                    )
-                                                {
-                                                    let pub_key = secret_key.public_key(
-                                                        &crate::types::nostr::SECP256K1,
-                                                    );
-                                                    parsed.p2pk_pub_key = Some(pub_key.to_string());
-                                                }
-                                            }
-                                            _ => {}
+                            // Process decrypted tags
+                            for tag in tags.0 {
+                                if tag.len() >= 2 {
+                                    match tag[0].as_str() {
+                                        "mint" => {
+                                            parsed.mints.push(tag[1].clone());
                                         }
+                                        "privkey" => {
+                                            parsed.p2pk_priv_key = Some(tag[1].clone());
+                                            // Derive public key from private key
+                                            if let Ok(secret_key) =
+                                                crate::types::nostr::SecretKey::from_hex(&tag[1])
+                                            {
+                                                let pub_key = secret_key
+                                                    .public_key(&crate::types::nostr::SECP256K1);
+                                                parsed.p2pk_pub_key = Some(pub_key.to_string());
+                                            }
+                                        }
+                                        _ => {}
                                     }
                                 }
                             }
-                            Err(e) => {
-                                warn!(
-                                    "Failed to parse decrypted tags for content {}, {}: {}",
-                                    decrypted, event.content, e
-                                );
-                            }
+                        }
+                        Err(e) => {
+                            warn!(
+                                "Failed to parse decrypted tags for content {}, {}: {}",
+                                decrypted, event.content, e
+                            );
                         }
                     }
                 }
-                Err(e) => {
-                    warn!("Failed to decrypt event content: {}", e);
-                }
             }
-        } else {
-            warn!("No signer found for event");
+            Err(e) => {
+                warn!("Failed to decrypt event content: {}", e);
+            }
         }
 
         // Also check for unencrypted mint tags in the event
@@ -98,7 +92,7 @@ impl Parser {
         Ok((parsed, None))
     }
 
-    pub fn prepare_kind_17375(&self, template: &Template) -> Result<Event> {
+    pub async fn prepare_kind_17375(&self, template: &Template) -> Result<Event> {
         if template.kind != 17375 {
             return Err(ParserError::Other("event is not kind 17375".to_string()));
         }
@@ -137,31 +131,31 @@ impl Parser {
             ));
         }
 
-        // If no private key was provided, we would generate one in a full implementation
+        // A private key is required in the content
         if !has_privkey {
             return Err(ParserError::Other(
                 "wallet must include a private key".to_string(),
             ));
         }
 
-        // Check if signer manager has a signer available
-        if !self.signer_manager.has_signer() {
-            return Err(ParserError::Other(
-                "no signer available to encrypt message".to_string(),
-            ));
-        }
-
-        // Encrypt the message content using NIP-04
+        // Encrypt the message content using NIP-44; let signer use its own pubkey (empty recipient)
         let encrypted_content = self
-            .signer_manager
-            .nip44_encrypt(&self.signer_manager.get_public_key()?, &template.content)?;
+            .signer_client
+            .nip44_encrypt("", &template.content)
+            .await
+            .map_err(|e| ParserError::Crypto(format!("Signer error: {}", e)))?;
 
         let encrypted_template =
             Template::new(template.kind, encrypted_content, template.tags.clone());
 
-        // Sign the event with encrypted content
-        let new_event = self.signer_manager.sign_event(&encrypted_template)?;
+        // Sign the event (SignerClient returns JSON)
+        let signed_event_json = self
+            .signer_client
+            .sign_event(encrypted_template.to_json())
+            .await
+            .map_err(|e| ParserError::Crypto(format!("Signer error: {}", e)))?;
 
+        let new_event = Event::from_json(&signed_event_json)?;
         Ok(new_event)
     }
 }

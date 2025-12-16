@@ -89,6 +89,7 @@ const INDEXER_RELAYS: &[&str] = &[
 pub struct NostrClient {
     network_manager: NetworkManager,
     signer_client: Arc<SignerClient>,
+    parser: Arc<Parser>,
 }
 
 #[wasm_bindgen]
@@ -113,10 +114,10 @@ impl NostrClient {
                 .expect("Failed to initialize signer client"),
         );
 
-        let parser = Arc::new(Parser::new_with_signer(signer_client.clone()));
+        let parser = Arc::new(Parser::new(signer_client.clone()));
 
         let network_manager = NetworkManager::new(
-            parser,
+            parser.clone(),
             Rc::new(RefCell::new(
                 SabRing::new(cache_request).expect("Failed to create SabRing for ws_request"),
             )),
@@ -136,6 +137,7 @@ impl NostrClient {
         Self {
             network_manager,
             signer_client,
+            parser,
         }
     }
 
@@ -153,19 +155,17 @@ impl NostrClient {
             .sign_event(template.clone())
             .await
             .map_err(|e| JsValue::from_str(&format!("Failed to sign event: {}", e)))?;
-        let json_str = serde_json::to_string(&signed_event)
-            .map_err(|e| JsValue::from_str(&format!("Failed to serialize signed event: {}", e)))?;
-        let js_value = JsValue::from_str(&json_str);
-        info!("Event signed and ready for posting: {}", json_str);
+        let js_value = JsValue::from_str(&signed_event);
         post_worker_message(&js_value);
         Ok(())
     }
 
-    pub fn get_public_key(&self) -> Result<(), JsValue> {
+    pub async fn get_public_key(&self) -> Result<(), JsValue> {
         // Get the public key from signer manager
         let pubkey = self
-            .signer_manager
+            .signer_client
             .get_public_key()
+            .await // Await the future returned by get_public_key
             .map_err(|e| JsValue::from_str(&format!("Failed to get public key: {}", e)))?;
 
         // Create FlatBuffer message
@@ -303,39 +303,37 @@ impl NostrClient {
             fb::MainContent::SignEvent => {
                 if let Some(sign_event) = main_message.content_as_sign_event() {
                     let template = Template::from_flatbuffer(&sign_event.template());
-                    self.sign_event(template)?;
+                    // self.sign_event(template)?;
                 } else {
                     return Err(JsValue::from_str("Invalid SignEvent message"));
                 }
             }
 
-            fb::MainContent::SetSigner => {
-                let set_signer = main_message.content_as_set_signer().unwrap();
-                match set_signer.signer_type_type() {
-                    fb::SignerType::PrivateKey => {
-                        let pk_type = set_signer.signer_type_as_private_key().unwrap();
-                        self.signer_manager
-                            .set_privatekey_signer(pk_type.private_key())
-                            .map_err(|e| {
-                                JsValue::from_str(&format!(
-                                    "Failed to set private key signer: {}",
-                                    e
-                                ))
-                            })?;
-                    }
-                    _ => {
-                        // Handle other signer types here
-                    }
-                }
+            // fb::MainContent::SetSigner => {
+            //     let set_signer = main_message.content_as_set_signer().unwrap();
+            //     match set_signer.signer_type_type() {
+            //         fb::SignerType::PrivateKey => {
+            //             let pk_type = set_signer.signer_type_as_private_key().unwrap();
+            //             self.signer_manager
+            //                 .set_privatekey_signer(pk_type.private_key())
+            //                 .map_err(|e| {
+            //                     JsValue::from_str(&format!(
+            //                         "Failed to set private key signer: {}",
+            //                         e
+            //                     ))
+            //                 })?;
+            //         }
+            //         _ => {
+            //             // Handle other signer types here
+            //         }
+            //     }
 
-                // self.set_signer(set_signer)?;
-            }
-
-            fb::MainContent::GetPublicKey => {
-                // GetPublicKey has no fields, just process it
-                self.get_public_key()?;
-            }
-
+            //     // self.set_signer(set_signer)?;
+            // }
+            // fb::MainContent::GetPublicKey => {
+            //     // GetPublicKey has no fields, just process it
+            //     self.get_public_key()?;
+            // }
             _ => {
                 return Err(JsValue::from_str("Empty message content"));
             }

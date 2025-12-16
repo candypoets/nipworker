@@ -1,13 +1,11 @@
 use crate::nostr::Template;
-use crate::parser::Parser;
-use crate::parser::{ParserError, Result};
-use crate::signer::interface::SignerManagerInterface;
+use crate::parser::{Parser, ParserError, Result};
 use crate::types::network::Request;
-use crate::types::nostr::{Event, UnsignedEvent};
+use crate::types::nostr::Event;
 
 // NEW: Imports for FlatBuffers
-use shared::generated::nostr::*;
 use flatbuffers::FlatBufferBuilder;
+use shared::generated::nostr::*;
 
 pub struct Kind7374Parsed {
     pub quote_id: String,
@@ -16,12 +14,15 @@ pub struct Kind7374Parsed {
 }
 
 impl Parser {
-    pub fn parse_kind_7374(&self, event: &Event) -> Result<(Kind7374Parsed, Option<Vec<Request>>)> {
+    pub async fn parse_kind_7374(
+        &self,
+        event: &Event,
+    ) -> Result<(Kind7374Parsed, Option<Vec<Request>>)> {
         if event.kind != 7374 {
             return Err(ParserError::Other("event is not kind 7374".to_string()));
         }
 
-        // Extract mint URL from tags
+        // Extract mint URL and expiration from tags
         let mut mint_url = String::new();
         let mut expiration_unix = 0u64;
 
@@ -47,14 +48,17 @@ impl Parser {
             ));
         }
 
+        // Attempt to decrypt the content using our pubkey (if present) via SignerClient (async)
         let mut quote_id = String::new();
 
-        if self.signer_manager.has_signer() {
-            let pubkey = self.signer_manager.get_public_key()?;
-            if let Ok(decrypted) = self.signer_manager.nip44_decrypt(&pubkey, &event.content) {
-                if !decrypted.is_empty() {
-                    quote_id = decrypted;
-                }
+        let sender_pubkey = event.pubkey.to_string();
+        if let Ok(decrypted) = self
+            .signer_client
+            .nip44_decrypt(&sender_pubkey, &event.content)
+            .await
+        {
+            if !decrypted.is_empty() {
+                quote_id = decrypted;
             }
         }
 
@@ -67,7 +71,7 @@ impl Parser {
         Ok((parsed, None))
     }
 
-    pub fn prepare_kind_7374(&self, template: &Template) -> Result<Event> {
+    pub async fn prepare_kind_7374(&self, template: &Template) -> Result<Event> {
         if template.kind != 7374 {
             return Err(ParserError::Other("event is not kind 7374".to_string()));
         }
@@ -87,19 +91,22 @@ impl Parser {
             ));
         }
 
-        if self.signer_manager.has_signer() {
-            let pubkey = self.signer_manager.get_public_key()?;
-            let encrypted = self
-                .signer_manager
-                .nip44_encrypt(&pubkey, &template.content)?;
-            let encrypted_template = Template::new(template.kind, encrypted, template.tags.clone());
-            let new_event = self.signer_manager.sign_event(&encrypted_template)?;
-            Ok(new_event)
-        } else {
-            Err(ParserError::Other(
-                "signer is required for kind 7374 events".to_string(),
-            ))
-        }
+        let encrypted = self
+            .signer_client
+            .nip44_encrypt("", &template.content)
+            .await
+            .map_err(|e| ParserError::Crypto(format!("Signer error: {}", e)))?;
+
+        let encrypted_template = Template::new(template.kind, encrypted, template.tags.clone());
+
+        let signed_event_json = self
+            .signer_client
+            .sign_event(encrypted_template.to_json())
+            .await
+            .map_err(|e| ParserError::Crypto(format!("Signer error: {}", e)))?;
+
+        let new_event = Event::from_json(&signed_event_json)?;
+        Ok(new_event)
     }
 }
 

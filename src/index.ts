@@ -116,6 +116,7 @@ export class NostrManager {
 		this.connections = new Worker(connectionURL, {
 			type: 'module'
 		});
+
 		this.cache = new Worker(cacheURL, { type: 'module' });
 		this.parser = new Worker(parserURL, { type: 'module' });
 		this.signer = new Worker(signerURL, { type: 'module' });
@@ -137,7 +138,14 @@ export class NostrManager {
 
 		this.parser.postMessage({
 			type: 'init',
-			payload: { ingestRing: dbRing, cacheRequest, cacheResponse, wsResponse }
+			payload: {
+				ingestRing: dbRing,
+				cacheRequest,
+				cacheResponse,
+				signerRequest,
+				signerResponse,
+				wsResponse
+			}
 		} as InitParserMsg);
 
 		this.signer.postMessage({
@@ -165,14 +173,6 @@ export class NostrManager {
 	private setupWorkerListener() {
 		this.parser.onmessage = async (event) => {
 			const id = typeof event.data === 'string' ? event.data : undefined;
-			try {
-				if (event.data.startsWith('{"id":')) {
-					const parsed = JSON.parse(event.data);
-					this.signCB(parsed);
-				}
-			} catch (error) {
-				// console.error("Error parsing event data:", error);
-			}
 
 			if (!id) return;
 			// Prefer O(1) routing via your existing maps
@@ -185,6 +185,17 @@ export class NostrManager {
 			if (this.publishes.has(id)) {
 				this.dispatch(`publish:${id}`, id);
 				return;
+			}
+		};
+
+		this.signer.onmessage = async (event) => {
+			try {
+				if (event.data.op == 'sign_event') {
+					const parsed = JSON.parse(event.data.result);
+					this.signCB(parsed);
+				}
+			} catch (error) {
+				// console.error("Error parsing event data:", error);
 			}
 		};
 
@@ -374,46 +385,20 @@ export class NostrManager {
 	}
 
 	setSigner(name: string, secretKeyHex: string): void {
-		console.log('setSigner', name, secretKeyHex);
+		console.log('Setting signer:', name, secretKeyHex);
+		switch (name) {
+			case 'privkey':
+				// Create the PrivateKeyT object
+				this.signer.postMessage({ type: 'set_private_key', payload: secretKeyHex });
+				break;
+		}
 
-		// Create the PrivateKeyT object
-		const privateKeyT = new PrivateKeyT(this.textEncoder.encode(secretKeyHex));
-
-		// Create the SetSignerT object and set the union
-		const setSignerT = new SetSignerT(SignerType.PrivateKey, privateKeyT);
-
-		// Create the MainMessageT with the properly constructed SetSignerT
-		const mainT = new MainMessageT(MainContent.SetSigner, setSignerT);
-
-		// Serialize with FlatBuffers builder (unchanged)
-		const builder = new flatbuffers.Builder(2048);
-		const mainOffset = mainT.pack(builder);
-		builder.finish(mainOffset);
-		const serializedMessage = builder.asUint8Array();
-
-		void this.postToWorker(serializedMessage);
 		this.signers.set(name, secretKeyHex);
 	}
 
 	signEvent(event: EventTemplate, cb: (event: NostrEvent) => void) {
-		const mainT = new MainMessageT(
-			MainContent.SignEvent,
-			new SignEventT(
-				new TemplateT(
-					event.kind,
-					this.textEncoder.encode(event.content),
-					event.tags.map((t) => new StringVecT(t))
-				)
-			)
-		);
-
-		// Serialize with FlatBuffers builder
-		const builder = new flatbuffers.Builder(2048);
-		const mainOffset = mainT.pack(builder);
-		builder.finish(mainOffset);
-		const serializedMessage = builder.asUint8Array();
 		this.signCB = cb;
-		this.parser.postMessage(serializedMessage);
+		this.signer.postMessage({ type: 'sign_event', payload: event });
 	}
 
 	getPublicKey() {

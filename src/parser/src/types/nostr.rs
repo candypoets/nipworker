@@ -177,6 +177,180 @@ impl Template {
             tags,
         }
     }
+
+    /// Serialize Template to a compact JSON string: {"kind":<u32>,"content":"<escaped>","tags":[...]}
+    pub fn to_json(&self) -> String {
+        let tags_json = NostrTags(self.tags.clone()).to_json();
+        let mut result = String::with_capacity(32 + self.content.len() * 2 + tags_json.len());
+        use core::fmt::Write;
+        write!(
+            result,
+            r#"{{"kind":{},"content":"{}","tags":{}}}"#,
+            self.kind,
+            Self::escape_string(&self.content),
+            tags_json
+        )
+        .unwrap();
+        result
+    }
+
+    /// Parse Template from a minimal JSON object containing "kind", "content", and "tags".
+    /// Uses a lightweight scan and NostrTags::from_json for the tags array.
+    pub fn from_json(json: &str) -> Result<Self> {
+        // kind
+        let kind = {
+            if let Some(i) = json.find("\"kind\"") {
+                let tail = &json[i + 6..];
+                // Skip spaces and colon
+                let bytes = tail.as_bytes();
+                let mut j = 0usize;
+                while j < bytes.len() && (bytes[j] == b' ' || bytes[j] == b'\t' || bytes[j] == b':')
+                {
+                    j += 1;
+                }
+                let start = j;
+                while j < bytes.len() && bytes[j].is_ascii_digit() {
+                    j += 1;
+                }
+                if start == j {
+                    return Err(TypesError::InvalidFormat("Invalid kind".to_string()));
+                }
+                let num_str = &tail[start..j];
+                num_str
+                    .parse::<u32>()
+                    .map_err(|_| TypesError::InvalidFormat("Invalid kind".to_string()))?
+            } else {
+                return Err(TypesError::InvalidFormat("Missing kind".to_string()));
+            }
+        };
+
+        // content
+        let content = {
+            if let Some(i) = json.find("\"content\"") {
+                let tail = &json[i + 9..];
+                let qpos = tail.find('"').ok_or_else(|| {
+                    TypesError::InvalidFormat("Missing content string".to_string())
+                })?;
+                let bytes = tail.as_bytes();
+                let mut idx = qpos + 1;
+                let mut out = String::new();
+                let mut escaped = false;
+                while idx < tail.len() {
+                    let ch = bytes[idx];
+                    if escaped {
+                        match ch {
+                            b'"' => out.push('"'),
+                            b'\\' => out.push('\\'),
+                            b'n' => out.push('\n'),
+                            b'r' => out.push('\r'),
+                            b't' => out.push('\t'),
+                            _ => out.push(ch as char),
+                        }
+                        escaped = false;
+                    } else if ch == b'\\' {
+                        escaped = true;
+                    } else if ch == b'"' {
+                        break;
+                    } else {
+                        out.push(ch as char);
+                    }
+                    idx += 1;
+                }
+                out
+            } else {
+                return Err(TypesError::InvalidFormat("Missing content".to_string()));
+            }
+        };
+
+        // tags
+        let tags = {
+            if let Some(i) = json.find("\"tags\"") {
+                let tail = &json[i + 6..];
+                let start_rel = tail
+                    .find('[')
+                    .ok_or_else(|| TypesError::InvalidFormat("Missing tags array".to_string()))?;
+                let start = i + 6 + start_rel;
+                let bytes = json.as_bytes();
+                let mut pos = start;
+                let len = json.len();
+                let mut depth = 0usize;
+                let mut in_string = false;
+                let mut escaped = false;
+                let mut end = start;
+
+                while pos < len {
+                    let c = bytes[pos];
+                    if in_string {
+                        if escaped {
+                            escaped = false;
+                        } else if c == b'\\' {
+                            escaped = true;
+                        } else if c == b'"' {
+                            in_string = false;
+                        }
+                    } else {
+                        match c {
+                            b'"' => in_string = true,
+                            b'[' => depth += 1,
+                            b']' => {
+                                if depth == 0 {
+                                    return Err(TypesError::InvalidFormat(
+                                        "Unbalanced tags array".to_string(),
+                                    ));
+                                }
+                                depth -= 1;
+                                if depth == 0 {
+                                    end = pos + 1;
+                                    break;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    pos += 1;
+                }
+
+                if end <= start {
+                    return Err(TypesError::InvalidFormat("Invalid tags array".to_string()));
+                }
+                let tags_str = &json[start..end];
+                let nt = NostrTags::from_json(tags_str)?;
+                nt.0
+            } else {
+                return Err(TypesError::InvalidFormat("Missing tags".to_string()));
+            }
+        };
+
+        if kind > u16::MAX as u32 {
+            return Err(TypesError::InvalidFormat("Kind out of range".to_string()));
+        }
+        Ok(Template {
+            kind: kind as u16,
+            content,
+            tags,
+        })
+    }
+
+    #[inline(always)]
+    fn escape_string(s: &str) -> String {
+        let mut result = String::with_capacity(s.len() + 4);
+        Self::escape_string_to(&mut result, s);
+        result
+    }
+
+    #[inline(always)]
+    fn escape_string_to(result: &mut String, s: &str) {
+        for ch in s.chars() {
+            match ch {
+                '\\' => result.push_str("\\\\"),
+                '"' => result.push_str("\\\""),
+                '\n' => result.push_str("\\n"),
+                '\r' => result.push_str("\\r"),
+                '\t' => result.push_str("\\t"),
+                other => result.push(other),
+            }
+        }
+    }
 }
 
 pub struct UnsignedEvent {

@@ -1,7 +1,5 @@
 use crate::nostr::{NostrTags, Template};
-use crate::parser::Parser;
-use crate::parser::{ParserError, Result};
-use crate::signer::interface::SignerManagerInterface;
+use crate::parser::{Parser, ParserError, Result};
 use crate::types::network::Request;
 use crate::types::nostr::Event;
 
@@ -26,7 +24,10 @@ pub struct Kind7376Parsed {
 }
 
 impl Parser {
-    pub fn parse_kind_7376(&self, event: &Event) -> Result<(Kind7376Parsed, Option<Vec<Request>>)> {
+    pub async fn parse_kind_7376(
+        &self,
+        event: &Event,
+    ) -> Result<(Kind7376Parsed, Option<Vec<Request>>)> {
         if event.kind != 7376 {
             return Err(ParserError::Other("event is not kind 7376".to_string()));
         }
@@ -57,53 +58,52 @@ impl Parser {
             }
         }
 
-        let signer = &self.signer_manager;
+        // Attempt to decrypt spending history (NIP-44) using the sender's pubkey
+        let sender_pubkey = event.pubkey.to_string();
+        if let Ok(decrypted) = self
+            .signer_client
+            .nip44_decrypt(&sender_pubkey, &event.content)
+            .await
+        {
+            if !decrypted.is_empty() {
+                if let Ok(tags) = NostrTags::from_json(&decrypted) {
+                    parsed.decrypted = true;
+                    parsed.tags = Vec::new();
 
-        if signer.has_signer() {
-            let pubkey = signer.get_public_key()?;
-            if let Ok(decrypted) = signer.nip44_decrypt(&pubkey, &event.content) {
-                if !decrypted.is_empty() {
-                    if let Ok(tags) = NostrTags::from_json(&decrypted) {
-                        parsed.decrypted = true;
-                        parsed.tags = Vec::new();
+                    // Process decrypted tags - access inner Vec<Vec<String>> via .0
+                    for tag in &tags.0 {
+                        if tag.len() >= 2 {
+                            let history_tag = HistoryTag {
+                                name: tag[0].clone(),
+                                value: tag[1].clone(),
+                                relay: tag.get(2).cloned(),
+                                marker: tag.get(3).cloned(),
+                            };
+                            parsed.tags.push(history_tag);
 
-                        // Process decrypted tags - access inner Vec<Vec<String>> via .0
-                        for tag in &tags.0 {
-                            if tag.len() >= 2 {
-                                let history_tag = HistoryTag {
-                                    name: tag[0].clone(),
-                                    value: tag[1].clone(),
-                                    relay: tag.get(2).cloned(),
-                                    marker: tag.get(3).cloned(),
-                                };
-                                parsed.tags.push(history_tag);
-
-                                // Extract specific tag values
-                                match tag[0].as_str() {
-                                    "direction" => parsed.direction = tag[1].clone(),
-                                    "amount" => {
-                                        if let Ok(amt) = tag[1].parse::<i32>() {
-                                            parsed.amount = amt;
-                                        }
+                            // Extract specific tag values
+                            match tag[0].as_str() {
+                                "direction" => parsed.direction = tag[1].clone(),
+                                "amount" => {
+                                    if let Ok(amt) = tag[1].parse::<i32>() {
+                                        parsed.amount = amt;
                                     }
-                                    "e" => {
-                                        if tag.len() >= 4 {
-                                            match tag[3].as_str() {
-                                                "created" => {
-                                                    parsed.created_events.push(tag[1].clone())
-                                                }
-                                                "destroyed" => {
-                                                    parsed.destroyed_events.push(tag[1].clone())
-                                                }
-                                                "redeemed" => {
-                                                    parsed.redeemed_events.push(tag[1].clone())
-                                                }
-                                                _ => {}
-                                            }
-                                        }
-                                    }
-                                    _ => {}
                                 }
+                                "e" => {
+                                    if tag.len() >= 4 {
+                                        match tag[3].as_str() {
+                                            "created" => parsed.created_events.push(tag[1].clone()),
+                                            "destroyed" => {
+                                                parsed.destroyed_events.push(tag[1].clone())
+                                            }
+                                            "redeemed" => {
+                                                parsed.redeemed_events.push(tag[1].clone())
+                                            }
+                                            _ => {}
+                                        }
+                                    }
+                                }
+                                _ => {}
                             }
                         }
                     }
@@ -114,7 +114,7 @@ impl Parser {
         Ok((parsed, Some(requests)))
     }
 
-    pub fn prepare_kind_7376(&self, template: &Template) -> Result<Event> {
+    pub async fn prepare_kind_7376(&self, template: &Template) -> Result<Event> {
         if template.kind != 7376 {
             return Err(ParserError::Other("event is not kind 7376".to_string()));
         }
@@ -151,26 +151,25 @@ impl Parser {
 
         let tags_json = tags.to_json();
 
-        let signer_manager = &self.signer_manager;
+        // Using signer's own pubkey by passing empty recipient to nip44_encrypt
 
-        if !signer_manager.has_signer() {
-            return Err(ParserError::Other(
-                "no signer available for encryption".to_string(),
-            ));
-        }
-
-        let pubkey = signer_manager.get_public_key()?;
-
-        let encrypted = signer_manager
-            .nip44_encrypt(&pubkey, &tags_json)
-            .map_err(|e| ParserError::Other(format!("failed to encrypt tags: {}", e)))?;
+        let encrypted = self
+            .signer_client
+            .nip44_encrypt("", &tags_json)
+            .await
+            .map_err(|e| ParserError::Crypto(format!("Signer error: {}", e)))?;
 
         let encrypted_template = Template::new(template.kind, encrypted, template.tags.clone());
 
         // Sign the event
-        signer_manager
-            .sign_event(&encrypted_template)
-            .map_err(|e| ParserError::Other(format!("failed to sign event: {}", e)))
+        let signed_event_json = self
+            .signer_client
+            .sign_event(encrypted_template.to_json())
+            .await
+            .map_err(|e| ParserError::Crypto(format!("Signer error: {}", e)))?;
+
+        let new_event = Event::from_json(&signed_event_json)?;
+        Ok(new_event)
     }
 }
 

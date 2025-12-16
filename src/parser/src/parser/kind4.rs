@@ -2,12 +2,11 @@ use crate::parser::content::serialize_content_data;
 use crate::parser::ContentBlock;
 use crate::parser::{content::parse_content, Parser};
 use crate::parser::{ParserError, Result};
-use crate::signer::interface::SignerManagerInterface;
 use crate::types::network::Request;
 use crate::types::nostr::{Event, Template};
 use crate::utils::request_deduplication::RequestDeduplicator;
 
-use tracing::warn;
+use tracing::{info, warn};
 
 // NEW: Imports for FlatBuffers
 use shared::generated::nostr::*;
@@ -20,7 +19,7 @@ pub struct Kind4Parsed {
 }
 
 impl Parser {
-    pub fn parse_kind_4(&self, event: &Event) -> Result<(Kind4Parsed, Option<Vec<Request>>)> {
+    pub async fn parse_kind_4(&self, event: &Event) -> Result<(Kind4Parsed, Option<Vec<Request>>)> {
         if event.kind != 4 {
             return Err(ParserError::Other("event is not kind 4".to_string()));
         }
@@ -39,8 +38,6 @@ impl Parser {
                 }
             })
             .ok_or_else(|| ParserError::Other("no recipient found in DM".to_string()))?;
-
-        let event_pubkey = event.pubkey.to_hex();
 
         // Request profile information for both sender and recipient
         requests.push(Request {
@@ -76,28 +73,15 @@ impl Parser {
         // Try to decrypt the message using NIP-04
         // The sender is the event author, so we decrypt using their pubkey
         let sender_pubkey = event.pubkey.to_string();
-
-        // Check if we are the sender - if so, use the recipient for decryption
-        let decryption_pubkey = if self.signer_manager.has_signer() {
-            match self.signer_manager.get_public_key() {
-                Ok(our_pubkey) => {
-                    if our_pubkey == sender_pubkey {
-                        // We are the sender, use recipient for decryption
-                        parsed.recipient.clone()
-                    } else {
-                        // We are not the sender, use sender for decryption
-                        sender_pubkey.clone()
-                    }
-                }
-                Err(_) => sender_pubkey.clone(),
-            }
-        } else {
-            sender_pubkey.clone()
-        };
-
+        info!(
+            "Attempting to decrypt kind 4 message from {} to {}",
+            event.pubkey.to_hex(),
+            parsed.recipient
+        );
         match self
-            .signer_manager
-            .nip04_decrypt(&decryption_pubkey, &event.content)
+            .signer_client
+            .nip04_decrypt_between(&sender_pubkey, &parsed.recipient, &event.content)
+            .await
         {
             Ok(decrypted) => {
                 parsed.decrypted_content = Some(decrypted.clone());
@@ -141,7 +125,7 @@ impl Parser {
         Ok((parsed, Some(deduplicated_requests)))
     }
 
-    pub fn prepare_kind_4(&self, event: &Template) -> Result<Event> {
+    pub async fn prepare_kind_4(&self, event: &Template) -> Result<Event> {
         // Find recipient from p tag
         let recipient = event
             .tags
@@ -155,23 +139,26 @@ impl Parser {
             })
             .ok_or_else(|| ParserError::Other("no recipient found in p tag".to_string()))?;
 
-        // Check if signer manager has a signer available
-        if !self.signer_manager.has_signer() {
-            return Err(ParserError::Other(
-                "no signer available to encrypt message".to_string(),
-            ));
-        }
-
         // Encrypt the message content using NIP-04
         let encrypted_content = self
-            .signer_manager
-            .nip04_encrypt(&recipient, &event.content)?;
+            .signer_client
+            .nip04_encrypt(&recipient, &event.content)
+            .await
+            .map_err(|e| ParserError::Crypto(format!("Signer error: {}", e)))?;
 
         // Create a new event with the encrypted content using EventBuilder
         let new_template = Template::new(event.kind, encrypted_content, event.tags.clone());
 
-        // Sign the event with encrypted content
-        let new_event = self.signer_manager.sign_event(&new_template)?;
+        let template_json = new_template.to_json();
+
+        // Sign the event with encrypted content (SignerClient returns JSON)
+        let signed_event_json = self
+            .signer_client
+            .sign_event(template_json)
+            .await
+            .map_err(|e| ParserError::Crypto(format!("Signer error: {}", e)))?;
+
+        let new_event = Event::from_json(&signed_event_json)?;
 
         Ok(new_event)
     }

@@ -3,7 +3,7 @@
 #![allow(dead_code)]
 
 use js_sys::{Array, SharedArrayBuffer, Uint8Array};
-use shared::{telemetry, SabRing};
+use shared::{init_with_component, telemetry, SabRing};
 use tracing::{error, info, warn};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
@@ -14,7 +14,7 @@ use std::rc::Rc;
 
 // expose client
 mod client;
-mod service;
+
 mod signers;
 pub use client::SignerClient;
 use signers::{Nip07Signer, Nip46Config, Nip46Signer, PrivateKeySigner};
@@ -66,7 +66,7 @@ impl Signer {
         ws_request_signer: SharedArrayBuffer,
         ws_response_signer: SharedArrayBuffer,
     ) -> Result<Signer, JsValue> {
-        telemetry::init_with_component(tracing::Level::INFO, "signer");
+        init_with_component(tracing::Level::INFO, "signer");
 
         let svc_req = Rc::new(RefCell::new(SabRing::new(signer_service_request)?));
         let svc_resp = Rc::new(RefCell::new(SabRing::new(signer_service_response)?));
@@ -75,22 +75,17 @@ impl Signer {
 
         info!("[signer] initialized SAB rings");
 
-        Ok(Signer {
+        let signer = Signer {
             svc_req,
             svc_resp,
             ws_req,
             ws_resp,
             active: Rc::new(RefCell::new(ActiveSigner::Unset)),
-        })
-    }
+        };
 
-    /// Starts:
-    /// - the signer service loop (drains signer_service_request and writes signer_service_response)
-    /// - the NIP-46 response pump (drains ws_response_signer)
-    #[wasm_bindgen]
-    pub fn start(&self) {
-        self.start_service_loop();
-        info!("[signer] loops started");
+        signer.start_service_loop();
+
+        Ok(signer)
     }
 
     // --------------------------
@@ -100,6 +95,7 @@ impl Signer {
     /// Set a private key signer (hex or nsec). For now we don't perform validation here.
     #[wasm_bindgen(js_name = "setPrivateKey")]
     pub fn set_private_key(&self, secret: String) -> Result<(), JsValue> {
+        info!("[signer] setting private key");
         let pk = PrivateKeySigner::new(&secret)
             .map_err(|e| js_err(&format!("failed to create private key signer: {e}")))?;
         *self.active.borrow_mut() = ActiveSigner::Pk(pk);
@@ -189,6 +185,7 @@ impl Signer {
     fn start_service_loop(&self) {
         let svc_req = self.svc_req.clone();
         let svc_resp = self.svc_resp.clone();
+        let active = self.active.clone();
 
         spawn_local(async move {
             let mut sleep_ms: u32 = 8;
@@ -198,30 +195,131 @@ impl Signer {
                 let maybe = { svc_req.borrow_mut().read_next() };
 
                 if let Some(bytes) = maybe {
-                    // Placeholder: In the real version, decode FB::SignerRequest, dispatch
-                    // to the active signer, then encode FB::SignerResponse.
-                    // For now, echo a minimal "ok" envelope: { "ok": true, "echo": ... }
                     sleep_ms = 8;
 
-                    // Try to log a UTF-8 preview
-                    if let Ok(s) = std::str::from_utf8(&bytes) {
-                        info!(
-                            "[signer][svc] received {} bytes: {}",
-                            bytes.len(),
-                            preview(s, 160)
-                        );
-                    } else {
-                        info!("[signer][svc] received {} binary bytes", bytes.len());
-                    }
+                    // Decode SignerRequest FlatBuffer
+                    let req = match flatbuffers::root::<shared::generated::nostr::fb::SignerRequest>(
+                        &bytes,
+                    ) {
+                        Ok(r) => r,
+                        Err(e) => {
+                            warn!("[signer][svc] failed to decode SignerRequest: {:?}", e);
+                            continue;
+                        }
+                    };
 
-                    // Echo back as an opaque payload so parser can validate the pipe.
-                    if !bytes.is_empty() {
-                        svc_resp.borrow_mut().write(&bytes);
-                    } else {
-                        // Always write something, even if empty, to test ring pathway
-                        let fallback = br#"{"ok":true}"#;
-                        svc_resp.borrow_mut().write(fallback);
-                    }
+                    let rid = req.request_id();
+                    let op = req.op();
+                    let payload = req.payload().unwrap_or("");
+                    let peer = req.pubkey().unwrap_or("");
+                    let sender = req.sender_pubkey().unwrap_or("");
+                    let recipient = req.recipient_pubkey().unwrap_or("");
+
+                    // Dispatch to active signer
+                    let result: Result<String, String> = match &*active.borrow() {
+                        ActiveSigner::Unset => Err("signer not configured".into()),
+                        ActiveSigner::Pk(pk) => match op {
+                            shared::generated::nostr::fb::SignerOp::GetPubkey => {
+                                pk.get_public_key().map_err(|e| e.to_string())
+                            }
+                            shared::generated::nostr::fb::SignerOp::SignEvent => {
+                                match pk.sign_event(payload).await {
+                                    Ok(sig) => Ok(sig),
+                                    Err(e) => Err(e.to_string()),
+                                }
+                            }
+                            shared::generated::nostr::fb::SignerOp::Nip04Encrypt => {
+                                pk.nip04_encrypt(peer, payload).map_err(|e| e.to_string())
+                            }
+                            shared::generated::nostr::fb::SignerOp::Nip04Decrypt => {
+                                pk.nip04_decrypt(peer, payload).map_err(|e| e.to_string())
+                            }
+                            shared::generated::nostr::fb::SignerOp::Nip44Encrypt => {
+                                pk.nip44_encrypt(peer, payload).map_err(|e| e.to_string())
+                            }
+                            shared::generated::nostr::fb::SignerOp::Nip44Decrypt => {
+                                pk.nip44_decrypt(peer, payload).map_err(|e| e.to_string())
+                            }
+                            shared::generated::nostr::fb::SignerOp::Nip04DecryptBetween => {
+                                info!("[signer] decrypting between");
+                                if sender.is_empty() && recipient.is_empty() {
+                                    Err("missing sender/recipient".to_string())
+                                } else {
+                                    pk.nip04_decrypt_between(sender, recipient, payload)
+                                        .map_err(|e| e.to_string())
+                                }
+                            }
+                            shared::generated::nostr::fb::SignerOp::Nip44DecryptBetween => {
+                                if sender.is_empty() && recipient.is_empty() {
+                                    Err("missing sender/recipient".to_string())
+                                } else {
+                                    pk.nip44_decrypt_between(sender, recipient, payload)
+                                        .map_err(|e| e.to_string())
+                                }
+                            }
+                            _ => Err("Unsupported operation".to_string()),
+                        },
+                        ActiveSigner::Nip07(s) => match op {
+                            shared::generated::nostr::fb::SignerOp::GetPubkey => {
+                                s.get_public_key().await.map_err(|e| format!("{:?}", e))
+                            }
+                            shared::generated::nostr::fb::SignerOp::SignEvent => {
+                                match s.sign_event(payload).await {
+                                    Ok(signed) => Ok(serde_json::to_string(&signed)
+                                        .unwrap_or_else(|_| "{}".to_string())),
+                                    Err(e) => Err(format!("{:?}", e)),
+                                }
+                            }
+                            shared::generated::nostr::fb::SignerOp::Nip04Encrypt
+                            | shared::generated::nostr::fb::SignerOp::Nip04Decrypt
+                            | shared::generated::nostr::fb::SignerOp::Nip44Encrypt
+                            | shared::generated::nostr::fb::SignerOp::Nip44Decrypt
+                            | shared::generated::nostr::fb::SignerOp::Nip04DecryptBetween
+                            | shared::generated::nostr::fb::SignerOp::Nip44DecryptBetween => {
+                                Err("op not implemented for NIP-07".into())
+                            }
+                            _ => Err("Unsupported operation".to_string()),
+                        },
+                        ActiveSigner::Nip46(s) => match op {
+                            shared::generated::nostr::fb::SignerOp::GetPubkey => {
+                                s.get_public_key().await.map_err(|e| format!("{:?}", e))
+                            }
+                            shared::generated::nostr::fb::SignerOp::SignEvent => {
+                                match s.sign_event(payload).await {
+                                    Ok(signed) => Ok(serde_json::to_string(&signed)
+                                        .unwrap_or_else(|_| "{}".to_string())),
+                                    Err(e) => Err(format!("{:?}", e)),
+                                }
+                            }
+                            shared::generated::nostr::fb::SignerOp::Nip04Encrypt
+                            | shared::generated::nostr::fb::SignerOp::Nip04Decrypt
+                            | shared::generated::nostr::fb::SignerOp::Nip44Encrypt
+                            | shared::generated::nostr::fb::SignerOp::Nip44Decrypt
+                            | shared::generated::nostr::fb::SignerOp::Nip04DecryptBetween
+                            | shared::generated::nostr::fb::SignerOp::Nip44DecryptBetween => {
+                                Err("op not implemented for NIP-46".into())
+                            }
+                            _ => Err("Unsupported operation".to_string()),
+                        },
+                    };
+
+                    // Encode SignerResponse FlatBuffer (no ok flag; use result/error)
+                    let mut fbb = flatbuffers::FlatBufferBuilder::new();
+                    let (result_off, err_off) = match result {
+                        Ok(s) => (Some(fbb.create_string(&s)), None),
+                        Err(e) => (None, Some(fbb.create_string(&e))),
+                    };
+                    let resp = shared::generated::nostr::fb::SignerResponse::create(
+                        &mut fbb,
+                        &shared::generated::nostr::fb::SignerResponseArgs {
+                            request_id: rid,
+                            result: result_off,
+                            error: err_off,
+                        },
+                    );
+                    fbb.finish(resp, None);
+                    let out = fbb.finished_data();
+                    let _ = svc_resp.borrow_mut().write(out);
 
                     continue;
                 }

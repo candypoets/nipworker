@@ -25,7 +25,7 @@ impl Pipe for ParsePipe {
 
         // Parse the raw event
         if let Some(raw_event) = event.raw.clone() {
-            match self.parser.parse(raw_event) {
+            match self.parser.parse(raw_event).await {
                 Ok(parsed_event) => {
                     event.raw = None;
                     event.parsed = Some(parsed_event);

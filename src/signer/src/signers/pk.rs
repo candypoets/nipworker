@@ -22,6 +22,8 @@ pub struct PrivateKeySigner {
     /// Secret key representation provided by the caller.
     /// Accepts hex (64 lowercase hex chars) or bech32 nsec.
     keys: Keys,
+    /// Cached public key (hex, x-only) derived from `keys`.
+    pubkey_hex: String,
 }
 
 impl PrivateKeySigner {
@@ -33,13 +35,14 @@ impl PrivateKeySigner {
         let secret_key = SecretKey::from_hex(private_key_hex)
             .map_err(|e| SignerError::Other(format!("Invalid private key: {}", e)))?;
         let keys = Keys::new(secret_key);
+        let pubkey_hex = keys.public_key().to_hex();
 
         info!(
             "Created new PrivateKeySigner with public key: {}",
-            keys.public_key().to_hex()
+            pubkey_hex
         );
 
-        Ok(Self { keys })
+        Ok(Self { keys, pubkey_hex })
     }
 
     /// Replace the secret.
@@ -47,13 +50,14 @@ impl PrivateKeySigner {
         let secret_key = SecretKey::from_hex(secret)
             .map_err(|e| SignerError::Other(format!("Invalid private key: {}", e)))?;
         self.keys = Keys::new(secret_key);
+        self.pubkey_hex = self.keys.public_key().to_hex();
         info!("[pk] signer secret replaced");
         Ok(())
     }
 
     /// Return the public key (hex, x-only).
     pub fn get_public_key(&self) -> Result<String> {
-        Ok(self.keys.public_key().to_hex())
+        Ok(self.pubkey_hex.clone())
     }
 
     /// Sign an event id
@@ -92,8 +96,12 @@ impl PrivateKeySigner {
 
     /// NIP-04 encrypt plaintext for a recipient pubkey (hex).
     pub fn nip04_encrypt(&self, _recipient_pubkey_hex: &str, _plaintext: &str) -> Result<String> {
-        let recipient_pk = PublicKey::from_hex(_recipient_pubkey_hex)
-            .map_err(|e| SignerError::Other(format!("Invalid recipient public key: {}", e)))?;
+        let recipient_pk = if _recipient_pubkey_hex.is_empty() {
+            self.keys.public_key()
+        } else {
+            PublicKey::from_hex(_recipient_pubkey_hex)
+                .map_err(|e| SignerError::Other(format!("Invalid recipient public key: {}", e)))?
+        };
         let secret_key = self
             .keys
             .secret_key()
@@ -124,8 +132,12 @@ impl PrivateKeySigner {
 
     /// NIP-44 encrypt plaintext for a recipient pubkey (hex).
     pub fn nip44_encrypt(&self, _recipient_pubkey_hex: &str, _plaintext: &str) -> Result<String> {
-        let recipient_pk = PublicKey::from_hex(_recipient_pubkey_hex)
-            .map_err(|e| SignerError::Other(format!("Invalid recipient public key: {}", e)))?;
+        let recipient_pk = if _recipient_pubkey_hex.is_empty() {
+            self.keys.public_key()
+        } else {
+            PublicKey::from_hex(_recipient_pubkey_hex)
+                .map_err(|e| SignerError::Other(format!("Invalid recipient public key: {}", e)))?
+        };
         let secret_key = self
             .keys
             .secret_key()
@@ -156,6 +168,38 @@ impl PrivateKeySigner {
         let decrypted = decrypt(_ciphertext, &conversation_key)?;
 
         Ok(decrypted)
+    }
+
+    /// NIP-04 decrypt when both participants are provided (sender/recipient).
+    /// Chooses the correct peer based on our pubkey and delegates to nip04_decrypt.
+    pub fn nip04_decrypt_between(
+        &self,
+        _sender_pubkey_hex: &str,
+        _recipient_pubkey_hex: &str,
+        _ciphertext: &str,
+    ) -> Result<String> {
+        let peer_hex = if self.pubkey_hex == _sender_pubkey_hex {
+            _recipient_pubkey_hex
+        } else {
+            _sender_pubkey_hex
+        };
+        self.nip04_decrypt(peer_hex, _ciphertext)
+    }
+
+    /// NIP-44 decrypt when both participants are provided (sender/recipient).
+    /// Chooses the correct peer based on our pubkey and delegates to nip44_decrypt.
+    pub fn nip44_decrypt_between(
+        &self,
+        _sender_pubkey_hex: &str,
+        _recipient_pubkey_hex: &str,
+        _ciphertext: &str,
+    ) -> Result<String> {
+        let peer_hex = if self.pubkey_hex == _sender_pubkey_hex {
+            _recipient_pubkey_hex
+        } else {
+            _sender_pubkey_hex
+        };
+        self.nip44_decrypt(peer_hex, _ciphertext)
     }
 }
 

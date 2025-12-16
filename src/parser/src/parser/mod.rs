@@ -1,9 +1,9 @@
 use crate::nostr::Template;
 use crate::parsed_event::{ParsedData, ParsedEvent};
-use crate::signer::interface::SignerManagerInterface;
-use crate::signer::manager::SignerManager;
 
 use crate::types::nostr::Event;
+use signer::SignerClient;
+use std::cell::RefCell;
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -25,9 +25,8 @@ pub enum ParserError {
     #[error("Cryptographic error: {0}")]
     Crypto(String),
 
-    #[error("Signer error: {0}")]
-    SignerError(#[from] crate::signer::SignerError),
-
+    // #[error("Signer error: {0}")]
+    // SignerError(#[from] crate::signer::SignerError),
     #[error("Types error: {0}")]
     TypesError(#[from] crate::types::TypesError),
 
@@ -90,15 +89,15 @@ pub use pre_adapters::{
 };
 
 pub struct Parser {
-    pub signer_manager: Arc<SignerManager>,
+    pub signer_client: Arc<SignerClient>,
 }
 
 impl Parser {
-    pub fn new_with_signer(signer_manager: Arc<SignerManager>) -> Self {
-        Self { signer_manager }
+    pub fn new(signer_client: Arc<SignerClient>) -> Self {
+        Self { signer_client }
     }
 
-    pub fn parse(&self, event: Event) -> Result<ParsedEvent> {
+    pub async fn parse(&self, event: Event) -> Result<ParsedEvent> {
         let kind = event.kind;
 
         let (parsed, requests) = match kind {
@@ -115,7 +114,7 @@ impl Parser {
                 (Some(ParsedData::Kind3(parsed)), requests)
             }
             4 => {
-                let (parsed, requests) = self.parse_kind_4(&event)?;
+                let (parsed, requests) = self.parse_kind_4(&event).await?;
                 (Some(ParsedData::Kind4(parsed)), requests)
             }
             6 => {
@@ -131,15 +130,15 @@ impl Parser {
                 (Some(ParsedData::Kind17(parsed)), requests)
             }
             7374 => {
-                let (parsed, requests) = self.parse_kind_7374(&event)?;
+                let (parsed, requests) = self.parse_kind_7374(&event).await?;
                 (Some(ParsedData::Kind7374(parsed)), requests)
             }
             7375 => {
-                let (parsed, requests) = self.parse_kind_7375(&event)?;
+                let (parsed, requests) = self.parse_kind_7375(&event).await?;
                 (Some(ParsedData::Kind7375(parsed)), requests)
             }
             7376 => {
-                let (parsed, requests) = self.parse_kind_7376(&event)?;
+                let (parsed, requests) = self.parse_kind_7376(&event).await?;
                 (Some(ParsedData::Kind7376(parsed)), requests)
             }
             9321 => {
@@ -159,7 +158,7 @@ impl Parser {
                 (Some(ParsedData::Kind10019(parsed)), requests)
             }
             17375 => {
-                let (parsed, requests) = self.parse_kind_17375(&event)?;
+                let (parsed, requests) = self.parse_kind_17375(&event).await?;
                 (Some(ParsedData::Kind17375(parsed)), requests)
             }
             30023 => {
@@ -167,7 +166,7 @@ impl Parser {
                 (Some(ParsedData::Kind30023(parsed)), requests)
             }
             k if (10000..20000).contains(&k) => {
-                let (parsed, requests) = self.parse_nip51(&event)?;
+                let (parsed, requests) = self.parse_nip51(&event).await?;
                 (Some(ParsedData::List(parsed)), requests)
             }
             k if matches!(
@@ -186,7 +185,7 @@ impl Parser {
                     | 39089
             ) =>
             {
-                let (parsed, requests) = self.parse_nip51(&event)?;
+                let (parsed, requests) = self.parse_nip51(&event).await?;
                 (Some(ParsedData::List(parsed)), requests)
             }
             k if (30000..40000).contains(&k) => {
@@ -206,20 +205,29 @@ impl Parser {
         })
     }
 
-    pub fn prepare(&self, template: &Template) -> Result<Event> {
+    pub async fn prepare(&self, template: &Template) -> Result<Event> {
         let kind = template.kind;
 
         match kind {
-            4 => self.prepare_kind_4(template),
-            7374 => self.prepare_kind_7374(template),
-            7375 => self.prepare_kind_7375(template),
-            7376 => self.prepare_kind_7376(template),
-            9321 => self.prepare_kind_9321(template),
-            10019 => self.prepare_kind_10019(template),
-            17375 => self.prepare_kind_17375(template),
+            4 => self.prepare_kind_4(template).await,
+            7374 => self.prepare_kind_7374(template).await,
+            7375 => self.prepare_kind_7375(template).await,
+            7376 => self.prepare_kind_7376(template).await,
+            9321 => self.prepare_kind_9321(template).await,
+            10019 => self.prepare_kind_10019(template).await,
+            9735 => self.prepare_kind_9735(template).await,
+            17375 => self.prepare_kind_17375(template).await,
             _ => {
-                // Event is already signed - no additional preparation needed
-                let new_event = self.signer_manager.sign_event(template)?;
+                let template_json = template.to_json();
+                // Call the async signer client and await the result
+                let signed_event_json = self
+                    .signer_client
+                    .sign_event(template_json)
+                    .await
+                    .map_err(|e| ParserError::Crypto(format!("Signer error: {}", e)))?;
+
+                let new_event = Event::from_json(&signed_event_json)?;
+
                 Ok(new_event)
             }
         }

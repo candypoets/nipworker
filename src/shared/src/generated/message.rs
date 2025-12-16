@@ -1179,10 +1179,10 @@ impl PipeConfigT {
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_MAIN_CONTENT: u8 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MAX_MAIN_CONTENT: u8 = 6;
+pub const ENUM_MAX_MAIN_CONTENT: u8 = 7;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_MAIN_CONTENT: [MainContent; 7] = [
+pub const ENUM_VALUES_MAIN_CONTENT: [MainContent; 8] = [
   MainContent::NONE,
   MainContent::Subscribe,
   MainContent::Unsubscribe,
@@ -1190,6 +1190,7 @@ pub const ENUM_VALUES_MAIN_CONTENT: [MainContent; 7] = [
   MainContent::SignEvent,
   MainContent::SetSigner,
   MainContent::GetPublicKey,
+  MainContent::SetPubKey,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -1204,9 +1205,10 @@ impl MainContent {
   pub const SignEvent: Self = Self(4);
   pub const SetSigner: Self = Self(5);
   pub const GetPublicKey: Self = Self(6);
+  pub const SetPubKey: Self = Self(7);
 
   pub const ENUM_MIN: u8 = 0;
-  pub const ENUM_MAX: u8 = 6;
+  pub const ENUM_MAX: u8 = 7;
   pub const ENUM_VALUES: &'static [Self] = &[
     Self::NONE,
     Self::Subscribe,
@@ -1215,6 +1217,7 @@ impl MainContent {
     Self::SignEvent,
     Self::SetSigner,
     Self::GetPublicKey,
+    Self::SetPubKey,
   ];
   /// Returns the variant's name or "" if unknown.
   pub fn variant_name(self) -> Option<&'static str> {
@@ -1226,6 +1229,7 @@ impl MainContent {
       Self::SignEvent => Some("SignEvent"),
       Self::SetSigner => Some("SetSigner"),
       Self::GetPublicKey => Some("GetPublicKey"),
+      Self::SetPubKey => Some("SetPubKey"),
       _ => None,
     }
   }
@@ -1294,6 +1298,7 @@ pub enum MainContentT {
   SignEvent(Box<SignEventT>),
   SetSigner(Box<SetSignerT>),
   GetPublicKey(Box<GetPublicKeyT>),
+  SetPubKey(Box<SetPubKeyT>),
 }
 impl Default for MainContentT {
   fn default() -> Self {
@@ -1310,6 +1315,7 @@ impl MainContentT {
       Self::SignEvent(_) => MainContent::SignEvent,
       Self::SetSigner(_) => MainContent::SetSigner,
       Self::GetPublicKey(_) => MainContent::GetPublicKey,
+      Self::SetPubKey(_) => MainContent::SetPubKey,
     }
   }
   pub fn pack<'b, A: flatbuffers::Allocator + 'b>(&self, fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>) -> Option<flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>> {
@@ -1321,6 +1327,7 @@ impl MainContentT {
       Self::SignEvent(v) => Some(v.pack(fbb).as_union_value()),
       Self::SetSigner(v) => Some(v.pack(fbb).as_union_value()),
       Self::GetPublicKey(v) => Some(v.pack(fbb).as_union_value()),
+      Self::SetPubKey(v) => Some(v.pack(fbb).as_union_value()),
     }
   }
   /// If the union variant matches, return the owned SubscribeT, setting the union to NONE.
@@ -1448,6 +1455,27 @@ impl MainContentT {
   /// If the union variant matches, return a mutable reference to the GetPublicKeyT.
   pub fn as_get_public_key_mut(&mut self) -> Option<&mut GetPublicKeyT> {
     if let Self::GetPublicKey(v) = self { Some(v.as_mut()) } else { None }
+  }
+  /// If the union variant matches, return the owned SetPubKeyT, setting the union to NONE.
+  pub fn take_set_pub_key(&mut self) -> Option<Box<SetPubKeyT>> {
+    if let Self::SetPubKey(_) = self {
+      let v = core::mem::replace(self, Self::NONE);
+      if let Self::SetPubKey(w) = v {
+        Some(w)
+      } else {
+        unreachable!()
+      }
+    } else {
+      None
+    }
+  }
+  /// If the union variant matches, return a reference to the SetPubKeyT.
+  pub fn as_set_pub_key(&self) -> Option<&SetPubKeyT> {
+    if let Self::SetPubKey(v) = self { Some(v.as_ref()) } else { None }
+  }
+  /// If the union variant matches, return a mutable reference to the SetPubKeyT.
+  pub fn as_set_pub_key_mut(&mut self) -> Option<&mut SetPubKeyT> {
+    if let Self::SetPubKey(v) = self { Some(v.as_mut()) } else { None }
   }
 }
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
@@ -2719,16 +2747,18 @@ impl MessageT {
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_SIGNER_OP: u32 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MAX_SIGNER_OP: u32 = 5;
+pub const ENUM_MAX_SIGNER_OP: u32 = 7;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_SIGNER_OP: [SignerOp; 6] = [
+pub const ENUM_VALUES_SIGNER_OP: [SignerOp; 8] = [
   SignerOp::GetPubkey,
   SignerOp::SignEvent,
   SignerOp::Nip04Encrypt,
   SignerOp::Nip04Decrypt,
   SignerOp::Nip44Encrypt,
   SignerOp::Nip44Decrypt,
+  SignerOp::Nip04DecryptBetween,
+  SignerOp::Nip44DecryptBetween,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -2742,9 +2772,11 @@ impl SignerOp {
   pub const Nip04Decrypt: Self = Self(3);
   pub const Nip44Encrypt: Self = Self(4);
   pub const Nip44Decrypt: Self = Self(5);
+  pub const Nip04DecryptBetween: Self = Self(6);
+  pub const Nip44DecryptBetween: Self = Self(7);
 
   pub const ENUM_MIN: u32 = 0;
-  pub const ENUM_MAX: u32 = 5;
+  pub const ENUM_MAX: u32 = 7;
   pub const ENUM_VALUES: &'static [Self] = &[
     Self::GetPubkey,
     Self::SignEvent,
@@ -2752,6 +2784,8 @@ impl SignerOp {
     Self::Nip04Decrypt,
     Self::Nip44Encrypt,
     Self::Nip44Decrypt,
+    Self::Nip04DecryptBetween,
+    Self::Nip44DecryptBetween,
   ];
   /// Returns the variant's name or "" if unknown.
   pub fn variant_name(self) -> Option<&'static str> {
@@ -2762,6 +2796,8 @@ impl SignerOp {
       Self::Nip04Decrypt => Some("Nip04Decrypt"),
       Self::Nip44Encrypt => Some("Nip44Encrypt"),
       Self::Nip44Decrypt => Some("Nip44Decrypt"),
+      Self::Nip04DecryptBetween => Some("Nip04DecryptBetween"),
+      Self::Nip44DecryptBetween => Some("Nip44DecryptBetween"),
       _ => None,
     }
   }
@@ -11016,6 +11052,139 @@ impl SetSignerT {
     })
   }
 }
+pub enum SetPubKeyOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct SetPubKey<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for SetPubKey<'a> {
+  type Inner = SetPubKey<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> SetPubKey<'a> {
+  pub const VT_PUBKEY: flatbuffers::VOffsetT = 4;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    SetPubKey { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args SetPubKeyArgs<'args>
+  ) -> flatbuffers::WIPOffset<SetPubKey<'bldr>> {
+    let mut builder = SetPubKeyBuilder::new(_fbb);
+    if let Some(x) = args.pubkey { builder.add_pubkey(x); }
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> SetPubKeyT {
+    let pubkey = {
+      let x = self.pubkey();
+      x.to_string()
+    };
+    SetPubKeyT {
+      pubkey,
+    }
+  }
+
+  #[inline]
+  pub fn pubkey(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(SetPubKey::VT_PUBKEY, None).unwrap()}
+  }
+}
+
+impl flatbuffers::Verifiable for SetPubKey<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("pubkey", Self::VT_PUBKEY, true)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct SetPubKeyArgs<'a> {
+    pub pubkey: Option<flatbuffers::WIPOffset<&'a str>>,
+}
+impl<'a> Default for SetPubKeyArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    SetPubKeyArgs {
+      pubkey: None, // required field
+    }
+  }
+}
+
+pub struct SetPubKeyBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> SetPubKeyBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_pubkey(&mut self, pubkey: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(SetPubKey::VT_PUBKEY, pubkey);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> SetPubKeyBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    SetPubKeyBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<SetPubKey<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, SetPubKey::VT_PUBKEY,"pubkey");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for SetPubKey<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("SetPubKey");
+      ds.field("pubkey", &self.pubkey());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct SetPubKeyT {
+  pub pubkey: String,
+}
+impl Default for SetPubKeyT {
+  fn default() -> Self {
+    Self {
+      pubkey: "".to_string(),
+    }
+  }
+}
+impl SetPubKeyT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<SetPubKey<'b>> {
+    let pubkey = Some({
+      let x = &self.pubkey;
+      _fbb.create_string(x)
+    });
+    SetPubKey::create(_fbb, &SetPubKeyArgs{
+      pubkey,
+    })
+  }
+}
 pub enum GetPublicKeyOffset {}
 #[derive(Copy, Clone, PartialEq)]
 
@@ -11185,6 +11354,11 @@ impl<'a> MainMessage<'a> {
             .expect("Invalid union table, expected `MainContent::GetPublicKey`.")
             .unpack()
       )),
+      MainContent::SetPubKey => MainContentT::SetPubKey(Box::new(
+        self.content_as_set_pub_key()
+            .expect("Invalid union table, expected `MainContent::SetPubKey`.")
+            .unpack()
+      )),
       _ => MainContentT::NONE,
     };
     MainMessageT {
@@ -11290,6 +11464,20 @@ impl<'a> MainMessage<'a> {
     }
   }
 
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn content_as_set_pub_key(&self) -> Option<SetPubKey<'a>> {
+    if self.content_type() == MainContent::SetPubKey {
+      let u = self.content();
+      // Safety:
+      // Created from a valid Table for this object
+      // Which contains a valid union in this slot
+      Some(unsafe { SetPubKey::init_from_table(u) })
+    } else {
+      None
+    }
+  }
+
 }
 
 impl flatbuffers::Verifiable for MainMessage<'_> {
@@ -11307,6 +11495,7 @@ impl flatbuffers::Verifiable for MainMessage<'_> {
           MainContent::SignEvent => v.verify_union_variant::<flatbuffers::ForwardsUOffset<SignEvent>>("MainContent::SignEvent", pos),
           MainContent::SetSigner => v.verify_union_variant::<flatbuffers::ForwardsUOffset<SetSigner>>("MainContent::SetSigner", pos),
           MainContent::GetPublicKey => v.verify_union_variant::<flatbuffers::ForwardsUOffset<GetPublicKey>>("MainContent::GetPublicKey", pos),
+          MainContent::SetPubKey => v.verify_union_variant::<flatbuffers::ForwardsUOffset<SetPubKey>>("MainContent::SetPubKey", pos),
           _ => Ok(()),
         }
      })?
@@ -11399,6 +11588,13 @@ impl core::fmt::Debug for MainMessage<'_> {
         },
         MainContent::GetPublicKey => {
           if let Some(x) = self.content_as_get_public_key() {
+            ds.field("content", &x)
+          } else {
+            ds.field("content", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        MainContent::SetPubKey => {
+          if let Some(x) = self.content_as_set_pub_key() {
             ds.field("content", &x)
           } else {
             ds.field("content", &"InvalidFlatbuffer: Union discriminant does not match value.")
@@ -20262,7 +20458,10 @@ impl<'a> flatbuffers::Follow<'a> for SignerRequest<'a> {
 impl<'a> SignerRequest<'a> {
   pub const VT_REQUEST_ID: flatbuffers::VOffsetT = 4;
   pub const VT_OP: flatbuffers::VOffsetT = 6;
-  pub const VT_PAYLOAD_JSON: flatbuffers::VOffsetT = 8;
+  pub const VT_PAYLOAD: flatbuffers::VOffsetT = 8;
+  pub const VT_PUBKEY: flatbuffers::VOffsetT = 10;
+  pub const VT_SENDER_PUBKEY: flatbuffers::VOffsetT = 12;
+  pub const VT_RECIPIENT_PUBKEY: flatbuffers::VOffsetT = 14;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -20275,7 +20474,10 @@ impl<'a> SignerRequest<'a> {
   ) -> flatbuffers::WIPOffset<SignerRequest<'bldr>> {
     let mut builder = SignerRequestBuilder::new(_fbb);
     builder.add_request_id(args.request_id);
-    if let Some(x) = args.payload_json { builder.add_payload_json(x); }
+    if let Some(x) = args.recipient_pubkey { builder.add_recipient_pubkey(x); }
+    if let Some(x) = args.sender_pubkey { builder.add_sender_pubkey(x); }
+    if let Some(x) = args.pubkey { builder.add_pubkey(x); }
+    if let Some(x) = args.payload { builder.add_payload(x); }
     builder.add_op(args.op);
     builder.finish()
   }
@@ -20283,13 +20485,25 @@ impl<'a> SignerRequest<'a> {
   pub fn unpack(&self) -> SignerRequestT {
     let request_id = self.request_id();
     let op = self.op();
-    let payload_json = self.payload_json().map(|x| {
+    let payload = self.payload().map(|x| {
+      x.to_string()
+    });
+    let pubkey = self.pubkey().map(|x| {
+      x.to_string()
+    });
+    let sender_pubkey = self.sender_pubkey().map(|x| {
+      x.to_string()
+    });
+    let recipient_pubkey = self.recipient_pubkey().map(|x| {
       x.to_string()
     });
     SignerRequestT {
       request_id,
       op,
-      payload_json,
+      payload,
+      pubkey,
+      sender_pubkey,
+      recipient_pubkey,
     }
   }
 
@@ -20308,11 +20522,32 @@ impl<'a> SignerRequest<'a> {
     unsafe { self._tab.get::<SignerOp>(SignerRequest::VT_OP, Some(SignerOp::GetPubkey)).unwrap()}
   }
   #[inline]
-  pub fn payload_json(&self) -> Option<&'a str> {
+  pub fn payload(&self) -> Option<&'a str> {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(SignerRequest::VT_PAYLOAD_JSON, None)}
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(SignerRequest::VT_PAYLOAD, None)}
+  }
+  #[inline]
+  pub fn pubkey(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(SignerRequest::VT_PUBKEY, None)}
+  }
+  #[inline]
+  pub fn sender_pubkey(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(SignerRequest::VT_SENDER_PUBKEY, None)}
+  }
+  #[inline]
+  pub fn recipient_pubkey(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(SignerRequest::VT_RECIPIENT_PUBKEY, None)}
   }
 }
 
@@ -20325,7 +20560,10 @@ impl flatbuffers::Verifiable for SignerRequest<'_> {
     v.visit_table(pos)?
      .visit_field::<u64>("request_id", Self::VT_REQUEST_ID, false)?
      .visit_field::<SignerOp>("op", Self::VT_OP, false)?
-     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("payload_json", Self::VT_PAYLOAD_JSON, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("payload", Self::VT_PAYLOAD, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("pubkey", Self::VT_PUBKEY, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("sender_pubkey", Self::VT_SENDER_PUBKEY, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("recipient_pubkey", Self::VT_RECIPIENT_PUBKEY, false)?
      .finish();
     Ok(())
   }
@@ -20333,7 +20571,10 @@ impl flatbuffers::Verifiable for SignerRequest<'_> {
 pub struct SignerRequestArgs<'a> {
     pub request_id: u64,
     pub op: SignerOp,
-    pub payload_json: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub payload: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub pubkey: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub sender_pubkey: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub recipient_pubkey: Option<flatbuffers::WIPOffset<&'a str>>,
 }
 impl<'a> Default for SignerRequestArgs<'a> {
   #[inline]
@@ -20341,7 +20582,10 @@ impl<'a> Default for SignerRequestArgs<'a> {
     SignerRequestArgs {
       request_id: 0,
       op: SignerOp::GetPubkey,
-      payload_json: None,
+      payload: None,
+      pubkey: None,
+      sender_pubkey: None,
+      recipient_pubkey: None,
     }
   }
 }
@@ -20360,8 +20604,20 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> SignerRequestBuilder<'a, 'b, A>
     self.fbb_.push_slot::<SignerOp>(SignerRequest::VT_OP, op, SignerOp::GetPubkey);
   }
   #[inline]
-  pub fn add_payload_json(&mut self, payload_json: flatbuffers::WIPOffset<&'b  str>) {
-    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(SignerRequest::VT_PAYLOAD_JSON, payload_json);
+  pub fn add_payload(&mut self, payload: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(SignerRequest::VT_PAYLOAD, payload);
+  }
+  #[inline]
+  pub fn add_pubkey(&mut self, pubkey: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(SignerRequest::VT_PUBKEY, pubkey);
+  }
+  #[inline]
+  pub fn add_sender_pubkey(&mut self, sender_pubkey: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(SignerRequest::VT_SENDER_PUBKEY, sender_pubkey);
+  }
+  #[inline]
+  pub fn add_recipient_pubkey(&mut self, recipient_pubkey: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(SignerRequest::VT_RECIPIENT_PUBKEY, recipient_pubkey);
   }
   #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> SignerRequestBuilder<'a, 'b, A> {
@@ -20383,7 +20639,10 @@ impl core::fmt::Debug for SignerRequest<'_> {
     let mut ds = f.debug_struct("SignerRequest");
       ds.field("request_id", &self.request_id());
       ds.field("op", &self.op());
-      ds.field("payload_json", &self.payload_json());
+      ds.field("payload", &self.payload());
+      ds.field("pubkey", &self.pubkey());
+      ds.field("sender_pubkey", &self.sender_pubkey());
+      ds.field("recipient_pubkey", &self.recipient_pubkey());
       ds.finish()
   }
 }
@@ -20392,14 +20651,20 @@ impl core::fmt::Debug for SignerRequest<'_> {
 pub struct SignerRequestT {
   pub request_id: u64,
   pub op: SignerOp,
-  pub payload_json: Option<String>,
+  pub payload: Option<String>,
+  pub pubkey: Option<String>,
+  pub sender_pubkey: Option<String>,
+  pub recipient_pubkey: Option<String>,
 }
 impl Default for SignerRequestT {
   fn default() -> Self {
     Self {
       request_id: 0,
       op: SignerOp::GetPubkey,
-      payload_json: None,
+      payload: None,
+      pubkey: None,
+      sender_pubkey: None,
+      recipient_pubkey: None,
     }
   }
 }
@@ -20410,13 +20675,25 @@ impl SignerRequestT {
   ) -> flatbuffers::WIPOffset<SignerRequest<'b>> {
     let request_id = self.request_id;
     let op = self.op;
-    let payload_json = self.payload_json.as_ref().map(|x|{
+    let payload = self.payload.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let pubkey = self.pubkey.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let sender_pubkey = self.sender_pubkey.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let recipient_pubkey = self.recipient_pubkey.as_ref().map(|x|{
       _fbb.create_string(x)
     });
     SignerRequest::create(_fbb, &SignerRequestArgs{
       request_id,
       op,
-      payload_json,
+      payload,
+      pubkey,
+      sender_pubkey,
+      recipient_pubkey,
     })
   }
 }
@@ -20437,9 +20714,8 @@ impl<'a> flatbuffers::Follow<'a> for SignerResponse<'a> {
 
 impl<'a> SignerResponse<'a> {
   pub const VT_REQUEST_ID: flatbuffers::VOffsetT = 4;
-  pub const VT_OK: flatbuffers::VOffsetT = 6;
-  pub const VT_RESULT_JSON: flatbuffers::VOffsetT = 8;
-  pub const VT_ERROR: flatbuffers::VOffsetT = 10;
+  pub const VT_RESULT: flatbuffers::VOffsetT = 6;
+  pub const VT_ERROR: flatbuffers::VOffsetT = 8;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -20453,15 +20729,13 @@ impl<'a> SignerResponse<'a> {
     let mut builder = SignerResponseBuilder::new(_fbb);
     builder.add_request_id(args.request_id);
     if let Some(x) = args.error { builder.add_error(x); }
-    if let Some(x) = args.result_json { builder.add_result_json(x); }
-    builder.add_ok(args.ok);
+    if let Some(x) = args.result { builder.add_result(x); }
     builder.finish()
   }
 
   pub fn unpack(&self) -> SignerResponseT {
     let request_id = self.request_id();
-    let ok = self.ok();
-    let result_json = self.result_json().map(|x| {
+    let result = self.result().map(|x| {
       x.to_string()
     });
     let error = self.error().map(|x| {
@@ -20469,8 +20743,7 @@ impl<'a> SignerResponse<'a> {
     });
     SignerResponseT {
       request_id,
-      ok,
-      result_json,
+      result,
       error,
     }
   }
@@ -20483,18 +20756,11 @@ impl<'a> SignerResponse<'a> {
     unsafe { self._tab.get::<u64>(SignerResponse::VT_REQUEST_ID, Some(0)).unwrap()}
   }
   #[inline]
-  pub fn ok(&self) -> bool {
+  pub fn result(&self) -> Option<&'a str> {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<bool>(SignerResponse::VT_OK, Some(true)).unwrap()}
-  }
-  #[inline]
-  pub fn result_json(&self) -> Option<&'a str> {
-    // Safety:
-    // Created from valid Table for this object
-    // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(SignerResponse::VT_RESULT_JSON, None)}
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(SignerResponse::VT_RESULT, None)}
   }
   #[inline]
   pub fn error(&self) -> Option<&'a str> {
@@ -20513,8 +20779,7 @@ impl flatbuffers::Verifiable for SignerResponse<'_> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
      .visit_field::<u64>("request_id", Self::VT_REQUEST_ID, false)?
-     .visit_field::<bool>("ok", Self::VT_OK, false)?
-     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("result_json", Self::VT_RESULT_JSON, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("result", Self::VT_RESULT, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("error", Self::VT_ERROR, false)?
      .finish();
     Ok(())
@@ -20522,8 +20787,7 @@ impl flatbuffers::Verifiable for SignerResponse<'_> {
 }
 pub struct SignerResponseArgs<'a> {
     pub request_id: u64,
-    pub ok: bool,
-    pub result_json: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub result: Option<flatbuffers::WIPOffset<&'a str>>,
     pub error: Option<flatbuffers::WIPOffset<&'a str>>,
 }
 impl<'a> Default for SignerResponseArgs<'a> {
@@ -20531,8 +20795,7 @@ impl<'a> Default for SignerResponseArgs<'a> {
   fn default() -> Self {
     SignerResponseArgs {
       request_id: 0,
-      ok: true,
-      result_json: None,
+      result: None,
       error: None,
     }
   }
@@ -20548,12 +20811,8 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> SignerResponseBuilder<'a, 'b, A
     self.fbb_.push_slot::<u64>(SignerResponse::VT_REQUEST_ID, request_id, 0);
   }
   #[inline]
-  pub fn add_ok(&mut self, ok: bool) {
-    self.fbb_.push_slot::<bool>(SignerResponse::VT_OK, ok, true);
-  }
-  #[inline]
-  pub fn add_result_json(&mut self, result_json: flatbuffers::WIPOffset<&'b  str>) {
-    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(SignerResponse::VT_RESULT_JSON, result_json);
+  pub fn add_result(&mut self, result: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(SignerResponse::VT_RESULT, result);
   }
   #[inline]
   pub fn add_error(&mut self, error: flatbuffers::WIPOffset<&'b  str>) {
@@ -20578,8 +20837,7 @@ impl core::fmt::Debug for SignerResponse<'_> {
   fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
     let mut ds = f.debug_struct("SignerResponse");
       ds.field("request_id", &self.request_id());
-      ds.field("ok", &self.ok());
-      ds.field("result_json", &self.result_json());
+      ds.field("result", &self.result());
       ds.field("error", &self.error());
       ds.finish()
   }
@@ -20588,16 +20846,14 @@ impl core::fmt::Debug for SignerResponse<'_> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct SignerResponseT {
   pub request_id: u64,
-  pub ok: bool,
-  pub result_json: Option<String>,
+  pub result: Option<String>,
   pub error: Option<String>,
 }
 impl Default for SignerResponseT {
   fn default() -> Self {
     Self {
       request_id: 0,
-      ok: true,
-      result_json: None,
+      result: None,
       error: None,
     }
   }
@@ -20608,8 +20864,7 @@ impl SignerResponseT {
     _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
   ) -> flatbuffers::WIPOffset<SignerResponse<'b>> {
     let request_id = self.request_id;
-    let ok = self.ok;
-    let result_json = self.result_json.as_ref().map(|x|{
+    let result = self.result.as_ref().map(|x|{
       _fbb.create_string(x)
     });
     let error = self.error.as_ref().map(|x|{
@@ -20617,8 +20872,7 @@ impl SignerResponseT {
     });
     SignerResponse::create(_fbb, &SignerResponseArgs{
       request_id,
-      ok,
-      result_json,
+      result,
       error,
     })
   }

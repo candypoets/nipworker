@@ -26,7 +26,7 @@ use wasm_bindgen_futures::spawn_local;
 pub struct SignerClient {
     req: Rc<RefCell<SabRing>>,
     resp: Rc<RefCell<SabRing>>,
-    pending: Rc<RefCell<HashMap<u64, futures_channel::oneshot::Sender<serde_json::Value>>>>,
+    pending: Rc<RefCell<HashMap<u64, futures_channel::oneshot::Sender<Result<String, String>>>>>,
     next_id: Rc<Cell<u64>>,
     pump_started: Rc<Cell<bool>>,
 }
@@ -75,23 +75,19 @@ impl SignerClient {
                 if let Some(bytes) = maybe {
                     sleep_ms = 8;
 
-                    // Decode FlatBuffers SignerResponse and forward JSON-shaped payload to callers
+                    // Decode FlatBuffers SignerResponse and forward raw result/error to callers
                     match flatbuffers::root::<fb::SignerResponse>(&bytes) {
                         Ok(resp) => {
                             let rid = resp.request_id();
-                            let ok_flag = resp.ok();
-                            let result_json = resp.result_json().unwrap_or("");
+                            let result_str = resp.result().unwrap_or("");
                             let error_str = resp.error().unwrap_or("");
 
-                            let body = serde_json::json!({
-                                "request_id": rid,
-                                "ok": ok_flag,
-                                "result_json": result_json,
-                                "error": if error_str.is_empty() { serde_json::Value::Null } else { serde_json::Value::String(error_str.to_string()) }
-                            });
-
                             if let Some(tx) = pending.borrow_mut().remove(&rid) {
-                                let _ = tx.send(body);
+                                if !error_str.is_empty() {
+                                    let _ = tx.send(Err(error_str.to_string()));
+                                } else {
+                                    let _ = tx.send(Ok(result_str.to_string()));
+                                }
                             } else {
                                 warn!("[signer-client] response for unknown request_id={rid}");
                             }
@@ -121,32 +117,30 @@ impl SignerClient {
         id
     }
 
-    /// Core generic call using the placeholder JSON envelope.
+    /// Core generic call using raw string protocol.
     ///
-    /// On success, returns the JSON response body. While the service echoes for now,
-    /// callers should expect a structured response once the FlatBuffers path is wired.
-    pub async fn call(
+    /// - payload: for sign_event pass the template JSON; for nip04/44 pass plaintext/ciphertext
+    /// - pubkey: recipient for encrypt ops, sender for decrypt ops
+    pub async fn call_raw(
         &self,
         op: &str,
-        payload: serde_json::Value,
-    ) -> Result<serde_json::Value, String> {
+        payload: Option<&str>,
+        pubkey: Option<&str>,
+        sender_pubkey: Option<&str>,
+        recipient_pubkey: Option<&str>,
+    ) -> Result<String, String> {
         // Create a channel and register pending
         let rid = self.next_request_id();
-        let (tx, rx) = futures_channel::oneshot::channel::<serde_json::Value>();
+        let (tx, rx) = futures_channel::oneshot::channel::<Result<String, String>>();
         self.pending.borrow_mut().insert(rid, tx);
 
         // Build FlatBuffers SignerRequest
         let mut fbb = FlatBufferBuilder::new();
 
-        let payload_str = match serde_json::to_string(&payload) {
-            Ok(s) => s,
-            Err(e) => {
-                self.pending.borrow_mut().remove(&rid);
-                return Err(format!("serialize payload: {}", e));
-            }
-        };
-
-        let payload_off = fbb.create_string(&payload_str);
+        let payload_off = payload.map(|s| fbb.create_string(s));
+        let pubkey_off = pubkey.map(|s| fbb.create_string(s));
+        let sender_off = sender_pubkey.map(|s| fbb.create_string(s));
+        let recipient_off = recipient_pubkey.map(|s| fbb.create_string(s));
         let op_enum = match op {
             "get_pubkey" => fb::SignerOp::GetPubkey,
             "sign_event" => fb::SignerOp::SignEvent,
@@ -154,6 +148,8 @@ impl SignerClient {
             "nip04_decrypt" => fb::SignerOp::Nip04Decrypt,
             "nip44_encrypt" => fb::SignerOp::Nip44Encrypt,
             "nip44_decrypt" => fb::SignerOp::Nip44Decrypt,
+            "nip04_decrypt_between" => fb::SignerOp::Nip04DecryptBetween,
+            "nip44_decrypt_between" => fb::SignerOp::Nip44DecryptBetween,
             _ => fb::SignerOp::GetPubkey,
         };
 
@@ -162,7 +158,10 @@ impl SignerClient {
             &fb::SignerRequestArgs {
                 request_id: rid,
                 op: op_enum,
-                payload_json: Some(payload_off),
+                payload: payload_off,
+                pubkey: pubkey_off,
+                sender_pubkey: sender_off,
+                recipient_pubkey: recipient_off,
             },
         );
         fbb.finish(req, None);
@@ -177,21 +176,21 @@ impl SignerClient {
 
         // Await response (no timeout here; the service loop applies backpressure)
         match rx.await {
-            Ok(v) => Ok(v),
+            Ok(res) => res,
             Err(_) => Err("signer response channel canceled".to_string()),
         }
     }
 
     /// Convenience: request public key from signer.
     /// Note: currently returns the entire JSON response (echo), until FB path is used.
-    pub async fn get_public_key(&self) -> Result<serde_json::Value, String> {
-        self.call("get_pubkey", serde_json::Value::Null).await
+    pub async fn get_public_key(&self) -> Result<String, String> {
+        self.call_raw("get_pubkey", None, None, None, None).await
     }
 
     /// Convenience: sign an event Template represented as JSON.
     /// The payload should be a JSON object with fields expected by your Template.
-    pub async fn sign_event(&self, template: String) -> Result<serde_json::Value, String> {
-        self.call("sign_event", serde_json::Value::String(template))
+    pub async fn sign_event(&self, template: String) -> Result<String, String> {
+        self.call_raw("sign_event", Some(&template), None, None, None)
             .await
     }
 
@@ -200,12 +199,15 @@ impl SignerClient {
         &self,
         recipient_pubkey_hex: &str,
         plaintext: &str,
-    ) -> Result<serde_json::Value, String> {
-        let payload = serde_json::json!({
-            "to": recipient_pubkey_hex,
-            "content": plaintext
-        });
-        self.call("nip04_encrypt", payload).await
+    ) -> Result<String, String> {
+        self.call_raw(
+            "nip04_encrypt",
+            Some(plaintext),
+            Some(recipient_pubkey_hex),
+            None,
+            None,
+        )
+        .await
     }
 
     /// Convenience: NIP-44 encrypt via signer.
@@ -213,12 +215,15 @@ impl SignerClient {
         &self,
         recipient_pubkey_hex: &str,
         plaintext: &str,
-    ) -> Result<serde_json::Value, String> {
-        let payload = serde_json::json!({
-            "to": recipient_pubkey_hex,
-            "content": plaintext
-        });
-        self.call("nip44_encrypt", payload).await
+    ) -> Result<String, String> {
+        self.call_raw(
+            "nip44_encrypt",
+            Some(plaintext),
+            Some(recipient_pubkey_hex),
+            None,
+            None,
+        )
+        .await
     }
 
     /// Convenience: NIP-04 decrypt via signer.
@@ -226,12 +231,15 @@ impl SignerClient {
         &self,
         sender_pubkey_hex: &str,
         ciphertext: &str,
-    ) -> Result<serde_json::Value, String> {
-        let payload = serde_json::json!({
-            "from": sender_pubkey_hex,
-            "content": ciphertext
-        });
-        self.call("nip04_decrypt", payload).await
+    ) -> Result<String, String> {
+        self.call_raw(
+            "nip04_decrypt",
+            Some(ciphertext),
+            Some(sender_pubkey_hex),
+            None,
+            None,
+        )
+        .await
     }
 
     /// Convenience: NIP-44 decrypt via signer.
@@ -239,11 +247,54 @@ impl SignerClient {
         &self,
         sender_pubkey_hex: &str,
         ciphertext: &str,
-    ) -> Result<serde_json::Value, String> {
-        let payload = serde_json::json!({
-            "from": sender_pubkey_hex,
-            "content": ciphertext
-        });
-        self.call("nip44_decrypt", payload).await
+    ) -> Result<String, String> {
+        self.call_raw(
+            "nip44_decrypt",
+            Some(ciphertext),
+            Some(sender_pubkey_hex),
+            None,
+            None,
+        )
+        .await
+    }
+
+    /// Between-decrypt NIP-04 using explicit sender/recipient pubkeys.
+    pub async fn nip04_decrypt_between(
+        &self,
+        sender_pubkey_hex: &str,
+        recipient_pubkey_hex: &str,
+        ciphertext: &str,
+    ) -> Result<String, String> {
+        info!(
+            "[signer-client] nip04_decrypt_between sender={} recipient={} ciphertext_len={}",
+            sender_pubkey_hex,
+            recipient_pubkey_hex,
+            ciphertext.len()
+        );
+        self.call_raw(
+            "nip04_decrypt_between",
+            Some(ciphertext),
+            None,
+            Some(sender_pubkey_hex),
+            Some(recipient_pubkey_hex),
+        )
+        .await
+    }
+
+    /// Between-decrypt NIP-44 using explicit sender/recipient pubkeys.
+    pub async fn nip44_decrypt_between(
+        &self,
+        sender_pubkey_hex: &str,
+        recipient_pubkey_hex: &str,
+        ciphertext: &str,
+    ) -> Result<String, String> {
+        self.call_raw(
+            "nip44_decrypt_between",
+            Some(ciphertext),
+            None,
+            Some(sender_pubkey_hex),
+            Some(recipient_pubkey_hex),
+        )
+        .await
     }
 }

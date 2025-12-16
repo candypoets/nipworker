@@ -1,11 +1,8 @@
 use crate::nostr::Template;
-use crate::parser::{ParserError, Result};
-use crate::signer::interface::SignerManagerInterface;
+use crate::parser::{Parser, ParserError, Result};
 use crate::types::network::Request;
 use crate::types::nostr::Event;
-use crate::types::proof::TokenContent;
-use crate::{parser::Parser, Proof};
-
+use crate::types::proof::{Proof, TokenContent};
 use tracing::warn;
 
 // NEW: Imports for FlatBuffers
@@ -19,7 +16,10 @@ pub struct Kind7375Parsed {
 }
 
 impl Parser {
-    pub fn parse_kind_7375(&self, event: &Event) -> Result<(Kind7375Parsed, Option<Vec<Request>>)> {
+    pub async fn parse_kind_7375(
+        &self,
+        event: &Event,
+    ) -> Result<(Kind7375Parsed, Option<Vec<Request>>)> {
         if event.kind != 7375 {
             return Err(ParserError::Other("event is not kind 7375".to_string()));
         }
@@ -31,67 +31,69 @@ impl Parser {
             decrypted: false,
         };
 
-        let signer = &self.signer_manager;
-
-        if signer.has_signer() {
-            let pubkey = signer.get_public_key()?;
-            if let Ok(decrypted) = signer.nip44_decrypt(&pubkey, &event.content) {
-                if !decrypted.is_empty() {
-                    if let Ok(content) = TokenContent::from_json(&decrypted) {
+        // Attempt to decrypt using the sender's pubkey
+        let sender_pubkey = event.pubkey.to_string();
+        if let Ok(decrypted) = self
+            .signer_client
+            .nip44_decrypt(&sender_pubkey, &event.content)
+            .await
+        {
+            if !decrypted.is_empty() {
+                match TokenContent::from_json(&decrypted) {
+                    Ok(content) => {
                         parsed.mint_url = content.mint;
                         parsed.proofs = content.proofs;
                         parsed.deleted_ids = content.del.unwrap_or_default();
                         parsed.decrypted = true;
-                    } else if let Err(e) = TokenContent::from_json(&decrypted) {
+                    }
+                    Err(e) => {
                         warn!("Failed to parse 7375 token content: {}", e);
                     }
                 }
             }
-        } else {
-            warn!("No signer found for event 7375");
         }
 
         Ok((parsed, None))
     }
 
-    pub fn prepare_kind_7375(&self, template: &Template) -> Result<Event> {
+    pub async fn prepare_kind_7375(&self, template: &Template) -> Result<Event> {
         if template.kind != 7375 {
             return Err(ParserError::Other("event is not kind 7375".to_string()));
         }
 
         // Content must be a valid JSON for TokenContent
-        let _content: TokenContent = TokenContent::from_json(&template.content)
+        let content: TokenContent = TokenContent::from_json(&template.content)
             .map_err(|e| ParserError::Other(format!("invalid token content: {}", e)))?;
 
         // Validate content
-        if _content.mint.is_empty() {
+        if content.mint.is_empty() {
             return Err(ParserError::Other(
                 "token content must specify a mint".to_string(),
             ));
         }
 
-        if _content.proofs.is_empty() {
+        if content.proofs.is_empty() {
             return Err(ParserError::Other(
                 "token content must include at least one proof".to_string(),
             ));
         }
 
-        let signer = &self.signer_manager;
-
-        if !signer.has_signer() {
-            return Err(ParserError::Other(
-                "no signer available for encryption".to_string(),
-            ));
-        }
-
-        let pubkey = signer.get_public_key()?;
-        let encrypted_content = signer.nip44_encrypt(&pubkey, &template.content)?;
+        let encrypted_content = self
+            .signer_client
+            .nip44_encrypt("", &template.content)
+            .await
+            .map_err(|e| ParserError::Crypto(format!("Signer error: {}", e)))?;
 
         let encrypted_template =
             Template::new(template.kind, encrypted_content, template.tags.clone());
 
-        let event = signer.sign_event(&encrypted_template)?;
+        let signed_event_json = self
+            .signer_client
+            .sign_event(encrypted_template.to_json())
+            .await
+            .map_err(|e| ParserError::Crypto(format!("Signer error: {}", e)))?;
 
+        let event = Event::from_json(&signed_event_json)?;
         Ok(event)
     }
 }
