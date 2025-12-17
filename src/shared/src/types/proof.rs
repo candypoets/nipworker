@@ -1,10 +1,9 @@
-use crate::nostr::NostrTags;
-use crate::parser::{ParserError, Result};
-use crate::utils::json::BaseJsonParser;
 use flatbuffers::{FlatBufferBuilder, WIPOffset};
 use std::fmt::Write;
 
-use shared::generated::nostr::fb;
+use crate::{generated::nostr::fb, types::ParserError, utils::BaseJsonParser};
+
+type Result<T> = std::result::Result<T, ParserError>;
 
 /// DLEQ (Discrete Log Equality) proof for offline signature validation (NUT-12)
 #[derive(Debug, Clone, PartialEq)]

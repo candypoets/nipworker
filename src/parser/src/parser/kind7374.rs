@@ -1,11 +1,11 @@
-use crate::nostr::Template;
 use crate::parser::{Parser, ParserError, Result};
-use crate::types::network::Request;
-use crate::types::nostr::Event;
 
 // NEW: Imports for FlatBuffers
 use flatbuffers::FlatBufferBuilder;
-use shared::generated::nostr::*;
+use shared::{
+    generated::nostr::*,
+    types::{network::Request, nostr::Template, Event},
+};
 
 pub struct Kind7374Parsed {
     pub quote_id: String,

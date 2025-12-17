@@ -1,10 +1,14 @@
-use crate::nostr::{NostrTags, Template};
 use crate::parser::{Parser, ParserError, Result};
-use crate::types::network::Request;
-use crate::types::nostr::Event;
 use tracing::warn;
 
-use shared::generated::nostr::*;
+use shared::{
+    generated::nostr::*,
+    types::{
+        network::Request,
+        nostr::{NostrTags, Template},
+        Event, SecretKey, SECP256K1,
+    },
+};
 
 pub struct Kind17375Parsed {
     pub mints: Vec<String>,
@@ -52,11 +56,8 @@ impl Parser {
                                         "privkey" => {
                                             parsed.p2pk_priv_key = Some(tag[1].clone());
                                             // Derive public key from private key
-                                            if let Ok(secret_key) =
-                                                crate::types::nostr::SecretKey::from_hex(&tag[1])
-                                            {
-                                                let pub_key = secret_key
-                                                    .public_key(&crate::types::nostr::SECP256K1);
+                                            if let Ok(secret_key) = SecretKey::from_hex(&tag[1]) {
+                                                let pub_key = secret_key.public_key(&SECP256K1);
                                                 parsed.p2pk_pub_key = Some(pub_key.to_string());
                                             }
                                         }

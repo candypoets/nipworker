@@ -1,12 +1,11 @@
-use crate::nostr::Template;
 use crate::parser::Parser;
 use crate::parser::{ParserError, Result};
 
-use crate::types::network::Request;
-use crate::types::nostr::Event;
-use crate::types::proof::Proof;
 use crate::utils::request_deduplication::RequestDeduplicator;
 use rustc_hash::FxHashMap;
+use shared::types::network::Request;
+use shared::types::nostr::Template;
+use shared::types::{Event, Proof};
 use tracing::{debug, error, info, warn};
 
 // NEW: Imports for FlatBuffers

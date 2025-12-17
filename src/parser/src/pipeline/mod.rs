@@ -1,13 +1,12 @@
-use shared::generated::nostr::fb::{self};
-use crate::parsed_event::ParsedEvent;
 use crate::parser::Parser;
-use crate::types::*;
+use crate::types::parsed_event::ParsedEvent;
 use crate::utils::json::extract_event_id;
 use crate::NostrError;
+use shared::generated::nostr::fb::{self};
+use shared::types::Event;
 
 type Result<T> = std::result::Result<T, NostrError>;
 
-use crate::types::nostr::Event as NostrEvent;
 use hex::decode_to_slice;
 use rustc_hash::FxHashSet;
 use shared::SabRing;
@@ -29,7 +28,7 @@ extern "C" {
 
 pub struct PipelineEvent {
     /// Raw nostr event (if available)
-    pub raw: Option<NostrEvent>,
+    pub raw: Option<Event>,
     /// Parsed event (if already parsed)
     pub parsed: Option<ParsedEvent>,
     /// Event ID (always available for deduplication)
@@ -39,7 +38,7 @@ pub struct PipelineEvent {
 }
 
 impl PipelineEvent {
-    pub fn from_raw(event: NostrEvent, source_relay: Option<String>) -> Self {
+    pub fn from_raw(event: Event, source_relay: Option<String>) -> Self {
         Self {
             id: event.id.to_bytes(),
             raw: Some(event),
@@ -320,7 +319,7 @@ impl Pipeline {
     pub async fn process_bytes(&mut self, raw_event_bytes: &[u8]) -> Result<Option<Vec<u8>>> {
         info!("Processing event bytes");
 
-        let nostr_event = match NostrEvent::from_worker_message(raw_event_bytes) {
+        let nostr_event = match Event::from_worker_message(raw_event_bytes) {
             Ok(ev) => ev,
             Err(_) => {
                 tracing::warn!("Failed to parse event from worker message bytes");

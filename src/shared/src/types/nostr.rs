@@ -1,6 +1,6 @@
+use crate::{generated::nostr::fb, types::TypesError, utils::BaseJsonParser};
 use k256::schnorr::{Signature, SigningKey, VerifyingKey};
 use sha2::{Digest, Sha256};
-use shared::generated::nostr::fb;
 use std::{collections::HashMap, fmt::Write};
 
 type Result<T> = std::result::Result<T, TypesError>;
@@ -1740,5 +1740,3 @@ impl NostrTags {
 
 // Re-export for compatibility
 pub use nips::*;
-
-use crate::{utils::json::BaseJsonParser, TypesError};

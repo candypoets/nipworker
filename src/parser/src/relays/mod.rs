@@ -22,7 +22,7 @@ pub use types::{
 };
 
 // Re-export nostr types for convenience
-pub use crate::types::nostr::{Event, EventId, Filter, PublicKey};
+pub use shared::types::nostr::{Event, EventId, Filter, PublicKey};
 
 /// Main entry point for relay operations
 ///

@@ -1,11 +1,11 @@
 use crate::parser::Parser;
 use crate::parser::{ParserError, Result};
-use crate::types::network::Request;
-use crate::types::nostr::Event;
 
 // NEW: Imports for FlatBuffers
-use shared::generated::nostr::*;
 use crate::utils::relay::RelayUtils;
+use shared::generated::nostr::*;
+use shared::types::network::Request;
+use shared::types::Event;
 
 pub struct Contact {
     pub pubkey: String,

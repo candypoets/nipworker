@@ -1,5 +1,6 @@
 use super::super::*;
 use rustc_hash::FxHashSet;
+use shared::types::Event;
 
 /// Pre-parsed mute criteria. Build this upstream from your parsed mute event (kind 10000).
 /// - pubkeys: hex pubkeys to mute
@@ -58,7 +59,7 @@ impl MuteFilterPipe {
     }
 
     #[inline]
-    fn should_drop(&self, ev: &crate::types::nostr::Event) -> bool {
+    fn should_drop(&self, ev: &Event) -> bool {
         // 1) Author muted
         let pubkey_hex = ev.pubkey.to_string();
         if self.muted_pubkeys.contains(&pubkey_hex) {

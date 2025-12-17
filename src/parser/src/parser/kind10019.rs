@@ -1,13 +1,10 @@
-use crate::nostr::Template;
 use crate::parser::Parser;
 use crate::parser::{ParserError, Result};
-use crate::types::network::Request;
-use crate::types::nostr::Event;
-use tracing::info;
 
-// NEW: Imports for FlatBuffers
-use flatbuffers::FlatBufferBuilder;
 use shared::generated::nostr::*;
+use shared::types::network::Request;
+use shared::types::nostr::Template;
+use shared::types::Event;
 
 pub struct MintInfo {
     pub url: String,

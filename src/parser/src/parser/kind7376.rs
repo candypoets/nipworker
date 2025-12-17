@@ -1,10 +1,13 @@
-use crate::nostr::{NostrTags, Template};
 use crate::parser::{Parser, ParserError, Result};
-use crate::types::network::Request;
-use crate::types::nostr::Event;
 
-// NEW: Imports for FlatBuffers
-use shared::generated::nostr::*;
+use shared::{
+    generated::nostr::*,
+    types::{
+        network::Request,
+        nostr::{NostrTags, Template},
+        Event,
+    },
+};
 
 pub struct HistoryTag {
     pub name: String,

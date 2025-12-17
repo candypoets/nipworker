@@ -2,7 +2,11 @@
 
 use flatbuffers::FlatBufferBuilder;
 use js_sys::SharedArrayBuffer;
-use shared::{telemetry, SabRing};
+use shared::{
+    telemetry,
+    types::{nostr::Template, Event, ParserError, TypesError},
+    SabRing,
+};
 use signer::SignerClient;
 use wasm_bindgen::prelude::*;
 
@@ -17,8 +21,6 @@ pub mod utils;
 pub use network::NetworkManager;
 pub use parser::Parser;
 // pub use signer::{PrivateKeySigner, SignerInterface, SignerManager, SignerManagerInterface};
-
-pub use types::*;
 
 // Type aliases to match Go implementation
 pub type NostrEvent = Event;
@@ -35,9 +37,9 @@ pub enum NostrError {
     #[error("Relay error: {0}")]
     Relay(#[from] relays::types::RelayError),
     #[error("Types error: {0}")]
-    Types(#[from] types::TypesError),
+    Types(#[from] TypesError),
     #[error("Parser error: {0}")]
-    Parser(#[from] parser::ParserError),
+    Parser(#[from] ParserError),
     #[error("HTTP error: {0}")]
     Http(String),
     #[error("Other error: {0}")]
@@ -68,7 +70,7 @@ use std::{
 };
 use tracing::info;
 
-use crate::{types::nostr::Template, utils::js_interop::post_worker_message};
+use crate::utils::js_interop::post_worker_message;
 use shared::generated::nostr::fb;
 
 // Default relay configurations to match Go implementation

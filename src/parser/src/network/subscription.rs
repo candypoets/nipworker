@@ -1,8 +1,9 @@
-use shared::generated::nostr::fb;
 use crate::parser::Parser;
 use crate::pipeline::pipes::*;
 use crate::pipeline::{PipeType, Pipeline};
-use crate::types::network::Request;
+use shared::generated::nostr::fb;
+use shared::types::network::Request;
+
 use crate::NostrError;
 use rustc_hash::FxHashMap;
 use shared::SabRing;

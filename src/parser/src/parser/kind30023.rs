@@ -1,7 +1,8 @@
-use shared::generated::nostr::*; // brings `fb::...` into scope
 use crate::parser::{Parser, ParserError, Result};
-use crate::types::network::Request;
-use crate::types::nostr::Event;
+use shared::{
+    generated::nostr::*,
+    types::{network::Request, Event},
+}; // brings `fb::...` into scope
 
 /// Parsed representation for NIP-23 (kind 30023) long-form content.
 ///

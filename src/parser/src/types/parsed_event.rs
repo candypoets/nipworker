@@ -1,16 +1,14 @@
 use crate::parser::nip51::ListParsed;
 use crate::parser::pre_generic::PreGenericParsed;
 use crate::parser::Kind30023Parsed;
-use crate::types::nostr::Event;
-use shared::generated::nostr::fb;
+use shared::types::network::Request;
+use shared::types::nostr::Event;
+use shared::{generated::nostr::fb, types::TypesError};
 
-use crate::{
-    parser::{
-        Kind0Parsed, Kind10002Parsed, Kind10019Parsed, Kind17375Parsed, Kind17Parsed, Kind1Parsed,
-        Kind3Parsed, Kind4Parsed, Kind6Parsed, Kind7374Parsed, Kind7375Parsed, Kind7376Parsed,
-        Kind7Parsed, Kind9321Parsed, Kind9735Parsed,
-    },
-    types::network::Request,
+use crate::parser::{
+    Kind0Parsed, Kind10002Parsed, Kind10019Parsed, Kind17375Parsed, Kind17Parsed, Kind1Parsed,
+    Kind3Parsed, Kind4Parsed, Kind6Parsed, Kind7374Parsed, Kind7375Parsed, Kind7376Parsed,
+    Kind7Parsed, Kind9321Parsed, Kind9735Parsed,
 };
 
 /// Strongly typed parsed data for different event kinds
@@ -45,7 +43,7 @@ impl ParsedData {
             shared::generated::nostr::fb::ParsedData,
             flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>,
         ),
-        crate::types::TypesError,
+        TypesError,
     > {
         use shared::generated::nostr::fb;
 
@@ -165,10 +163,11 @@ impl ParsedEvent {
     pub fn build_flatbuffer<'a>(
         &self,
         fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
-    ) -> Result<flatbuffers::WIPOffset<fb::ParsedEvent<'a>>, crate::types::TypesError> {
-        let parsed_data = self.parsed.as_ref().ok_or_else(|| {
-            crate::types::TypesError::MissingField("No parsed data available".to_string())
-        })?;
+    ) -> Result<flatbuffers::WIPOffset<fb::ParsedEvent<'a>>, TypesError> {
+        let parsed_data = self
+            .parsed
+            .as_ref()
+            .ok_or_else(|| TypesError::MissingField("No parsed data available".to_string()))?;
 
         // Build the ParsedData union directly in our builder
         let (parsed_type, parsed_union_offset) = parsed_data.build_flatbuffer(fbb)?;

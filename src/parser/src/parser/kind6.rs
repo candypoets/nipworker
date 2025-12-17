@@ -1,13 +1,11 @@
-use crate::parsed_event::ParsedData;
-use crate::parser::{ParserError, Result};
-use crate::types::network::Request;
-use crate::types::nostr::{Event, REPOST};
+use crate::parser::{Parser, ParserError, Result};
+use crate::types::parsed_event::{ParsedData, ParsedEvent};
 use crate::utils::request_deduplication::RequestDeduplicator;
-use crate::TEXT_NOTE;
-use crate::{parsed_event::ParsedEvent, parser::Parser};
 
 // NEW: Imports for FlatBuffers
 use shared::generated::nostr::*;
+use shared::types::network::Request;
+use shared::types::{Event, REPOST, TEXT_NOTE};
 
 pub struct Kind6Parsed {
     pub reposted_event: Option<Event>,

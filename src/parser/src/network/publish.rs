@@ -1,10 +1,10 @@
-use crate::nostr::Template;
 use crate::parser::Parser;
-use crate::types::nostr::Event;
 use crate::NostrError;
 use std::sync::Arc;
 
 type Result<T> = std::result::Result<T, NostrError>;
+use shared::types::nostr::Template;
+use shared::types::Event;
 use tracing::info;
 
 #[derive(Clone)]

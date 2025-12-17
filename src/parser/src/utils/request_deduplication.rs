@@ -4,8 +4,8 @@
 //! filter criteria, helping to optimize network usage by merging requests with
 //! identical filter parameters while combining their relay lists.
 
-use crate::types::network::Request;
 use rustc_hash::FxHashMap;
+use shared::types::network::Request;
 
 /// Utility struct for request deduplication operations
 pub struct RequestDeduplicator;

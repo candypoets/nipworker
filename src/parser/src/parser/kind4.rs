@@ -2,10 +2,11 @@ use crate::parser::content::serialize_content_data;
 use crate::parser::ContentBlock;
 use crate::parser::{content::parse_content, Parser};
 use crate::parser::{ParserError, Result};
-use crate::types::network::Request;
-use crate::types::nostr::{Event, Template};
 use crate::utils::request_deduplication::RequestDeduplicator;
 
+use shared::types::network::Request;
+use shared::types::nostr::Template;
+use shared::types::Event;
 use tracing::{info, warn};
 
 // NEW: Imports for FlatBuffers

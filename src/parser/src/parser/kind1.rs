@@ -5,12 +5,12 @@ use crate::parser::{
     Parser,
 };
 use crate::parser::{ParserError, Result};
-use crate::types::network::Request;
-use crate::types::nostr::Event;
 use crate::utils::request_deduplication::RequestDeduplicator;
 
-// NEW: Imports for FlatBuffers
-use shared::generated::nostr::*;
+use shared::{
+    generated::nostr::*,
+    types::{network::Request, nostr, Event},
+};
 
 pub struct ProfilePointer {
     pub public_key: String,
@@ -156,10 +156,8 @@ impl Parser {
 
         for caps in profile_regex.captures_iter(content) {
             if let Some(npub) = caps.get(1) {
-                if let Ok(decoded) =
-                    crate::types::nostr::nips::nip19::FromBech32::from_bech32(npub.as_str())
-                {
-                    if let crate::types::nostr::nips::nip19::Nip19::Pubkey(pubkey) = decoded {
+                if let Ok(decoded) = nostr::nips::nip19::FromBech32::from_bech32(npub.as_str()) {
+                    if let nostr::nips::nip19::Nip19::Pubkey(pubkey) = decoded {
                         let pointer = ProfilePointer {
                             public_key: pubkey.to_string(),
                             relays: Vec::new(),
@@ -187,10 +185,9 @@ impl Parser {
 
         for caps in nprofile_regex.captures_iter(content) {
             if let Some(nprofile) = caps.get(1) {
-                if let Ok(decoded) =
-                    crate::types::nostr::nips::nip19::FromBech32::from_bech32(nprofile.as_str())
+                if let Ok(decoded) = nostr::nips::nip19::FromBech32::from_bech32(nprofile.as_str())
                 {
-                    if let crate::types::nostr::nips::nip19::Nip19::Profile(profile) = decoded {
+                    if let nostr::nips::nip19::Nip19::Profile(profile) = decoded {
                         let pointer = ProfilePointer {
                             public_key: profile.public_key.to_string(),
                             relays: profile
@@ -233,10 +230,8 @@ impl Parser {
 
         for caps in note_regex.captures_iter(content) {
             if let Some(note) = caps.get(1) {
-                if let Ok(decoded) =
-                    crate::types::nostr::nips::nip19::FromBech32::from_bech32(note.as_str())
-                {
-                    if let crate::types::nostr::nips::nip19::Nip19::EventId(event_id) = decoded {
+                if let Ok(decoded) = nostr::nips::nip19::FromBech32::from_bech32(note.as_str()) {
+                    if let nostr::nips::nip19::Nip19::EventId(event_id) = decoded {
                         let id = event_id.to_string();
 
                         // Add request for this event
@@ -266,10 +261,8 @@ impl Parser {
 
         for caps in nevent_regex.captures_iter(content) {
             if let Some(nevent) = caps.get(1) {
-                if let Ok(decoded) =
-                    crate::types::nostr::nips::nip19::FromBech32::from_bech32(nevent.as_str())
-                {
-                    if let crate::types::nostr::nips::nip19::Nip19::Event(event) = decoded {
+                if let Ok(decoded) = nostr::nips::nip19::FromBech32::from_bech32(nevent.as_str()) {
+                    if let nostr::nips::nip19::Nip19::Event(event) = decoded {
                         let id = event.event_id.to_string();
                         let author = event.author.map(|pk| pk.to_string());
 

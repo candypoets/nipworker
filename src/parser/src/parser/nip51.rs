@@ -1,8 +1,9 @@
 use crate::parser::{Parser, ParserError, Result};
-use shared::generated::nostr::*; // brings `fb::...` into scope
+use shared::{
+    generated::nostr::*,
+    types::{network::Request, Event},
+}; // brings `fb::...` into scope
 
-use crate::types::network::Request;
-use crate::types::nostr::Event;
 use tracing::warn;
 
 /// Coordinate for an "a" tag entry: `kind:pubkey:d` with optional relay(s).

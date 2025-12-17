@@ -1,7 +1,8 @@
-use shared::generated::nostr::*; // brings `fb::...` into scope
 use crate::parser::{Parser, ParserError, Result};
-use crate::types::network::Request;
-use crate::types::nostr::Event;
+use shared::{
+    generated::nostr::*,
+    types::{network::Request, Event},
+}; // brings `fb::...` into scope
 
 /// Participant parsed from a "p" tag:
 /// ["p", "<pubkey>", "<relay?>", "<role?>", "<proof?>"]

@@ -9,17 +9,12 @@ import {
 	MainContent,
 	MainMessageT,
 	PipelineConfigT,
-	PrivateKeyT,
 	PublishT,
 	RequestT,
-	SetSignerT,
-	SignerType,
-	SignEventT,
 	StringVecT,
 	SubscribeT,
 	SubscriptionConfigT,
-	TemplateT,
-	UnsubscribeT
+	TemplateT
 } from './generated/nostr/fb';
 import { InitConnectionsMsg } from './connections';
 import { InitCacheMsg } from './cache';
@@ -384,12 +379,23 @@ export class NostrManager {
 		}
 	}
 
-	setSigner(name: string, secretKeyHex: string): void {
-		console.log('Setting signer:', name, secretKeyHex);
+	setSigner(name: string, payload: string): void {
+		console.log('Setting signer:', name, payload);
 		switch (name) {
 			case 'privkey':
 				// Create the PrivateKeyT object
-				this.signer.postMessage({ type: 'set_private_key', payload: secretKeyHex });
+				this.signer.postMessage({ type: 'set_private_key', payload });
+				break;
+			case 'nip46':
+				this.signer.postMessage({ type: 'set_nip46', payload: secretKeyHex });
+				break;
+			case 'nip46_bunker':
+				// Pass the bunker URL directly
+				this.signer.postMessage({ type: 'set_nip46_bunker', payload: secretKeyHex });
+				break;
+			case 'nip46_qr':
+				// Pass the nostrconnect URL directly
+				this.signer.postMessage({ type: 'set_nip46_qr', payload: secretKeyHex });
 				break;
 		}
 
@@ -411,6 +417,26 @@ export class NostrManager {
 		const serializedMessage = builder.asUint8Array();
 
 		this.parser.postMessage(serializedMessage);
+	}
+
+	/**
+	 * Set up NIP-46 remote signer using a bunker URL.
+	 * This is for the "Direct connection initiated by remote-signer" flow.
+	 * @param bunkerUrl The bunker URL in format: bunker://<remote-signer-pubkey>?relay=<relay-url>&relay=<relay-url>&secret=<secret>
+	 */
+	setNip46Bunker(bunkerUrl: string): void {
+		console.log('Setting up NIP-46 with bunker URL:', bunkerUrl);
+		this.setSigner('nip46_bunker', bunkerUrl);
+	}
+
+	/**
+	 * Set up NIP-46 remote signer using a QR code.
+	 * This is for the "Direct connection initiated by the client" flow.
+	 * @param nostrconnectUrl The nostrconnect URL from the QR code
+	 */
+	setNip46QR(nostrconnectUrl: string): void {
+		console.log('Setting up NIP-46 with QR code:', nostrconnectUrl);
+		this.setSigner('nip46_qr', nostrconnectUrl);
 	}
 
 	cleanup(): void {

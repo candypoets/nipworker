@@ -1,7 +1,7 @@
 use crate::parser::Parser;
-use crate::types::network::Request;
-use crate::types::nostr::Event;
 use crate::parser::{ParserError, Result};
+use shared::types::network::Request;
+use shared::types::nostr::Event;
 
 // NEW: Imports for FlatBuffers
 use shared::generated::nostr::*;

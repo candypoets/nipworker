@@ -3,7 +3,7 @@
 //! This module defines the message types used in the Nostr relay protocol
 //! as specified in NIP-01, along with connection and operation status types.
 
-use crate::types::nostr::{Event, Filter};
+use shared::types::nostr::{Event, Filter};
 use thiserror::Error;
 
 /// Client-to-relay messages as defined in NIP-01

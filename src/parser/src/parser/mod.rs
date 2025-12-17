@@ -1,44 +1,8 @@
-use crate::nostr::Template;
-use crate::parsed_event::{ParsedData, ParsedEvent};
-
-use crate::types::nostr::Event;
+use shared::types::{nostr::Template, Event, ParserError, TypesError};
 use signer::SignerClient;
 use std::cell::RefCell;
 use std::sync::Arc;
 use thiserror::Error;
-
-/// Parser-specific error type
-#[derive(Debug, Error)]
-pub enum ParserError {
-    #[error("Invalid event kind: {0}")]
-    InvalidKind(u32),
-
-    #[error("Missing required field: {0}")]
-    MissingField(String),
-
-    #[error("Invalid format: {0}")]
-    InvalidFormat(String),
-
-    #[error("Invalid content format: {0}")]
-    InvalidContent(String),
-
-    #[error("Cryptographic error: {0}")]
-    Crypto(String),
-
-    // #[error("Signer error: {0}")]
-    // SignerError(#[from] crate::signer::SignerError),
-    #[error("Types error: {0}")]
-    TypesError(#[from] crate::types::TypesError),
-
-    #[error("Invalid tag format: {0}")]
-    InvalidTag(String),
-
-    #[error("Parse error: {0}")]
-    Parse(String),
-
-    #[error("Other error: {0}")]
-    Other(String),
-}
 
 pub type Result<T> = std::result::Result<T, ParserError>;
 
@@ -87,6 +51,8 @@ pub use pre_adapters::{
     compute_a_pointer, compute_naddr_like, try_compute_naddr, BadgeDefinition, Calendar,
     CalendarEvent, LiveActivity, LiveSession, LiveSpace, ProfileBadges, WikiArticle, WikiRedirect,
 };
+
+use crate::types::parsed_event::{ParsedData, ParsedEvent};
 
 pub struct Parser {
     pub signer_client: Arc<SignerClient>,

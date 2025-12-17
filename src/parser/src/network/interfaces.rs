@@ -1,9 +1,5 @@
-use crate::{
-    parsed_event::ParsedEvent,
-    types::{network::Request, *},
-    NostrError,
-};
-use futures::channel::mpsc;
+use crate::{types::parsed_event::ParsedEvent, NostrError};
+use shared::types::{network::Request, Event, Filter};
 
 type Result<T> = std::result::Result<T, NostrError>;
 
@@ -15,13 +11,13 @@ pub trait EventDatabase {
         skip_filtered: bool,
     ) -> Result<(Vec<Request>, Vec<Vec<u8>>)>;
 
-    async fn query_events(&self, filter: crate::types::nostr::Filter) -> Result<Vec<Vec<u8>>>;
+    async fn query_events(&self, filter: Filter) -> Result<Vec<Vec<u8>>>;
     async fn add_event(&self, event: &ParsedEvent) -> Result<()>;
 }
 
 pub trait EventParser {
-    async fn parse(&self, event: crate::types::nostr::Event) -> Result<ParsedEvent>;
-    fn get_relay_hint(&self, event: &crate::types::nostr::Event) -> Vec<String>;
+    async fn parse(&self, event: Event) -> Result<ParsedEvent>;
+    fn get_relay_hint(&self, event: &Event) -> Vec<String>;
     fn get_relays(&self, kind: u64, pubkey: &str, write: bool) -> Vec<String>;
 }
 

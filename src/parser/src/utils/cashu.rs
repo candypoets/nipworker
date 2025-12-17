@@ -1,6 +1,6 @@
-use crate::types::proof::{DleqProof, Proof};
 use crate::utils::json::BaseJsonParser;
 use crate::NostrError;
+use shared::types::proof::{DleqProof, Proof};
 
 use gloo_net::http::Request;
 use hex;

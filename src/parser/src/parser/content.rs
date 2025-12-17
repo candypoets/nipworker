@@ -1,6 +1,6 @@
 use crate::parser::{ParserError, Result};
-use crate::types::nostr::nips::nip19::{self, Nip19};
 use regex::Regex;
+use shared::types::nostr::nips::nip19::{self, Nip19};
 use tracing::info;
 
 use shared::generated::nostr::fb;

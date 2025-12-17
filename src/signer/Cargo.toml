@@ -48,6 +48,7 @@ aes = "0.8"        # Required for NIP-04 AES-256-CBC
 cbc = { version = "0.1", features = ["alloc"] }
 signature = "2"
 getrandom = { version = "0.2", features = ["js"] }
+url = "2.5"
 
 
 [features]
