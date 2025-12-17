@@ -75,6 +75,53 @@ self.addEventListener('message', async (evt: MessageEvent<any>) => {
 					}
 					break;
 				}
+				case 'set_nip46_bunker': {
+					try {
+						const bunkerUrl = m?.payload || '';
+						s.setNip46Bunker(bunkerUrl);
+
+						(self as any).postMessage({
+							id: m.id,
+							type: 'response',
+							op: 'set_nip46_bunker',
+							ok: true
+						});
+					} catch (e: any) {
+						console.error('Error setting NIP-46 with bunker URL:', e);
+						(self as any).postMessage({
+							id: m.id,
+							type: 'response',
+							op: 'set_nip46_bunker',
+							ok: false,
+							error: e.message
+						});
+					}
+					break;
+				}
+				case 'set_nip46_qr': {
+					try {
+						const nostrconnectUrl = m?.payload || '';
+						s.setNip46QR(nostrconnectUrl);
+
+						(self as any).postMessage({
+							id: m.id,
+							type: 'response',
+							op: 'set_nip46_qr',
+							ok: true
+						});
+					} catch (e: any) {
+						console.error('Error setting NIP-46 with QR code:', e);
+						(self as any).postMessage({
+							id: m.id,
+							type: 'response',
+							op: 'set_nip46_qr',
+							ok: false,
+							error: e.message
+						});
+					}
+					break;
+				}
+
 				case 'get_pubkey': {
 					try {
 						const pk = await s.getPublicKeyDirect();
@@ -90,6 +137,7 @@ self.addEventListener('message', async (evt: MessageEvent<any>) => {
 					}
 					break;
 				}
+
 				case 'sign_event': {
 					try {
 						const signed = await s.signEvent(m?.payload);

@@ -6,6 +6,7 @@ use crate::signers::{
     types::{Keys, PublicKey, SecretKey},
     SignerError,
 };
+use shared::types::Event;
 
 use signature::hazmat::{PrehashSigner, PrehashVerifier};
 
@@ -61,7 +62,16 @@ impl PrivateKeySigner {
     }
 
     /// Sign an event id
-    pub async fn sign_event(&self, event_id: &str) -> Result<String> {
+    pub async fn sign_event(&self, event_json: &str) -> Result<String> {
+        // Parse the event JSON
+        let mut event = Event::from_json(event_json)
+            .map_err(|e| SignerError::Other(format!("Failed to parse event JSON: {}", e)))?;
+
+        // Compute the event ID
+        event
+            .compute_id()
+            .map_err(|e| SignerError::Other(format!("Failed to compute event ID: {}", e)))?;
+
         // Sign the event
         let secret_key = self
             .keys
@@ -75,23 +85,22 @@ impl PrivateKeySigner {
         let verifying_key = signing_key.verifying_key();
 
         // Sign the 32-byte event id as a prehash message
-        // Decode the hex-encoded event_id string into bytes for signing
-        let event_id_bytes = hex::decode(event_id).map_err(|e| {
-            SignerError::Other(format!("Failed to decode event ID from hex: {}", e))
-        })?;
-
         let signature = signing_key
-            .sign_prehash(&event_id_bytes)
+            .sign_prehash(&event.id.to_bytes())
             .map_err(|e| SignerError::Other(format!("Schnorr prehash sign failed: {}", e)))?;
 
         // Verify with the prehash verifier to match nostr-tools/relay behavior
         verifying_key
-            .verify_prehash(&event_id_bytes, &signature)
+            .verify_prehash(&event.id.to_bytes(), &signature)
             .map_err(|e| {
                 SignerError::Other(format!("Local Schnorr prehash verify failed: {}", e))
             })?;
 
-        Ok(hex::encode(signature.to_bytes()))
+        // Set the signature on the event
+        event.sig = hex::encode(signature.to_bytes());
+
+        // Return the signed event as JSON
+        Ok(event.as_json())
     }
 
     /// NIP-04 encrypt plaintext for a recipient pubkey (hex).

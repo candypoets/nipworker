@@ -11,6 +11,7 @@ use wasm_bindgen_futures::spawn_local;
 use gloo_timers::future::TimeoutFuture;
 use std::cell::RefCell;
 use std::rc::Rc;
+use url::Url;
 
 // expose client
 mod client;
@@ -19,7 +20,21 @@ mod signers;
 pub use client::SignerClient;
 use signers::{Nip07Signer, Nip46Config, Nip46Signer, PrivateKeySigner};
 
-use crate::signers::SignerError;
+/// Helper structs for URL parsing
+#[derive(Debug)]
+struct BunkerUrl {
+    remote_pubkey: String,
+    relays: Vec<String>,
+    secret: Option<String>,
+}
+
+#[derive(Debug)]
+struct NostrconnectUrl {
+    client_pubkey: String,
+    relays: Vec<String>,
+    secret: String,
+    app_name: Option<String>,
+}
 
 /// A minimal signer worker that:
 /// - Wires four SAB rings:
@@ -111,21 +126,191 @@ impl Signer {
     }
 
     /// Configure NIP-46 remote signer. Takes remote signer pubkey (hex) and relays.
-    #[wasm_bindgen(js_name = "setNip46")]
-    pub fn set_nip46(&self, remote_pubkey_hex: String, relays: Array) -> Result<(), JsValue> {
-        let relays_vec: Vec<String> = relays.iter().filter_map(|v| v.as_string()).collect();
+    /// Configure NIP-46 remote signer using a bunker URL.
+    /// This is for the "Direct connection initiated by remote-signer" flow.
+    #[wasm_bindgen(js_name = "setNip46Bunker")]
+    pub fn set_nip46_bunker(&self, bunker_url: String) -> Result<(), JsValue> {
+        // Parse the bunker URL to extract remote pubkey and relays
+        let parsed = Self::parse_bunker_url(&bunker_url)?;
+
+        info!(
+            "[signer] setting NIP-46 signer with remote_pubkey: {}, relays: {:?}",
+            parsed.remote_pubkey, parsed.relays
+        );
+
         let cfg = Nip46Config {
-            remote_signer_pubkey: remote_pubkey_hex,
-            relays: relays_vec,
+            remote_signer_pubkey: parsed.remote_pubkey,
+            relays: parsed.relays,
             use_nip44: true,
             app_name: None,
+            expected_secret: parsed.secret, // Optional secret for single-use connection
         };
+
         // Create fresh SAB views for the NIP-46 signer
         let nip46 = Nip46Signer::new(cfg, self.ws_req.clone(), self.ws_resp.clone());
         nip46.start();
         *self.active.borrow_mut() = ActiveSigner::Nip46(nip46);
-        info!("[signer] active signer = NIP-46 (configured)");
+        info!("[signer] active signer = NIP-46 (bunker URL configured)");
         Ok(())
+    }
+
+    /// Configure NIP-46 remote signer using a QR code.
+    /// This is for the "Direct connection initiated by the client" flow.
+    #[wasm_bindgen(js_name = "setNip46QR")]
+    pub fn set_nip46_qr(&self, nostrconnect_url: String) -> Result<(), JsValue> {
+        // Parse the nostrconnect URL to extract client info
+        let parsed = Self::parse_nostrconnect_url(&nostrconnect_url)?;
+
+        info!(
+            "[signer] setting NIP-46 signer in QR mode with client_pubkey: {}, relays: {:?}",
+            parsed.client_pubkey, parsed.relays
+        );
+
+        let cfg = Nip46Config {
+            remote_signer_pubkey: String::new(), // Will be discovered
+            relays: parsed.relays,
+            use_nip44: true,
+            app_name: parsed.app_name,
+            expected_secret: Some(parsed.secret), // Required for validation
+        };
+
+        // Create fresh SAB views for the NIP-46 signer
+        let nip46 = Nip46Signer::new(cfg, self.ws_req.clone(), self.ws_resp.clone());
+        nip46.start();
+        *self.active.borrow_mut() = ActiveSigner::Nip46(nip46);
+        info!("[signer] active signer = NIP-46 (QR code discovery mode)");
+        Ok(())
+    }
+
+    /// Helper function to parse bunker URLs
+    fn parse_bunker_url(url: &str) -> Result<BunkerUrl, JsValue> {
+        if !url.starts_with("bunker://") {
+            return Err(JsValue::from_str(
+                "Invalid bunker URL: must start with bunker://",
+            ));
+        }
+
+        let url_part = &url[9..]; // Remove 'bunker://'
+        let parts: Vec<&str> = url_part.split('?').collect();
+
+        if parts.len() != 2 {
+            return Err(JsValue::from_str(
+                "Invalid bunker URL: missing query parameters",
+            ));
+        }
+
+        let remote_pubkey = parts[0];
+        if !remote_pubkey.chars().all(|c| c.is_ascii_hexdigit()) || remote_pubkey.len() != 64 {
+            return Err(JsValue::from_str(
+                "Invalid remote signer pubkey in bunker URL",
+            ));
+        }
+
+        let params = Url::parse(&format!("http://{}", parts[1]))
+            .map_err(|e| JsValue::from_str(&format!("Invalid URL parameters: {}", e)))?;
+
+        let mut relays = Vec::new();
+        for relay in params
+            .query_pairs()
+            .filter_map(|(k, v)| if k == "relay" { Some(v) } else { None })
+        {
+            relays.push(relay.to_string());
+        }
+
+        if relays.is_empty() {
+            return Err(JsValue::from_str("No relays specified in bunker URL"));
+        }
+
+        let secret = params.query_pairs().find_map(|(k, v)| {
+            if k == "secret" {
+                Some(v.to_string())
+            } else {
+                None
+            }
+        });
+
+        Ok(BunkerUrl {
+            remote_pubkey: remote_pubkey.to_string(),
+            relays,
+            secret,
+        })
+    }
+
+    /// Helper function to parse nostrconnect URLs
+    fn parse_nostrconnect_url(url: &str) -> Result<NostrconnectUrl, JsValue> {
+        if !url.starts_with("nostrconnect://") {
+            return Err(JsValue::from_str(
+                "Invalid nostrconnect URL: must start with nostrconnect://",
+            ));
+        }
+
+        let url_part = &url[13..]; // Remove 'nostrconnect://'
+        let parts: Vec<&str> = url_part.split('?').collect();
+
+        if parts.len() != 2 {
+            return Err(JsValue::from_str(
+                "Invalid nostrconnect URL: missing query parameters",
+            ));
+        }
+
+        let client_pubkey = parts[0];
+        if !client_pubkey.chars().all(|c| c.is_ascii_hexdigit()) || client_pubkey.len() != 64 {
+            return Err(JsValue::from_str(
+                "Invalid client pubkey in nostrconnect URL",
+            ));
+        }
+
+        let params = Url::parse(&format!("http://{}", parts[1]))
+            .map_err(|e| JsValue::from_str(&format!("Invalid URL parameters: {}", e)))?;
+
+        let mut relays = Vec::new();
+        for relay in params
+            .query_pairs()
+            .filter_map(|(k, v)| if k == "relay" { Some(v) } else { None })
+        {
+            relays.push(relay.to_string());
+        }
+
+        if relays.is_empty() {
+            return Err(JsValue::from_str("No relays specified in nostrconnect URL"));
+        }
+
+        let secret = params
+            .query_pairs()
+            .find_map(|(k, v)| {
+                if k == "secret" {
+                    Some(v.to_string())
+                } else {
+                    None
+                }
+            })
+            .ok_or_else(|| JsValue::from_str("Secret is required in nostrconnect URL"))?;
+
+        let app_name = params.query_pairs().find_map(|(k, v)| {
+            if k == "name" {
+                Some(v.to_string())
+            } else {
+                None
+            }
+        });
+
+        Ok(NostrconnectUrl {
+            client_pubkey: client_pubkey.to_string(),
+            relays,
+            secret,
+            app_name,
+        })
+    }
+
+    /// Get the discovered remote signer pubkey (for QR code mode).
+    /// Returns None if no remote signer has been discovered yet.
+    #[wasm_bindgen(js_name = "getDiscoveredRemotePubkey")]
+    pub fn get_discovered_remote_pubkey(&self) -> Option<String> {
+        if let ActiveSigner::Nip46(ref nip46) = *self.active.borrow() {
+            nip46.get_discovered_remote_pubkey()
+        } else {
+            None
+        }
     }
 
     /// Direct path: get public key as a string. This is a placeholder until key plumbing lands.
@@ -291,13 +476,41 @@ impl Signer {
                                     Err(e) => Err(format!("{:?}", e)),
                                 }
                             }
-                            shared::generated::nostr::fb::SignerOp::Nip04Encrypt
-                            | shared::generated::nostr::fb::SignerOp::Nip04Decrypt
-                            | shared::generated::nostr::fb::SignerOp::Nip44Encrypt
-                            | shared::generated::nostr::fb::SignerOp::Nip44Decrypt
-                            | shared::generated::nostr::fb::SignerOp::Nip04DecryptBetween
-                            | shared::generated::nostr::fb::SignerOp::Nip44DecryptBetween => {
-                                Err("op not implemented for NIP-46".into())
+                            shared::generated::nostr::fb::SignerOp::Nip04Encrypt => {
+                                match s.nip04_encrypt(peer, payload).await {
+                                    Ok(out) => Ok(out),
+                                    Err(e) => Err(format!("{:?}", e)),
+                                }
+                            }
+                            shared::generated::nostr::fb::SignerOp::Nip04Decrypt => {
+                                match s.nip04_decrypt(peer, payload).await {
+                                    Ok(out) => Ok(out),
+                                    Err(e) => Err(format!("{:?}", e)),
+                                }
+                            }
+                            shared::generated::nostr::fb::SignerOp::Nip44Encrypt => {
+                                match s.nip44_encrypt(peer, payload).await {
+                                    Ok(out) => Ok(out),
+                                    Err(e) => Err(format!("{:?}", e)),
+                                }
+                            }
+                            shared::generated::nostr::fb::SignerOp::Nip44Decrypt => {
+                                match s.nip44_decrypt(peer, payload).await {
+                                    Ok(out) => Ok(out),
+                                    Err(e) => Err(format!("{:?}", e)),
+                                }
+                            }
+                            shared::generated::nostr::fb::SignerOp::Nip04DecryptBetween => {
+                                match s.nip04_decrypt_between(sender, recipient, payload).await {
+                                    Ok(out) => Ok(out),
+                                    Err(e) => Err(format!("{:?}", e)),
+                                }
+                            }
+                            shared::generated::nostr::fb::SignerOp::Nip44DecryptBetween => {
+                                match s.nip44_decrypt_between(sender, recipient, payload).await {
+                                    Ok(out) => Ok(out),
+                                    Err(e) => Err(format!("{:?}", e)),
+                                }
                             }
                             _ => Err("Unsupported operation".to_string()),
                         },

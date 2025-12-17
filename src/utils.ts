@@ -1,3 +1,6 @@
+import { generateSecretKey, getPublicKey } from 'nostr-tools';
+import { manager } from '.';
+
 export { ConnectionTracker } from './lib/ConnectionTracker';
 export { ByteString } from './lib/ByteString';
 
@@ -57,4 +60,38 @@ export function fbArray<T, K extends FlatBufferKeys<T>>(
 		if (v != null) result.push(v);
 	}
 	return result;
+}
+
+// In your frontend application
+export async function connectWithQRCode(appName: string, relays: string[]) {
+	// Generate a client keypair
+	const clientKeys = generateSecretKey();
+	const clientPubkey = getPublicKey(clientKeys);
+
+	// Generate a random secret
+	const secret = getPublicKey(generateSecretKey());
+
+	const params = new URLSearchParams();
+
+	for (const relay of relays) {
+		params.append('relay', relay);
+	}
+
+	params.set('secret', secret);
+	params.set('name', appName);
+
+	const nostrconnectUrl = `nostrconnect://${clientPubkey}?${params.toString()}`;
+
+	// Set up the NIP-46 signer with the client's pubkey and relays
+	// Note: We don't know the remote signer's pubkey yet - that's what we're discovering
+	manager.setSigner(
+		'nip46',
+		JSON.stringify({
+			clientPubkey,
+			relays,
+			secret
+		})
+	);
+
+	return nostrconnectUrl;
 }
