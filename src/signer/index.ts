@@ -13,6 +13,18 @@ export type InitSignerMsg = {
 	};
 };
 
+const pendingRequests = new Map<number, { resolve: Function; reject: Function }>();
+let nextRequestId = 0;
+
+// Expose this to WASM (Nip07Signer)
+(self as any).callExtension = (op: string, payload: any): Promise<any> => {
+	const id = nextRequestId++;
+	return new Promise((resolve, reject) => {
+		pendingRequests.set(id, { resolve, reject });
+		(self as any).postMessage({ type: 'extension_request', id, op, payload });
+	});
+};
+
 let wasmReady: Promise<any> | null = null;
 let resolveInstance: ((s: Signer) => void) | null = null;
 const instanceReady: Promise<Signer> = new Promise<Signer>((resolve) => {
@@ -30,6 +42,21 @@ async function ensureWasm() {
 
 self.addEventListener('message', async (evt: MessageEvent<any>) => {
 	const msg = evt.data;
+
+	// Handle response from main thread for NIP-07 extension calls
+	if (msg?.type === 'extension_response') {
+		const { id, ok, result, error } = msg;
+		const pending = pendingRequests.get(id);
+		if (pending) {
+			pendingRequests.delete(id);
+			if (ok) {
+				pending.resolve(result);
+			} else {
+				pending.reject(new Error(error));
+			}
+		}
+		return;
+	}
 
 	if (msg?.type === 'init') {
 		await ensureWasm();

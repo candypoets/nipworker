@@ -190,9 +190,58 @@ export class NostrManager {
 		};
 
 		this.signer.onmessage = async (event) => {
+			const msg = event.data;
+
+			// Handle NIP-07 extension requests from the worker
+			if (msg?.type === 'extension_request') {
+				const { id, op, payload } = msg;
+				try {
+					const nostr = (window as any).nostr;
+					if (!nostr) throw new Error('NIP-07 extension (window.nostr) not found');
+
+					let result;
+					switch (op) {
+						case 'getPublicKey':
+							result = await nostr.getPublicKey();
+							break;
+						case 'signEvent':
+							result = await nostr.signEvent(JSON.parse(payload));
+							break;
+						case 'nip04Encrypt':
+							if (!nostr.nip04) throw new Error('NIP-04 not supported by extension');
+							result = await nostr.nip04.encrypt(payload.pubkey, payload.plaintext);
+							break;
+						case 'nip04Decrypt':
+							if (!nostr.nip04) throw new Error('NIP-04 not supported by extension');
+							result = await nostr.nip04.decrypt(payload.pubkey, payload.ciphertext);
+							break;
+						case 'nip44Encrypt':
+							if (!nostr.nip44) throw new Error('NIP-44 not supported by extension');
+							result = await nostr.nip44.encrypt(payload.pubkey, payload.plaintext);
+							break;
+						case 'nip44Decrypt':
+							if (!nostr.nip44) throw new Error('NIP-44 not supported by extension');
+							result = await nostr.nip44.decrypt(payload.pubkey, payload.ciphertext);
+							break;
+						default:
+							throw new Error(`Unknown extension operation: ${op}`);
+					}
+
+					this.signer.postMessage({ type: 'extension_response', id, ok: true, result });
+				} catch (e: any) {
+					this.signer.postMessage({
+						type: 'extension_response',
+						id,
+						ok: false,
+						error: e.message || String(e)
+					});
+				}
+				return;
+			}
+
 			try {
-				if (event.data.op == 'sign_event') {
-					const parsed = JSON.parse(event.data.result);
+				if (msg.op == 'sign_event') {
+					const parsed = JSON.parse(msg.result);
 					this.signCB(parsed);
 				}
 			} catch (error) {
@@ -393,6 +442,9 @@ export class NostrManager {
 				// Create the PrivateKeyT object
 				this.signer.postMessage({ type: 'set_private_key', payload });
 				break;
+			case 'nip07':
+				this.signer.postMessage({ type: 'set_nip07' });
+				break;
 			case 'nip46_bunker':
 				// Pass the bunker URL directly
 				this.signer.postMessage({ type: 'set_nip46_bunker', payload });
@@ -449,6 +501,14 @@ export class NostrManager {
 			'nip46_qr',
 			clientSecret ? { url: nostrconnectUrl, clientSecret } : nostrconnectUrl
 		);
+	}
+
+	/**
+	 * Set up NIP-07 extension signer (window.nostr).
+	 */
+	setNip07(): void {
+		console.log('Setting up NIP-07 extension signer');
+		this.setSigner('nip07', '');
 	}
 
 	cleanup(): void {
