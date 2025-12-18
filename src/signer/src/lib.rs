@@ -82,7 +82,7 @@ impl Signer {
         ws_request_signer: SharedArrayBuffer,
         ws_response_signer: SharedArrayBuffer,
     ) -> Result<Signer, JsValue> {
-        init_with_component(tracing::Level::INFO, "signer");
+        init_with_component(tracing::Level::ERROR, "signer");
 
         let svc_req = Rc::new(RefCell::new(SabRing::new(signer_service_request)?));
         let svc_resp = Rc::new(RefCell::new(SabRing::new(signer_service_response)?));

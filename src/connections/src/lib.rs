@@ -53,7 +53,7 @@ impl WSRust {
         ws_signer_request: Option<SharedArrayBuffer>,
         ws_signer_response: Option<SharedArrayBuffer>,
     ) -> Result<WSRust, JsValue> {
-        telemetry::init(tracing::Level::INFO);
+        telemetry::init(tracing::Level::ERROR);
 
         info!("instanciating connections");
         let ws_request = Rc::new(RefCell::new(SabRing::new(ws_request)?));

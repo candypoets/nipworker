@@ -23,8 +23,6 @@ import { InitSignerMsg } from './signer';
 export * from './lib/nostrUtils';
 
 // Idempotent header initializer for rings created on the TS side.
-// If capacity (u32 at offset 0) is 0, we set it to (byteLength - 32)
-// and zero head, tail, and seq. Reserved bytes are cleared as well.
 export function initializeRingHeader(size: number): SharedArrayBuffer {
 	const buffer = new SharedArrayBuffer(size);
 	const HEADER = 32;
@@ -37,7 +35,6 @@ export function initializeRingHeader(size: number): SharedArrayBuffer {
 
 	const cap = view.getUint32(0, true);
 	if (cap !== 0) {
-		// Already initialized; nothing to do.
 		return buffer;
 	}
 	const capacity = total - HEADER;
@@ -50,7 +47,6 @@ export function initializeRingHeader(size: number): SharedArrayBuffer {
 	view.setUint32(4, 0, true); // head
 	view.setUint32(8, 0, true); // tail
 	view.setUint32(12, 0, true); // seq
-	// Zero reserved [16..32)
 	for (let off = 16; off < 32; off += 4) {
 		view.setUint32(off, 0, true);
 	}
@@ -60,8 +56,7 @@ export function initializeRingHeader(size: number): SharedArrayBuffer {
 export const statusRing = initializeRingHeader(512 * 1024);
 
 /**
- * Pure TypeScript NostrClient that manages worker communication and state.
- * Uses WASM utilities for heavy lifting (encoding, decoding, crypto).
+ * NostrManager handles worker orchestration and session persistence.
  */
 export class NostrManager {
 	private connections: Worker;
@@ -78,17 +73,19 @@ export class NostrManager {
 		}
 	>();
 	private publishes = new Map<string, { buffer: SharedArrayBuffer }>();
-	private signers = new Map<string, string>(); // name -> secret key hex
+	private signers = new Map<string, string>(); // name -> last payload
+
+	private activePubkey: string | null = null;
+	private _pendingSession: { type: string; payload: any } | null = null;
 
 	private signCB = (event: any) => {};
 	private eventTarget = new EventTarget();
 
 	public PERPETUAL_SUBSCRIPTIONS = ['notifications', 'starterpack'];
 
-	// In constructor, do NOT start init directly. Just set up ready lazily.
 	constructor() {
-		const wsRequest = initializeRingHeader(1 * 1024 * 1024); // 1MB (ws request)
-		const wsResponse = initializeRingHeader(5 * 1024 * 1024); // 2MB (ws response)
+		const wsRequest = initializeRingHeader(1 * 1024 * 1024);
+		const wsResponse = initializeRingHeader(5 * 1024 * 1024);
 
 		const wsSignerRequest = initializeRingHeader(512 * 1024);
 		const wsSignerResponse = initializeRingHeader(512 * 1024);
@@ -101,17 +98,12 @@ export class NostrManager {
 		const signerRequest = initializeRingHeader(512 * 1024);
 		const signerResponse = initializeRingHeader(512 * 1024);
 
-		// console.log('connection.url', import.meta.url);
-
 		const connectionURL = new URL('./connections/index.js', import.meta.url);
 		const cacheURL = new URL('./cache/index.js', import.meta.url);
 		const parserURL = new URL('./parser/index.js', import.meta.url);
 		const signerURL = new URL('./signer/index.js', import.meta.url);
 
-		this.connections = new Worker(connectionURL, {
-			type: 'module'
-		});
-
+		this.connections = new Worker(connectionURL, { type: 'module' });
 		this.cache = new Worker(cacheURL, { type: 'module' });
 		this.parser = new Worker(parserURL, { type: 'module' });
 		this.signer = new Worker(signerURL, { type: 'module' });
@@ -155,34 +147,25 @@ export class NostrManager {
 		} as InitSignerMsg);
 
 		this.setupWorkerListener();
+		this.restoreSession();
 	}
 
-	// private _ready: Promise<void> | null = null;
-	// private config!: NostrManagerConfig;
-
-	// Helper so all calls route through a single place and never race init:
 	private postToWorker(message: any, transfer?: Transferable[]) {
-		// return this.init().then(() => {
 		if (transfer && transfer.length) {
 			this.parser.postMessage(message, transfer);
 		} else {
 			this.parser.postMessage(message);
 		}
-		// });
 	}
 
 	private setupWorkerListener() {
 		this.parser.onmessage = async (event) => {
 			const id = typeof event.data === 'string' ? event.data : undefined;
-
 			if (!id) return;
-			// Prefer O(1) routing via your existing maps
 			if (this.subscriptions.has(id)) {
-				// Notify only the listeners for this subscription
 				this.dispatch(`subscription:${id}`, id);
 				return;
 			}
-
 			if (this.publishes.has(id)) {
 				this.dispatch(`publish:${id}`, id);
 				return;
@@ -208,25 +191,20 @@ export class NostrManager {
 							result = await nostr.signEvent(JSON.parse(payload));
 							break;
 						case 'nip04Encrypt':
-							if (!nostr.nip04) throw new Error('NIP-04 not supported by extension');
 							result = await nostr.nip04.encrypt(payload.pubkey, payload.plaintext);
 							break;
 						case 'nip04Decrypt':
-							if (!nostr.nip04) throw new Error('NIP-04 not supported by extension');
 							result = await nostr.nip04.decrypt(payload.pubkey, payload.ciphertext);
 							break;
 						case 'nip44Encrypt':
-							if (!nostr.nip44) throw new Error('NIP-44 not supported by extension');
 							result = await nostr.nip44.encrypt(payload.pubkey, payload.plaintext);
 							break;
 						case 'nip44Decrypt':
-							if (!nostr.nip44) throw new Error('NIP-44 not supported by extension');
 							result = await nostr.nip44.decrypt(payload.pubkey, payload.ciphertext);
 							break;
 						default:
 							throw new Error(`Unknown extension operation: ${op}`);
 					}
-
 					this.signer.postMessage({ type: 'extension_response', id, ok: true, result });
 				} catch (e: any) {
 					this.signer.postMessage({
@@ -239,19 +217,25 @@ export class NostrManager {
 				return;
 			}
 
-			try {
-				if (msg.op == 'sign_event') {
+			// Handle standard responses
+			if (msg.type === 'response') {
+				if (msg.op === 'get_pubkey' && msg.ok) {
+					this.activePubkey = msg.result;
+					if (this._pendingSession) {
+						this.saveSession(
+							this.activePubkey!,
+							this._pendingSession.type,
+							this._pendingSession.payload
+						);
+						this._pendingSession = null;
+					}
+					this.dispatch('auth', this.activePubkey);
+				} else if (msg.op === 'sign_event' && msg.ok) {
 					const parsed = JSON.parse(msg.result);
 					this.signCB(parsed);
 				}
-			} catch (error) {
-				// console.error("Error parsing event data:", error);
 			}
 		};
-
-		// this.worker.onerror = (error) => {
-		// 	console.error('Worker error:', error);
-		// };
 	}
 
 	public createShortId(input: string): string {
@@ -292,38 +276,18 @@ export class NostrManager {
 		options: SubscriptionConfig
 	): SharedArrayBuffer {
 		const subId = this.createShortId(subscriptionId);
-
 		const existingSubscription = this.subscriptions.get(subId);
-
 		if (existingSubscription) {
 			existingSubscription.refCount++;
 			return existingSubscription.buffer;
 		}
 
 		const totalLimit = requests.reduce((sum, req) => sum + (req.limit || 100), 0);
-
 		const bufferSize = SharedBufferReader.calculateBufferSize(totalLimit, options.bytesPerEvent);
-
-		let initialMessage: Uint8Array<ArrayBufferLike> = new Uint8Array();
-
-		const buffer = new SharedArrayBuffer(bufferSize + initialMessage.length);
-
-		// Initialize the buffer (sets write position to 4)
+		const buffer = new SharedArrayBuffer(bufferSize);
 		SharedBufferReader.initializeBuffer(buffer);
 
-		// Write the initial message if provided
-		if (initialMessage.length > 0) {
-			const success = SharedBufferReader.writeMessage(buffer, initialMessage);
-			if (!success) {
-				console.error('Failed to write initial message to buffer');
-			}
-		}
-
-		this.subscriptions.set(subId, {
-			buffer,
-			options,
-			refCount: 1
-		});
+		this.subscriptions.set(subId, { buffer, options, refCount: 1 });
 
 		const optionsT = new SubscriptionConfigT(
 			new PipelineConfigT(options.pipeline || []),
@@ -361,24 +325,12 @@ export class NostrManager {
 			optionsT
 		);
 
-		// Wrap in MainMessageT as Subscribe variant
 		const mainT = new MainMessageT(MainContent.Subscribe, subscribeT);
-
-		// Serialize with FlatBuffers builder
 		const builder = new flatbuffers.Builder(2048);
-		const mainOffset = mainT.pack(builder);
-		builder.finish(mainOffset);
-		const serializedMessage = builder.asUint8Array();
+		builder.finish(mainT.pack(builder));
+		this.postToWorker({ serializedMessage: builder.asUint8Array(), sharedBuffer: buffer });
 
-		try {
-			// nipWorker.resetInputLoopBackoff();
-			void this.postToWorker({ serializedMessage, sharedBuffer: buffer });
-
-			return buffer;
-		} catch (error) {
-			this.subscriptions.delete(subId);
-			throw error;
-		}
+		return buffer;
 	}
 
 	getBuffer(subId: string): SharedArrayBuffer | undefined {
@@ -395,15 +347,11 @@ export class NostrManager {
 		const subscription = this.subscriptions.get(subId);
 		if (subscription) {
 			subscription.refCount--;
-			// this.connections.postMessage(subId);
 		}
 	}
 
 	publish(publish_id: string, event: NostrEvent, defaultRelays: string[] = []): SharedArrayBuffer {
-		// a publish buffer fit in 3kb
 		const buffer = new SharedArrayBuffer(3072);
-
-		// Initialize the buffer (sets write position to 4)
 		SharedBufferReader.initializeBuffer(buffer);
 
 		try {
@@ -414,19 +362,10 @@ export class NostrManager {
 				event.tags.map((t) => new StringVecT(t)) || []
 			);
 			const publishT = new PublishT(this.textEncoder.encode(publish_id), templateT, defaultRelays);
-
-			// Wrap in MainMessageT as Publish variant
 			const mainT = new MainMessageT(MainContent.Publish, publishT);
-
-			// Serialize with FlatBuffers builder
 			const builder = new flatbuffers.Builder(2048);
-			const mainOffset = mainT.pack(builder);
-			builder.finish(mainOffset);
-			const serializedMessage = builder.asUint8Array();
-
-			// nipWorker.resetInputLoopBackoff();
-			this.postToWorker({ serializedMessage, sharedBuffer: buffer });
-
+			builder.finish(mainT.pack(builder));
+			this.postToWorker({ serializedMessage: builder.asUint8Array(), sharedBuffer: buffer });
 			this.publishes.set(publish_id, { buffer });
 			return buffer;
 		} catch (error) {
@@ -435,27 +374,30 @@ export class NostrManager {
 		}
 	}
 
-	setSigner(name: string, payload: string | { url: string; clientSecret: string }): void {
+	setSigner(name: string, payload?: string | { url: string; clientSecret: string }): void {
 		console.log('Setting signer:', name, payload);
 		switch (name) {
 			case 'privkey':
-				// Create the PrivateKeyT object
 				this.signer.postMessage({ type: 'set_private_key', payload });
 				break;
 			case 'nip07':
 				this.signer.postMessage({ type: 'set_nip07' });
 				break;
 			case 'nip46_bunker':
-				// Pass the bunker URL directly
 				this.signer.postMessage({ type: 'set_nip46_bunker', payload });
 				break;
 			case 'nip46_qr':
-				// Pass the nostrconnect URL directly
 				this.signer.postMessage({ type: 'set_nip46_qr', payload });
 				break;
 		}
 
 		this.signers.set(name, typeof payload === 'string' ? payload : payload.url);
+
+		// Trigger pubkey discovery to validate and save session
+		if (name === 'privkey' || name === 'nip07' || name === 'nip46_bunker') {
+			this._pendingSession = { type: name, payload };
+			this.signer.postMessage({ type: 'get_pubkey' });
+		}
 	}
 
 	signEvent(event: EventTemplate, cb: (event: NostrEvent) => void) {
@@ -469,77 +411,76 @@ export class NostrManager {
 
 	getPublicKey() {
 		const mainT = new MainMessageT(MainContent.GetPublicKey, new GetPublicKeyT());
-
-		// Serialize with FlatBuffers builder
 		const builder = new flatbuffers.Builder(2048);
-		const mainOffset = mainT.pack(builder);
-		builder.finish(mainOffset);
-		const serializedMessage = builder.asUint8Array();
-
-		this.parser.postMessage(serializedMessage);
+		builder.finish(mainT.pack(builder));
+		this.parser.postMessage(builder.asUint8Array());
 	}
 
-	/**
-	 * Set up NIP-46 remote signer using a bunker URL.
-	 * This is for the "Direct connection initiated by remote-signer" flow.
-	 * @param bunkerUrl The bunker URL in format: bunker://<remote-signer-pubkey>?relay=<relay-url>&relay=<relay-url>&secret=<secret>
-	 */
 	setNip46Bunker(bunkerUrl: string): void {
-		console.log('Setting up NIP-46 with bunker URL:', bunkerUrl);
 		this.setSigner('nip46_bunker', bunkerUrl);
 	}
 
-	/**
-	 * Set up NIP-46 remote signer using a QR code.
-	 * This is for the "Direct connection initiated by the client" flow.
-	 * @param nostrconnectUrl The nostrconnect URL from the QR code
-	 * @param clientSecret Optional client secret key (hex)
-	 */
 	setNip46QR(nostrconnectUrl: string, clientSecret?: string): void {
-		console.log('Setting up NIP-46 with QR code:', nostrconnectUrl);
 		this.setSigner(
 			'nip46_qr',
 			clientSecret ? { url: nostrconnectUrl, clientSecret } : nostrconnectUrl
 		);
 	}
 
-	/**
-	 * Set up NIP-07 extension signer (window.nostr).
-	 */
 	setNip07(): void {
-		console.log('Setting up NIP-07 extension signer');
 		this.setSigner('nip07', '');
 	}
 
+	public getActivePubkey(): string | null {
+		return this.activePubkey;
+	}
+
+	public getAccounts(): Record<string, { type: string; payload: any }> {
+		const accountsJson = localStorage.getItem('nostr_signer_accounts') || '{}';
+		try {
+			return JSON.parse(accountsJson);
+		} catch (e) {
+			return {};
+		}
+	}
+
+	public switchAccount(pubkey: string) {
+		const accounts = this.getAccounts();
+		const session = accounts[pubkey];
+		if (session) {
+			this.setSigner(session.type, session.payload);
+		}
+	}
+
+	private saveSession(pubkey: string, type: string, payload: any) {
+		const accounts = this.getAccounts();
+		accounts[pubkey] = { type, payload };
+		localStorage.setItem('nostr_signer_accounts', JSON.stringify(accounts));
+		localStorage.setItem('nostr_active_pubkey', pubkey);
+	}
+
+	private restoreSession() {
+		const activePubkey = localStorage.getItem('nostr_active_pubkey');
+		if (activePubkey) {
+			this.switchAccount(activePubkey);
+		}
+	}
+
+	public logout() {
+		this.activePubkey = null;
+		localStorage.removeItem('nostr_active_pubkey');
+		this.dispatch('logout');
+	}
+
 	cleanup(): void {
-		// console.trace('Cleanup called');
 		const subscriptionsToDelete: string[] = [];
 		for (const [subId, subscription] of this.subscriptions.entries()) {
 			if (subscription.refCount <= 0 && !this.PERPETUAL_SUBSCRIPTIONS.includes(subId)) {
 				subscriptionsToDelete.push(subId);
 			}
 		}
-		// for (const subId of subscriptionsToDelete) {
-		// 	const subscription = this.subscriptions.get(subId);
-		// 	if (subscription) {
-		// 		const mainT = new MainMessageT(
-		// 			MainContent.Unsubscribe,
-		// 			new UnsubscribeT(this.textEncoder.encode(subId))
-		// 		);
-		// 		// Serialize with FlatBuffers builder
-		// 		const builder = new flatbuffers.Builder(2048);
-		// 		const mainOffset = mainT.pack(builder);
-		// 		builder.finish(mainOffset);
-		// 		const serializedMessage = builder.asUint8Array();
-		// 		// nipWorker.resetInputLoopBackoff();
-		// 		this.postToWorker(serializedMessage);
-		// 		subscription.closed = true;
-		// 		this.subscriptions.delete(subId);
-		// 	}
-		// }
 	}
 }
 
 export const manager = new NostrManager();
-
 export * from './types';
