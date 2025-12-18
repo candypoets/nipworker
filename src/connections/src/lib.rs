@@ -38,6 +38,7 @@ fn write_status_line(status_ring: &mut SabRing, status: &str, url: &str) {
 pub struct WSRust {
     // Own the rings behind Rc so tasks can hold them without borrowing `self`.
     ws_request: Rc<RefCell<SabRing>>,
+    ws_signer_request: Option<Rc<RefCell<SabRing>>>,
     registry: ConnectionRegistry,
 }
 
@@ -49,14 +50,42 @@ impl WSRust {
         ws_request: SharedArrayBuffer,
         ws_response: SharedArrayBuffer,
         status_ring: SharedArrayBuffer,
+        ws_signer_request: Option<SharedArrayBuffer>,
+        ws_signer_response: Option<SharedArrayBuffer>,
     ) -> Result<WSRust, JsValue> {
-        telemetry::init(tracing::Level::ERROR);
+        telemetry::init(tracing::Level::INFO);
 
         info!("instanciating connections");
         let ws_request = Rc::new(RefCell::new(SabRing::new(ws_request)?));
         let ws_response = Rc::new(RefCell::new(SabRing::new(ws_response)?));
         let status_ring = Rc::new(RefCell::new(SabRing::new(status_ring)?));
+
+        let ws_signer_request = if let Some(sab) = ws_signer_request {
+            Some(Rc::new(RefCell::new(SabRing::new(sab)?)))
+        } else {
+            None
+        };
+
+        let ws_signer_response = if let Some(sab) = ws_signer_response {
+            Some(Rc::new(RefCell::new(SabRing::new(sab)?)))
+        } else {
+            None
+        };
+
         let ws_response_clone = ws_response.clone();
+        let ws_signer_response_clone = ws_signer_response.clone();
+
+        if ws_signer_request.is_some() {
+            info!("[connections] Signer request ring is PRESENT");
+        } else {
+            info!("[connections] Signer request ring is MISSING");
+        }
+
+        if ws_signer_response.is_some() {
+            info!("[connections] Signer response ring is PRESENT");
+        } else {
+            info!("[connections] Signer response ring is MISSING");
+        }
 
         let writer = Rc::new(move |url: &str, sub_id: &str, raw: &str| {
             // Build a WorkerMessage FlatBuffer and write its bytes
@@ -66,6 +95,19 @@ impl WSRust {
             let bytes = fbb.finished_data().to_vec();
 
             if !bytes.is_empty() {
+                // Route by sub_id: if it starts with "n46:", send to signer ring
+                if sub_id.starts_with("n46:") {
+                    if let Some(ref signer_ring) = ws_signer_response_clone {
+                        info!(
+                            "[connections] Routing NIP-46 response to signer ring (sub_id: {}): {}",
+                            sub_id, raw
+                        );
+                        signer_ring.borrow_mut().write(&bytes);
+                        return;
+                    } else {
+                        warn!("[connections] Received NIP-46 response but signer ring is missing (sub_id: {})", sub_id);
+                    }
+                }
                 ws_response_clone.borrow_mut().write(&bytes);
             } else {
                 // Failure log (error handling) - now compiles with Value import
@@ -97,6 +139,7 @@ impl WSRust {
 
         let connections = WSRust {
             ws_request,
+            ws_signer_request,
             registry,
         };
 
@@ -114,46 +157,68 @@ impl WSRust {
     fn start(&self) {
         info!("Starting WebSocket server");
         // Clone the Rc for the task so we don’t capture &self
-        let ws_request_clone = self.ws_request.clone();
+        let ws_request = self.ws_request.clone();
+        let ws_signer_request = self.ws_signer_request.clone();
         let reg = self.registry.clone();
 
         spawn_local(async move {
             let mut sleep_ms: u32 = 16;
             let max_sleep_ms: u32 = 500;
+            let mut prefer_signer = false;
 
             loop {
-                let mut processed = 0usize;
+                let mut took_any = false;
 
-                // Drain ring
-                loop {
-                    let bytes_opt = {
-                        let mut ring = ws_request_clone.borrow_mut();
-                        ring.read_next()
+                // Try both rings, starting with the preferred one, but only take ONE message
+                // to ensure strict alternation for maximum fairness.
+                for _ in 0..2 {
+                    let target_ring = if prefer_signer {
+                        ws_signer_request.as_ref()
+                    } else {
+                        Some(&ws_request)
                     };
 
-                    let Some(bytes) = bytes_opt else { break };
-
-                    processed += 1;
-
-                    info!("Processed message {}", processed);
-
-                    if let Ok(env) = serde_json::from_slice::<Envelope>(&bytes) {
-                        if !env.relays.is_empty() && !env.frames.is_empty() {
-                            // Sync call to send_to_relays
-                            info!(
-                                "Sending frames to relays {}, {}",
-                                env.relays.join(", "),
-                                env.frames.len()
-                            );
-                            if let Err(e) = reg.send_to_relays(&env.relays, &env.frames) {
-                                error!("send_to_relays failed: {:?}", e);
-                                // No retry; just log
+                    let bytes_opt = if let Some(ring) = target_ring {
+                        let b = ring.borrow_mut().read_next();
+                        if b.is_some() {
+                            if prefer_signer {
+                                info!("[connections] Read message from SIGNER ring");
+                            } else {
+                                info!("[connections] Read message from MAIN ring");
                             }
                         }
+                        b
+                    } else {
+                        None
+                    };
+
+                    if let Some(bytes) = bytes_opt {
+                        took_any = true;
+                        if let Ok(env) = serde_json::from_slice::<Envelope>(&bytes) {
+                            if !env.relays.is_empty() && !env.frames.is_empty() {
+                                info!(
+                                    "[connections] Sending {} frames to {} relays",
+                                    env.frames.len(),
+                                    env.relays.len()
+                                );
+                                if let Err(e) = reg.send_to_relays(&env.relays, &env.frames) {
+                                    error!("send_to_relays failed: {:?}", e);
+                                }
+                            } else {
+                                warn!("[connections] Envelope has no relays or frames");
+                            }
+                        } else {
+                            warn!("[connections] Failed to parse Envelope from ring bytes");
+                        }
+                        // After a successful read, we alternate preference and break to start next iteration
+                        prefer_signer = !prefer_signer;
+                        break;
                     }
+                    // If we didn't find anything in the preferred ring, try the other one
+                    prefer_signer = !prefer_signer;
                 }
 
-                if processed == 0 {
+                if !took_any {
                     gloo_timers::future::TimeoutFuture::new(sleep_ms).await;
                     sleep_ms = (sleep_ms.saturating_mul(2)).min(max_sleep_ms);
                 } else {

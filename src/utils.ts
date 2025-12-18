@@ -67,6 +67,9 @@ export async function connectWithQRCode(appName: string, relays: string[]) {
 	// Generate a client keypair
 	const clientKeys = generateSecretKey();
 	const clientPubkey = getPublicKey(clientKeys);
+	const clientSecretHex = Array.from(clientKeys)
+		.map((b) => b.toString(16).padStart(2, '0'))
+		.join('');
 
 	// Generate a random secret
 	const secret = getPublicKey(generateSecretKey());
@@ -82,16 +85,11 @@ export async function connectWithQRCode(appName: string, relays: string[]) {
 
 	const nostrconnectUrl = `nostrconnect://${clientPubkey}?${params.toString()}`;
 
+	console.log('connect url:', nostrconnectUrl);
+
 	// Set up the NIP-46 signer with the client's pubkey and relays
 	// Note: We don't know the remote signer's pubkey yet - that's what we're discovering
-	manager.setSigner(
-		'nip46',
-		JSON.stringify({
-			clientPubkey,
-			relays,
-			secret
-		})
-	);
+	manager.setNip46QR(nostrconnectUrl, clientSecretHex);
 
 	return nostrconnectUrl;
 }

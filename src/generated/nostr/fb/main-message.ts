@@ -8,7 +8,6 @@ import * as flatbuffers from 'flatbuffers';
 import { GetPublicKey, GetPublicKeyT } from '../../nostr/fb/get-public-key.js';
 import { MainContent, unionToMainContent, unionListToMainContent } from '../../nostr/fb/main-content.js';
 import { Publish, PublishT } from '../../nostr/fb/publish.js';
-import { SetPubKey, SetPubKeyT } from '../../nostr/fb/set-pub-key.js';
 import { SetSigner, SetSignerT } from '../../nostr/fb/set-signer.js';
 import { SignEvent, SignEventT } from '../../nostr/fb/sign-event.js';
 import { Subscribe, SubscribeT } from '../../nostr/fb/subscribe.js';
@@ -93,7 +92,7 @@ unpackTo(_o: MainMessageT): void {
 export class MainMessageT implements flatbuffers.IGeneratedObject {
 constructor(
   public contentType: MainContent = MainContent.NONE,
-  public content: GetPublicKeyT|PublishT|SetPubKeyT|SetSignerT|SignEventT|SubscribeT|UnsubscribeT|null = null
+  public content: GetPublicKeyT|PublishT|SetSignerT|SignEventT|SubscribeT|UnsubscribeT|null = null
 ){}
 
 

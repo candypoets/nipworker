@@ -1179,10 +1179,10 @@ impl PipeConfigT {
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_MAIN_CONTENT: u8 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MAX_MAIN_CONTENT: u8 = 7;
+pub const ENUM_MAX_MAIN_CONTENT: u8 = 6;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_MAIN_CONTENT: [MainContent; 8] = [
+pub const ENUM_VALUES_MAIN_CONTENT: [MainContent; 7] = [
   MainContent::NONE,
   MainContent::Subscribe,
   MainContent::Unsubscribe,
@@ -1190,7 +1190,6 @@ pub const ENUM_VALUES_MAIN_CONTENT: [MainContent; 8] = [
   MainContent::SignEvent,
   MainContent::SetSigner,
   MainContent::GetPublicKey,
-  MainContent::SetPubKey,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -1205,10 +1204,9 @@ impl MainContent {
   pub const SignEvent: Self = Self(4);
   pub const SetSigner: Self = Self(5);
   pub const GetPublicKey: Self = Self(6);
-  pub const SetPubKey: Self = Self(7);
 
   pub const ENUM_MIN: u8 = 0;
-  pub const ENUM_MAX: u8 = 7;
+  pub const ENUM_MAX: u8 = 6;
   pub const ENUM_VALUES: &'static [Self] = &[
     Self::NONE,
     Self::Subscribe,
@@ -1217,7 +1215,6 @@ impl MainContent {
     Self::SignEvent,
     Self::SetSigner,
     Self::GetPublicKey,
-    Self::SetPubKey,
   ];
   /// Returns the variant's name or "" if unknown.
   pub fn variant_name(self) -> Option<&'static str> {
@@ -1229,7 +1226,6 @@ impl MainContent {
       Self::SignEvent => Some("SignEvent"),
       Self::SetSigner => Some("SetSigner"),
       Self::GetPublicKey => Some("GetPublicKey"),
-      Self::SetPubKey => Some("SetPubKey"),
       _ => None,
     }
   }
@@ -1298,7 +1294,6 @@ pub enum MainContentT {
   SignEvent(Box<SignEventT>),
   SetSigner(Box<SetSignerT>),
   GetPublicKey(Box<GetPublicKeyT>),
-  SetPubKey(Box<SetPubKeyT>),
 }
 impl Default for MainContentT {
   fn default() -> Self {
@@ -1315,7 +1310,6 @@ impl MainContentT {
       Self::SignEvent(_) => MainContent::SignEvent,
       Self::SetSigner(_) => MainContent::SetSigner,
       Self::GetPublicKey(_) => MainContent::GetPublicKey,
-      Self::SetPubKey(_) => MainContent::SetPubKey,
     }
   }
   pub fn pack<'b, A: flatbuffers::Allocator + 'b>(&self, fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>) -> Option<flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>> {
@@ -1327,7 +1321,6 @@ impl MainContentT {
       Self::SignEvent(v) => Some(v.pack(fbb).as_union_value()),
       Self::SetSigner(v) => Some(v.pack(fbb).as_union_value()),
       Self::GetPublicKey(v) => Some(v.pack(fbb).as_union_value()),
-      Self::SetPubKey(v) => Some(v.pack(fbb).as_union_value()),
     }
   }
   /// If the union variant matches, return the owned SubscribeT, setting the union to NONE.
@@ -1455,27 +1448,6 @@ impl MainContentT {
   /// If the union variant matches, return a mutable reference to the GetPublicKeyT.
   pub fn as_get_public_key_mut(&mut self) -> Option<&mut GetPublicKeyT> {
     if let Self::GetPublicKey(v) = self { Some(v.as_mut()) } else { None }
-  }
-  /// If the union variant matches, return the owned SetPubKeyT, setting the union to NONE.
-  pub fn take_set_pub_key(&mut self) -> Option<Box<SetPubKeyT>> {
-    if let Self::SetPubKey(_) = self {
-      let v = core::mem::replace(self, Self::NONE);
-      if let Self::SetPubKey(w) = v {
-        Some(w)
-      } else {
-        unreachable!()
-      }
-    } else {
-      None
-    }
-  }
-  /// If the union variant matches, return a reference to the SetPubKeyT.
-  pub fn as_set_pub_key(&self) -> Option<&SetPubKeyT> {
-    if let Self::SetPubKey(v) = self { Some(v.as_ref()) } else { None }
-  }
-  /// If the union variant matches, return a mutable reference to the SetPubKeyT.
-  pub fn as_set_pub_key_mut(&mut self) -> Option<&mut SetPubKeyT> {
-    if let Self::SetPubKey(v) = self { Some(v.as_mut()) } else { None }
   }
 }
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
@@ -9733,8 +9705,9 @@ impl<'a> flatbuffers::Follow<'a> for Template<'a> {
 
 impl<'a> Template<'a> {
   pub const VT_KIND: flatbuffers::VOffsetT = 4;
-  pub const VT_CONTENT: flatbuffers::VOffsetT = 6;
-  pub const VT_TAGS: flatbuffers::VOffsetT = 8;
+  pub const VT_CREATED_AT: flatbuffers::VOffsetT = 6;
+  pub const VT_CONTENT: flatbuffers::VOffsetT = 8;
+  pub const VT_TAGS: flatbuffers::VOffsetT = 10;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -9748,12 +9721,14 @@ impl<'a> Template<'a> {
     let mut builder = TemplateBuilder::new(_fbb);
     if let Some(x) = args.tags { builder.add_tags(x); }
     if let Some(x) = args.content { builder.add_content(x); }
+    builder.add_created_at(args.created_at);
     builder.add_kind(args.kind);
     builder.finish()
   }
 
   pub fn unpack(&self) -> TemplateT {
     let kind = self.kind();
+    let created_at = self.created_at();
     let content = {
       let x = self.content();
       x.to_string()
@@ -9764,6 +9739,7 @@ impl<'a> Template<'a> {
     };
     TemplateT {
       kind,
+      created_at,
       content,
       tags,
     }
@@ -9775,6 +9751,13 @@ impl<'a> Template<'a> {
     // Created from valid Table for this object
     // which contains a valid value in this slot
     unsafe { self._tab.get::<u16>(Template::VT_KIND, Some(0)).unwrap()}
+  }
+  #[inline]
+  pub fn created_at(&self) -> i32 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<i32>(Template::VT_CREATED_AT, Some(0)).unwrap()}
   }
   #[inline]
   pub fn content(&self) -> &'a str {
@@ -9800,6 +9783,7 @@ impl flatbuffers::Verifiable for Template<'_> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
      .visit_field::<u16>("kind", Self::VT_KIND, false)?
+     .visit_field::<i32>("created_at", Self::VT_CREATED_AT, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("content", Self::VT_CONTENT, true)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<StringVec>>>>("tags", Self::VT_TAGS, true)?
      .finish();
@@ -9808,6 +9792,7 @@ impl flatbuffers::Verifiable for Template<'_> {
 }
 pub struct TemplateArgs<'a> {
     pub kind: u16,
+    pub created_at: i32,
     pub content: Option<flatbuffers::WIPOffset<&'a str>>,
     pub tags: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<StringVec<'a>>>>>,
 }
@@ -9816,6 +9801,7 @@ impl<'a> Default for TemplateArgs<'a> {
   fn default() -> Self {
     TemplateArgs {
       kind: 0,
+      created_at: 0,
       content: None, // required field
       tags: None, // required field
     }
@@ -9830,6 +9816,10 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> TemplateBuilder<'a, 'b, A> {
   #[inline]
   pub fn add_kind(&mut self, kind: u16) {
     self.fbb_.push_slot::<u16>(Template::VT_KIND, kind, 0);
+  }
+  #[inline]
+  pub fn add_created_at(&mut self, created_at: i32) {
+    self.fbb_.push_slot::<i32>(Template::VT_CREATED_AT, created_at, 0);
   }
   #[inline]
   pub fn add_content(&mut self, content: flatbuffers::WIPOffset<&'b  str>) {
@@ -9860,6 +9850,7 @@ impl core::fmt::Debug for Template<'_> {
   fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
     let mut ds = f.debug_struct("Template");
       ds.field("kind", &self.kind());
+      ds.field("created_at", &self.created_at());
       ds.field("content", &self.content());
       ds.field("tags", &self.tags());
       ds.finish()
@@ -9869,6 +9860,7 @@ impl core::fmt::Debug for Template<'_> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct TemplateT {
   pub kind: u16,
+  pub created_at: i32,
   pub content: String,
   pub tags: Vec<StringVecT>,
 }
@@ -9876,6 +9868,7 @@ impl Default for TemplateT {
   fn default() -> Self {
     Self {
       kind: 0,
+      created_at: 0,
       content: "".to_string(),
       tags: Default::default(),
     }
@@ -9887,6 +9880,7 @@ impl TemplateT {
     _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
   ) -> flatbuffers::WIPOffset<Template<'b>> {
     let kind = self.kind;
+    let created_at = self.created_at;
     let content = Some({
       let x = &self.content;
       _fbb.create_string(x)
@@ -9897,6 +9891,7 @@ impl TemplateT {
     });
     Template::create(_fbb, &TemplateArgs{
       kind,
+      created_at,
       content,
       tags,
     })
@@ -11052,139 +11047,6 @@ impl SetSignerT {
     })
   }
 }
-pub enum SetPubKeyOffset {}
-#[derive(Copy, Clone, PartialEq)]
-
-pub struct SetPubKey<'a> {
-  pub _tab: flatbuffers::Table<'a>,
-}
-
-impl<'a> flatbuffers::Follow<'a> for SetPubKey<'a> {
-  type Inner = SetPubKey<'a>;
-  #[inline]
-  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
-    Self { _tab: flatbuffers::Table::new(buf, loc) }
-  }
-}
-
-impl<'a> SetPubKey<'a> {
-  pub const VT_PUBKEY: flatbuffers::VOffsetT = 4;
-
-  #[inline]
-  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
-    SetPubKey { _tab: table }
-  }
-  #[allow(unused_mut)]
-  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
-    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
-    args: &'args SetPubKeyArgs<'args>
-  ) -> flatbuffers::WIPOffset<SetPubKey<'bldr>> {
-    let mut builder = SetPubKeyBuilder::new(_fbb);
-    if let Some(x) = args.pubkey { builder.add_pubkey(x); }
-    builder.finish()
-  }
-
-  pub fn unpack(&self) -> SetPubKeyT {
-    let pubkey = {
-      let x = self.pubkey();
-      x.to_string()
-    };
-    SetPubKeyT {
-      pubkey,
-    }
-  }
-
-  #[inline]
-  pub fn pubkey(&self) -> &'a str {
-    // Safety:
-    // Created from valid Table for this object
-    // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(SetPubKey::VT_PUBKEY, None).unwrap()}
-  }
-}
-
-impl flatbuffers::Verifiable for SetPubKey<'_> {
-  #[inline]
-  fn run_verifier(
-    v: &mut flatbuffers::Verifier, pos: usize
-  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
-    use self::flatbuffers::Verifiable;
-    v.visit_table(pos)?
-     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("pubkey", Self::VT_PUBKEY, true)?
-     .finish();
-    Ok(())
-  }
-}
-pub struct SetPubKeyArgs<'a> {
-    pub pubkey: Option<flatbuffers::WIPOffset<&'a str>>,
-}
-impl<'a> Default for SetPubKeyArgs<'a> {
-  #[inline]
-  fn default() -> Self {
-    SetPubKeyArgs {
-      pubkey: None, // required field
-    }
-  }
-}
-
-pub struct SetPubKeyBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
-  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
-  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
-}
-impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> SetPubKeyBuilder<'a, 'b, A> {
-  #[inline]
-  pub fn add_pubkey(&mut self, pubkey: flatbuffers::WIPOffset<&'b  str>) {
-    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(SetPubKey::VT_PUBKEY, pubkey);
-  }
-  #[inline]
-  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> SetPubKeyBuilder<'a, 'b, A> {
-    let start = _fbb.start_table();
-    SetPubKeyBuilder {
-      fbb_: _fbb,
-      start_: start,
-    }
-  }
-  #[inline]
-  pub fn finish(self) -> flatbuffers::WIPOffset<SetPubKey<'a>> {
-    let o = self.fbb_.end_table(self.start_);
-    self.fbb_.required(o, SetPubKey::VT_PUBKEY,"pubkey");
-    flatbuffers::WIPOffset::new(o.value())
-  }
-}
-
-impl core::fmt::Debug for SetPubKey<'_> {
-  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-    let mut ds = f.debug_struct("SetPubKey");
-      ds.field("pubkey", &self.pubkey());
-      ds.finish()
-  }
-}
-#[non_exhaustive]
-#[derive(Debug, Clone, PartialEq)]
-pub struct SetPubKeyT {
-  pub pubkey: String,
-}
-impl Default for SetPubKeyT {
-  fn default() -> Self {
-    Self {
-      pubkey: "".to_string(),
-    }
-  }
-}
-impl SetPubKeyT {
-  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
-    &self,
-    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
-  ) -> flatbuffers::WIPOffset<SetPubKey<'b>> {
-    let pubkey = Some({
-      let x = &self.pubkey;
-      _fbb.create_string(x)
-    });
-    SetPubKey::create(_fbb, &SetPubKeyArgs{
-      pubkey,
-    })
-  }
-}
 pub enum GetPublicKeyOffset {}
 #[derive(Copy, Clone, PartialEq)]
 
@@ -11354,11 +11216,6 @@ impl<'a> MainMessage<'a> {
             .expect("Invalid union table, expected `MainContent::GetPublicKey`.")
             .unpack()
       )),
-      MainContent::SetPubKey => MainContentT::SetPubKey(Box::new(
-        self.content_as_set_pub_key()
-            .expect("Invalid union table, expected `MainContent::SetPubKey`.")
-            .unpack()
-      )),
       _ => MainContentT::NONE,
     };
     MainMessageT {
@@ -11464,20 +11321,6 @@ impl<'a> MainMessage<'a> {
     }
   }
 
-  #[inline]
-  #[allow(non_snake_case)]
-  pub fn content_as_set_pub_key(&self) -> Option<SetPubKey<'a>> {
-    if self.content_type() == MainContent::SetPubKey {
-      let u = self.content();
-      // Safety:
-      // Created from a valid Table for this object
-      // Which contains a valid union in this slot
-      Some(unsafe { SetPubKey::init_from_table(u) })
-    } else {
-      None
-    }
-  }
-
 }
 
 impl flatbuffers::Verifiable for MainMessage<'_> {
@@ -11495,7 +11338,6 @@ impl flatbuffers::Verifiable for MainMessage<'_> {
           MainContent::SignEvent => v.verify_union_variant::<flatbuffers::ForwardsUOffset<SignEvent>>("MainContent::SignEvent", pos),
           MainContent::SetSigner => v.verify_union_variant::<flatbuffers::ForwardsUOffset<SetSigner>>("MainContent::SetSigner", pos),
           MainContent::GetPublicKey => v.verify_union_variant::<flatbuffers::ForwardsUOffset<GetPublicKey>>("MainContent::GetPublicKey", pos),
-          MainContent::SetPubKey => v.verify_union_variant::<flatbuffers::ForwardsUOffset<SetPubKey>>("MainContent::SetPubKey", pos),
           _ => Ok(()),
         }
      })?
@@ -11588,13 +11430,6 @@ impl core::fmt::Debug for MainMessage<'_> {
         },
         MainContent::GetPublicKey => {
           if let Some(x) = self.content_as_get_public_key() {
-            ds.field("content", &x)
-          } else {
-            ds.field("content", &"InvalidFlatbuffer: Union discriminant does not match value.")
-          }
-        },
-        MainContent::SetPubKey => {
-          if let Some(x) = self.content_as_set_pub_key() {
             ds.field("content", &x)
           } else {
             ds.field("content", &"InvalidFlatbuffer: Union discriminant does not match value.")

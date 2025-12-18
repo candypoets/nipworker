@@ -115,6 +115,7 @@ impl RelayConnection {
             while let Some(msg) = ws_stream.next().await {
                 match msg {
                     Ok(Message::Text(text)) => {
+                        tracing::info!(relay = %url, "Raw incoming: {}", text);
                         if let Some(parts) = extract_first_three(&text) {
                             if let Some(kind_raw) = parts[0] {
                                 let kind = kind_raw.trim_matches('"');

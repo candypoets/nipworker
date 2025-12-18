@@ -76,7 +76,6 @@ export { RelayInfo, RelayInfoT } from './fb/relay-info.js';
 export { Request, RequestT } from './fb/request.js';
 export { SaveToDbPipeConfig, SaveToDbPipeConfigT } from './fb/save-to-db-pipe-config.js';
 export { SerializeEventsPipeConfig, SerializeEventsPipeConfigT } from './fb/serialize-events-pipe-config.js';
-export { SetPubKey, SetPubKeyT } from './fb/set-pub-key.js';
 export { SetSigner, SetSignerT } from './fb/set-signer.js';
 export { SignEvent, SignEventT } from './fb/sign-event.js';
 export { SignedEvent, SignedEventT } from './fb/signed-event.js';

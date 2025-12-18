@@ -118,7 +118,13 @@ export class NostrManager {
 
 		this.connections.postMessage({
 			type: 'init',
-			payload: { ws_request: wsRequest, ws_response: wsResponse, statusRing }
+			payload: {
+				ws_request: wsRequest,
+				ws_response: wsResponse,
+				statusRing,
+				ws_signer_request: wsSignerRequest,
+				ws_signer_response: wsSignerResponse
+			}
 		} as InitConnectionsMsg);
 
 		this.cache.postMessage({
@@ -354,6 +360,7 @@ export class NostrManager {
 		try {
 			const templateT = new TemplateT(
 				event.kind,
+				event.created_at,
 				this.textEncoder.encode(event.content),
 				event.tags.map((t) => new StringVecT(t)) || []
 			);
@@ -379,32 +386,33 @@ export class NostrManager {
 		}
 	}
 
-	setSigner(name: string, payload: string): void {
+	setSigner(name: string, payload: string | { url: string; clientSecret: string }): void {
 		console.log('Setting signer:', name, payload);
 		switch (name) {
 			case 'privkey':
 				// Create the PrivateKeyT object
 				this.signer.postMessage({ type: 'set_private_key', payload });
 				break;
-			case 'nip46':
-				this.signer.postMessage({ type: 'set_nip46', payload: secretKeyHex });
-				break;
 			case 'nip46_bunker':
 				// Pass the bunker URL directly
-				this.signer.postMessage({ type: 'set_nip46_bunker', payload: secretKeyHex });
+				this.signer.postMessage({ type: 'set_nip46_bunker', payload });
 				break;
 			case 'nip46_qr':
 				// Pass the nostrconnect URL directly
-				this.signer.postMessage({ type: 'set_nip46_qr', payload: secretKeyHex });
+				this.signer.postMessage({ type: 'set_nip46_qr', payload });
 				break;
 		}
 
-		this.signers.set(name, secretKeyHex);
+		this.signers.set(name, typeof payload === 'string' ? payload : payload.url);
 	}
 
 	signEvent(event: EventTemplate, cb: (event: NostrEvent) => void) {
 		this.signCB = cb;
 		this.signer.postMessage({ type: 'sign_event', payload: event });
+	}
+
+	connect() {
+		this.signer.postMessage({ type: 'connect' });
 	}
 
 	getPublicKey() {
@@ -433,10 +441,14 @@ export class NostrManager {
 	 * Set up NIP-46 remote signer using a QR code.
 	 * This is for the "Direct connection initiated by the client" flow.
 	 * @param nostrconnectUrl The nostrconnect URL from the QR code
+	 * @param clientSecret Optional client secret key (hex)
 	 */
-	setNip46QR(nostrconnectUrl: string): void {
+	setNip46QR(nostrconnectUrl: string, clientSecret?: string): void {
 		console.log('Setting up NIP-46 with QR code:', nostrconnectUrl);
-		this.setSigner('nip46_qr', nostrconnectUrl);
+		this.setSigner(
+			'nip46_qr',
+			clientSecret ? { url: nostrconnectUrl, clientSecret } : nostrconnectUrl
+		);
 	}
 
 	cleanup(): void {

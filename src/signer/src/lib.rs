@@ -3,7 +3,7 @@
 #![allow(dead_code)]
 
 use js_sys::{Array, SharedArrayBuffer, Uint8Array};
-use shared::{init_with_component, telemetry, SabRing};
+use shared::{init_with_component, telemetry, types::Keys, SabRing};
 use tracing::{error, info, warn};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
@@ -64,11 +64,12 @@ pub struct Signer {
     active: Rc<RefCell<ActiveSigner>>,
 }
 
+#[derive(Clone)]
 enum ActiveSigner {
     Unset,
-    Pk(PrivateKeySigner),
-    Nip07(Nip07Signer),
-    Nip46(Nip46Signer),
+    Pk(Rc<PrivateKeySigner>),
+    Nip07(Rc<Nip07Signer>),
+    Nip46(Rc<Nip46Signer>),
 }
 
 #[wasm_bindgen]
@@ -113,7 +114,7 @@ impl Signer {
         info!("[signer] setting private key");
         let pk = PrivateKeySigner::new(&secret)
             .map_err(|e| js_err(&format!("failed to create private key signer: {e}")))?;
-        *self.active.borrow_mut() = ActiveSigner::Pk(pk);
+        *self.active.borrow_mut() = ActiveSigner::Pk(Rc::new(pk));
         info!("[signer] active signer = PrivateKey");
         Ok(())
     }
@@ -121,7 +122,7 @@ impl Signer {
     /// Use NIP-07 (window.nostr). Assumes this signer runs in the main window context.
     #[wasm_bindgen(js_name = "setNip07")]
     pub fn set_nip07(&self) {
-        *self.active.borrow_mut() = ActiveSigner::Nip07(Nip07Signer::new());
+        *self.active.borrow_mut() = ActiveSigner::Nip07(Rc::new(Nip07Signer::new()));
         info!("[signer] active signer = NIP-07");
     }
 
@@ -129,7 +130,11 @@ impl Signer {
     /// Configure NIP-46 remote signer using a bunker URL.
     /// This is for the "Direct connection initiated by remote-signer" flow.
     #[wasm_bindgen(js_name = "setNip46Bunker")]
-    pub fn set_nip46_bunker(&self, bunker_url: String) -> Result<(), JsValue> {
+    pub fn set_nip46_bunker(
+        &self,
+        bunker_url: String,
+        client_secret: Option<String>,
+    ) -> Result<(), JsValue> {
         // Parse the bunker URL to extract remote pubkey and relays
         let parsed = Self::parse_bunker_url(&bunker_url)?;
 
@@ -146,24 +151,50 @@ impl Signer {
             expected_secret: parsed.secret, // Optional secret for single-use connection
         };
 
+        let client_keys = if let Some(s) = client_secret {
+            Some(Keys::parse(&s).map_err(|e| js_err(&e.to_string()))?)
+        } else {
+            None
+        };
+
         // Create fresh SAB views for the NIP-46 signer
-        let nip46 = Nip46Signer::new(cfg, self.ws_req.clone(), self.ws_resp.clone());
+        let nip46 = Rc::new(Nip46Signer::new(
+            cfg,
+            self.ws_req.clone(),
+            self.ws_resp.clone(),
+            client_keys,
+        ));
         nip46.start();
-        *self.active.borrow_mut() = ActiveSigner::Nip46(nip46);
-        info!("[signer] active signer = NIP-46 (bunker URL configured)");
+        *self.active.borrow_mut() = ActiveSigner::Nip46(nip46.clone());
+
+        // Auto-connect for bunker flow
+        spawn_local(async move {
+            info!("[nip46] Auto-connecting to bunker...");
+            if let Err(e) = nip46.connect().await {
+                error!("[nip46] Auto-connect failed: {:?}", e);
+            } else {
+                info!("[nip46] Auto-connect successful");
+            }
+        });
+
+        info!("[signer] active signer = NIP-46 (Bunker mode)");
         Ok(())
     }
 
     /// Configure NIP-46 remote signer using a QR code.
     /// This is for the "Direct connection initiated by the client" flow.
     #[wasm_bindgen(js_name = "setNip46QR")]
-    pub fn set_nip46_qr(&self, nostrconnect_url: String) -> Result<(), JsValue> {
-        // Parse the nostrconnect URL to extract client info
+    pub fn set_nip46_qr(
+        &self,
+        nostrconnect_url: String,
+        client_secret: Option<String>,
+    ) -> Result<(), JsValue> {
+        // Parse the nostrconnect URL
         let parsed = Self::parse_nostrconnect_url(&nostrconnect_url)?;
 
         info!(
-            "[signer] setting NIP-46 signer in QR mode with client_pubkey: {}, relays: {:?}",
-            parsed.client_pubkey, parsed.relays
+            "[signer] setting NIP-46 signer via QR code (client_pubkey: {})",
+            parsed.client_pubkey
         );
 
         let cfg = Nip46Config {
@@ -174,10 +205,32 @@ impl Signer {
             expected_secret: Some(parsed.secret), // Required for validation
         };
 
+        let client_keys = if let Some(s) = client_secret {
+            Some(Keys::parse(&s).map_err(|e| js_err(&e.to_string()))?)
+        } else {
+            None
+        };
+
         // Create fresh SAB views for the NIP-46 signer
-        let nip46 = Nip46Signer::new(cfg, self.ws_req.clone(), self.ws_resp.clone());
+        let nip46 = Rc::new(Nip46Signer::new(
+            cfg,
+            self.ws_req.clone(),
+            self.ws_resp.clone(),
+            client_keys,
+        ));
         nip46.start();
-        *self.active.borrow_mut() = ActiveSigner::Nip46(nip46);
+        *self.active.borrow_mut() = ActiveSigner::Nip46(nip46.clone());
+
+        // Auto-connect for bunker flow
+        spawn_local(async move {
+            info!("[nip46] Auto-connecting to bunker...");
+            if let Err(e) = nip46.connect().await {
+                error!("[nip46] Auto-connect failed: {:?}", e);
+            } else {
+                info!("[nip46] Auto-connect successful");
+            }
+        });
+
         info!("[signer] active signer = NIP-46 (QR code discovery mode)");
         Ok(())
     }
@@ -206,7 +259,7 @@ impl Signer {
             ));
         }
 
-        let params = Url::parse(&format!("http://{}", parts[1]))
+        let params = Url::parse(&format!("http://localhost/?{}", parts[1]))
             .map_err(|e| JsValue::from_str(&format!("Invalid URL parameters: {}", e)))?;
 
         let mut relays = Vec::new();
@@ -238,13 +291,14 @@ impl Signer {
 
     /// Helper function to parse nostrconnect URLs
     fn parse_nostrconnect_url(url: &str) -> Result<NostrconnectUrl, JsValue> {
+        info!("Parsing nostrconnect URL: {}", url);
         if !url.starts_with("nostrconnect://") {
             return Err(JsValue::from_str(
                 "Invalid nostrconnect URL: must start with nostrconnect://",
             ));
         }
 
-        let url_part = &url[13..]; // Remove 'nostrconnect://'
+        let url_part = &url[15..]; // Remove 'nostrconnect://'
         let parts: Vec<&str> = url_part.split('?').collect();
 
         if parts.len() != 2 {
@@ -260,7 +314,7 @@ impl Signer {
             ));
         }
 
-        let params = Url::parse(&format!("http://{}", parts[1]))
+        let params = Url::parse(&format!("http://localhost/?{}", parts[1]))
             .map_err(|e| JsValue::from_str(&format!("Invalid URL parameters: {}", e)))?;
 
         let mut relays = Vec::new();
@@ -313,17 +367,28 @@ impl Signer {
         }
     }
 
+    /// Direct path: perform NIP-46 connect handshake.
+    #[wasm_bindgen(js_name = "connectDirect")]
+    pub async fn connect_direct(&self) -> Result<JsValue, JsValue> {
+        let signer = match &*self.active.borrow() {
+            ActiveSigner::Nip46(s) => s.clone(),
+            _ => return Err(js_err("connect only supported for NIP-46")),
+        };
+        let res = signer.connect().await?;
+        Ok(JsValue::from_str(&res))
+    }
+
     /// Direct path: get public key as a string. This is a placeholder until key plumbing lands.
     #[wasm_bindgen(js_name = "getPublicKeyDirect")]
     pub async fn get_public_key_direct(&self) -> Result<JsValue, JsValue> {
-        match &*self.active.borrow() {
+        let active = self.active.borrow().clone();
+        match active {
             ActiveSigner::Pk(pk) => {
                 let pk_hex = pk.get_public_key().map_err(|e| js_err(&e.to_string()))?;
                 Ok(JsValue::from_str(&pk_hex))
             }
             ActiveSigner::Nip07(s) => {
                 let pk = s.get_public_key().await?;
-
                 Ok(JsValue::from_str(&pk))
             }
             ActiveSigner::Nip46(s) => {
@@ -337,7 +402,8 @@ impl Signer {
     /// Direct path: sign event template (JSON object string). Returns signed event (JSON string).
     #[wasm_bindgen(js_name = "signEvent")]
     pub async fn sign_event_direct(&self, tmpl: String) -> Result<JsValue, JsValue> {
-        match &*self.active.borrow() {
+        let active = self.active.borrow().clone();
+        match active {
             ActiveSigner::Pk(pk) => {
                 let signed = pk
                     .sign_event(&tmpl)

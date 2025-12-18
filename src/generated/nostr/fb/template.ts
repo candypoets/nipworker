@@ -31,37 +31,46 @@ kind():number {
   return offset ? this.bb!.readUint16(this.bb_pos + offset) : 0;
 }
 
+createdAt():number {
+  const offset = this.bb!.__offset(this.bb_pos, 6);
+  return offset ? this.bb!.readInt32(this.bb_pos + offset) : 0;
+}
+
 content(): ByteString|null
 content(optionalEncoding:flatbuffers.Encoding): ByteString|Uint8Array|null
 content(optionalEncoding?:any): ByteString|Uint8Array|null {
-  const offset = this.bb!.__offset(this.bb_pos, 6);
+  const offset = this.bb!.__offset(this.bb_pos, 8);
   return offset ? this.bb!.__stringByteString(this.bb_pos + offset, optionalEncoding) : null;
 }
 
 tags(index: number, obj?:StringVec):StringVec|null {
-  const offset = this.bb!.__offset(this.bb_pos, 8);
+  const offset = this.bb!.__offset(this.bb_pos, 10);
   return offset ? (obj || new StringVec()).__init(this.bb!.__indirect(this.bb!.__vector(this.bb_pos + offset) + index * 4), this.bb!) : null;
 }
 
 tagsLength():number {
-  const offset = this.bb!.__offset(this.bb_pos, 8);
+  const offset = this.bb!.__offset(this.bb_pos, 10);
   return offset ? this.bb!.__vector_len(this.bb_pos + offset) : 0;
 }
 
 static startTemplate(builder:flatbuffers.Builder) {
-  builder.startObject(3);
+  builder.startObject(4);
 }
 
 static addKind(builder:flatbuffers.Builder, kind:number) {
   builder.addFieldInt16(0, kind, 0);
 }
 
+static addCreatedAt(builder:flatbuffers.Builder, createdAt:number) {
+  builder.addFieldInt32(1, createdAt, 0);
+}
+
 static addContent(builder:flatbuffers.Builder, contentOffset:flatbuffers.Offset) {
-  builder.addFieldOffset(1, contentOffset, 0);
+  builder.addFieldOffset(2, contentOffset, 0);
 }
 
 static addTags(builder:flatbuffers.Builder, tagsOffset:flatbuffers.Offset) {
-  builder.addFieldOffset(2, tagsOffset, 0);
+  builder.addFieldOffset(3, tagsOffset, 0);
 }
 
 static createTagsVector(builder:flatbuffers.Builder, data:flatbuffers.Offset[]):flatbuffers.Offset {
@@ -78,14 +87,15 @@ static startTagsVector(builder:flatbuffers.Builder, numElems:number) {
 
 static endTemplate(builder:flatbuffers.Builder):flatbuffers.Offset {
   const offset = builder.endObject();
-  builder.requiredField(offset, 6) // content
-  builder.requiredField(offset, 8) // tags
+  builder.requiredField(offset, 8) // content
+  builder.requiredField(offset, 10) // tags
   return offset;
 }
 
-static createTemplate(builder:flatbuffers.Builder, kind:number, contentOffset:flatbuffers.Offset, tagsOffset:flatbuffers.Offset):flatbuffers.Offset {
+static createTemplate(builder:flatbuffers.Builder, kind:number, createdAt:number, contentOffset:flatbuffers.Offset, tagsOffset:flatbuffers.Offset):flatbuffers.Offset {
   Template.startTemplate(builder);
   Template.addKind(builder, kind);
+  Template.addCreatedAt(builder, createdAt);
   Template.addContent(builder, contentOffset);
   Template.addTags(builder, tagsOffset);
   return Template.endTemplate(builder);
@@ -94,6 +104,7 @@ static createTemplate(builder:flatbuffers.Builder, kind:number, contentOffset:fl
 unpack(): TemplateT {
   return new TemplateT(
     this.kind(),
+    this.createdAt(),
     this.content(),
     this.bb!.createObjList<StringVec, StringVecT>(this.tags.bind(this), this.tagsLength())
   );
@@ -102,6 +113,7 @@ unpack(): TemplateT {
 
 unpackTo(_o: TemplateT): void {
   _o.kind = this.kind();
+  _o.createdAt = this.createdAt();
   _o.content = this.content();
   _o.tags = this.bb!.createObjList<StringVec, StringVecT>(this.tags.bind(this), this.tagsLength());
 }
@@ -110,6 +122,7 @@ unpackTo(_o: TemplateT): void {
 export class TemplateT implements flatbuffers.IGeneratedObject {
 constructor(
   public kind: number = 0,
+  public createdAt: number = 0,
   public content: ByteString|Uint8Array|null = null,
   public tags: (StringVecT)[] = []
 ){}
@@ -121,6 +134,7 @@ pack(builder:flatbuffers.Builder): flatbuffers.Offset {
 
   return Template.createTemplate(builder,
     this.kind,
+    this.createdAt,
     content,
     tags
   );

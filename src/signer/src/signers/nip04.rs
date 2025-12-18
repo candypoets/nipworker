@@ -10,11 +10,9 @@ use base64::engine::{general_purpose, Engine};
 use cbc::cipher::{block_padding::Pkcs7, BlockDecryptMut, BlockEncryptMut, KeyIvInit};
 use getrandom::getrandom;
 use k256::{PublicKey as K256PublicKey, SecretKey as K256SecretKey};
+use shared::types::{PublicKey, SecretKey};
 
-use crate::signers::{
-    types::{PublicKey, SecretKey},
-    SignerError,
-};
+use crate::signers::SignerError;
 
 type Aes256CbcEnc = cbc::Encryptor<Aes256>;
 type Aes256CbcDec = cbc::Decryptor<Aes256>;

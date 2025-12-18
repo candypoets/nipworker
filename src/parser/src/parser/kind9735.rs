@@ -472,6 +472,7 @@ impl Parser {
             kind: template.kind,
             tags,
             content,
+            created_at: template.created_at,
         };
 
         let signed_event_json = self

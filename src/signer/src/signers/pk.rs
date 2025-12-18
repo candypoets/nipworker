@@ -3,10 +3,9 @@ use wasm_bindgen::prelude::*;
 
 use crate::signers::{
     nip44::{decrypt, encrypt, ConversationKey},
-    types::{Keys, PublicKey, SecretKey},
     SignerError,
 };
-use shared::types::Event;
+use shared::types::{Event, Keys, PublicKey, SecretKey};
 
 use signature::hazmat::{PrehashSigner, PrehashVerifier};
 
@@ -66,6 +65,9 @@ impl PrivateKeySigner {
         // Parse the event JSON
         let mut event = Event::from_json(event_json)
             .map_err(|e| SignerError::Other(format!("Failed to parse event JSON: {}", e)))?;
+
+        // force the current signer pubkey on the event
+        event.pubkey = self.keys.public_key();
 
         // Compute the event ID
         event

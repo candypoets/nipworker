@@ -68,6 +68,7 @@ table PipelineConfig {
 // Template for creating Nostr events
 table Template {
   kind: ushort;
+  created_at: int;
   content: string (required);
   tags: [StringVec] (required);
 }

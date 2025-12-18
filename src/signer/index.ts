@@ -65,27 +65,11 @@ self.addEventListener('message', async (evt: MessageEvent<any>) => {
 					s.setNip07();
 					break;
 				}
-				case 'set_nip46': {
-					try {
-						const relays: string[] = Array.isArray(m?.payload?.relays) ? m.payload.relays : [];
-						// set_nip46 expects an Array; passing a TS array is fine
-						s.setNip46(m?.payload?.remotePubkey, relays as any);
-					} catch (e: any) {
-						console.error('Error setting NIP-46:', e);
-					}
-					break;
-				}
 				case 'set_nip46_bunker': {
 					try {
-						const bunkerUrl = m?.payload || '';
-						s.setNip46Bunker(bunkerUrl);
-
-						(self as any).postMessage({
-							id: m.id,
-							type: 'response',
-							op: 'set_nip46_bunker',
-							ok: true
-						});
+						const bunkerUrl = m?.payload?.url || m?.payload || '';
+						const clientSecret = m?.payload?.clientSecret;
+						s.setNip46Bunker(bunkerUrl, clientSecret);
 					} catch (e: any) {
 						console.error('Error setting NIP-46 with bunker URL:', e);
 						(self as any).postMessage({
@@ -100,21 +84,38 @@ self.addEventListener('message', async (evt: MessageEvent<any>) => {
 				}
 				case 'set_nip46_qr': {
 					try {
-						const nostrconnectUrl = m?.payload || '';
-						s.setNip46QR(nostrconnectUrl);
-
-						(self as any).postMessage({
-							id: m.id,
-							type: 'response',
-							op: 'set_nip46_qr',
-							ok: true
-						});
+						const nostrconnectUrl = m?.payload?.url || m?.payload || '';
+						const clientSecret = m?.payload?.clientSecret;
+						s.setNip46QR(nostrconnectUrl, clientSecret);
 					} catch (e: any) {
 						console.error('Error setting NIP-46 with QR code:', e);
 						(self as any).postMessage({
 							id: m.id,
 							type: 'response',
 							op: 'set_nip46_qr',
+							ok: false,
+							error: e.message
+						});
+					}
+					break;
+				}
+
+				case 'connect': {
+					try {
+						const res = await s.connectDirect();
+						(self as any).postMessage({
+							id: m.id,
+							type: 'response',
+							op: 'connect',
+							ok: true,
+							result: res
+						});
+					} catch (e: any) {
+						console.error('Error connecting NIP-46:', e);
+						(self as any).postMessage({
+							id: m.id,
+							type: 'response',
+							op: 'connect',
 							ok: false,
 							error: e.message
 						});

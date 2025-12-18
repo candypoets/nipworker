@@ -26,20 +26,6 @@ impl PublishManager {
             Err(e) => return Err(NostrError::Other(format!("failed to prepare event: {}", e))),
         };
 
-        // Determine target relays for the event
-        // let relays = match self.determine_target_relays(&event).await {
-        //     Ok(relays) if !relays.is_empty() => relays,
-        //     Ok(_) => self.database.default_relays.clone(),
-        //     Err(e) => {
-        //         warn!(
-        //             "Failed to determine target relays for publish ID {}: {}, using defaults",
-        //             publish_id, e
-        //         );
-        //         self.database.default_relays.clone()
-        //     }
-        // };
-        //
-
         Ok(event)
     }
 

@@ -18,8 +18,7 @@ use getrandom::getrandom;
 use hkdf::Hkdf;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
-
-use crate::signers::types::{PublicKey, SecretKey};
+use shared::types::{PublicKey, SecretKey};
 
 use super::SignerError;
 

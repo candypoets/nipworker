@@ -9,6 +9,8 @@ export type InitConnectionsMsg = {
 		ws_request: SharedArrayBuffer;
 		ws_response: SharedArrayBuffer;
 		statusRing: SharedArrayBuffer;
+		ws_signer_request?: SharedArrayBuffer;
+		ws_signer_response?: SharedArrayBuffer;
 	};
 };
 
@@ -32,14 +34,23 @@ self.addEventListener(
 		if (msg?.type === 'init') {
 			await ensureWasm();
 
-			const { ws_request, ws_response, statusRing } = msg.payload;
+			const { ws_request, ws_response, statusRing, ws_signer_request, ws_signer_response } =
+				msg.payload;
 
 			console.log('[connections] ws_request.len', ws_request.byteLength);
 			console.log('[connections] ws_response.len', ws_response.byteLength);
 			console.log('[connections] statusRing.len', statusRing.byteLength);
+			console.log('[connections] ws_signer_request.present', !!ws_signer_request);
+			console.log('[connections] ws_signer_response.present', !!ws_signer_response);
 
 			// Create the Rust worker and start it
-			instance = new WSRust(ws_request, ws_response, statusRing);
+			instance = new WSRust(
+				ws_request,
+				ws_response,
+				statusRing,
+				ws_signer_request,
+				ws_signer_response
+			);
 
 			return;
 		}

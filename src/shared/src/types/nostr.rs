@@ -65,7 +65,7 @@ impl PublicKey {
         self.to_hex()
     }
 }
-
+#[derive(Clone)]
 pub struct SecretKey(pub [u8; 32]);
 
 impl SecretKey {
@@ -95,6 +95,7 @@ impl SecretKey {
     }
 }
 
+#[derive(Clone)]
 pub struct Keys {
     pub secret_key: SecretKey,
     pub public_key: PublicKey,
@@ -149,6 +150,7 @@ pub struct Template {
     pub kind: Kind,
     pub content: String,
     pub tags: Vec<Vec<String>>,
+    pub created_at: Timestamp, // Added created_at field of type Timestamp (u64)
 }
 
 impl Template {
@@ -157,6 +159,7 @@ impl Template {
             kind,
             content,
             tags,
+            created_at: if 0 == 0 { timestamp_now() } else { 0 },
         }
     }
 
@@ -175,20 +178,22 @@ impl Template {
             kind: fb_template.kind(),
             content: fb_template.content().to_string(),
             tags,
+            created_at: fb_template.created_at() as u64,
         }
     }
 
     /// Serialize Template to a compact JSON string: {"kind":<u32>,"content":"<escaped>","tags":[...]}
     pub fn to_json(&self) -> String {
         let tags_json = NostrTags(self.tags.clone()).to_json();
-        let mut result = String::with_capacity(32 + self.content.len() * 2 + tags_json.len());
+        let mut result = String::with_capacity(32 + self.content.len() * 2 + tags_json.len() + 20);
         use core::fmt::Write;
         write!(
             result,
-            r#"{{"kind":{},"content":"{}","tags":{}}}"#,
+            r#"{{"kind":{},"content":"{}","tags":{},"created_at":{}}}"#,
             self.kind,
             Self::escape_string(&self.content),
-            tags_json
+            tags_json,
+            self.created_at
         )
         .unwrap();
         result
@@ -321,6 +326,33 @@ impl Template {
             }
         };
 
+        // created_at
+        let created_at = {
+            if let Some(i) = json.find("\"created_at\"") {
+                let tail = &json[i + 11..];
+                // Skip spaces and colon
+                let bytes = tail.as_bytes();
+                let mut j = 0usize;
+                while j < bytes.len() && (bytes[j] == b' ' || bytes[j] == b'\t' || bytes[j] == b':')
+                {
+                    j += 1;
+                }
+                let start = j;
+                while j < bytes.len() && bytes[j].is_ascii_digit() {
+                    j += 1;
+                }
+                if start == j {
+                    return Err(TypesError::InvalidFormat("Invalid created_at".to_string()));
+                }
+                let num_str = &tail[start..j];
+                num_str
+                    .parse::<u64>()
+                    .map_err(|_| TypesError::InvalidFormat("Invalid created_at".to_string()))?
+            } else {
+                return Err(TypesError::InvalidFormat("Missing created_at".to_string()));
+            }
+        };
+
         if kind > u16::MAX as u32 {
             return Err(TypesError::InvalidFormat("Kind out of range".to_string()));
         }
@@ -328,6 +360,7 @@ impl Template {
             kind: kind as u16,
             content,
             tags,
+            created_at, // Initialize created_at with the current timestamp when parsing from JSON, adjust according to your requirements
         })
     }
 
