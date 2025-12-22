@@ -1,4 +1,5 @@
 use js_sys::Promise;
+use tracing::info;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 
@@ -50,6 +51,11 @@ impl Nip07Signer {
 
     /// NIP-04 Decrypt via `window.nostr.nip04.decrypt(pubkey, ciphertext)`.
     pub async fn nip04_decrypt(&self, pubkey: &str, ciphertext: &str) -> Result<String, JsValue> {
+        // info log here
+        info!(
+            "nip04_decrypt called with pubkey: {}, ciphertext: {}",
+            pubkey, ciphertext
+        );
         let payload = js_sys::Object::new();
         js_sys::Reflect::set(&payload, &"pubkey".into(), &JsValue::from_str(pubkey))?;
         js_sys::Reflect::set(
@@ -90,5 +96,39 @@ impl Nip07Signer {
         let res = JsFuture::from(promise).await?;
         res.as_string()
             .ok_or_else(|| JsValue::from_str("NIP-07: nip44.decrypt returned non-string"))
+    }
+
+    /// NIP-04 decrypt when both participants are provided (sender/recipient).
+    /// Chooses the correct peer based on our pubkey and delegates to nip04_decrypt.
+    pub async fn nip04_decrypt_between(
+        &self,
+        sender_pubkey_hex: &str,
+        recipient_pubkey_hex: &str,
+        ciphertext: &str,
+    ) -> Result<String, JsValue> {
+        let my_pubkey = self.get_public_key().await?;
+        let peer_hex = if my_pubkey == sender_pubkey_hex {
+            recipient_pubkey_hex
+        } else {
+            sender_pubkey_hex
+        };
+        self.nip04_decrypt(peer_hex, ciphertext).await
+    }
+
+    /// NIP-44 decrypt when both participants are provided (sender/recipient).
+    /// Chooses the correct peer based on our pubkey and delegates to nip44_decrypt.
+    pub async fn nip44_decrypt_between(
+        &self,
+        sender_pubkey_hex: &str,
+        recipient_pubkey_hex: &str,
+        ciphertext: &str,
+    ) -> Result<String, JsValue> {
+        let my_pubkey = self.get_public_key().await?;
+        let peer_hex = if my_pubkey == sender_pubkey_hex {
+            recipient_pubkey_hex
+        } else {
+            sender_pubkey_hex
+        };
+        self.nip44_decrypt(peer_hex, ciphertext).await
     }
 }

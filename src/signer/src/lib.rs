@@ -2,8 +2,8 @@
 #![allow(clippy::should_implement_trait)]
 #![allow(dead_code)]
 
-use js_sys::{Array, SharedArrayBuffer, Uint8Array};
-use shared::{init_with_component, telemetry, types::Keys, SabRing};
+use js_sys::SharedArrayBuffer;
+use shared::{init_with_component, types::Keys, SabRing};
 use tracing::{error, info, warn};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
@@ -12,6 +12,12 @@ use gloo_timers::future::TimeoutFuture;
 use std::cell::RefCell;
 use std::rc::Rc;
 use url::Url;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_name = postMessage)]
+    fn post_message(msg: &JsValue);
+}
 
 // expose client
 mod client;
@@ -82,7 +88,7 @@ impl Signer {
         ws_request_signer: SharedArrayBuffer,
         ws_response_signer: SharedArrayBuffer,
     ) -> Result<Signer, JsValue> {
-        init_with_component(tracing::Level::ERROR, "signer");
+        init_with_component(tracing::Level::INFO, "signer");
 
         let svc_req = Rc::new(RefCell::new(SabRing::new(signer_service_request)?));
         let svc_resp = Rc::new(RefCell::new(SabRing::new(signer_service_response)?));
@@ -164,7 +170,23 @@ impl Signer {
             self.ws_resp.clone(),
             client_keys,
         ));
-        nip46.start();
+        let signer_weak = Rc::downgrade(&self.active);
+        nip46.start(Some(Rc::new(move |_| {
+            if let Some(active_rc) = signer_weak.upgrade() {
+                if let ActiveSigner::Nip46(ref n46) = *active_rc.borrow() {
+                    if let Some(url) = n46.get_bunker_url() {
+                        // We need a way to call notify_discovery from here.
+                        // Since we don't have &self, we can't call it directly.
+                        // But we can use the global post_message.
+                        let msg = js_sys::Object::new();
+                        let _ =
+                            js_sys::Reflect::set(&msg, &"type".into(), &"bunker_discovered".into());
+                        let _ = js_sys::Reflect::set(&msg, &"bunker_url".into(), &url.into());
+                        post_message(&msg.into());
+                    }
+                }
+            }
+        })));
         *self.active.borrow_mut() = ActiveSigner::Nip46(nip46.clone());
 
         // Auto-connect for bunker flow
@@ -218,7 +240,20 @@ impl Signer {
             self.ws_resp.clone(),
             client_keys,
         ));
-        nip46.start();
+        let signer_weak = Rc::downgrade(&self.active);
+        nip46.start(Some(Rc::new(move |_| {
+            if let Some(active_rc) = signer_weak.upgrade() {
+                if let ActiveSigner::Nip46(ref n46) = *active_rc.borrow() {
+                    if let Some(url) = n46.get_bunker_url() {
+                        let msg = js_sys::Object::new();
+                        let _ =
+                            js_sys::Reflect::set(&msg, &"type".into(), &"bunker_discovered".into());
+                        let _ = js_sys::Reflect::set(&msg, &"bunker_url".into(), &url.into());
+                        post_message(&msg.into());
+                    }
+                }
+            }
+        })));
         *self.active.borrow_mut() = ActiveSigner::Nip46(nip46.clone());
 
         // Auto-connect for bunker flow
@@ -365,6 +400,14 @@ impl Signer {
         } else {
             None
         }
+    }
+
+    /// Notify the main thread about a discovered bunker URL.
+    pub fn notify_discovery(&self, bunker_url: &str) {
+        let msg = js_sys::Object::new();
+        let _ = js_sys::Reflect::set(&msg, &"type".into(), &"bunker_discovered".into());
+        let _ = js_sys::Reflect::set(&msg, &"bunker_url".into(), &bunker_url.into());
+        post_message(&msg.into());
     }
 
     /// Direct path: perform NIP-46 connect handshake.
@@ -521,13 +564,39 @@ impl Signer {
                                     Err(e) => Err(format!("{:?}", e)),
                                 }
                             }
-                            shared::generated::nostr::fb::SignerOp::Nip04Encrypt
-                            | shared::generated::nostr::fb::SignerOp::Nip04Decrypt
-                            | shared::generated::nostr::fb::SignerOp::Nip44Encrypt
-                            | shared::generated::nostr::fb::SignerOp::Nip44Decrypt
-                            | shared::generated::nostr::fb::SignerOp::Nip04DecryptBetween
-                            | shared::generated::nostr::fb::SignerOp::Nip44DecryptBetween => {
-                                Err("op not implemented for NIP-07".into())
+                            shared::generated::nostr::fb::SignerOp::Nip04Encrypt => s
+                                .nip04_encrypt(peer, payload)
+                                .await
+                                .map_err(|e| format!("{:?}", e)),
+                            shared::generated::nostr::fb::SignerOp::Nip04Decrypt => s
+                                .nip04_decrypt(peer, payload)
+                                .await
+                                .map_err(|e| format!("{:?}", e)),
+                            shared::generated::nostr::fb::SignerOp::Nip44Encrypt => s
+                                .nip44_encrypt(peer, payload)
+                                .await
+                                .map_err(|e| format!("{:?}", e)),
+                            shared::generated::nostr::fb::SignerOp::Nip44Decrypt => s
+                                .nip44_decrypt(peer, payload)
+                                .await
+                                .map_err(|e| format!("{:?}", e)),
+                            shared::generated::nostr::fb::SignerOp::Nip04DecryptBetween => {
+                                if sender.is_empty() && recipient.is_empty() {
+                                    Err("missing sender/recipient".to_string())
+                                } else {
+                                    s.nip04_decrypt_between(sender, recipient, payload)
+                                        .await
+                                        .map_err(|e| format!("{:?}", e))
+                                }
+                            }
+                            shared::generated::nostr::fb::SignerOp::Nip44DecryptBetween => {
+                                if sender.is_empty() && recipient.is_empty() {
+                                    Err("missing sender/recipient".to_string())
+                                } else {
+                                    s.nip44_decrypt_between(sender, recipient, payload)
+                                        .await
+                                        .map_err(|e| format!("{:?}", e))
+                                }
                             }
                             _ => Err("Unsupported operation".to_string()),
                         },

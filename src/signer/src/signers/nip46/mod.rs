@@ -35,6 +35,7 @@ pub struct Nip46Signer {
     crypto: Crypto,
     transport: Transport,
     ws_resp: Rc<RefCell<SabRing>>,
+    on_discovery: Rc<RefCell<Option<Rc<dyn Fn(String)>>>>,
 }
 
 impl Nip46Signer {
@@ -76,10 +77,12 @@ impl Nip46Signer {
             crypto,
             transport,
             ws_resp,
+            on_discovery: Rc::new(RefCell::new(None)),
         }
     }
 
-    pub fn start(&self) {
+    pub fn start(&self, on_discovery: Option<Rc<dyn Fn(String)>>) {
+        *self.on_discovery.borrow_mut() = on_discovery;
         self.transport
             .open_req_subscription(&self.sub_id, Self::unix_time());
         self.spawn_pump_once();
@@ -95,6 +98,22 @@ impl Nip46Signer {
 
     pub fn get_discovered_remote_pubkey(&self) -> Option<String> {
         self.discovered_remote_pubkey.borrow().clone()
+    }
+
+    pub fn get_bunker_url(&self) -> Option<String> {
+        let remote_pk = self.discovered_remote_pubkey.borrow().clone()?;
+        let mut url = format!("bunker://{}?", remote_pk);
+        for (i, relay) in self.cfg.relays.iter().enumerate() {
+            if i > 0 {
+                url.push('&');
+            }
+            let encoded_relay = js_sys::encode_uri_component(relay);
+            url.push_str(&format!("relay={}", String::from(encoded_relay)));
+        }
+        if let Some(secret) = &self.cfg.expected_secret {
+            url.push_str(&format!("&secret={}", secret));
+        }
+        Some(url)
     }
 
     pub async fn connect(&self) -> Result<String, JsValue> {
@@ -274,6 +293,7 @@ impl Nip46Signer {
             self.cfg.expected_secret.clone(),
             self.client_keys.clone(),
             self.cfg.use_nip44,
+            self.on_discovery.clone(),
         );
     }
 

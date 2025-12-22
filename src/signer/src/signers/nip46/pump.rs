@@ -24,6 +24,7 @@ impl Pump {
         expected_secret: Option<String>,
         client_keys: Keys,
         use_nip44: bool,
+        on_discovery: Rc<RefCell<Option<Rc<dyn Fn(String)>>>>,
     ) {
         let secret_bytes = client_keys.secret_key.0;
 
@@ -66,6 +67,7 @@ impl Pump {
                 client_pk,
                 expected_secret,
                 decrypt_helper,
+                on_discovery,
             )
             .await;
         };
@@ -82,6 +84,7 @@ impl Pump {
         client_pk: String,
         expected_secret: Option<String>,
         decrypt_helper: impl Fn(&str, &str) -> Result<String, String>,
+        on_discovery: Rc<RefCell<Option<Rc<dyn Fn(String)>>>>,
     ) {
         let mut sleep_ms: u32 = 8;
         let max_sleep: u32 = 256;
@@ -100,6 +103,7 @@ impl Pump {
                     &client_pk,
                     &expected_secret,
                     &decrypt_helper,
+                    &on_discovery,
                 )
                 .await;
 
@@ -119,6 +123,7 @@ impl Pump {
         client_pk: &str,
         expected_secret: &Option<String>,
         decrypt_helper: &impl Fn(&str, &str) -> Result<String, String>,
+        on_discovery: &Rc<RefCell<Option<Rc<dyn Fn(String)>>>>,
     ) {
         // The connections worker sends FlatBuffer-encoded WorkerMessage
         if let Ok(wm) = flatbuffers::root::<fb::WorkerMessage>(bytes) {
@@ -153,6 +158,7 @@ impl Pump {
                             client_pk,
                             expected_secret,
                             decrypt_helper,
+                            on_discovery,
                         )
                         .await;
                     }
@@ -190,6 +196,7 @@ impl Pump {
                             client_pk,
                             expected_secret,
                             decrypt_helper,
+                            on_discovery,
                         )
                         .await;
                     }
@@ -214,6 +221,7 @@ impl Pump {
         client_pk: &str,
         expected_secret: &Option<String>,
         decrypt_helper: &impl Fn(&str, &str) -> Result<String, String>,
+        on_discovery: &Rc<RefCell<Option<Rc<dyn Fn(String)>>>>,
     ) {
         let (maybe_sub, evt_json) = match (second, third) {
             (Some(sub), Some(evt)) => (Some(sub), evt),
@@ -259,6 +267,7 @@ impl Pump {
                         pending,
                         discovered_remote_pubkey,
                         expected_secret,
+                        on_discovery,
                     );
                 }
                 Err(e) => {
@@ -276,6 +285,7 @@ impl Pump {
         pending: &Rc<RefCell<HashMap<String, Result<String, String>>>>,
         discovered_remote_pubkey: &Rc<RefCell<Option<String>>>,
         expected_secret: &Option<String>,
+        on_discovery: &Rc<RefCell<Option<Rc<dyn Fn(String)>>>>,
     ) {
         if let Ok(rpc) = serde_json::from_str::<Value>(plaintext) {
             let rid = rpc
@@ -314,6 +324,9 @@ impl Pump {
                                 info!("[nip46] Remote signer discovered: {}", remote_pubkey);
                                 *discovered_remote_pubkey.borrow_mut() =
                                     Some(remote_pubkey.to_string());
+                                if let Some(cb) = on_discovery.borrow().as_ref() {
+                                    cb(remote_pubkey.to_string());
+                                }
                                 Ok(res)
                             } else {
                                 Err("Invalid secret in response".to_string())

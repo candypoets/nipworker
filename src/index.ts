@@ -20,7 +20,7 @@ import { InitConnectionsMsg } from './connections';
 import { InitCacheMsg } from './cache';
 import { InitParserMsg } from './parser';
 import { InitSignerMsg } from './signer';
-export * from './lib/nostrUtils';
+export * from './lib/NostrUtils';
 
 // Idempotent header initializer for rings created on the TS side.
 export function initializeRingHeader(size: number): SharedArrayBuffer {
@@ -73,12 +73,12 @@ export class NostrManager {
 		}
 	>();
 	private publishes = new Map<string, { buffer: SharedArrayBuffer }>();
-	private signers = new Map<string, string>(); // name -> last payload
+	// private signers = new Map<string, string>(); // name -> last payload
 
 	private activePubkey: string | null = null;
 	private _pendingSession: { type: string; payload: any } | null = null;
 
-	private signCB = (event: any) => {};
+	private signCB = (_event: any) => {};
 	private eventTarget = new EventTarget();
 
 	public PERPETUAL_SUBSCRIPTIONS = ['notifications', 'starterpack'];
@@ -174,7 +174,7 @@ export class NostrManager {
 
 		this.signer.onmessage = async (event) => {
 			const msg = event.data;
-
+			console.log('signer message', msg);
 			// Handle NIP-07 extension requests from the worker
 			if (msg?.type === 'extension_request') {
 				const { id, op, payload } = msg;
@@ -194,6 +194,7 @@ export class NostrManager {
 							result = await nostr.nip04.encrypt(payload.pubkey, payload.plaintext);
 							break;
 						case 'nip04Decrypt':
+							console.log('nip04Decrypt', payload.pubkey);
 							result = await nostr.nip04.decrypt(payload.pubkey, payload.ciphertext);
 							break;
 						case 'nip44Encrypt':
@@ -212,6 +213,19 @@ export class NostrManager {
 						id,
 						ok: false,
 						error: e.message || String(e)
+					});
+				}
+				return;
+			}
+
+			if (msg?.type === 'bunker_discovered') {
+				const { bunker_url } = msg;
+				if (this.activePubkey && this._pendingSession && this._pendingSession.type === 'nip46_qr') {
+					// We just discovered a bunker via QR code
+					const clientSecret = this._pendingSession.payload.clientSecret;
+					this.saveSession(this.activePubkey, 'nip46_bunker', {
+						url: bunker_url,
+						clientSecret
 					});
 				}
 				return;
@@ -375,7 +389,7 @@ export class NostrManager {
 	}
 
 	setSigner(name: string, payload?: string | { url: string; clientSecret: string }): void {
-		console.log('Setting signer:', name, payload);
+		console.trace('setting signer', name, payload);
 		switch (name) {
 			case 'privkey':
 				this.signer.postMessage({ type: 'set_private_key', payload });
@@ -391,10 +405,8 @@ export class NostrManager {
 				break;
 		}
 
-		this.signers.set(name, typeof payload === 'string' ? payload : payload.url);
-
 		// Trigger pubkey discovery to validate and save session
-		if (name === 'privkey' || name === 'nip07' || name === 'nip46_bunker') {
+		if (name === 'privkey' || name === 'nip07' || name === 'nip46_bunker' || name === 'nip46_qr') {
 			this._pendingSession = { type: name, payload };
 			this.signer.postMessage({ type: 'get_pubkey' });
 		}
@@ -403,10 +415,6 @@ export class NostrManager {
 	signEvent(event: EventTemplate, cb: (event: NostrEvent) => void) {
 		this.signCB = cb;
 		this.signer.postMessage({ type: 'sign_event', payload: event });
-	}
-
-	connect() {
-		this.signer.postMessage({ type: 'connect' });
 	}
 
 	getPublicKey() {
