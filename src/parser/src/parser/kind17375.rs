@@ -36,7 +36,7 @@ impl Parser {
         // Attempt to decrypt using the sender's pubkey
         let sender_pubkey = event.pubkey.to_string();
         match self
-            .signer_client
+            .crypto_client
             .nip44_decrypt(&sender_pubkey, &event.content)
             .await
         {
@@ -141,7 +141,7 @@ impl Parser {
 
         // Encrypt the message content using NIP-44; let signer use its own pubkey (empty recipient)
         let encrypted_content = self
-            .signer_client
+            .crypto_client
             .nip44_encrypt("", &template.content)
             .await
             .map_err(|e| ParserError::Crypto(format!("Signer error: {}", e)))?;
@@ -151,7 +151,7 @@ impl Parser {
 
         // Sign the event (SignerClient returns JSON)
         let signed_event_json = self
-            .signer_client
+            .crypto_client
             .sign_event(encrypted_template.to_json())
             .await
             .map_err(|e| ParserError::Crypto(format!("Signer error: {}", e)))?;

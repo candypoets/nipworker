@@ -29,7 +29,7 @@ overflow-checks = false # Disable overflow checks in release
 
 [dependencies]
 shared = { path = "../shared" }
-signer = { path = "../signer" }
+crypto = { path = "../crypto" }
 
 # Lightweight async utilities (replacing tokio)
 futures = "0.3"

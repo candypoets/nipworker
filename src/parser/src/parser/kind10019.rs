@@ -108,7 +108,7 @@ impl Parser {
         }
         let template_json = template.to_json();
         let signed_event_json = self
-            .signer_client
+            .crypto_client
             .sign_event(template_json)
             .await
             .map_err(|e| ParserError::Crypto(format!("Signer error: {}", e)))?;

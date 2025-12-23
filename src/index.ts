@@ -19,7 +19,7 @@ import {
 import { InitConnectionsMsg } from './connections';
 import { InitCacheMsg } from './cache';
 import { InitParserMsg } from './parser';
-import { InitSignerMsg } from './signer';
+import { InitCryptoMsg } from './crypto';
 export * from './lib/NostrUtils';
 
 // Idempotent header initializer for rings created on the TS side.
@@ -62,7 +62,7 @@ export class NostrManager {
 	private connections: Worker;
 	private cache: Worker;
 	private parser: Worker;
-	private signer: Worker;
+	private crypto: Worker;
 	private textEncoder = new TextEncoder();
 	private subscriptions = new Map<
 		string,
@@ -87,26 +87,26 @@ export class NostrManager {
 		const wsRequest = initializeRingHeader(1 * 1024 * 1024);
 		const wsResponse = initializeRingHeader(5 * 1024 * 1024);
 
-		const wsSignerRequest = initializeRingHeader(512 * 1024);
-		const wsSignerResponse = initializeRingHeader(512 * 1024);
+		const wsCryptoRequest = initializeRingHeader(512 * 1024);
+		const wsCryptoResponse = initializeRingHeader(512 * 1024);
 
 		const cacheRequest = initializeRingHeader(1 * 1024 * 1024);
 		const cacheResponse = initializeRingHeader(10 * 1024 * 1024);
 
 		const dbRing = initializeRingHeader(2 * 1024 * 1024);
 
-		const signerRequest = initializeRingHeader(512 * 1024);
-		const signerResponse = initializeRingHeader(512 * 1024);
+		const cryptoRequest = initializeRingHeader(512 * 1024);
+		const cryptoResponse = initializeRingHeader(512 * 1024);
 
 		const connectionURL = new URL('./connections/index.js', import.meta.url);
 		const cacheURL = new URL('./cache/index.js', import.meta.url);
 		const parserURL = new URL('./parser/index.js', import.meta.url);
-		const signerURL = new URL('./signer/index.js', import.meta.url);
+		const cryptoURL = new URL('./crypto/index.js', import.meta.url);
 
 		this.connections = new Worker(connectionURL, { type: 'module' });
 		this.cache = new Worker(cacheURL, { type: 'module' });
 		this.parser = new Worker(parserURL, { type: 'module' });
-		this.signer = new Worker(signerURL, { type: 'module' });
+		this.crypto = new Worker(cryptoURL, { type: 'module' });
 
 		this.connections.postMessage({
 			type: 'init',
@@ -114,8 +114,8 @@ export class NostrManager {
 				ws_request: wsRequest,
 				ws_response: wsResponse,
 				statusRing,
-				ws_signer_request: wsSignerRequest,
-				ws_signer_response: wsSignerResponse
+				ws_crypto_request: wsCryptoRequest,
+				ws_crypto_response: wsCryptoResponse
 			}
 		} as InitConnectionsMsg);
 
@@ -135,16 +135,21 @@ export class NostrManager {
 				ingestRing: dbRing,
 				cacheRequest,
 				cacheResponse,
-				signerRequest,
-				signerResponse,
+				cryptoRequest,
+				cryptoResponse,
 				wsResponse
 			}
 		} as InitParserMsg);
 
-		this.signer.postMessage({
+		this.crypto.postMessage({
 			type: 'init',
-			payload: { signerRequest, signerResponse, wsSignerRequest, wsSignerResponse }
-		} as InitSignerMsg);
+			payload: {
+				cryptoRequest,
+				cryptoResponse,
+				wsCryptoRequest,
+				wsCryptoResponse
+			}
+		} as InitCryptoMsg);
 
 		this.setupWorkerListener();
 		this.restoreSession();
@@ -172,7 +177,7 @@ export class NostrManager {
 			}
 		};
 
-		this.signer.onmessage = async (event) => {
+		this.crypto.onmessage = async (event) => {
 			const msg = event.data;
 			console.log('signer message', msg);
 			// Handle NIP-07 extension requests from the worker
@@ -206,9 +211,9 @@ export class NostrManager {
 						default:
 							throw new Error(`Unknown extension operation: ${op}`);
 					}
-					this.signer.postMessage({ type: 'extension_response', id, ok: true, result });
+					this.crypto.postMessage({ type: 'extension_response', id, ok: true, result });
 				} catch (e: any) {
-					this.signer.postMessage({
+					this.crypto.postMessage({
 						type: 'extension_response',
 						id,
 						ok: false,
@@ -392,29 +397,29 @@ export class NostrManager {
 		console.trace('setting signer', name, payload);
 		switch (name) {
 			case 'privkey':
-				this.signer.postMessage({ type: 'set_private_key', payload });
+				this.crypto.postMessage({ type: 'set_private_key', payload });
 				break;
 			case 'nip07':
-				this.signer.postMessage({ type: 'set_nip07' });
+				this.crypto.postMessage({ type: 'set_nip07' });
 				break;
 			case 'nip46_bunker':
-				this.signer.postMessage({ type: 'set_nip46_bunker', payload });
+				this.crypto.postMessage({ type: 'set_nip46_bunker', payload });
 				break;
 			case 'nip46_qr':
-				this.signer.postMessage({ type: 'set_nip46_qr', payload });
+				this.crypto.postMessage({ type: 'set_nip46_qr', payload });
 				break;
 		}
 
 		// Trigger pubkey discovery to validate and save session
 		if (name === 'privkey' || name === 'nip07' || name === 'nip46_bunker' || name === 'nip46_qr') {
 			this._pendingSession = { type: name, payload };
-			this.signer.postMessage({ type: 'get_pubkey' });
+			this.crypto.postMessage({ type: 'get_pubkey' });
 		}
 	}
 
 	signEvent(event: EventTemplate, cb: (event: NostrEvent) => void) {
 		this.signCB = cb;
-		this.signer.postMessage({ type: 'sign_event', payload: event });
+		this.crypto.postMessage({ type: 'sign_event', payload: event });
 	}
 
 	getPublicKey() {

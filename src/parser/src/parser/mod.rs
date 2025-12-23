@@ -1,5 +1,5 @@
 use shared::types::{nostr::Template, Event, ParserError, TypesError};
-use signer::SignerClient;
+use crypto::CryptoClient;
 use std::cell::RefCell;
 use std::sync::Arc;
 use thiserror::Error;
@@ -55,12 +55,12 @@ pub use pre_adapters::{
 use crate::types::parsed_event::{ParsedData, ParsedEvent};
 
 pub struct Parser {
-    pub signer_client: Arc<SignerClient>,
+    pub crypto_client: Arc<CryptoClient>,
 }
 
 impl Parser {
-    pub fn new(signer_client: Arc<SignerClient>) -> Self {
-        Self { signer_client }
+    pub fn new(crypto_client: Arc<CryptoClient>) -> Self {
+        Self { crypto_client }
     }
 
     pub async fn parse(&self, event: Event) -> Result<ParsedEvent> {
@@ -187,7 +187,7 @@ impl Parser {
                 let template_json = template.to_json();
                 // Call the async signer client and await the result
                 let signed_event_json = self
-                    .signer_client
+                    .crypto_client
                     .sign_event(template_json)
                     .await
                     .map_err(|e| ParserError::Crypto(format!("Signer error: {}", e)))?;

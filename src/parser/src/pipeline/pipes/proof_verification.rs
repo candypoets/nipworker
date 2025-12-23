@@ -1,6 +1,7 @@
 use super::super::*;
 use crate::{types::parsed_event::ParsedData, utils::cashu::filter_valid_dleq_proofs_with_mint};
 use shared::{
+    crypto::compute_y_point,
     generated::nostr::fb::{self},
     types::Proof,
 };
@@ -189,38 +190,7 @@ impl ProofVerificationPipe {
         }
     }
 
-    /// Compute Y point from secret using cashu-ts compatible hash_to_curve implementation
-    fn compute_y_point(&self, secret: &str) -> String {
-        const DOMAIN_SEPARATOR: &[u8] = b"Secp256k1_HashToCurve_Cashu_";
 
-        // First hash: DOMAIN_SEPARATOR || secret
-        let mut hasher = Sha256::new();
-        hasher.update(DOMAIN_SEPARATOR);
-        hasher.update(secret.as_bytes());
-        let msg_hash = hasher.finalize();
-
-        // Counter loop to find valid point
-        const MAX_ITERATIONS: u32 = 65536; // 2^16
-        for counter in 0..MAX_ITERATIONS {
-            let mut hasher = Sha256::new();
-            hasher.update(&msg_hash);
-            hasher.update(&counter.to_le_bytes()); // little endian as per spec
-            let hash = hasher.finalize();
-
-            // Try to create point with 0x02 prefix (compressed)
-            let mut point_bytes = Vec::with_capacity(33);
-            point_bytes.push(0x02);
-            point_bytes.extend_from_slice(&hash);
-
-            // Try to parse as a valid secp256k1 point
-            if let Ok(public_key) = PublicKey::from_sec1_bytes(&point_bytes) {
-                let encoded_point = public_key.to_encoded_point(true);
-                return hex::encode(encoded_point.as_bytes());
-            }
-        }
-
-        panic!("No valid point found after 65536 iterations");
-    }
 
     /// Add proofs to tracking, with deduplication
     fn add_proofs(&mut self, proofs: Vec<Proof>, mint_url: String) {
@@ -246,7 +216,7 @@ impl ProofVerificationPipe {
             }
 
             // Compute Y point and add to pending verifications
-            let y_point = self.compute_y_point(&secret);
+            let y_point = compute_y_point(&secret);
             self.pending_verifications.insert(secret.clone(), y_point);
 
             // Add to pending proofs by mint

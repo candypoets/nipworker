@@ -1,5 +1,7 @@
 use crate::types::ParserError;
 
+pub mod crypto;
+
 pub type Result<T> = std::result::Result<T, ParserError>;
 
 pub struct BaseJsonParser<'a> {

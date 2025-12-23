@@ -173,6 +173,38 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0a5c400df2834b80a4c3327b3aad3a4c4cd4de0629063962b03235697506a28"
 
 [[package]]
+name = "crypto"
+version = "0.1.0"
+dependencies = [
+ "aes",
+ "base64",
+ "cbc",
+ "chacha20",
+ "flatbuffers",
+ "futures-channel",
+ "getrandom",
+ "gloo-timers",
+ "hex",
+ "hkdf",
+ "hmac",
+ "js-sys",
+ "k256",
+ "rustc-hash",
+ "serde",
+ "serde-wasm-bindgen",
+ "serde_json",
+ "sha2",
+ "shared",
+ "signature",
+ "thiserror",
+ "tracing",
+ "url",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+]
+
+[[package]]
 name = "crypto-bigint"
 version = "0.5.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -751,6 +783,7 @@ dependencies = [
  "cbc",
  "chacha20",
  "console_error_panic_hook",
+ "crypto",
  "flatbuffers",
  "futures",
  "getrandom",
@@ -766,7 +799,6 @@ dependencies = [
  "sha2",
  "shared",
  "signature",
- "signer",
  "thiserror",
  "tracing",
  "tracing-subscriber",
@@ -1065,38 +1097,6 @@ checksum = "77549399552de45a898a580c1b41d445bf730df867cc44e6c0233bbc4b8329de"
 dependencies = [
  "digest",
  "rand_core",
-]
-
-[[package]]
-name = "signer"
-version = "0.1.0"
-dependencies = [
- "aes",
- "base64",
- "cbc",
- "chacha20",
- "flatbuffers",
- "futures-channel",
- "getrandom",
- "gloo-timers",
- "hex",
- "hkdf",
- "hmac",
- "js-sys",
- "k256",
- "rustc-hash",
- "serde",
- "serde-wasm-bindgen",
- "serde_json",
- "sha2",
- "shared",
- "signature",
- "thiserror",
- "tracing",
- "url",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
 ]
 
 [[package]]

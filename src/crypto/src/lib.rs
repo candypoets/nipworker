@@ -21,9 +21,10 @@ extern "C" {
 
 // expose client
 mod client;
-
+mod crypto_utils;
 mod signers;
-pub use client::SignerClient;
+pub use client::CryptoClient;
+pub use crypto_utils::hash_to_curve;
 use signers::{Nip07Signer, Nip46Config, Nip46Signer, PrivateKeySigner};
 
 /// Helper structs for URL parsing
@@ -42,12 +43,12 @@ struct NostrconnectUrl {
     app_name: Option<String>,
 }
 
-/// A minimal signer worker that:
+/// A cryptographic operations worker that:
 /// - Wires four SAB rings:
-///   - signer_service_request  (parser -> signer)
-///   - signer_service_response (signer -> parser)
-///   - ws_request_signer       (signer -> connections)
-///   - ws_response_signer      (connections -> signer)
+///   - crypto_service_request  (parser -> crypto)
+///   - crypto_service_response (crypto -> parser)
+///   - ws_request_crypto       (crypto -> connections)
+///   - ws_response_crypto      (connections -> crypto)
 /// - Exposes direct methods for frontend (bypassing SAB).
 ///
 /// NOTE:
@@ -57,12 +58,12 @@ struct NostrconnectUrl {
 /// - NIP-46 transport wiring is scaffolded. It publishes/consumes frames via the
 ///   dedicated ws SABs. Business logic will be implemented after schema/types land.
 #[wasm_bindgen]
-pub struct Signer {
-    // Parser <-> Signer SABs (SPSC each)
+pub struct Crypto {
+    // Parser <-> Crypto SABs (SPSC each)
     svc_req: Rc<RefCell<SabRing>>,
     svc_resp: Rc<RefCell<SabRing>>,
 
-    // Signer <-> Connections SABs (SPSC each)
+    // Crypto <-> Connections SABs (SPSC each)
     ws_req: Rc<RefCell<SabRing>>,
     ws_resp: Rc<RefCell<SabRing>>,
 
@@ -79,25 +80,25 @@ enum ActiveSigner {
 }
 
 #[wasm_bindgen]
-impl Signer {
-    /// new(signer_service_request, signer_service_response, ws_request_signer, ws_response_signer)
+impl Crypto {
+    /// new(crypto_service_request, crypto_service_response, ws_request_crypto, ws_response_crypto)
     #[wasm_bindgen(constructor)]
     pub fn new(
-        signer_service_request: SharedArrayBuffer,
-        signer_service_response: SharedArrayBuffer,
-        ws_request_signer: SharedArrayBuffer,
-        ws_response_signer: SharedArrayBuffer,
-    ) -> Result<Signer, JsValue> {
-        init_with_component(tracing::Level::INFO, "signer");
+        crypto_service_request: SharedArrayBuffer,
+        crypto_service_response: SharedArrayBuffer,
+        ws_request_crypto: SharedArrayBuffer,
+        ws_response_crypto: SharedArrayBuffer,
+    ) -> Result<Crypto, JsValue> {
+        init_with_component(tracing::Level::INFO, "crypto");
 
-        let svc_req = Rc::new(RefCell::new(SabRing::new(signer_service_request)?));
-        let svc_resp = Rc::new(RefCell::new(SabRing::new(signer_service_response)?));
-        let ws_req = Rc::new(RefCell::new(SabRing::new(ws_request_signer)?));
-        let ws_resp = Rc::new(RefCell::new(SabRing::new(ws_response_signer)?));
+        let svc_req = Rc::new(RefCell::new(SabRing::new(crypto_service_request)?));
+        let svc_resp = Rc::new(RefCell::new(SabRing::new(crypto_service_response)?));
+        let ws_req = Rc::new(RefCell::new(SabRing::new(ws_request_crypto)?));
+        let ws_resp = Rc::new(RefCell::new(SabRing::new(ws_response_crypto)?));
 
-        info!("[signer] initialized SAB rings");
+        info!("[crypto] initialized SAB rings");
 
-        let signer = Signer {
+        let crypto = Crypto {
             svc_req,
             svc_resp,
             ws_req,
@@ -105,9 +106,9 @@ impl Signer {
             active: Rc::new(RefCell::new(ActiveSigner::Unset)),
         };
 
-        signer.start_service_loop();
+        crypto.start_service_loop();
 
-        Ok(signer)
+        Ok(crypto)
     }
 
     // --------------------------
@@ -117,11 +118,11 @@ impl Signer {
     /// Set a private key signer (hex or nsec). For now we don't perform validation here.
     #[wasm_bindgen(js_name = "setPrivateKey")]
     pub fn set_private_key(&self, secret: String) -> Result<(), JsValue> {
-        info!("[signer] setting private key");
+        info!("[crypto] setting private key");
         let pk = PrivateKeySigner::new(&secret)
             .map_err(|e| js_err(&format!("failed to create private key signer: {e}")))?;
         *self.active.borrow_mut() = ActiveSigner::Pk(Rc::new(pk));
-        info!("[signer] active signer = PrivateKey");
+        info!("[crypto] active signer = PrivateKey");
         Ok(())
     }
 
@@ -129,7 +130,7 @@ impl Signer {
     #[wasm_bindgen(js_name = "setNip07")]
     pub fn set_nip07(&self) {
         *self.active.borrow_mut() = ActiveSigner::Nip07(Rc::new(Nip07Signer::new()));
-        info!("[signer] active signer = NIP-07");
+        info!("[crypto] active signer = NIP-07");
     }
 
     /// Configure NIP-46 remote signer. Takes remote signer pubkey (hex) and relays.
@@ -145,7 +146,7 @@ impl Signer {
         let parsed = Self::parse_bunker_url(&bunker_url)?;
 
         info!(
-            "[signer] setting NIP-46 signer with remote_pubkey: {}, relays: {:?}",
+            "[crypto] setting NIP-46 signer with remote_pubkey: {}, relays: {:?}",
             parsed.remote_pubkey, parsed.relays
         );
 
@@ -199,7 +200,7 @@ impl Signer {
             }
         });
 
-        info!("[signer] active signer = NIP-46 (Bunker mode)");
+        info!("[crypto] active signer = NIP-46 (Bunker mode)");
         Ok(())
     }
 
@@ -215,7 +216,7 @@ impl Signer {
         let parsed = Self::parse_nostrconnect_url(&nostrconnect_url)?;
 
         info!(
-            "[signer] setting NIP-46 signer via QR code (client_pubkey: {})",
+            "[crypto] setting NIP-46 signer via QR code (client_pubkey: {})",
             parsed.client_pubkey
         );
 
@@ -266,7 +267,7 @@ impl Signer {
             }
         });
 
-        info!("[signer] active signer = NIP-46 (QR code discovery mode)");
+        info!("[crypto] active signer = NIP-46 (QR code discovery mode)");
         Ok(())
     }
 
@@ -438,7 +439,7 @@ impl Signer {
                 let pk = s.get_public_key().await?;
                 Ok(JsValue::from_str(&pk))
             }
-            ActiveSigner::Unset => Err(js_err("signer not configured")),
+            ActiveSigner::Unset => Err(js_err("crypto not configured")),
         }
     }
 
@@ -468,12 +469,12 @@ impl Signer {
                     &serde_json::to_string(&signed).unwrap_or_else(|_| "{}".to_string()),
                 ))
             }
-            ActiveSigner::Unset => Err(js_err("signer not configured")),
+            ActiveSigner::Unset => Err(js_err("crypto not configured")),
         }
     }
 }
 
-impl Signer {
+impl Crypto {
     // Service loop: drains signer_service_request and writes signer_service_response.
     // For now, this echoes the payload back in a trivial envelope to prove the pipe.
     fn start_service_loop(&self) {
@@ -497,7 +498,7 @@ impl Signer {
                     ) {
                         Ok(r) => r,
                         Err(e) => {
-                            warn!("[signer][svc] failed to decode SignerRequest: {:?}", e);
+                            warn!("[crypto][svc] failed to decode SignerRequest: {:?}", e);
                             continue;
                         }
                     };
@@ -511,7 +512,7 @@ impl Signer {
 
                     // Dispatch to active signer
                     let result: Result<String, String> = match &*active.borrow() {
-                        ActiveSigner::Unset => Err("signer not configured".into()),
+                        ActiveSigner::Unset => Err("crypto not configured".into()),
                         ActiveSigner::Pk(pk) => match op {
                             shared::generated::nostr::fb::SignerOp::GetPubkey => {
                                 pk.get_public_key().map_err(|e| e.to_string())
@@ -535,7 +536,7 @@ impl Signer {
                                 pk.nip44_decrypt(peer, payload).map_err(|e| e.to_string())
                             }
                             shared::generated::nostr::fb::SignerOp::Nip04DecryptBetween => {
-                                info!("[signer] decrypting between");
+                                info!("[crypto] decrypting between");
                                 if sender.is_empty() && recipient.is_empty() {
                                     Err("missing sender/recipient".to_string())
                                 } else {
@@ -677,7 +678,7 @@ impl Signer {
             }
         });
 
-        info!("[signer] service loop spawned");
+        info!("[crypto] service loop spawned");
     }
 
     // NIP-46 pump: drains ws_response_signer and logs frames.
@@ -695,7 +696,7 @@ impl Signer {
             .map_err(|e| JsValue::from_str(&format!("serialize envelope: {}", e)))?;
         let ok = self.ws_req.borrow_mut().write(&bytes);
         if !ok {
-            warn!("[signer] ws_req ring full, frame dropped");
+            warn!("[crypto] ws_req ring full, frame dropped");
         }
         Ok(())
     }

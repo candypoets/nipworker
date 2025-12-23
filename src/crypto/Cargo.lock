@@ -123,6 +123,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "crypto"
+version = "0.1.0"
+dependencies = [
+ "aes",
+ "base64",
+ "cbc",
+ "chacha20",
+ "flatbuffers",
+ "futures-channel",
+ "getrandom",
+ "gloo-timers",
+ "hex",
+ "hkdf",
+ "hmac",
+ "js-sys",
+ "k256",
+ "rustc-hash",
+ "serde",
+ "serde-wasm-bindgen",
+ "serde_json",
+ "sha2",
+ "shared",
+ "signature",
+ "thiserror",
+ "tracing",
+ "url",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+]
+
+[[package]]
 name = "crypto-bigint"
 version = "0.5.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -713,38 +745,6 @@ checksum = "77549399552de45a898a580c1b41d445bf730df867cc44e6c0233bbc4b8329de"
 dependencies = [
  "digest",
  "rand_core",
-]
-
-[[package]]
-name = "signer"
-version = "0.1.0"
-dependencies = [
- "aes",
- "base64",
- "cbc",
- "chacha20",
- "flatbuffers",
- "futures-channel",
- "getrandom",
- "gloo-timers",
- "hex",
- "hkdf",
- "hmac",
- "js-sys",
- "k256",
- "rustc-hash",
- "serde",
- "serde-wasm-bindgen",
- "serde_json",
- "sha2",
- "shared",
- "signature",
- "thiserror",
- "tracing",
- "url",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
 ]
 
 [[package]]

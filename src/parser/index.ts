@@ -7,8 +7,8 @@ export type InitParserMsg = {
 		ingestRing: SharedArrayBuffer;
 		cacheRequest: SharedArrayBuffer;
 		cacheResponse: SharedArrayBuffer;
-		signerRequest: SharedArrayBuffer;
-		signerResponse: SharedArrayBuffer;
+		cryptoRequest: SharedArrayBuffer;
+		cryptoResponse: SharedArrayBuffer;
 		wsResponse: SharedArrayBuffer;
 	};
 };
@@ -34,15 +34,15 @@ self.addEventListener('message', async (evt: MessageEvent<InitParserMsg | { type
 	if (msg?.type === 'init') {
 		await ensureWasm();
 
-		const { cacheRequest, cacheResponse, signerRequest, signerResponse, wsResponse, ingestRing } =
+		const { cacheRequest, cacheResponse, cryptoRequest, cryptoResponse, wsResponse, ingestRing } =
 			msg.payload;
 
 		const client = new NostrClient(
 			ingestRing,
 			cacheRequest,
 			cacheResponse,
-			signerRequest,
-			signerResponse,
+			cryptoRequest,
+			cryptoResponse,
 			wsResponse
 		);
 		// Resolve the deferred so all queued .then handlers can run

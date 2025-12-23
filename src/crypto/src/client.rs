@@ -14,8 +14,8 @@ use wasm_bindgen_futures::spawn_local;
 /// Parser-facing client for the signer service SABs.
 ///
 /// This is a minimal client that:
-/// - writes requests into `signer_service_request`
-/// - reads responses from `signer_service_response`
+/// - writes requests into `crypto_service_request`
+/// - reads responses from `crypto_service_response`
 ///
 /// Encoding is a placeholder JSON envelope until the FlatBuffers schema is finalized:
 /// { "request_id": u64, "op": "<string>", "payload": <json> }
@@ -23,7 +23,7 @@ use wasm_bindgen_futures::spawn_local;
 /// The service currently echoes back payloads to prove the pipe. Once the full
 /// FlatBuffers path is wired, this client can be updated to encode/decode FB
 /// while keeping the same async API for parser users.
-pub struct SignerClient {
+pub struct CryptoClient {
     req: Rc<RefCell<SabRing>>,
     resp: Rc<RefCell<SabRing>>,
     pending: Rc<RefCell<HashMap<u64, futures_channel::oneshot::Sender<Result<String, String>>>>>,
@@ -31,16 +31,16 @@ pub struct SignerClient {
     pump_started: Rc<Cell<bool>>,
 }
 
-impl SignerClient {
+impl CryptoClient {
     /// Construct a client from two SABs:
-    /// - signer_service_request (writer)
-    /// - signer_service_response (reader)
+    /// - crypto_service_request (writer)
+    /// - crypto_service_response (reader)
     pub fn new(
-        signer_service_request: SharedArrayBuffer,
-        signer_service_response: SharedArrayBuffer,
+        crypto_service_request: SharedArrayBuffer,
+        crypto_service_response: SharedArrayBuffer,
     ) -> Result<Self, JsValue> {
-        let req = Rc::new(RefCell::new(SabRing::new(signer_service_request)?));
-        let resp = Rc::new(RefCell::new(SabRing::new(signer_service_response)?));
+        let req = Rc::new(RefCell::new(SabRing::new(crypto_service_request)?));
+        let resp = Rc::new(RefCell::new(SabRing::new(crypto_service_response)?));
 
         let client = Self {
             req,
@@ -51,7 +51,7 @@ impl SignerClient {
         };
 
         client.ensure_pump();
-        info!("[signer-client] initialized");
+        info!("[crypto-client] initialized");
         Ok(client)
     }
 
@@ -89,12 +89,12 @@ impl SignerClient {
                                     let _ = tx.send(Ok(result_str.to_string()));
                                 }
                             } else {
-                                warn!("[signer-client] response for unknown request_id={rid}");
+                                warn!("[crypto-client] response for unknown request_id={rid}");
                             }
                         }
                         Err(e) => {
                             warn!(
-                                "[signer-client] failed to decode SignerResponse FB: {:?}",
+                                "[crypto-client] failed to decode SignerResponse FB: {:?}",
                                 e
                             );
                         }
@@ -107,7 +107,7 @@ impl SignerClient {
             }
         });
 
-        info!("[signer-client] response pump started");
+        info!("[crypto-client] response pump started");
     }
 
     /// Get a new request id (monotonic u64, wraps on overflow)
@@ -171,13 +171,13 @@ impl SignerClient {
         let ok = self.req.borrow_mut().write(out);
         if !ok {
             self.pending.borrow_mut().remove(&rid);
-            return Err("signer_service_request ring full (write dropped)".to_string());
+            return Err("crypto_service_request ring full (write dropped)".to_string());
         }
 
         // Await response (no timeout here; the service loop applies backpressure)
         match rx.await {
             Ok(res) => res,
-            Err(_) => Err("signer response channel canceled".to_string()),
+            Err(_) => Err("crypto response channel canceled".to_string()),
         }
     }
 
@@ -266,7 +266,7 @@ impl SignerClient {
         ciphertext: &str,
     ) -> Result<String, String> {
         info!(
-            "[signer-client] nip04_decrypt_between sender={} recipient={} ciphertext_len={}",
+            "[crypto-client] nip04_decrypt_between sender={} recipient={} ciphertext_len={}",
             sender_pubkey_hex,
             recipient_pubkey_hex,
             ciphertext.len()

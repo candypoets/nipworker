@@ -1,15 +1,15 @@
-/* WASM-based WS worker runtime (dedicated Web Worker, module) */
+/* WASM-based crypto worker runtime (dedicated Web Worker, module) */
 
-import initWasm, { Signer } from './pkg/signer.js';
-import wasmUrl from './pkg/signer_bg.wasm?url';
+import initWasm, { Crypto } from './pkg/crypto.js';
+import wasmUrl from './pkg/crypto_bg.wasm?url';
 
-export type InitSignerMsg = {
+export type InitCryptoMsg = {
 	type: 'init';
 	payload: {
-		wsSignerRequest: SharedArrayBuffer;
-		wsSignerResponse: SharedArrayBuffer;
-		signerRequest: SharedArrayBuffer;
-		signerResponse: SharedArrayBuffer;
+		wsCryptoRequest: SharedArrayBuffer;
+		wsCryptoResponse: SharedArrayBuffer;
+		cryptoRequest: SharedArrayBuffer;
+		cryptoResponse: SharedArrayBuffer;
 	};
 };
 
@@ -26,8 +26,8 @@ let nextRequestId = 0;
 };
 
 let wasmReady: Promise<any> | null = null;
-let resolveInstance: ((s: Signer) => void) | null = null;
-const instanceReady: Promise<Signer> = new Promise<Signer>((resolve) => {
+let resolveInstance: ((c: Crypto) => void) | null = null;
+const instanceReady: Promise<Crypto> = new Promise<Crypto>((resolve) => {
 	resolveInstance = resolve;
 });
 
@@ -61,42 +61,42 @@ self.addEventListener('message', async (evt: MessageEvent<any>) => {
 	if (msg?.type === 'init') {
 		await ensureWasm();
 
-		const { signerRequest, signerResponse, wsSignerRequest, wsSignerResponse } = msg.payload;
-		console.log('Initializing Signer');
-		const signer = new Signer(signerRequest, signerResponse, wsSignerRequest, wsSignerResponse);
-		// Resolve the deferred so queued handlers can use the instance
-		resolveInstance?.(signer);
+		const { cryptoRequest, cryptoResponse, wsCryptoRequest, wsCryptoResponse } = msg.payload;
+		console.log('Initializing Crypto');
+		const crypto = new Crypto(cryptoRequest, cryptoResponse, wsCryptoRequest, wsCryptoResponse);
+		// Resolve to deferred so queued handlers can use the instance
+		resolveInstance?.(crypto);
 
 		return;
 	}
 
-	// Optional: wake signal; the Rust loops are self-driven, so this is a no-op.
+	// Optional: wake signal; Rust loops are self-driven, so this is a no-op.
 	if (msg?.type === 'wake') {
 		return;
 	}
 
-	// All non-init messages: await the instance promise, then process
-	instanceReady.then(async (s) => {
+	// All non-init messages: await instance promise, then process
+	instanceReady.then(async (c) => {
 		try {
 			const m: any = msg;
 			switch (m?.type) {
 				case 'set_private_key': {
 					try {
-						s.setPrivateKey(m?.payload);
+						c.setPrivateKey(m?.payload);
 					} catch (e: any) {
 						console.error('Error setting private key:', e);
 					}
 					break;
 				}
 				case 'set_nip07': {
-					s.setNip07();
+					c.setNip07();
 					break;
 				}
 				case 'set_nip46_bunker': {
 					try {
 						const bunkerUrl = m?.payload?.url || m?.payload || '';
 						const clientSecret = m?.payload?.clientSecret;
-						s.setNip46Bunker(bunkerUrl, clientSecret);
+						c.setNip46Bunker(bunkerUrl, clientSecret);
 					} catch (e: any) {
 						console.error('Error setting NIP-46 with bunker URL:', e);
 						(self as any).postMessage({
@@ -113,7 +113,7 @@ self.addEventListener('message', async (evt: MessageEvent<any>) => {
 					try {
 						const nostrconnectUrl = m?.payload?.url || m?.payload || '';
 						const clientSecret = m?.payload?.clientSecret;
-						s.setNip46QR(nostrconnectUrl, clientSecret);
+						c.setNip46QR(nostrconnectUrl, clientSecret);
 					} catch (e: any) {
 						console.error('Error setting NIP-46 with QR code:', e);
 						(self as any).postMessage({
@@ -129,7 +129,7 @@ self.addEventListener('message', async (evt: MessageEvent<any>) => {
 
 				case 'connect': {
 					try {
-						const res = await s.connectDirect();
+						const res = await c.connectDirect();
 						(self as any).postMessage({
 							id: m.id,
 							type: 'response',
@@ -152,7 +152,7 @@ self.addEventListener('message', async (evt: MessageEvent<any>) => {
 
 				case 'get_pubkey': {
 					try {
-						const pk = await s.getPublicKeyDirect();
+						const pk = await c.getPublicKeyDirect();
 						(self as any).postMessage({
 							id: m.id,
 							type: 'response',
@@ -168,7 +168,7 @@ self.addEventListener('message', async (evt: MessageEvent<any>) => {
 
 				case 'sign_event': {
 					try {
-						const signed = await s.signEvent(m?.payload);
+						const signed = await c.signEvent(m?.payload);
 						(self as any).postMessage({
 							id: m.id,
 							type: 'response',

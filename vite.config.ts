@@ -44,7 +44,7 @@ export default defineConfig({
 				connections: resolve(__dirname, 'src/connections/index.ts'),
 				cache: resolve(__dirname, 'src/cache/index.ts'),
 				parser: resolve(__dirname, 'src/parser/index.ts'),
-				signer: resolve(__dirname, 'src/signer/index.ts')
+				crypto: resolve(__dirname, 'src/crypto/index.ts')
 			},
 			output: {
 				entryFileNames: (chunkInfo) => {
@@ -57,7 +57,7 @@ export default defineConfig({
 						connections: 'connections/index.js',
 						cache: 'cache/index.js',
 						parser: 'parser/index.js',
-						signer: 'signer/index.js'
+						crypto: 'crypto/index.js'
 					};
 					return entryNameMap[chunkInfo.name as string] || '[name].js';
 				},

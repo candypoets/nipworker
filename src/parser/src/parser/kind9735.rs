@@ -476,7 +476,7 @@ impl Parser {
         };
 
         let signed_event_json = self
-            .signer_client
+            .crypto_client
             .sign_event(new_template.to_json())
             .await
             .map_err(|e| ParserError::Crypto(format!("Signer error: {}", e)))?;

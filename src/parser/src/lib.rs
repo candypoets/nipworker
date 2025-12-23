@@ -1,5 +1,6 @@
 #![allow(async_fn_in_trait)]
 
+use crypto::CryptoClient;
 use flatbuffers::FlatBufferBuilder;
 use js_sys::SharedArrayBuffer;
 use shared::{
@@ -7,7 +8,6 @@ use shared::{
     types::{nostr::Template, Event, ParserError, TypesError},
     SabRing,
 };
-use signer::SignerClient;
 use wasm_bindgen::prelude::*;
 
 pub mod network;
@@ -20,7 +20,7 @@ pub mod utils;
 // Re-export key types for external use
 pub use network::NetworkManager;
 pub use parser::Parser;
-// pub use signer::{PrivateKeySigner, SignerInterface, SignerManager, SignerManagerInterface};
+// pub use crypto::{PrivateKeySigner, SignerInterface, SignerManager, SignerManagerInterface};
 
 // Type aliases to match Go implementation
 pub type NostrEvent = Event;
@@ -32,8 +32,8 @@ pub enum NostrError {
     Network(String),
     #[error("Parse error: {0}")]
     Parse(String),
-    #[error("Signer error: {0}")]
-    Signer(String),
+    #[error("Crypto error: {0}")]
+    Crypto(String),
     #[error("Relay error: {0}")]
     Relay(#[from] relays::types::RelayError),
     #[error("Types error: {0}")]
@@ -90,7 +90,7 @@ const INDEXER_RELAYS: &[&str] = &[
 #[wasm_bindgen]
 pub struct NostrClient {
     network_manager: NetworkManager,
-    signer_client: Arc<SignerClient>,
+    crypto_client: Arc<CryptoClient>,
     parser: Arc<Parser>,
 }
 
@@ -101,8 +101,8 @@ impl NostrClient {
         db_ring: SharedArrayBuffer,
         cache_request: SharedArrayBuffer, // ws request
         cache_response: SharedArrayBuffer,
-        signer_request: SharedArrayBuffer,
-        signer_response: SharedArrayBuffer,
+        crypto_request: SharedArrayBuffer,
+        crypto_response: SharedArrayBuffer,
         ws_response: SharedArrayBuffer, // ws response
     ) -> Self {
         telemetry::init(tracing::Level::ERROR);
@@ -110,13 +110,12 @@ impl NostrClient {
         info!("Initializing NostrClient...");
 
         // let signer_manager = Arc::new(SignerManager::new());
-
-        let signer_client = Arc::new(
-            SignerClient::new(signer_request, signer_response)
+        let crypto_client = Arc::new(
+            CryptoClient::new(crypto_request, crypto_response)
                 .expect("Failed to initialize signer client"),
         );
 
-        let parser = Arc::new(Parser::new(signer_client.clone()));
+        let parser = Arc::new(Parser::new(crypto_client.clone()));
 
         let network_manager = NetworkManager::new(
             parser.clone(),
@@ -138,7 +137,7 @@ impl NostrClient {
 
         Self {
             network_manager,
-            signer_client,
+            crypto_client,
             parser,
         }
     }
@@ -153,7 +152,7 @@ impl NostrClient {
     async fn sign_event(&self, template: String) -> Result<(), JsValue> {
         // Sign the event using the signer manager
         let signed_event = self
-            .signer_client
+            .crypto_client
             .sign_event(template.clone())
             .await
             .map_err(|e| JsValue::from_str(&format!("Failed to sign event: {}", e)))?;
@@ -165,7 +164,7 @@ impl NostrClient {
     pub async fn get_public_key(&self) -> Result<(), JsValue> {
         // Get the public key from signer manager
         let pubkey = self
-            .signer_client
+            .crypto_client
             .get_public_key()
             .await // Await the future returned by get_public_key
             .map_err(|e| JsValue::from_str(&format!("Failed to get public key: {}", e)))?;
@@ -185,6 +184,7 @@ impl NostrClient {
         );
 
         // Create SignerMessage wrapper
+        let mut builder = flatbuffers::FlatBufferBuilder::new();
         let signer_msg = fb::WorkerMessage::create(
             &mut builder,
             &fb::WorkerMessageArgs {

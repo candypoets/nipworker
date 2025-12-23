@@ -80,7 +80,7 @@ impl Parser {
             parsed.recipient
         );
         match self
-            .signer_client
+            .crypto_client
             .nip04_decrypt_between(&sender_pubkey, &parsed.recipient, &event.content)
             .await
         {
@@ -142,7 +142,7 @@ impl Parser {
 
         // Encrypt the message content using NIP-04
         let encrypted_content = self
-            .signer_client
+            .crypto_client
             .nip04_encrypt(&recipient, &event.content)
             .await
             .map_err(|e| ParserError::Crypto(format!("Signer error: {}", e)))?;
@@ -154,7 +154,7 @@ impl Parser {
 
         // Sign the event with encrypted content (SignerClient returns JSON)
         let signed_event_json = self
-            .signer_client
+            .crypto_client
             .sign_event(template_json)
             .await
             .map_err(|e| ParserError::Crypto(format!("Signer error: {}", e)))?;

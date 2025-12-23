@@ -1,10 +1,10 @@
 [package]
-name = "signer"
+name = "crypto"
 version = "0.1.0"
 edition = "2021"
 publish = false
 license = "MIT"
-description = "Nostr signer worker (PK, NIP-07, NIP-46) for wasm/browser using SAB rings"
+description = "Nostr cryptographic operations worker (signing, encryption, proof verification) for wasm/browser using SAB rings"
 
 [lib]
 crate-type = ["cdylib", "rlib"]

@@ -24,11 +24,11 @@
 		"README.md"
 	],
 	"scripts": {
-		"build": "npm run build:connections && npm run build:cache && npm run build:parser && npm run build:signer && vite build",
+		"build": "npm run build:connections && npm run build:cache && npm run build:parser && npm run build:crypto && vite build",
 		"build:connections": "wasm-pack build ./src/connections --release --target web",
 		"build:cache": "wasm-pack build ./src/cache --release --target web",
 		"build:parser": "wasm-pack build ./src/parser --release --target web",
-		"build:signer": "wasm-pack build ./src/signer --release --target web",
+		"build:crypto": "wasm-pack build ./src/crypto --release --target web",
 		"flatc": "npm run flatc:rust && npm run flatc:ts",
 		"flatc:rust": "flatc --rust --gen-object-api --gen-all --filename-suffix '' -o ./src/shared/src/generated ./schemas/message.fbs",
 		"flatc:ts": "flatc --ts --gen-object-api --gen-all --filename-suffix '' -o ./src/generated ./schemas/message.fbs && node ./scripts/patch-strings.js",

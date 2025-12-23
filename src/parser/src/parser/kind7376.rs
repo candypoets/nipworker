@@ -64,7 +64,7 @@ impl Parser {
         // Attempt to decrypt spending history (NIP-44) using the sender's pubkey
         let sender_pubkey = event.pubkey.to_string();
         if let Ok(decrypted) = self
-            .signer_client
+            .crypto_client
             .nip44_decrypt(&sender_pubkey, &event.content)
             .await
         {
@@ -157,7 +157,7 @@ impl Parser {
         // Using signer's own pubkey by passing empty recipient to nip44_encrypt
 
         let encrypted = self
-            .signer_client
+            .crypto_client
             .nip44_encrypt("", &tags_json)
             .await
             .map_err(|e| ParserError::Crypto(format!("Signer error: {}", e)))?;
@@ -166,7 +166,7 @@ impl Parser {
 
         // Sign the event
         let signed_event_json = self
-            .signer_client
+            .crypto_client
             .sign_event(encrypted_template.to_json())
             .await
             .map_err(|e| ParserError::Crypto(format!("Signer error: {}", e)))?;

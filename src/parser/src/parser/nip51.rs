@@ -97,12 +97,12 @@ impl Parser {
                 let sender_pubkey = event.pubkey.to_string();
                 let decrypted = match enc.as_str() {
                     "nip04" | "nip-04" => self
-                        .signer_client
+                        .crypto_client
                         .nip04_decrypt(&sender_pubkey, &event.content)
                         .await
                         .ok(),
                     "nip44" | "nip-44" => self
-                        .signer_client
+                        .crypto_client
                         .nip44_decrypt(&sender_pubkey, &event.content)
                         .await
                         .ok(),
