@@ -5,7 +5,7 @@ use shared::generated::nostr::fb;
 use shared::types::network::Request;
 
 use crate::NostrError;
-use crypto::CryptoClient;
+use crate::crypto_client::CryptoClient;
 use rustc_hash::FxHashMap;
 use shared::SabRing;
 

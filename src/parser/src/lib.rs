@@ -1,6 +1,5 @@
 #![allow(async_fn_in_trait)]
 
-use crypto::CryptoClient;
 use flatbuffers::FlatBufferBuilder;
 use js_sys::SharedArrayBuffer;
 use shared::{
@@ -10,12 +9,15 @@ use shared::{
 };
 use wasm_bindgen::prelude::*;
 
+pub mod crypto_client;
 pub mod network;
 pub mod parser;
 pub mod pipeline;
 pub mod relays;
 pub mod types;
 pub mod utils;
+
+pub use crypto_client::CryptoClient;
 
 // Re-export key types for external use
 pub use network::NetworkManager;

@@ -2,7 +2,7 @@ use crate::parser::Parser;
 use crate::types::parsed_event::ParsedEvent;
 use crate::utils::json::extract_event_id;
 use crate::NostrError;
-use crypto::CryptoClient;
+use crate::crypto_client::CryptoClient;
 use shared::generated::nostr::fb::{self};
 use shared::types::Event;
 

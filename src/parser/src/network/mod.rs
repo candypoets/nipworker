@@ -7,7 +7,7 @@ use crate::pipeline::Pipeline;
 use crate::utils::buffer::SharedBufferManager;
 use crate::utils::js_interop::post_worker_message;
 use crate::NostrError;
-use crypto::CryptoClient;
+use crate::crypto_client::CryptoClient;
 use flatbuffers::FlatBufferBuilder;
 use futures::lock::Mutex;
 use js_sys::SharedArrayBuffer;

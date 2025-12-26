@@ -1,5 +1,5 @@
 use shared::types::{nostr::Template, Event, ParserError, TypesError};
-use crypto::CryptoClient;
+use crate::crypto_client::CryptoClient;
 use std::cell::RefCell;
 use std::sync::Arc;
 use thiserror::Error;

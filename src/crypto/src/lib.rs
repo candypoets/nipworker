@@ -19,11 +19,8 @@ extern "C" {
     fn post_message(msg: &JsValue);
 }
 
-// expose client
-mod client;
 mod crypto_utils;
 mod signers;
-pub use client::CryptoClient;
 pub use crypto_utils::hash_to_curve;
 use signers::{Nip07Signer, Nip46Config, Nip46Signer, PrivateKeySigner};
 

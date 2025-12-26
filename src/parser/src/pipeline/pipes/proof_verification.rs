@@ -4,7 +4,7 @@ use shared::{
     generated::nostr::fb::{self},
     types::Proof,
 };
-use crypto::CryptoClient;
+use crate::crypto_client::CryptoClient;
 use std::cell::RefCell;
 use std::sync::Arc;
 

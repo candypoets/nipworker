@@ -29,10 +29,10 @@ overflow-checks = false # Disable overflow checks in release
 
 [dependencies]
 shared = { path = "../shared" }
-crypto = { path = "../crypto" }
 
 # Lightweight async utilities (replacing tokio)
 futures = "0.3"
+futures-channel = "0.3"
 
 # Essential WASM bindings
 gloo-timers = { version = "0.3", features = ["futures"] }
@@ -57,6 +57,7 @@ base64 = "0.22"
 
 # Cryptography (minimal - only k256 for key derivation in kind17375)
 k256 = { version = "0.13", features = ["schnorr"] }
+getrandom = { version = "0.2", features = ["js"] }
 
 # WASM bindings (all targets for now to avoid conditional compilation issues)
 wasm-bindgen = { version = "0.2" }

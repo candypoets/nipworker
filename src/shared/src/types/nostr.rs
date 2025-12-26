@@ -248,18 +248,18 @@ impl Template {
 				})?;
 				let bytes = tail.as_bytes();
 				let mut idx = qpos + 1;
-				let mut out = String::new();
+				let mut raw_bytes = Vec::new();
 				let mut escaped = false;
 				while idx < tail.len() {
 					let ch = bytes[idx];
 					if escaped {
 						match ch {
-							b'"' => out.push('"'),
-							b'\\' => out.push('\\'),
-							b'n' => out.push('\n'),
-							b'r' => out.push('\r'),
-							b't' => out.push('\t'),
-							_ => out.push(ch as char),
+							b'"' => raw_bytes.push(b'"'),
+							b'\\' => raw_bytes.push(b'\\'),
+							b'n' => raw_bytes.push(b'\n'),
+							b'r' => raw_bytes.push(b'\r'),
+							b't' => raw_bytes.push(b'\t'),
+							_ => raw_bytes.push(ch),
 						}
 						escaped = false;
 					} else if ch == b'\\' {
@@ -267,11 +267,12 @@ impl Template {
 					} else if ch == b'"' {
 						break;
 					} else {
-						out.push(ch as char);
+						raw_bytes.push(ch);
 					}
 					idx += 1;
 				}
-				out
+				String::from_utf8(raw_bytes)
+					.map_err(|_| TypesError::InvalidFormat("Invalid UTF-8 in content".to_string()))?
 			} else {
 				return Err(TypesError::InvalidFormat("Missing content".to_string()));
 			}
@@ -696,18 +697,18 @@ impl Event {
 				})?;
 				let bytes = tail.as_bytes();
 				let mut idx = qpos + 1;
-				let mut out = String::new();
+				let mut raw_bytes = Vec::new();
 				let mut escaped = false;
 				while idx < tail.len() {
 					let ch = bytes[idx];
 					if escaped {
 						match ch {
-							b'"' => out.push('"'),
-							b'\\' => out.push('\\'),
-							b'n' => out.push('\n'),
-							b'r' => out.push('\r'),
-							b't' => out.push('\t'),
-							_ => out.push(ch as char),
+							b'"' => raw_bytes.push(b'"'),
+							b'\\' => raw_bytes.push(b'\\'),
+							b'n' => raw_bytes.push(b'\n'),
+							b'r' => raw_bytes.push(b'\r'),
+							b't' => raw_bytes.push(b'\t'),
+							_ => raw_bytes.push(ch),
 						}
 						escaped = false;
 					} else if ch == b'\\' {
@@ -715,11 +716,12 @@ impl Event {
 					} else if ch == b'"' {
 						break;
 					} else {
-						out.push(ch as char);
+						raw_bytes.push(ch);
 					}
 					idx += 1;
 				}
-				out
+				String::from_utf8(raw_bytes)
+					.map_err(|_| TypesError::InvalidFormat("Invalid UTF-8 in content".to_string()))?
 			} else {
 				return Err(TypesError::InvalidFormat("Missing content".to_string()));
 			}
