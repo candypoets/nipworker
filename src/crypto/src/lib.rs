@@ -86,7 +86,7 @@ impl Crypto {
         ws_request_crypto: SharedArrayBuffer,
         ws_response_crypto: SharedArrayBuffer,
     ) -> Result<Crypto, JsValue> {
-        init_with_component(tracing::Level::INFO, "crypto");
+        init_with_component(tracing::Level::ERROR, "crypto");
 
         let svc_req = Rc::new(RefCell::new(SabRing::new(crypto_service_request)?));
         let svc_resp = Rc::new(RefCell::new(SabRing::new(crypto_service_response)?));

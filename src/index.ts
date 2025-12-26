@@ -179,7 +179,6 @@ export class NostrManager {
 
 		this.crypto.onmessage = async (event) => {
 			const msg = event.data;
-			console.log('signer message', msg);
 			// Handle NIP-07 extension requests from the worker
 			if (msg?.type === 'extension_request') {
 				const { id, op, payload } = msg;
@@ -419,7 +418,7 @@ export class NostrManager {
 
 	signEvent(event: EventTemplate, cb: (event: NostrEvent) => void) {
 		this.signCB = cb;
-		this.crypto.postMessage({ type: 'sign_event', payload: event });
+		this.crypto.postMessage({ type: 'sign_event', payload: JSON.stringify(event) });
 	}
 
 	getPublicKey() {
