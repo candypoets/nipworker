@@ -3,7 +3,7 @@
 #![allow(dead_code)]
 
 use js_sys::SharedArrayBuffer;
-use shared::{init_with_component, types::Keys, SabRing};
+use shared::{init_with_component, types::Keys, utils::crypto::verify_proof_dleq_string, SabRing};
 use tracing::{error, info, warn};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
@@ -510,146 +510,155 @@ impl Crypto {
                     let sender = req.sender_pubkey().unwrap_or("");
                     let recipient = req.recipient_pubkey().unwrap_or("");
 
-                    // Dispatch to active signer
-                    let result: Result<String, String> = match &*active.borrow() {
-                        ActiveSigner::Unset => Err("crypto not configured".into()),
-                        ActiveSigner::Pk(pk) => match op {
-                            shared::generated::nostr::fb::SignerOp::GetPubkey => {
-                                pk.get_public_key().map_err(|e| e.to_string())
-                            }
-                            shared::generated::nostr::fb::SignerOp::SignEvent => {
-                                match pk.sign_event(payload).await {
-                                    Ok(sig) => Ok(sig),
-                                    Err(e) => Err(e.to_string()),
+                    // Handle operations that don't require a signer
+                    let result: Result<String, String> = if op
+                        == shared::generated::nostr::fb::SignerOp::VerifyProof
+                    {
+                        verify_proof_and_return_y_point(payload)
+                    } else {
+                        // Dispatch to active signer for signer-dependent operations
+                        match &*active.borrow() {
+                            ActiveSigner::Unset => Err("crypto not configured".into()),
+                            ActiveSigner::Pk(pk) => match op {
+                                shared::generated::nostr::fb::SignerOp::GetPubkey => {
+                                    pk.get_public_key().map_err(|e| e.to_string())
                                 }
-                            }
-                            shared::generated::nostr::fb::SignerOp::Nip04Encrypt => {
-                                pk.nip04_encrypt(peer, payload).map_err(|e| e.to_string())
-                            }
-                            shared::generated::nostr::fb::SignerOp::Nip04Decrypt => {
-                                pk.nip04_decrypt(peer, payload).map_err(|e| e.to_string())
-                            }
-                            shared::generated::nostr::fb::SignerOp::Nip44Encrypt => {
-                                pk.nip44_encrypt(peer, payload).map_err(|e| e.to_string())
-                            }
-                            shared::generated::nostr::fb::SignerOp::Nip44Decrypt => {
-                                pk.nip44_decrypt(peer, payload).map_err(|e| e.to_string())
-                            }
-                            shared::generated::nostr::fb::SignerOp::Nip04DecryptBetween => {
-                                info!("[crypto] decrypting between");
-                                if sender.is_empty() && recipient.is_empty() {
-                                    Err("missing sender/recipient".to_string())
-                                } else {
-                                    pk.nip04_decrypt_between(sender, recipient, payload)
-                                        .map_err(|e| e.to_string())
+                                shared::generated::nostr::fb::SignerOp::SignEvent => {
+                                    match pk.sign_event(payload).await {
+                                        Ok(sig) => Ok(sig),
+                                        Err(e) => Err(e.to_string()),
+                                    }
                                 }
-                            }
-                            shared::generated::nostr::fb::SignerOp::Nip44DecryptBetween => {
-                                if sender.is_empty() && recipient.is_empty() {
-                                    Err("missing sender/recipient".to_string())
-                                } else {
-                                    pk.nip44_decrypt_between(sender, recipient, payload)
-                                        .map_err(|e| e.to_string())
+                                shared::generated::nostr::fb::SignerOp::Nip04Encrypt => {
+                                    pk.nip04_encrypt(peer, payload).map_err(|e| e.to_string())
                                 }
-                            }
-                            _ => Err("Unsupported operation".to_string()),
-                        },
-                        ActiveSigner::Nip07(s) => match op {
-                            shared::generated::nostr::fb::SignerOp::GetPubkey => {
-                                s.get_public_key().await.map_err(|e| format!("{:?}", e))
-                            }
-                            shared::generated::nostr::fb::SignerOp::SignEvent => {
-                                match s.sign_event(payload).await {
-                                    Ok(signed) => Ok(serde_json::to_string(&signed)
-                                        .unwrap_or_else(|_| "{}".to_string())),
-                                    Err(e) => Err(format!("{:?}", e)),
+                                shared::generated::nostr::fb::SignerOp::Nip04Decrypt => {
+                                    pk.nip04_decrypt(peer, payload).map_err(|e| e.to_string())
                                 }
-                            }
-                            shared::generated::nostr::fb::SignerOp::Nip04Encrypt => s
-                                .nip04_encrypt(peer, payload)
-                                .await
-                                .map_err(|e| format!("{:?}", e)),
-                            shared::generated::nostr::fb::SignerOp::Nip04Decrypt => s
-                                .nip04_decrypt(peer, payload)
-                                .await
-                                .map_err(|e| format!("{:?}", e)),
-                            shared::generated::nostr::fb::SignerOp::Nip44Encrypt => s
-                                .nip44_encrypt(peer, payload)
-                                .await
-                                .map_err(|e| format!("{:?}", e)),
-                            shared::generated::nostr::fb::SignerOp::Nip44Decrypt => s
-                                .nip44_decrypt(peer, payload)
-                                .await
-                                .map_err(|e| format!("{:?}", e)),
-                            shared::generated::nostr::fb::SignerOp::Nip04DecryptBetween => {
-                                if sender.is_empty() && recipient.is_empty() {
-                                    Err("missing sender/recipient".to_string())
-                                } else {
-                                    s.nip04_decrypt_between(sender, recipient, payload)
-                                        .await
-                                        .map_err(|e| format!("{:?}", e))
+                                shared::generated::nostr::fb::SignerOp::Nip44Encrypt => {
+                                    pk.nip44_encrypt(peer, payload).map_err(|e| e.to_string())
                                 }
-                            }
-                            shared::generated::nostr::fb::SignerOp::Nip44DecryptBetween => {
-                                if sender.is_empty() && recipient.is_empty() {
-                                    Err("missing sender/recipient".to_string())
-                                } else {
-                                    s.nip44_decrypt_between(sender, recipient, payload)
-                                        .await
-                                        .map_err(|e| format!("{:?}", e))
+                                shared::generated::nostr::fb::SignerOp::Nip44Decrypt => {
+                                    pk.nip44_decrypt(peer, payload).map_err(|e| e.to_string())
                                 }
-                            }
-                            _ => Err("Unsupported operation".to_string()),
-                        },
-                        ActiveSigner::Nip46(s) => match op {
-                            shared::generated::nostr::fb::SignerOp::GetPubkey => {
-                                s.get_public_key().await.map_err(|e| format!("{:?}", e))
-                            }
-                            shared::generated::nostr::fb::SignerOp::SignEvent => {
-                                match s.sign_event(payload).await {
-                                    Ok(signed) => Ok(serde_json::to_string(&signed)
-                                        .unwrap_or_else(|_| "{}".to_string())),
-                                    Err(e) => Err(format!("{:?}", e)),
+                                shared::generated::nostr::fb::SignerOp::Nip04DecryptBetween => {
+                                    info!("[crypto] decrypting between");
+                                    if sender.is_empty() && recipient.is_empty() {
+                                        Err("missing sender/recipient".to_string())
+                                    } else {
+                                        pk.nip04_decrypt_between(sender, recipient, payload)
+                                            .map_err(|e| e.to_string())
+                                    }
                                 }
-                            }
-                            shared::generated::nostr::fb::SignerOp::Nip04Encrypt => {
-                                match s.nip04_encrypt(peer, payload).await {
-                                    Ok(out) => Ok(out),
-                                    Err(e) => Err(format!("{:?}", e)),
+                                shared::generated::nostr::fb::SignerOp::Nip44DecryptBetween => {
+                                    if sender.is_empty() && recipient.is_empty() {
+                                        Err("missing sender/recipient".to_string())
+                                    } else {
+                                        pk.nip44_decrypt_between(sender, recipient, payload)
+                                            .map_err(|e| e.to_string())
+                                    }
                                 }
-                            }
-                            shared::generated::nostr::fb::SignerOp::Nip04Decrypt => {
-                                match s.nip04_decrypt(peer, payload).await {
-                                    Ok(out) => Ok(out),
-                                    Err(e) => Err(format!("{:?}", e)),
+                                _ => Err("Unsupported operation".to_string()),
+                            },
+                            ActiveSigner::Nip07(s) => match op {
+                                shared::generated::nostr::fb::SignerOp::GetPubkey => {
+                                    s.get_public_key().await.map_err(|e| format!("{:?}", e))
                                 }
-                            }
-                            shared::generated::nostr::fb::SignerOp::Nip44Encrypt => {
-                                match s.nip44_encrypt(peer, payload).await {
-                                    Ok(out) => Ok(out),
-                                    Err(e) => Err(format!("{:?}", e)),
+                                shared::generated::nostr::fb::SignerOp::SignEvent => {
+                                    match s.sign_event(payload).await {
+                                        Ok(signed) => Ok(serde_json::to_string(&signed)
+                                            .unwrap_or_else(|_| "{}".to_string())),
+                                        Err(e) => Err(format!("{:?}", e)),
+                                    }
                                 }
-                            }
-                            shared::generated::nostr::fb::SignerOp::Nip44Decrypt => {
-                                match s.nip44_decrypt(peer, payload).await {
-                                    Ok(out) => Ok(out),
-                                    Err(e) => Err(format!("{:?}", e)),
+                                shared::generated::nostr::fb::SignerOp::Nip04Encrypt => s
+                                    .nip04_encrypt(peer, payload)
+                                    .await
+                                    .map_err(|e| format!("{:?}", e)),
+                                shared::generated::nostr::fb::SignerOp::Nip04Decrypt => s
+                                    .nip04_decrypt(peer, payload)
+                                    .await
+                                    .map_err(|e| format!("{:?}", e)),
+                                shared::generated::nostr::fb::SignerOp::Nip44Encrypt => s
+                                    .nip44_encrypt(peer, payload)
+                                    .await
+                                    .map_err(|e| format!("{:?}", e)),
+                                shared::generated::nostr::fb::SignerOp::Nip44Decrypt => s
+                                    .nip44_decrypt(peer, payload)
+                                    .await
+                                    .map_err(|e| format!("{:?}", e)),
+                                shared::generated::nostr::fb::SignerOp::Nip04DecryptBetween => {
+                                    if sender.is_empty() && recipient.is_empty() {
+                                        Err("missing sender/recipient".to_string())
+                                    } else {
+                                        s.nip04_decrypt_between(sender, recipient, payload)
+                                            .await
+                                            .map_err(|e| format!("{:?}", e))
+                                    }
                                 }
-                            }
-                            shared::generated::nostr::fb::SignerOp::Nip04DecryptBetween => {
-                                match s.nip04_decrypt_between(sender, recipient, payload).await {
-                                    Ok(out) => Ok(out),
-                                    Err(e) => Err(format!("{:?}", e)),
+                                shared::generated::nostr::fb::SignerOp::Nip44DecryptBetween => {
+                                    if sender.is_empty() && recipient.is_empty() {
+                                        Err("missing sender/recipient".to_string())
+                                    } else {
+                                        s.nip44_decrypt_between(sender, recipient, payload)
+                                            .await
+                                            .map_err(|e| format!("{:?}", e))
+                                    }
                                 }
-                            }
-                            shared::generated::nostr::fb::SignerOp::Nip44DecryptBetween => {
-                                match s.nip44_decrypt_between(sender, recipient, payload).await {
-                                    Ok(out) => Ok(out),
-                                    Err(e) => Err(format!("{:?}", e)),
+                                _ => Err("Unsupported operation".to_string()),
+                            },
+                            ActiveSigner::Nip46(s) => match op {
+                                shared::generated::nostr::fb::SignerOp::GetPubkey => {
+                                    s.get_public_key().await.map_err(|e| format!("{:?}", e))
                                 }
-                            }
-                            _ => Err("Unsupported operation".to_string()),
-                        },
+                                shared::generated::nostr::fb::SignerOp::SignEvent => {
+                                    match s.sign_event(payload).await {
+                                        Ok(signed) => Ok(serde_json::to_string(&signed)
+                                            .unwrap_or_else(|_| "{}".to_string())),
+                                        Err(e) => Err(format!("{:?}", e)),
+                                    }
+                                }
+                                shared::generated::nostr::fb::SignerOp::Nip04Encrypt => {
+                                    match s.nip04_encrypt(peer, payload).await {
+                                        Ok(out) => Ok(out),
+                                        Err(e) => Err(format!("{:?}", e)),
+                                    }
+                                }
+                                shared::generated::nostr::fb::SignerOp::Nip04Decrypt => {
+                                    match s.nip04_decrypt(peer, payload).await {
+                                        Ok(out) => Ok(out),
+                                        Err(e) => Err(format!("{:?}", e)),
+                                    }
+                                }
+                                shared::generated::nostr::fb::SignerOp::Nip44Encrypt => {
+                                    match s.nip44_encrypt(peer, payload).await {
+                                        Ok(out) => Ok(out),
+                                        Err(e) => Err(format!("{:?}", e)),
+                                    }
+                                }
+                                shared::generated::nostr::fb::SignerOp::Nip44Decrypt => {
+                                    match s.nip44_decrypt(peer, payload).await {
+                                        Ok(out) => Ok(out),
+                                        Err(e) => Err(format!("{:?}", e)),
+                                    }
+                                }
+                                shared::generated::nostr::fb::SignerOp::Nip04DecryptBetween => {
+                                    match s.nip04_decrypt_between(sender, recipient, payload).await
+                                    {
+                                        Ok(out) => Ok(out),
+                                        Err(e) => Err(format!("{:?}", e)),
+                                    }
+                                }
+                                shared::generated::nostr::fb::SignerOp::Nip44DecryptBetween => {
+                                    match s.nip44_decrypt_between(sender, recipient, payload).await
+                                    {
+                                        Ok(out) => Ok(out),
+                                        Err(e) => Err(format!("{:?}", e)),
+                                    }
+                                }
+                                _ => Err("Unsupported operation".to_string()),
+                            },
+                        }
                     };
 
                     // Encode SignerResponse FlatBuffer (no ok flag; use result/error)
@@ -699,6 +708,25 @@ impl Crypto {
             warn!("[crypto] ws_req ring full, frame dropped");
         }
         Ok(())
+    }
+}
+
+/// Verify proof DLEQ and return Y point if valid
+fn verify_proof_and_return_y_point(payload: &str) -> Result<String, String> {
+    // Parse JSON payload to extract proof and mint_keys
+    let (proof, keys_map) =
+        shared::utils::crypto::parse_verification_payload(payload).map_err(|e| e.to_string())?;
+
+    // Verify DLEQ with mint keys
+    if shared::utils::crypto::verify_proof_dleq_with_keys(&proof, &keys_map) {
+        // DLEQ valid - compute and return Y point
+        let y_point = shared::crypto::compute_y_point(&proof.secret);
+        info!("dleq valid");
+        Ok(y_point)
+    } else {
+        info!("dleq invalid");
+        // DLEQ invalid - return empty string
+        Ok(String::new())
     }
 }
 

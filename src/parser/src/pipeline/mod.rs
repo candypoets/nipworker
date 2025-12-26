@@ -2,6 +2,7 @@ use crate::parser::Parser;
 use crate::types::parsed_event::ParsedEvent;
 use crate::utils::json::extract_event_id;
 use crate::NostrError;
+use crypto::CryptoClient;
 use shared::generated::nostr::fb::{self};
 use shared::types::Event;
 
@@ -240,6 +241,7 @@ impl Pipeline {
     /// Create proof verification pipeline: parsing + proof verification
     pub fn proof_verification(
         parser: Arc<Parser>,
+        crypto_client: Arc<CryptoClient>,
         subscription_id: String,
         max_proofs: usize,
     ) -> Result<Self> {
@@ -247,7 +249,7 @@ impl Pipeline {
             vec![
                 PipeType::KindFilter(KindFilterPipe::new(vec![9321, 7375])), // Only process cashu events
                 PipeType::Parse(ParsePipe::new(parser)),
-                PipeType::ProofVerification(ProofVerificationPipe::new(max_proofs)),
+                PipeType::ProofVerification(ProofVerificationPipe::new(max_proofs, crypto_client)),
             ],
             subscription_id,
         )

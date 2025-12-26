@@ -131,6 +131,7 @@ impl NostrClient {
             Rc::new(RefCell::new(
                 SabRing::new(db_ring).expect("Failed to create SabRing for ws_response"),
             )),
+            crypto_client.clone(),
         );
 
         info!("NostrClient components initialized");

@@ -2719,10 +2719,10 @@ impl MessageT {
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_SIGNER_OP: u32 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MAX_SIGNER_OP: u32 = 7;
+pub const ENUM_MAX_SIGNER_OP: u32 = 8;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_SIGNER_OP: [SignerOp; 8] = [
+pub const ENUM_VALUES_SIGNER_OP: [SignerOp; 9] = [
   SignerOp::GetPubkey,
   SignerOp::SignEvent,
   SignerOp::Nip04Encrypt,
@@ -2731,6 +2731,7 @@ pub const ENUM_VALUES_SIGNER_OP: [SignerOp; 8] = [
   SignerOp::Nip44Decrypt,
   SignerOp::Nip04DecryptBetween,
   SignerOp::Nip44DecryptBetween,
+  SignerOp::VerifyProof,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -2746,9 +2747,10 @@ impl SignerOp {
   pub const Nip44Decrypt: Self = Self(5);
   pub const Nip04DecryptBetween: Self = Self(6);
   pub const Nip44DecryptBetween: Self = Self(7);
+  pub const VerifyProof: Self = Self(8);
 
   pub const ENUM_MIN: u32 = 0;
-  pub const ENUM_MAX: u32 = 7;
+  pub const ENUM_MAX: u32 = 8;
   pub const ENUM_VALUES: &'static [Self] = &[
     Self::GetPubkey,
     Self::SignEvent,
@@ -2758,6 +2760,7 @@ impl SignerOp {
     Self::Nip44Decrypt,
     Self::Nip04DecryptBetween,
     Self::Nip44DecryptBetween,
+    Self::VerifyProof,
   ];
   /// Returns the variant's name or "" if unknown.
   pub fn variant_name(self) -> Option<&'static str> {
@@ -2770,6 +2773,7 @@ impl SignerOp {
       Self::Nip44Decrypt => Some("Nip44Decrypt"),
       Self::Nip04DecryptBetween => Some("Nip04DecryptBetween"),
       Self::Nip44DecryptBetween => Some("Nip44DecryptBetween"),
+      Self::VerifyProof => Some("VerifyProof"),
       _ => None,
     }
   }

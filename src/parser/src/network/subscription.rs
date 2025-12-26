@@ -5,6 +5,7 @@ use shared::generated::nostr::fb;
 use shared::types::network::Request;
 
 use crate::NostrError;
+use crypto::CryptoClient;
 use rustc_hash::FxHashMap;
 use shared::SabRing;
 
@@ -20,6 +21,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 pub struct SubscriptionManager {
     parser: Arc<Parser>,
+    crypto_client: Arc<CryptoClient>,
     relay_hints: FxHashMap<String, Vec<String>>,
 
     // Added: simple concurrency limiter
@@ -38,9 +40,10 @@ impl Drop for PermitGuard {
 }
 
 impl SubscriptionManager {
-    pub fn new(parser: Arc<Parser>) -> Self {
+    pub fn new(parser: Arc<Parser>, crypto_client: Arc<CryptoClient>) -> Self {
         Self {
             parser,
+            crypto_client,
             relay_hints: FxHashMap::default(),
 
             // Added: init limiter (12 max concurrent process_subscription calls)
@@ -88,7 +91,7 @@ impl SubscriptionManager {
         let _permit = self.acquire_permit().await;
 
         // Create pipeline based on config
-        let pipeline = self.build_pipeline(config.pipeline(), db_ring, subscription_id.clone())?;
+        let pipeline = self.build_pipeline(config.pipeline(), db_ring, self.crypto_client.clone(), subscription_id.clone())?;
 
         // let (network_requests, events) =
         //     match self.cache_processor.process_local_requests(_requests).await {
@@ -212,6 +215,7 @@ impl SubscriptionManager {
         &self,
         pipeline_config: Option<fb::PipelineConfig<'_>>,
         db_ring: Rc<RefCell<SabRing>>,
+        crypto_client: Arc<CryptoClient>,
         subscription_id: String,
     ) -> Result<Pipeline> {
         match pipeline_config {
@@ -229,15 +233,15 @@ impl SubscriptionManager {
                         fb::PipeConfig::SerializeEventsPipeConfig => PipeType::SerializeEvents(
                             SerializeEventsPipe::new(subscription_id.clone()),
                         ),
-                        fb::PipeConfig::ProofVerificationPipeConfig => {
-                            let config = pipe_config
-                                .config_as_proof_verification_pipe_config()
-                                .unwrap();
-                            // max_proofs: usize, check_interval_secs: u64
-                            let max_proofs = config.max_proofs() as usize;
+                         fb::PipeConfig::ProofVerificationPipeConfig => {
+                             let config = pipe_config
+                                 .config_as_proof_verification_pipe_config()
+                                 .unwrap();
+                             // max_proofs: usize, check_interval_secs: u64
+                             let max_proofs = config.max_proofs() as usize;
 
-                            PipeType::ProofVerification(ProofVerificationPipe::new(max_proofs))
-                        }
+                             PipeType::ProofVerification(ProofVerificationPipe::new(max_proofs, crypto_client.clone()))
+                         }
                         fb::PipeConfig::CounterPipeConfig => {
                             let config = pipe_config.config_as_counter_pipe_config().unwrap();
 

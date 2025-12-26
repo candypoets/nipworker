@@ -150,6 +150,7 @@ impl CryptoClient {
             "nip44_decrypt" => fb::SignerOp::Nip44Decrypt,
             "nip04_decrypt_between" => fb::SignerOp::Nip04DecryptBetween,
             "nip44_decrypt_between" => fb::SignerOp::Nip44DecryptBetween,
+            "verify_proof" => fb::SignerOp::VerifyProof,
             _ => fb::SignerOp::GetPubkey,
         };
 
@@ -296,5 +297,29 @@ impl CryptoClient {
             Some(recipient_pubkey_hex),
         )
         .await
+    }
+
+    /// Verify a Cashu proof with DLEQ signature and return Y point if valid
+    ///
+    /// Arguments:
+    /// - proof_json: JSON string of the Proof object
+    /// - mint_keys_json: JSON string of mint keys map {amount: key_hex, ...}
+    ///
+    /// Returns Result<String, String>:
+    /// - Ok(Y_point_hex): Proof is valid, Y point computed
+    /// - Ok(""): Proof is invalid (DLEQ verification failed)
+    /// - Err(error): Error occurred during verification
+    pub async fn verify_proof(
+        &self,
+        proof_json: String,
+        mint_keys_json: String,
+    ) -> Result<String, String> {
+        // Use delimiter to separate proof and mint_keys
+        let payload = format!("{}|||{}", proof_json, mint_keys_json);
+
+        let result = self.call_raw("verify_proof", Some(&payload), None, None, None).await?;
+
+        // Result is Y point hex string if valid, empty string if invalid
+        Ok(result)
     }
 }

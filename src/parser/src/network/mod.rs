@@ -7,6 +7,7 @@ use crate::pipeline::Pipeline;
 use crate::utils::buffer::SharedBufferManager;
 use crate::utils::js_interop::post_worker_message;
 use crate::NostrError;
+use crypto::CryptoClient;
 use flatbuffers::FlatBufferBuilder;
 use futures::lock::Mutex;
 use js_sys::SharedArrayBuffer;
@@ -50,6 +51,7 @@ pub struct NetworkManager {
     publish_manager: publish::PublishManager,
     subscription_manager: subscription::SubscriptionManager,
     subscriptions: Arc<RwLock<FxHashMap<String, Sub>>>,
+    crypto_client: Arc<CryptoClient>,
     slow_rr: Rc<RefCell<usize>>, // round-robin index for reserved slow shards
 }
 
@@ -71,9 +73,10 @@ impl NetworkManager {
         cache_response: Rc<RefCell<SabRing>>,
         ws_response: Rc<RefCell<SabRing>>,
         db_ring: Rc<RefCell<SabRing>>,
+        crypto_client: Arc<CryptoClient>,
     ) -> Self {
         let publish_manager = publish::PublishManager::new(parser.clone());
-        let subscription_manager = subscription::SubscriptionManager::new(parser.clone());
+        let subscription_manager = subscription::SubscriptionManager::new(parser.clone(), crypto_client.clone());
 
         let manager = Self {
             ws_response,
@@ -83,6 +86,7 @@ impl NetworkManager {
             publish_manager,
             subscription_manager,
             subscriptions: Arc::new(RwLock::new(FxHashMap::default())),
+            crypto_client,
             slow_rr: Rc::new(RefCell::new(0)),
         };
 

@@ -2,6 +2,12 @@ use crate::types::ParserError;
 
 pub mod crypto;
 
+pub use crypto::{
+    compute_y_point,
+    verify_proof_dleq,
+    verify_proof_dleq_with_keys,
+};
+
 pub type Result<T> = std::result::Result<T, ParserError>;
 
 pub struct BaseJsonParser<'a> {

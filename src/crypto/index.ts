@@ -181,6 +181,7 @@ self.addEventListener('message', async (evt: MessageEvent<any>) => {
 					}
 					break;
 				}
+
 				default: {
 					console.error('Unknown message type:', m.type);
 				}

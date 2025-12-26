@@ -179,7 +179,8 @@ enum SignerOp : uint32 {
   // Between-ops accept both participants (sender and recipient).
   // The signer will fetch its own pubkey and choose the correct peer.
   Nip04DecryptBetween = 6,
-  Nip44DecryptBetween = 7
+  Nip44DecryptBetween = 7,
+  VerifyProof = 8
 }
 
 table SignerRequest {

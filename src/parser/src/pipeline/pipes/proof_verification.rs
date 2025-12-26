@@ -1,10 +1,12 @@
 use super::super::*;
-use crate::{types::parsed_event::ParsedData, utils::cashu::filter_valid_dleq_proofs_with_mint};
+use crate::types::parsed_event::ParsedData;
 use shared::{
-    crypto::compute_y_point,
     generated::nostr::fb::{self},
     types::Proof,
 };
+use crypto::CryptoClient;
+use std::cell::RefCell;
+use std::sync::Arc;
 
 type Result<T> = std::result::Result<T, NostrError>;
 use crate::utils::json::BaseJsonParser;
@@ -168,6 +170,12 @@ impl CheckStateResponse {
     }
 }
 
+/// Cached mint keys for avoiding repeated network requests
+#[derive(Clone)]
+struct CachedKeys {
+    keys_json: String,
+}
+
 /// Pipe that extracts proofs from Kind 9321 and 7375 events and verifies their state with mints
 pub struct ProofVerificationPipe {
     seen_proofs: FxHashSet<String>, // secrets we've already seen
@@ -176,10 +184,12 @@ pub struct ProofVerificationPipe {
     max_proofs: usize,
     name: String,
     verification_running: bool,
+    crypto_client: Arc<CryptoClient>,
+    mint_keys_cache: Arc<RefCell<FxHashMap<String, CachedKeys>>>, // cached mint keys with TTL
 }
 
 impl ProofVerificationPipe {
-    pub fn new(max_proofs: usize) -> Self {
+    pub fn new(max_proofs: usize, crypto_client: Arc<CryptoClient>) -> Self {
         Self {
             seen_proofs: FxHashSet::default(),
             pending_verifications: FxHashMap::default(),
@@ -187,47 +197,72 @@ impl ProofVerificationPipe {
             max_proofs,
             name: format!("ProofVerification(max:{})", max_proofs),
             verification_running: false,
+            crypto_client,
+            mint_keys_cache: Arc::new(RefCell::new(FxHashMap::default())),
         }
     }
 
 
 
-    /// Add proofs to tracking, with deduplication
-    fn add_proofs(&mut self, proofs: Vec<Proof>, mint_url: String) {
+    async fn add_proofs(&mut self, proofs: Vec<Proof>, mint_url: String) -> Result<()> {
+        let mint_keys_json = match self.fetch_mint_keys_json(&mint_url).await {
+            Ok(keys) => keys,
+            Err(e) => {
+                warn!("Failed to fetch keys for mint {}: {}", mint_url, e);
+                return Err(NostrError::Other(format!("Failed to fetch mint keys: {}", e)));
+            }
+        };
+
+        // Clone once before loop
+        let mint_keys_json_cloned = mint_keys_json.clone();
+
         for proof in proofs {
             let secret = proof.secret.clone();
-            // Skip if we've already seen this proof
+
             if self.seen_proofs.contains(&secret) {
                 continue;
             }
 
-            // Enforce max proofs limit
             if self.seen_proofs.len() >= self.max_proofs {
-                // Remove oldest proof (simple cleanup)
                 if let Some(oldest_secret) = self.seen_proofs.iter().next().cloned() {
                     self.seen_proofs.remove(&oldest_secret);
                     self.pending_verifications.remove(&oldest_secret);
-
-                    // Remove from pending_proofs
                     for mint_proofs in self.pending_proofs.values_mut() {
                         mint_proofs.remove(&oldest_secret);
                     }
                 }
             }
 
-            // Compute Y point and add to pending verifications
-            let y_point = compute_y_point(&secret);
+            let proof_json = proof.to_json();
+
+            let y_point = match self.crypto_client.verify_proof(
+                proof_json,
+                mint_keys_json.clone(),
+            ).await {
+                Ok(y) => y,
+                Err(e) => {
+                    warn!("DLEQ verification failed: {}", e);
+                    continue;
+                }
+            };
+
+            if y_point.is_empty() {
+                debug!("Proof has invalid DLEQ signature, skipping");
+                self.seen_proofs.insert(secret);
+                continue;
+            }
+
             self.pending_verifications.insert(secret.clone(), y_point);
 
-            // Add to pending proofs by mint
             self.pending_proofs
                 .entry(mint_url.clone())
                 .or_default()
                 .insert(secret.clone(), proof);
 
-            // Mark as seen
             self.seen_proofs.insert(secret);
         }
+
+        Ok(())
     }
 
     /// Check proofs with mints and return serialized valid proofs (iterative)
@@ -253,14 +288,32 @@ impl ProofVerificationPipe {
                     continue;
                 }
 
-                // Get Y points for this mint's proofs
+                // Get Y points for this mint's proofs, filtering out empty Y points
                 let mut y_points = Vec::new();
                 let mut secret_to_y: FxHashMap<String, String> = FxHashMap::default();
+                let mut secrets_to_remove = Vec::new();
 
                 for secret in mint_proofs.keys() {
                     if let Some(y_point) = self.pending_verifications.get(secret) {
-                        y_points.push(y_point.clone());
-                        secret_to_y.insert(secret.clone(), y_point.clone());
+                        // Skip proofs with empty/invalid Y points (failed DLEQ verification)
+                        if !y_point.is_empty() {
+                            y_points.push(y_point.clone());
+                            secret_to_y.insert(secret.clone(), y_point.clone());
+                        } else {
+                            // Mark for removal - failed DLEQ verification
+                            secrets_to_remove.push(secret.clone());
+                        }
+                    } else {
+                        // No Y point found - shouldn't happen, but clean up
+                        secrets_to_remove.push(secret.clone());
+                    }
+                }
+
+                // Clean up secrets with no valid Y point
+                for secret in secrets_to_remove {
+                    self.pending_verifications.remove(&secret);
+                    if let Some(mint_proofs_mut) = self.pending_proofs.get_mut(mint_url) {
+                        mint_proofs_mut.remove(&secret);
                     }
                 }
 
@@ -346,27 +399,12 @@ impl ProofVerificationPipe {
         // No more pending proofs, set verification_running to false
         self.verification_running = false;
 
-        // Apply DLEQ filtering per mint (NUT-12) using mint keys
-        let mut filtered_valid: FxHashMap<String, Vec<Proof>> = FxHashMap::default();
-        for (mint_url, proofs) in &valid_proofs {
-            match filter_valid_dleq_proofs_with_mint(&mint_url, proofs).await {
-                Ok(p) => {
-                    if !p.is_empty() {
-                        filtered_valid.insert(mint_url.to_string(), p);
-                    }
-                }
-                Err(e) => {
-                    warn!("Failed DLEQ verification for mint {}: {}", mint_url, e);
-                }
-            }
-        }
-
         // Serialize valid proofs to bytes
         let mut builder = FlatBufferBuilder::new();
 
         let mut proofs_mint = Vec::new();
 
-        for (mint_url, proofs) in &filtered_valid {
+        for (mint_url, proofs) in &valid_proofs {
             let mut proofs_offsets = Vec::new();
             for proof in proofs {
                 proofs_offsets.push(proof.to_offset(&mut builder));
@@ -501,7 +539,9 @@ impl Pipe for ProofVerificationPipe {
 
             // Add new proofs to tracking
             if !proofs.is_empty() && !mint_url.is_empty() {
-                self.add_proofs(proofs, mint_url);
+                if let Err(e) = self.add_proofs(proofs, mint_url).await {
+                    error!("Failed to add proofs: {}", e);
+                }
             }
         }
 
@@ -543,7 +583,9 @@ impl Pipe for ProofVerificationPipe {
                                         proofs.push(Proof::from_flatbuffer(&p));
                                     }
                                     if !proofs.is_empty() && !mint_url.is_empty() {
-                                        self.add_proofs(proofs, mint_url);
+                                        if let Err(e) = self.add_proofs(proofs, mint_url).await {
+                                            error!("Failed to add proofs: {}", e);
+                                        }
                                     }
                                 }
                             }
@@ -558,7 +600,9 @@ impl Pipe for ProofVerificationPipe {
                                             proofs.push(Proof::from_flatbuffer(&p));
                                         }
                                         if !proofs.is_empty() && !mint_url.is_empty() {
-                                            self.add_proofs(proofs, mint_url);
+                                            if let Err(e) = self.add_proofs(proofs, mint_url).await {
+                                                error!("Failed to add proofs: {}", e);
+                                            }
                                         }
                                     }
                                 }
@@ -593,6 +637,55 @@ impl Pipe for ProofVerificationPipe {
 
     fn name(&self) -> &str {
         &self.name
+    }
+}
+
+impl ProofVerificationPipe {
+    /// Fetch mint keys as JSON string for DLEQ verification
+    async fn fetch_mint_keys_json(&self, mint_url: &str) -> Result<String> {
+        // Check cache first
+        {
+            let cache = self.mint_keys_cache.borrow();
+            if let Some(cached) = cache.get(mint_url) {
+                return Ok(cached.keys_json.clone());
+            }
+        }
+        
+        // Fetch from network and update cache
+        let keys_json = self.fetch_mint_keys_from_network(mint_url).await?;
+        
+        {
+            let mut cache = self.mint_keys_cache.borrow_mut();
+            cache.insert(mint_url.to_string(), CachedKeys {
+                keys_json: keys_json.clone(),
+            });
+        }
+        
+        Ok(keys_json)
+    }
+
+    /// Fetch mint keys from network
+    async fn fetch_mint_keys_from_network(&self, mint_url: &str) -> Result<String> {
+        let url = format!("{}/v1/keys", mint_url.trim_end_matches('/'));
+
+        let response = gloo_net::http::Request::get(&url)
+            .send()
+            .await
+            .map_err(|e| NostrError::Other(format!("HTTP request failed: {:?}", e)))?;
+
+        if !response.ok() {
+            return Err(NostrError::Other(format!(
+                "Mint returned status: {}",
+                response.status()
+            )));
+        }
+
+        let text = response
+            .text()
+            .await
+            .map_err(|e| NostrError::Other(format!("Failed to read response: {:?}", e)))?;
+
+        Ok(text)
     }
 }
 
