@@ -70,9 +70,15 @@ impl PrivateKeySigner {
         event.pubkey = self.keys.public_key();
 
         // Compute the event ID
-        event
-            .compute_id()
-            .map_err(|e| SignerError::Other(format!("Failed to compute event ID: {}", e)))?;
+        let event_id_hex = shared::nostr_crypto::compute_event_id(
+            &event.pubkey,
+            event.created_at,
+            event.kind,
+            &event.tags,
+            &event.content,
+        );
+        event.id = shared::types::EventId::from_hex(&event_id_hex)
+            .map_err(|e| SignerError::Other(format!("Failed to parse event ID: {}", e)))?;
 
         // Sign the event
         let secret_key = self
@@ -102,7 +108,7 @@ impl PrivateKeySigner {
         event.sig = hex::encode(signature.to_bytes());
 
         // Return the signed event as JSON
-        Ok(event.as_json())
+        Ok(event.to_json())
     }
 
     /// NIP-04 encrypt plaintext for a recipient pubkey (hex).

@@ -725,9 +725,12 @@ version = "0.1.0"
 dependencies = [
  "console_error_panic_hook",
  "flatbuffers",
+ "getrandom",
  "hex",
  "js-sys",
+ "k256",
  "rustc-hash",
+ "sha2",
  "thiserror",
  "tracing",
  "tracing-wasm",

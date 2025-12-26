@@ -237,7 +237,7 @@ impl Request {
         }
 
         if let Some(limit) = self.limit {
-            filter.limit = Some(limit as usize);
+            filter.limit = Some(limit as u32);
         }
 
         if let Some(ref search) = self.search {
@@ -253,15 +253,10 @@ impl Request {
                     "#d" => filter.d_tags = Some(values.clone()),
                     "#a" => filter.a_tags = Some(values.clone()),
                     _ => {
-                        filter
-                            .tags
-                            .get_or_insert_with(std::collections::HashMap::new)
-                            .insert(
-                                key.strip_prefix('#').unwrap_or(key).to_string(),
-                                values.clone(),
-                            );
-                        // Handle other tag types if needed
-                        // For now, we'll ignore unknown tag types
+                        filter.tags.insert(
+                            key.strip_prefix('#').unwrap_or(key).to_string(),
+                            values.clone(),
+                        );
                     }
                 }
             }

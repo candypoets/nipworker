@@ -14,13 +14,13 @@ use thiserror::Error;
 
 // Re-export nostr types for convenience
 pub use crate::types::nostr::{
-    Event, EventId, Filter, Keys, PublicKey, SecretKey, Timestamp, UnsignedEvent, SECP256K1,
+    Event, EventId, Filter, Keys, PublicKey, SecretKey, Timestamp, UnsignedEvent,
 };
 
 // Re-export Kind helpers
 pub use crate::types::nostr::{
-    CONTACT_LIST, DELETION, ENCRYPTED_DIRECT_MESSAGE, METADATA, REACTION, RELAY_LIST, REPOST,
-    TEXT_NOTE,
+    CONTACT_LIST, ENCRYPTED_DIRECT_MESSAGE, EVENT_DELETION, METADATA, REACTION, RELAY_LIST,
+    REPOST, TEXT_NOTE,
 };
 
 // Type alias for Kind

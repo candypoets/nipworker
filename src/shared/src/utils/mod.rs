@@ -1,11 +1,16 @@
 use crate::types::ParserError;
 
+#[cfg(feature = "crypto")]
 pub mod crypto;
 
+#[cfg(feature = "crypto")]
+pub mod nostr_crypto;
+
+#[cfg(feature = "crypto")]
 pub use crypto::{
-    compute_y_point,
-    verify_proof_dleq,
-    verify_proof_dleq_with_keys,
+	compute_y_point,
+	verify_proof_dleq,
+	verify_proof_dleq_with_keys,
 };
 
 pub type Result<T> = std::result::Result<T, ParserError>;

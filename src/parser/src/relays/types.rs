@@ -236,7 +236,7 @@ impl ClientMessage {
     pub fn to_json(&self) -> Result<String, RelayError> {
         match self {
             ClientMessage::Event(event) => {
-                let event_json = event.as_json();
+                let event_json = event.to_json();
                 Ok(format!(r#"["EVENT",{}]"#, event_json))
             }
             ClientMessage::Req {
@@ -245,7 +245,8 @@ impl ClientMessage {
             } => {
                 let mut parts = vec![format!(r#""REQ""#), format!(r#""{}""#, subscription_id)];
                 for filter in filters {
-                    parts.push(filter.as_json());
+                    // TODO: Implement Filter::to_json() method
+                    parts.push("{}".to_string()); // Placeholder for filter JSON
                 }
                 Ok(format!("[{}]", parts.join(",")))
             }

@@ -13,9 +13,7 @@ use crate::utils::json::BaseJsonParser;
 use flatbuffers::FlatBufferBuilder;
 use gloo_net;
 use hex;
-use k256::{elliptic_curve::sec1::ToEncodedPoint, PublicKey};
 use rustc_hash::{FxHashMap, FxHashSet};
-use sha2::{Digest, Sha256};
 use std::fmt::Write;
 use tracing::{debug, error, info, warn};
 

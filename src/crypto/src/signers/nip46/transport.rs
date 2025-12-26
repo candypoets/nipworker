@@ -80,9 +80,16 @@ impl Transport {
             sig: String::new(),
         };
 
-        event
-            .compute_id()
-            .map_err(|e| JsValue::from_str(&format!("Failed to compute event ID: {}", e)))?;
+        // Compute the event ID
+        let event_id_hex = shared::nostr_crypto::compute_event_id(
+            &event.pubkey,
+            event.created_at,
+            event.kind,
+            &event.tags,
+            &event.content,
+        );
+        event.id = shared::types::EventId::from_hex(&event_id_hex)
+            .map_err(|e| JsValue::from_str(&format!("Failed to parse event ID: {}", e)))?;
 
         let secret_key = self
             .client_keys
@@ -106,7 +113,7 @@ impl Transport {
 
         event.sig = hex::encode(signature.to_bytes());
 
-        let frame = format!(r#"["EVENT",{}]"#, event.as_json());
+        let frame = format!(r#"["EVENT",{}]"#, event.to_json());
         self.publish_frames(&[frame]);
         Ok(())
     }

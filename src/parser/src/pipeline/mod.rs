@@ -321,10 +321,28 @@ impl Pipeline {
     pub async fn process_bytes(&mut self, raw_event_bytes: &[u8]) -> Result<Option<Vec<u8>>> {
         info!("Processing event bytes");
 
-        let nostr_event = match Event::from_worker_message(raw_event_bytes) {
+        // Parse the flatbuffer root
+        let fb_worker_msg = match shared::generated::message::nostr::fb::root_as_worker_message(raw_event_bytes) {
+            Ok(msg) => msg,
+            Err(_) => {
+                tracing::warn!("Failed to parse worker message from flatbuffer bytes");
+                return Ok(None);
+            }
+        };
+
+        // Extract the event from the worker message
+        let fb_event = match fb_worker_msg.content_as_nostr_event() {
+            Some(event) => event,
+            None => {
+                tracing::warn!("Worker message does not contain a NostrEvent");
+                return Ok(None);
+            }
+        };
+
+        let nostr_event = match Event::from_flatbuffer(&fb_event) {
             Ok(ev) => ev,
             Err(_) => {
-                tracing::warn!("Failed to parse event from worker message bytes");
+                tracing::warn!("Failed to convert flatbuffer to Event");
                 return Ok(None);
             }
         };

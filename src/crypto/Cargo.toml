@@ -33,7 +33,8 @@ serde-wasm-bindgen = "0.5"
 futures-channel = "0.3"
 
 # Workspace-local shared utilities (SAB ring, telemetry)
-shared = { path = "../shared" }
+# Enable crypto feature for nostr signing/verification and cashu proof verification
+shared = { path = "../shared", features = ["crypto"] }
 
 # Cryptography
 k256 = { version = "0.13", features = ["schnorr", "ecdsa", "sha256", "ecdh"] }
