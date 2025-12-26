@@ -55,15 +55,8 @@ impl Parser {
                                         }
                                         "privkey" => {
                                             parsed.p2pk_priv_key = Some(tag[1].clone());
-                                            // Derive public key from private key using k256
-                                            if let Ok(secret_key_hex) = hex::decode(&tag[1]) {
-                                                if secret_key_hex.len() == 32 {
-                                                    if let Ok(signing_key) = k256::schnorr::SigningKey::from_bytes(&secret_key_hex) {
-                                                        let pub_key_bytes = signing_key.verifying_key().to_bytes();
-                                                        parsed.p2pk_pub_key = Some(hex::encode(&pub_key_bytes));
-                                                    }
-                                                }
-                                            }
+                                            // TODO: Derive public key from private key via crypto worker if needed
+                                            parsed.p2pk_pub_key = Some(String::new());
                                         }
                                         _ => {}
                                     }

@@ -55,9 +55,7 @@ hex = "0.4"
 rustc-hash = "2.0"
 base64 = "0.22"
 
-# Cryptography (minimal - only k256 for key derivation in kind17375)
-k256 = { version = "0.13", features = ["schnorr"] }
-getrandom = { version = "0.2", features = ["js"] }
+
 
 # WASM bindings (all targets for now to avoid conditional compilation issues)
 wasm-bindgen = { version = "0.2" }
