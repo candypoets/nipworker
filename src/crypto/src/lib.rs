@@ -513,8 +513,11 @@ impl Crypto {
                     {
                         verify_proof_and_return_y_point(payload)
                     } else {
+                        // Clone the active signer before async operations to avoid borrow conflicts
+                        let active_signer = active.borrow().clone();
+
                         // Dispatch to active signer for signer-dependent operations
-                        match &*active.borrow() {
+                        match active_signer {
                             ActiveSigner::Unset => Err("crypto not configured".into()),
                             ActiveSigner::Pk(pk) => match op {
                                 shared::generated::nostr::fb::SignerOp::GetPubkey => {
@@ -530,7 +533,14 @@ impl Crypto {
                                     pk.nip04_encrypt(peer, payload).map_err(|e| e.to_string())
                                 }
                                 shared::generated::nostr::fb::SignerOp::Nip04Decrypt => {
-                                    pk.nip04_decrypt(peer, payload).map_err(|e| e.to_string())
+                                    info!("[crypto] nip04_decrypt called with peer='{}', payload_len={}", peer, payload.len());
+                                    let result =
+                                        pk.nip04_decrypt(peer, payload).map_err(|e| e.to_string());
+                                    info!(
+                                        "[crypto] nip04_decrypt result: {:?}",
+                                        if result.is_ok() { "ok" } else { "err" }
+                                    );
+                                    result
                                 }
                                 shared::generated::nostr::fb::SignerOp::Nip44Encrypt => {
                                     pk.nip44_encrypt(peer, payload).map_err(|e| e.to_string())

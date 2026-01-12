@@ -77,17 +77,25 @@ export function useSubscription(
 	let processing = false;
 
 	const processEvents = (): void => {
-		if (!running || !buffer) return;
+		if (!running || !buffer) {
+			processing = false;
+			return;
+		}
 		if (processing) return; // Avoid overlapping runs
 		processing = true;
 		try {
 			let result = SharedBufferReader.readMessages(buffer, lastReadPos);
-			while (result.hasNewData) {
+			while (result.hasNewData && buffer) {
 				for (const message of result.messages) {
 					callback(message);
 				}
 				lastReadPos = result.newReadPosition;
 				result = SharedBufferReader.readMessages(buffer, lastReadPos);
+			}
+		} catch (e) {
+			// Guard against null buffer in race conditions
+			if (!(e instanceof TypeError && e.message.includes('DataView'))) {
+				console.error(`[HOOK] Error processing events for ${subId}:`, e);
 			}
 		} finally {
 			processing = false;
@@ -104,23 +112,30 @@ export function useSubscription(
 		});
 	};
 
-	const unsubscribe = (): (() => void) => {
-		running = false;
+	const unsubscribe = (): void => {
+		if (hasUnsubscribed) return;
+		
+		console.log(`[HOOK] Unsubscribing from ${subId}`);
+		running = false; // Stop scheduling new work
 
-		if (hasSubscribed && !hasUnsubscribed) {
+		if (hasSubscribed) {
+			// Remove the exact same listener function that was added
 			manager.removeEventListener(`subscription:${subId}`, scheduleProcess);
 			manager.unsubscribe(subId);
 			hasUnsubscribed = true;
 		}
-
-		return () => {};
+		
+		// Defer buffer cleanup to allow pending microtasks to complete
+		Promise.resolve().then(() => {
+			buffer = null;
+			lastReadPos = 4;
+		});
 	};
 	buffer = manager.subscribe(subId, requests, options);
 	hasSubscribed = true;
 
-	manager.addEventListener(`subscription:${subId}`, () => {
-		scheduleProcess();
-	});
+	// Add the listener using the exact same function reference for proper removal
+	manager.addEventListener(`subscription:${subId}`, scheduleProcess);
 
 	// setInterval(scheduleProcess, 1000);
 	// Prime initial drain

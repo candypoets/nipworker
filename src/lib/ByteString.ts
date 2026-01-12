@@ -17,10 +17,6 @@ import { ByteBuffer } from 'flatbuffers';
 // Shared decoder for all instances (cheap, stateless for non-streaming use)
 const UTF8_DECODER = new TextDecoder('utf-8');
 
-// Cross-instance cache: per underlying buffer → (offset:length) → decoded string
-// WeakMap ensures entries are eligible for GC once the ArrayBuffer becomes unreachable.
-const BUFFER_STRING_CACHE = new WeakMap<ArrayBufferLike, Map<string, string>>();
-
 // Hex lookup table to speed up toHex()
 const HEX_TABLE: string[] = (() => {
 	const t = new Array(256);
@@ -31,7 +27,6 @@ const HEX_TABLE: string[] = (() => {
 // lib/ByteString.ts
 export class ByteString {
 	private readonly view: Uint8Array;
-	private _utf8?: string;
 
 	constructor(view: Uint8Array) {
 		this.view = view;
@@ -71,17 +66,12 @@ export class ByteString {
 	/**
 	 * Decode as UTF-8 string.
 	 * If backed by SharedArrayBuffer, makes a safe copy.
-	 * Optimizations:
-	 * - Reuses a shared TextDecoder
-	 * - ASCII fast path
-	 * - Cross-instance cache (non-SAB only) keyed by buffer+offset+length
+	 * No caching to allow proper GC of event data.
 	 */
 	utf8String(): string {
-		if (this._utf8 !== undefined) return this._utf8;
-
 		const v = this.view;
 
-		// 1) ASCII fast path (quick OR-scan for any high bit)
+		// ASCII fast path (quick OR-scan for any high bit)
 		let acc = 0;
 		for (let i = 0; i < v.length; i++) acc |= v[i];
 		if ((acc & 0x80) === 0) {
@@ -91,30 +81,18 @@ export class ByteString {
 			for (let i = 0; i < v.length; i += CHUNK) {
 				s += String.fromCharCode.apply(null, v.subarray(i, i + CHUNK) as unknown as number[]);
 			}
-			return (this._utf8 = s);
+			return s;
 		}
 
-		// 2) Non-ASCII: try cross-instance cache (non-SAB only)
+		// Non-ASCII: decode directly
+		// For SAB: make a safe copy first
 		const buf = v.buffer;
-		if (!(buf instanceof SharedArrayBuffer)) {
-			let cache = BUFFER_STRING_CACHE.get(buf);
-			if (!cache) {
-				cache = new Map<string, string>();
-				BUFFER_STRING_CACHE.set(buf, cache);
-			}
-			const key = `${v.byteOffset}:${v.byteLength}`;
-			const cached = cache.get(key);
-			if (cached !== undefined) return (this._utf8 = cached);
-
-			const s = UTF8_DECODER.decode(v);
-			cache.set(key, s);
-			return (this._utf8 = s);
+		if (buf instanceof SharedArrayBuffer) {
+			const safeCopy = new Uint8Array(v);
+			return UTF8_DECODER.decode(safeCopy);
 		}
 
-		// 3) SAB path: copy then decode, avoid cross-instance cache by default
-		const safeCopy = new Uint8Array(v);
-		const s = UTF8_DECODER.decode(safeCopy);
-		return (this._utf8 = s);
+		return UTF8_DECODER.decode(v);
 	}
 
 	/**

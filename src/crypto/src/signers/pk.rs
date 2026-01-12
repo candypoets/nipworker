@@ -6,6 +6,7 @@ use crate::signers::{
     SignerError,
 };
 use shared::types::{Event, Keys, PublicKey, SecretKey};
+use shared::types::nostr::Template;
 
 use signature::hazmat::{PrehashSigner, PrehashVerifier};
 
@@ -60,14 +61,22 @@ impl PrivateKeySigner {
         Ok(self.pubkey_hex.clone())
     }
 
-    /// Sign an event id
-    pub async fn sign_event(&self, event_json: &str) -> Result<String> {
-        // Parse the event JSON
-        let mut event = Event::from_json(event_json)
-            .map_err(|e| SignerError::Other(format!("Failed to parse event JSON: {}", e)))?;
+    /// Sign a template into a full signed event
+    pub async fn sign_event(&self, template_json: &str) -> Result<String> {
+        // Parse the template JSON
+        let template = Template::from_json(template_json)
+            .map_err(|e| SignerError::Other(format!("Failed to parse template JSON: {}", e)))?;
 
-        // force the current signer pubkey on the event
-        event.pubkey = self.keys.public_key();
+        // Create an event from the template
+        let mut event = Event {
+            id: shared::types::EventId([0u8; 32]),
+            pubkey: self.keys.public_key(),
+            created_at: template.created_at,
+            kind: template.kind,
+            tags: template.tags,
+            content: template.content,
+            sig: String::new(),
+        };
 
         // Compute the event ID
         let event_id_hex = shared::nostr_crypto::compute_event_id(

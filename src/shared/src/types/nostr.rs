@@ -145,7 +145,8 @@ impl SecretKey {
 	pub fn public_key_from_secret(&self) -> PublicKey {
 		use k256::schnorr::SigningKey;
 
-		let signing_key = SigningKey::from_bytes(&self.0).unwrap();
+		let signing_key = SigningKey::from_bytes(&self.0)
+			.expect("Secret key must be valid 32-byte scalar");
 		let verifying_key = signing_key.verifying_key();
 		PublicKey(verifying_key.to_bytes().into())
 	}
@@ -201,7 +202,7 @@ impl Template {
 		use core::fmt::Write;
 		write!(
 			result,
-			r#"{{"kind":{},"content":"{}","tags":{},"created_at":{}}}"#,
+			"{{\"kind\":{},\"content\":\"{}\",\"tags\":{},\"created_at\":{}}}",
 			self.kind,
 			Self::escape_string(&self.content),
 			tags_json,
@@ -340,7 +341,7 @@ impl Template {
 		// created_at
 		let created_at = {
 			if let Some(i) = json.find("\"created_at\"") {
-				let tail = &json[i + 11..];
+				let tail = &json[i + 12..];
 				let bytes = tail.as_bytes();
 				let mut j = 0usize;
 				while j < bytes.len() && (bytes[j] == b' ' || bytes[j] == b'\t' || bytes[j] == b':')

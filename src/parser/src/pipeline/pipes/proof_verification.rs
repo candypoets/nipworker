@@ -16,6 +16,10 @@ use hex;
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::fmt::Write;
 use tracing::{debug, error, info, warn};
+use futures::stream::{self, StreamExt};
+
+// Cap concurrent proof verifications to avoid SAB ring overflow and CPU saturation
+const MAX_CONCURRENT_PROOFS: usize = 4;
 
 #[derive(Debug, Clone)]
 struct CheckStateRequest {
@@ -203,6 +207,10 @@ impl ProofVerificationPipe {
 
 
     async fn add_proofs(&mut self, proofs: Vec<Proof>, mint_url: String) -> Result<()> {
+        if proofs.is_empty() {
+            return Ok(());
+        }
+
         let mint_keys_json = match self.fetch_mint_keys_json(&mint_url).await {
             Ok(keys) => keys,
             Err(e) => {
@@ -211,9 +219,8 @@ impl ProofVerificationPipe {
             }
         };
 
-        // Clone once before loop
-        let mint_keys_json_cloned = mint_keys_json.clone();
-
+        // Collect proofs that haven't been seen before
+        let mut new_proofs = Vec::new();
         for proof in proofs {
             let secret = proof.secret.clone();
 
@@ -221,6 +228,7 @@ impl ProofVerificationPipe {
                 continue;
             }
 
+            // Evict oldest if over capacity
             if self.seen_proofs.len() >= self.max_proofs {
                 if let Some(oldest_secret) = self.seen_proofs.iter().next().cloned() {
                     self.seen_proofs.remove(&oldest_secret);
@@ -231,33 +239,50 @@ impl ProofVerificationPipe {
                 }
             }
 
-            let proof_json = proof.to_json();
+            new_proofs.push(proof);
+        }
 
-            let y_point = match self.crypto_client.verify_proof(
-                proof_json,
-                mint_keys_json.clone(),
-            ).await {
-                Ok(y) => y,
+        if new_proofs.is_empty() {
+            return Ok(());
+        }
+
+        // Parallelize verification with concurrency cap
+        let futures_iter = new_proofs.into_iter().map(|proof| {
+            let secret = proof.secret.clone();
+            let proof_json = proof.to_json();
+            let client = self.crypto_client.clone();
+            let mint_keys = mint_keys_json.clone();
+
+            async move {
+                let result = client.verify_proof(proof_json, mint_keys).await;
+                (proof, secret, result)
+            }
+        });
+
+        let stream = stream::iter(futures_iter).buffered(MAX_CONCURRENT_PROOFS);
+        let results = stream.collect::<Vec<_>>().await;
+
+        // Process results in order
+        for (proof, secret, result) in results {
+            match result {
+                Ok(y_point) => {
+                    if y_point.is_empty() {
+                        debug!("Proof has invalid DLEQ signature, skipping");
+                        self.seen_proofs.insert(secret);
+                    } else {
+                        self.pending_verifications.insert(secret.clone(), y_point);
+                        self.pending_proofs
+                            .entry(mint_url.clone())
+                            .or_default()
+                            .insert(secret.clone(), proof);
+                        self.seen_proofs.insert(secret);
+                    }
+                }
                 Err(e) => {
                     warn!("DLEQ verification failed: {}", e);
-                    continue;
+                    self.seen_proofs.insert(secret);
                 }
-            };
-
-            if y_point.is_empty() {
-                debug!("Proof has invalid DLEQ signature, skipping");
-                self.seen_proofs.insert(secret);
-                continue;
             }
-
-            self.pending_verifications.insert(secret.clone(), y_point);
-
-            self.pending_proofs
-                .entry(mint_url.clone())
-                .or_default()
-                .insert(secret.clone(), proof);
-
-            self.seen_proofs.insert(secret);
         }
 
         Ok(())

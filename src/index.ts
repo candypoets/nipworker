@@ -14,7 +14,8 @@ import {
 	StringVecT,
 	SubscribeT,
 	SubscriptionConfigT,
-	TemplateT
+	TemplateT,
+	UnsubscribeT
 } from './generated/nostr/fb';
 import { InitConnectionsMsg } from './connections';
 import { InitCacheMsg } from './cache';
@@ -447,6 +448,10 @@ export class NostrManager {
 		return this.activePubkey;
 	}
 
+	public getSubscriptionCount(): number {
+		return this.subscriptions.size;
+	}
+
 	public getAccounts(): Record<string, { type: string; payload: any }> {
 		const accountsJson = localStorage.getItem('nostr_signer_accounts') || '{}';
 		try {
@@ -485,11 +490,39 @@ export class NostrManager {
 	}
 
 	cleanup(): void {
+		const beforeCount = this.subscriptions.size;
 		const subscriptionsToDelete: string[] = [];
+		
 		for (const [subId, subscription] of this.subscriptions.entries()) {
 			if (subscription.refCount <= 0 && !this.PERPETUAL_SUBSCRIPTIONS.includes(subId)) {
 				subscriptionsToDelete.push(subId);
 			}
+		}
+		
+		// Actually remove and tell workers to drop them
+		for (const subId of subscriptionsToDelete) {
+			console.log(`[CLEANUP] Removing subscription: ${subId}`);
+			
+			// Send Unsubscribe message to parser
+			const unsubscribeT = new UnsubscribeT(this.textEncoder.encode(subId));
+			const mainT = new MainMessageT(MainContent.Unsubscribe, unsubscribeT);
+			const builder = new flatbuffers.Builder(256);
+			builder.finish(mainT.pack(builder));
+			this.postToWorker({ serializedMessage: builder.asUint8Array() });
+			
+			// Tell connections worker to close relay subscriptions
+			this.connections.postMessage(subId);
+			
+			// Remove from local subscriptions map
+			this.subscriptions.delete(subId);
+		}
+		
+		const afterCount = this.subscriptions.size;
+		if (subscriptionsToDelete.length > 0) {
+			console.log(
+				`[CLEANUP] Cleaned up ${subscriptionsToDelete.length} subscriptions: ${beforeCount} -> ${afterCount}`,
+				subscriptionsToDelete
+			);
 		}
 	}
 }
