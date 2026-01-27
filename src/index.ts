@@ -238,15 +238,17 @@ export class NostrManager {
 
 			// Handle standard responses
 			if (msg.type === 'response') {
-				if (msg.op === 'get_pubkey' && msg.ok) {
-					this.activePubkey = msg.result;
-					if (this._pendingSession) {
-						this.saveSession(
-							this.activePubkey!,
-							this._pendingSession.type,
-							this._pendingSession.payload
-						);
-						this._pendingSession = null;
+				if (msg.op === 'get_pubkey') {
+					if (msg.ok) {
+						this.activePubkey = msg.result;
+						if (this._pendingSession) {
+							this.saveSession(
+								this.activePubkey!,
+								this._pendingSession.type,
+								this._pendingSession.payload
+							);
+							this._pendingSession = null;
+						}
 					}
 					this.dispatch('auth', this.activePubkey);
 				} else if (msg.op === 'sign_event' && msg.ok) {
@@ -373,28 +375,22 @@ export class NostrManager {
 		const buffer = new SharedArrayBuffer(3072);
 		SharedBufferReader.initializeBuffer(buffer);
 
-		try {
-			const templateT = new TemplateT(
-				event.kind,
-				event.created_at,
-				this.textEncoder.encode(event.content),
-				event.tags.map((t) => new StringVecT(t)) || []
-			);
-			const publishT = new PublishT(this.textEncoder.encode(publish_id), templateT, defaultRelays);
-			const mainT = new MainMessageT(MainContent.Publish, publishT);
-			const builder = new flatbuffers.Builder(2048);
-			builder.finish(mainT.pack(builder));
-			this.postToWorker({ serializedMessage: builder.asUint8Array(), sharedBuffer: buffer });
-			this.publishes.set(publish_id, { buffer });
-			return buffer;
-		} catch (error) {
-			console.error('Failed to publish event:', error);
-			throw error;
-		}
+		const templateT = new TemplateT(
+			event.kind,
+			event.created_at,
+			this.textEncoder.encode(event.content),
+			event.tags.map((t) => new StringVecT(t)) || []
+		);
+		const publishT = new PublishT(this.textEncoder.encode(publish_id), templateT, defaultRelays);
+		const mainT = new MainMessageT(MainContent.Publish, publishT);
+		const builder = new flatbuffers.Builder(2048);
+		builder.finish(mainT.pack(builder));
+		this.postToWorker({ serializedMessage: builder.asUint8Array(), sharedBuffer: buffer });
+		this.publishes.set(publish_id, { buffer });
+		return buffer;
 	}
 
 	setSigner(name: string, payload?: string | { url: string; clientSecret: string }): void {
-		console.trace('setting signer', name, payload);
 		switch (name) {
 			case 'privkey':
 				this.crypto.postMessage({ type: 'set_private_key', payload });
@@ -501,8 +497,6 @@ export class NostrManager {
 		
 		// Actually remove and tell workers to drop them
 		for (const subId of subscriptionsToDelete) {
-			console.log(`[CLEANUP] Removing subscription: ${subId}`);
-			
 			// Send Unsubscribe message to parser
 			const unsubscribeT = new UnsubscribeT(this.textEncoder.encode(subId));
 			const mainT = new MainMessageT(MainContent.Unsubscribe, unsubscribeT);
@@ -515,14 +509,6 @@ export class NostrManager {
 			
 			// Remove from local subscriptions map
 			this.subscriptions.delete(subId);
-		}
-		
-		const afterCount = this.subscriptions.size;
-		if (subscriptionsToDelete.length > 0) {
-			console.log(
-				`[CLEANUP] Cleaned up ${subscriptionsToDelete.length} subscriptions: ${beforeCount} -> ${afterCount}`,
-				subscriptionsToDelete
-			);
 		}
 	}
 }

@@ -59,7 +59,6 @@ export function useSubscription(
 	options: SubscriptionConfig = { closeOnEose: false }
 ): () => void {
 	if (!subId) {
-		console.warn('useSharedSubscription: No subscription ID provided');
 		return () => {};
 	}
 
@@ -94,9 +93,6 @@ export function useSubscription(
 			}
 		} catch (e) {
 			// Guard against null buffer in race conditions
-			if (!(e instanceof TypeError && e.message.includes('DataView'))) {
-				console.error(`[HOOK] Error processing events for ${subId}:`, e);
-			}
 		} finally {
 			processing = false;
 		}
@@ -114,8 +110,7 @@ export function useSubscription(
 
 	const unsubscribe = (): void => {
 		if (hasUnsubscribed) return;
-		
-		console.log(`[HOOK] Unsubscribing from ${subId}`);
+
 		running = false; // Stop scheduling new work
 
 		if (hasSubscribed) {
@@ -124,7 +119,7 @@ export function useSubscription(
 			manager.unsubscribe(subId);
 			hasUnsubscribed = true;
 		}
-		
+
 		// Defer buffer cleanup to allow pending microtasks to complete
 		Promise.resolve().then(() => {
 			buffer = null;
@@ -154,7 +149,6 @@ export function usePublish(
 	}
 ): () => void {
 	if (!pubId) {
-		console.warn('usePublish: No publish ID provided');
 		return () => {};
 	}
 

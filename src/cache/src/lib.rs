@@ -296,6 +296,15 @@ impl Caching {
                 }
             }
 
+            // Fallback to DEFAULT_RELAYS if none were determined
+            if relays.is_empty() {
+                warn!(
+                    "[PUBLISH] No relays determined for event {} - using defaults",
+                    fb_event.id()
+                );
+                relays = DEFAULT_RELAYS.iter().map(|s| s.to_string()).collect();
+            }
+
             // Deduplicate relays
             relays.sort();
             relays.dedup();

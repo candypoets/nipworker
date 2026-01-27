@@ -2,12 +2,12 @@ pub mod interfaces;
 pub mod publish;
 pub mod subscription;
 
+use crate::crypto_client::CryptoClient;
 use crate::parser::Parser;
 use crate::pipeline::Pipeline;
 use crate::utils::buffer::SharedBufferManager;
 use crate::utils::js_interop::post_worker_message;
 use crate::NostrError;
-use crate::crypto_client::CryptoClient;
 use flatbuffers::FlatBufferBuilder;
 use futures::lock::Mutex;
 use js_sys::SharedArrayBuffer;
@@ -76,7 +76,8 @@ impl NetworkManager {
         crypto_client: Arc<CryptoClient>,
     ) -> Self {
         let publish_manager = publish::PublishManager::new(parser.clone());
-        let subscription_manager = subscription::SubscriptionManager::new(parser.clone(), crypto_client.clone());
+        let subscription_manager =
+            subscription::SubscriptionManager::new(parser.clone(), crypto_client.clone());
 
         let manager = Self {
             ws_response,

@@ -204,6 +204,8 @@ impl WSRust {
                                 if let Err(e) = reg.send_to_relays(&env.relays, &env.frames) {
                                     error!("send_to_relays failed: {:?}", e);
                                 }
+                            } else if !env.frames.is_empty() && env.relays.is_empty() {
+                                error!("[connections] CRITICAL: Envelope has frames but no relays - message dropped");
                             } else {
                                 warn!("[connections] Envelope has no relays or frames");
                             }
