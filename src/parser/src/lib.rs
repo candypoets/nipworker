@@ -107,9 +107,9 @@ impl NostrClient {
         crypto_response: SharedArrayBuffer,
         ws_response: SharedArrayBuffer, // ws response
     ) -> Self {
-        telemetry::init(tracing::Level::ERROR);
+        telemetry::init(tracing::Level::INFO);
 
-        info!("Initializing NostrClient...");
+        info!("Initializing NostrClient with new reposts...");
 
         // let signer_manager = Arc::new(SignerManager::new());
         let crypto_client = Arc::new(
