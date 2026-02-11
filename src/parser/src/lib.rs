@@ -107,7 +107,7 @@ impl NostrClient {
         crypto_response: SharedArrayBuffer,
         ws_response: SharedArrayBuffer, // ws response
     ) -> Self {
-        telemetry::init(tracing::Level::INFO);
+        telemetry::init(tracing::Level::ERROR);
 
         info!("Initializing NostrClient with new reposts...");
 
