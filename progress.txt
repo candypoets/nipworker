@@ -20,3 +20,44 @@
 - The `shared` crate builds as `rlib` and is linked into WASM cdylib crates
 - Run cargo commands from `src/shared/`, not project root
 ---
+
+## 2026-02-19 12:45:08 - US-002
+- Created 6 MessageChannels in NostrManager constructor: cacheToConn, parserToCache, connToParser, parserToCrypto, cryptoToConn, cryptoToMain
+- Updated InitConnectionsMsg type to accept MessagePort parameters: statusRing, fromCache, toParser, fromCrypto
+- Updated InitCacheMsg type to accept MessagePort parameters: fromParser, toConnections
+- Updated InitParserMsg type to accept MessagePort parameters: fromConnections, fromCache, toCrypto
+- Updated InitCryptoMsg type to accept MessagePort parameters: fromParser, toConnections, toMain
+- Removed SAB creation for: ws_request, ws_response, ws_crypto_request, ws_crypto_response, cache_request, cache_response, dbRing, crypto_request, crypto_response
+- Kept statusRing SAB for main thread status updates (per requirements)
+- Transferred correct port ends to each worker's init message using postMessage with transfer list
+- Moved crypto control response handling (bunker_discovered, get_pubkey, sign_event responses) to cryptoToMain.port2 onmessage handler
+- Updated all worker index.ts files to use new port-based parameters with TODO comments referencing future stories
+- Build passes - all TypeScript errors are either pre-existing or expected WASM signature mismatches
+
+**Learnings for future iterations:**
+- When transferring MessagePorts, must include them in the transfer list: `worker.postMessage(data, [port1, port2])`
+- The `cryptoToMain` channel replaces the need for crypto worker to send control responses through the main thread postMessage
+- Worker initialization now cleanly separates: port-based channels (MessageChannel) vs subscription data (SAB)
+- The statusRing SAB is kept as-is since it broadcasts to main thread without requiring a dedicated channel
+- Type imports from './connections' needed to be updated to './connections/index' for proper resolution
+---
+
+## 2026-02-19 12:49:46 - US-003
+- Updated `src/connections/src/lib.rs` to use MessageChannel ports instead of SAB rings
+- Changed `WSRust::new()` signature to accept `MessagePort` parameters: `status_ring`, `from_cache`, `to_parser`, `from_crypto`
+- Added `web-sys` features for `MessagePort` and `MessageEvent` in `src/connections/Cargo.toml`
+- Created receivers using `Port::from_receiver()` for both `from_cache` and `from_crypto` ports
+- Wrapped `to_parser` port using `Port::new()` for sending WorkerMessage bytes
+- Replaced polling loop with `select!` macro racing between `from_cache_rx` and `from_crypto_rx`
+- NIP-46 messages now route through the `from_crypto` channel
+- Removed `ws_request`, `ws_signer_request`, `ws_response`, `ws_signer_response` SAB-based fields
+- Updated `src/connections/index.ts` to remove TODO comment
+- Build passes with `npm run build:connections`
+
+**Learnings for future iterations:**
+- Use `futures::StreamExt` for the `.next()` method on `mpsc::Receiver`
+- The `select!` macro requires `FutureExt` for `.fuse()` and `StreamExt` for `.next()`
+- When a receiver returns `None`, the channel is closed - break the loop appropriately
+- Keep the `statusRing` SAB unchanged as it's still used for main thread status updates
+- The `Port::send()` method handles the conversion to Uint8Array for transfer
+---

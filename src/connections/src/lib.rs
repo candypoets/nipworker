@@ -1,13 +1,18 @@
 use serde_json::Value;
-use shared::{telemetry, SabRing};
+use shared::{telemetry, Port, SabRing};
 use tracing::{error, info, warn};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
+use web_sys::MessagePort;
 
 use js_sys::SharedArrayBuffer;
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::Once;
+
+use futures::channel::mpsc;
+use futures::select;
+use futures::FutureExt;
+use futures::StreamExt;
 
 mod connection;
 mod connection_registry;
@@ -36,81 +41,52 @@ fn write_status_line(status_ring: &mut SabRing, status: &str, url: &str) {
 
 #[wasm_bindgen]
 pub struct WSRust {
-    // Own the rings behind Rc so tasks can hold them without borrowing `self`.
-    ws_request: Rc<RefCell<SabRing>>,
-    ws_signer_request: Option<Rc<RefCell<SabRing>>>,
     registry: ConnectionRegistry,
 }
 
 #[wasm_bindgen]
 impl WSRust {
-    /// new(inRings: SharedArrayBuffer[], outRings: SharedArrayBuffer[])
+    /// new(statusRing: SharedArrayBuffer, fromCache: MessagePort, toParser: MessagePort, fromCrypto: MessagePort)
     #[wasm_bindgen(constructor)]
     pub fn new(
-        ws_request: SharedArrayBuffer,
-        ws_response: SharedArrayBuffer,
         status_ring: SharedArrayBuffer,
-        ws_signer_request: Option<SharedArrayBuffer>,
-        ws_signer_response: Option<SharedArrayBuffer>,
+        from_cache: MessagePort,
+        to_parser: MessagePort,
+        from_crypto: MessagePort,
     ) -> Result<WSRust, JsValue> {
         telemetry::init(tracing::Level::ERROR);
 
         info!("instanciating connections");
-        let ws_request = Rc::new(RefCell::new(SabRing::new(ws_request)?));
-        let ws_response = Rc::new(RefCell::new(SabRing::new(ws_response)?));
         let status_ring = Rc::new(RefCell::new(SabRing::new(status_ring)?));
 
-        let ws_signer_request = if let Some(sab) = ws_signer_request {
-            Some(Rc::new(RefCell::new(SabRing::new(sab)?)))
-        } else {
-            None
-        };
+        // Create receivers from the MessagePorts
+        let from_cache_rx = Port::from_receiver(from_cache);
+        let from_crypto_rx = Port::from_receiver(from_crypto);
 
-        let ws_signer_response = if let Some(sab) = ws_signer_response {
-            Some(Rc::new(RefCell::new(SabRing::new(sab)?)))
-        } else {
-            None
-        };
+        // Wrap the to_parser port for sending
+        let to_parser_port = Port::new(to_parser);
 
-        let ws_response_clone = ws_response.clone();
-        let ws_signer_response_clone = ws_signer_response.clone();
+        // Wire status writer
+        let status_cell = status_ring.clone();
+        let status_writer = Rc::new(move |status: &str, url: &str| {
+            let mut ring = status_cell.borrow_mut();
+            write_status_line(&mut ring, status, url);
+        });
 
-        if ws_signer_request.is_some() {
-            info!("[connections] Signer request ring is PRESENT");
-        } else {
-            info!("[connections] Signer request ring is MISSING");
-        }
-
-        if ws_signer_response.is_some() {
-            info!("[connections] Signer response ring is PRESENT");
-        } else {
-            info!("[connections] Signer response ring is MISSING");
-        }
-
+        // Create the writer closure that sends through the to_parser port
         let writer = Rc::new(move |url: &str, sub_id: &str, raw: &str| {
-            // Build a WorkerMessage FlatBuffer and write its bytes
+            // Build a WorkerMessage FlatBuffer and send its bytes through the port
             let mut fbb = flatbuffers::FlatBufferBuilder::new();
             let wm = build_worker_message(&mut fbb, sub_id, url, raw);
             fbb.finish(wm, None);
-            let bytes = fbb.finished_data().to_vec();
+            let bytes = fbb.finished_data();
 
             if !bytes.is_empty() {
-                // Route by sub_id: if it starts with "n46:", send to signer ring
-                if sub_id.starts_with("n46:") {
-                    if let Some(ref signer_ring) = ws_signer_response_clone {
-                        info!(
-                            "[connections] Routing NIP-46 response to signer ring (sub_id: {}): {}",
-                            sub_id, raw
-                        );
-                        signer_ring.borrow_mut().write(&bytes);
-                        return;
-                    } else {
-                        warn!("[connections] Received NIP-46 response but signer ring is missing (sub_id: {})", sub_id);
-                    }
+                if let Err(e) = to_parser_port.send(bytes) {
+                    warn!("Failed to send message through to_parser port: {:?}", e);
                 }
-                ws_response_clone.borrow_mut().write(&bytes);
             } else {
-                // Failure log (error handling) - now compiles with Value import
+                // Failure log (error handling)
                 let raw_sub_id = if let Ok(parsed) = serde_json::from_str::<Value>(raw) {
                     if let Value::Array(arr) = parsed {
                         arr.get(1).and_then(|v| v.as_str()).map(|s| s.to_string())
@@ -127,23 +103,12 @@ impl WSRust {
             }
         });
 
-        // Wire status writer
-        let status_cell = status_ring.clone();
-        let status_writer = Rc::new(move |status: &str, url: &str| {
-            let mut ring = status_cell.borrow_mut();
-            write_status_line(&mut ring, status, url);
-        });
-
-        // Build registry and wire writer that routes by subId to the correct out ring
+        // Build registry and wire writer
         let registry = ConnectionRegistry::new(writer, status_writer);
 
-        let connections = WSRust {
-            ws_request,
-            ws_signer_request,
-            registry,
-        };
+        let connections = WSRust { registry };
 
-        connections.start();
+        connections.start(from_cache_rx, from_crypto_rx);
 
         Ok(connections)
     }
@@ -153,80 +118,64 @@ impl WSRust {
         reg.close_all(sub_id);
     }
 
-    /// Start one loop per inRing that reads JSON envelopes and calls send_to_relays
-    fn start(&self) {
+    /// Start the async loop that reads from both receivers using select!
+    fn start(
+        &self,
+        mut from_cache_rx: mpsc::Receiver<Vec<u8>>,
+        mut from_crypto_rx: mpsc::Receiver<Vec<u8>>,
+    ) {
         info!("Starting WebSocket server");
-        // Clone the Rc for the task so we don’t capture &self
-        let ws_request = self.ws_request.clone();
-        let ws_signer_request = self.ws_signer_request.clone();
         let reg = self.registry.clone();
 
         spawn_local(async move {
-            let mut sleep_ms: u32 = 16;
-            let max_sleep_ms: u32 = 500;
-            let mut prefer_signer = false;
-
             loop {
-                let mut took_any = false;
-
-                // Try both rings, starting with the preferred one, but only take ONE message
-                // to ensure strict alternation for maximum fairness.
-                for _ in 0..2 {
-                    let target_ring = if prefer_signer {
-                        ws_signer_request.as_ref()
-                    } else {
-                        Some(&ws_request)
-                    };
-
-                    let bytes_opt = if let Some(ring) = target_ring {
-                        let b = ring.borrow_mut().read_next();
-                        if b.is_some() {
-                            if prefer_signer {
-                                info!("[connections] Read message from SIGNER ring");
-                            } else {
-                                info!("[connections] Read message from MAIN ring");
-                            }
-                        }
-                        b
-                    } else {
-                        None
-                    };
-
-                    if let Some(bytes) = bytes_opt {
-                        took_any = true;
-                        if let Ok(env) = serde_json::from_slice::<Envelope>(&bytes) {
-                            if !env.relays.is_empty() && !env.frames.is_empty() {
-                                info!(
-                                    "[connections] Sending {} frames to {} relays",
-                                    env.frames.len(),
-                                    env.relays.len()
-                                );
-                                if let Err(e) = reg.send_to_relays(&env.relays, &env.frames) {
-                                    error!("send_to_relays failed: {:?}", e);
-                                }
-                            } else if !env.frames.is_empty() && env.relays.is_empty() {
-                                error!("[connections] CRITICAL: Envelope has frames but no relays - message dropped");
-                            } else {
-                                warn!("[connections] Envelope has no relays or frames");
-                            }
+                // Use select! to race between the two receivers
+                let bytes: Option<Vec<u8>> = select! {
+                    bytes_opt = from_cache_rx.next().fuse() => {
+                        if bytes_opt.is_some() {
+                            info!("[connections] Received message from cache port");
                         } else {
-                            warn!("[connections] Failed to parse Envelope from ring bytes");
+                            info!("[connections] Cache channel closed");
                         }
-                        // After a successful read, we alternate preference and break to start next iteration
-                        prefer_signer = !prefer_signer;
-                        break;
+                        bytes_opt
                     }
-                    // If we didn't find anything in the preferred ring, try the other one
-                    prefer_signer = !prefer_signer;
-                }
+                    bytes_opt = from_crypto_rx.next().fuse() => {
+                        if bytes_opt.is_some() {
+                            info!("[connections] Received message from crypto port (NIP-46)");
+                        } else {
+                            info!("[connections] Crypto channel closed");
+                        }
+                        bytes_opt
+                    }
+                };
 
-                if !took_any {
-                    gloo_timers::future::TimeoutFuture::new(sleep_ms).await;
-                    sleep_ms = (sleep_ms.saturating_mul(2)).min(max_sleep_ms);
+                // Break if either channel closed
+                let bytes = match bytes {
+                    Some(b) => b,
+                    None => break,
+                };
+
+                if let Ok(env) = serde_json::from_slice::<Envelope>(&bytes) {
+                    if !env.relays.is_empty() && !env.frames.is_empty() {
+                        info!(
+                            "[connections] Sending {} frames to {} relays",
+                            env.frames.len(),
+                            env.relays.len()
+                        );
+                        if let Err(e) = reg.send_to_relays(&env.relays, &env.frames) {
+                            error!("send_to_relays failed: {:?}", e);
+                        }
+                    } else if !env.frames.is_empty() && env.relays.is_empty() {
+                        error!("[connections] CRITICAL: Envelope has frames but no relays - message dropped");
+                    } else {
+                        warn!("[connections] Envelope has no relays or frames");
+                    }
                 } else {
-                    sleep_ms = 16;
+                    warn!("[connections] Failed to parse Envelope from ring bytes");
                 }
             }
+
+            info!("[connections] Message processing loop ended");
         });
     }
 }

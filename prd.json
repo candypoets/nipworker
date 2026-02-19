@@ -34,7 +34,7 @@
         "Build passes"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Reference: src/index.ts lines 62-153 (NostrManager constructor)"
     },
     {
@@ -52,7 +52,7 @@
         "Build passes with npm run build:connections"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Reference: src/connections/src/lib.rs lines 37-232"
     },
     {

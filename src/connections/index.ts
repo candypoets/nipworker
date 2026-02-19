@@ -41,7 +41,6 @@ self.addEventListener(
 			console.log('[connections] fromCrypto port', fromCrypto);
 
 			// Create the Rust worker and start it
-			// TODO: Update WSRust::new() to accept MessagePort parameters (US-003)
 			instance = new WSRust(statusRing, fromCache, toParser, fromCrypto);
 
 			return;

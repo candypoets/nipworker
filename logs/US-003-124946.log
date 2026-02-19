@@ -1,0 +1,372 @@
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ # Ralph Agent Instructions                                                   │
+│                                                                              │
+│ You are an autonomous coding agent working on a software project.            │
+│                                                                              │
+│ ## 🛡️ CRITICAL SAFETY RULES - NEVER VIOLATE                                   │
+│                                                                              │
+│ ### System Resource Protection                                               │
+│ The following actions are **STRICTLY PROHIBITED** and will cause harm to the │
+│ host system:                                                                 │
+│                                                                              │
+│ **Docker/Container Management:**                                             │
+│ - **NEVER** run `docker stop` without an explicit container name or ID       │
+│ - **NEVER** use `docker stop $(docker ps -q)` or any pattern that stops mult │
+│ iple/all containers                                                          │
+│ - **NEVER** run `docker rm -f $(docker ps -aq)` or similar mass-removal comm │
+│ ands                                                                         │
+│ - **ALWAYS** verify container names with `docker ps --filter name=<pattern>` │
+│ before stopping                                                              │
+│ - **ONLY** stop containers that were explicitly created by this session      │
+│ - **ONLY** stop containers using their explicit name: `docker stop <exact-co │
+│ ntainer-name>`                                                               │
+│                                                                              │
+│ **Process Management:**                                                      │
+│ - **NEVER** run `killall`, `pkill`, or similar commands without specific pro │
+│ cess names                                                                   │
+│ - **NEVER** use `kill -9` on system processes or processes you didn't start  │
+│ - **ONLY** terminate processes you explicitly started in this session        │
+│                                                                              │
+│ **Port/Network Conflicts:**                                                  │
+│ - If a port is in use, **USE A DIFFERENT PORT** instead of killing the proce │
+│ ss using it                                                                  │
+│ - Check what's running on a port with `lsof -i :<port>` or `ss -tlnp | grep  │
+│ <port>`                                                                      │
+│ - Prefer random/high ports (e.g., `docker run -p 0:8080`) to avoid conflicts │
+│                                                                              │
+│ **General Safety:**                                                          │
+│ - **NEVER** run commands that affect system-wide state unless explicitly req │
+│ uired by the PRD                                                             │
+│ - **NEVER** use wildcards or glob patterns with destructive commands (`rm`,  │
+│ `kill`, `stop`)                                                              │
+│ - When in doubt, be explicit and specific with resource names                │
+│                                                                              │
+│ ---                                                                          │
+│                                                                              │
+│ ## Your Task                                                                 │
+│                                                                              │
+│ 1. Read the PRD at `prd.json` (in the same directory as this file)           │
+│ 2. Read the progress log at `progress.txt` (check Codebase Patterns section  │
+│ first)                                                                       │
+│ 3. Check you're on the correct branch from PRD `branchName`. If not, check i │
+│ t out or create from main.                                                   │
+│ 4. Pick the **highest priority** user story where `passes: false`            │
+│ 5. Implement that single user story                                          │
+│ 6. Run quality checks (e.g., typecheck, lint, test - use whatever your proje │
+│ ct requires)                                                                 │
+│ 7. Update AGENTS.md files if you discover reusable patterns (see below)      │
+│ 8. If checks pass, commit ALL changes with message: `feat: [Story ID] - [Sto │
+│ ry Title]`                                                                   │
+│ 9. Update the PRD to set `passes: true` for the completed story - use this e │
+│ xact jq command (replace STORY_ID with the actual ID like "US-001"):         │
+│    ```bash                                                                   │
+│    jq '.userStories |= map(if .id == "STORY_ID" then . + {"passes": true} el │
+│ se . end)' prd.json > prd.json.tmp && mv prd.json.tmp prd.json               │
+│    ```                                                                       │
+│    ⚠️ CRITICAL: Only update the SINGLE story you just completed - do NOT upda │
+│ te all stories!                                                              │
+│ 10. Verify only ONE story has passes: true - run this to confirm:            │
+│     ```bash                                                                  │
+│     jq '[.userStories[].id, .userStories[].passes]' prd.json                 │
+│     ```                                                                      │
+│ 11. Append your progress to `progress.txt`                                   │
+│                                                                              │
+│ ## Progress Report Format                                                    │
+│                                                                              │
+│ APPEND to progress.txt (never replace, always append):                       │
+│ ```                                                                          │
+│ ## [Date/Time] - [Story ID]                                                  │
+│ - What was implemented                                                       │
+│ - Files changed                                                              │
+│ - **Learnings for future iterations:**                                       │
+│   - Patterns discovered (e.g., "this codebase uses X for Y")                 │
+│   - Gotchas encountered (e.g., "don't forget to update Z when changing W")   │
+│   - Useful context (e.g., "the evaluation panel is in component X")          │
+│ ---                                                                          │
+│ ```                                                                          │
+│                                                                              │
+│ The learnings section is critical - it helps future iterations avoid repeati │
+│ ng mistakes and understand the codebase better.                              │
+│                                                                              │
+│ ## Consolidate Patterns                                                      │
+│                                                                              │
+│ If you discover a **reusable pattern** that future iterations should know, a │
+│ dd it to the `## Codebase Patterns` section at the TOP of progress.txt (crea │
+│ te it if it doesn't exist). This section should consolidate the most importa │
+│ nt learnings:                                                                │
+│                                                                              │
+│ ```                                                                          │
+│ ## Codebase Patterns                                                         │
+│ - Example: Use `sql<number>` template for aggregations                       │
+│ - Example: Always use `IF NOT EXISTS` for migrations                         │
+│ - Example: Export types from actions.ts for UI components                    │
+│ ```                                                                          │
+│                                                                              │
+│ Only add patterns that are **general and reusable**, not story-specific deta │
+│ ils.                                                                         │
+│                                                                              │
+│ ## Update AGENTS.md Files                                                    │
+│                                                                              │
+│ Before committing, check if any edited files have learnings worth preserving │
+│ in nearby AGENTS.md files:                                                   │
+│                                                                              │
+│ 1. **Identify directories with edited files** - Look at which directories yo │
+│ u modified                                                                   │
+│ 2. **Check for existing AGENTS.md** - Look for AGENTS.md in those directorie │
+│ s or parent directories                                                      │
+│ 3. **Add valuable learnings** - If you discovered something future developer │
+│ s/agents should know:                                                        │
+│    - API patterns or conventions specific to that module                     │
+│    - Gotchas or non-obvious requirements                                     │
+│    - Dependencies between files                                              │
+│    - Testing approaches for that area                                        │
+│    - Configuration or environment requirements                               │
+│                                                                              │
+│ **Examples of good AGENTS.md additions:**                                    │
+│ - "When modifying X, also update Y to keep them in sync"                     │
+│ - "This module uses pattern Z for all API calls"                             │
+│ - "Tests require the dev server running on PORT 3000"                        │
+│ - "Field names must match the template exactly"                              │
+│                                                                              │
+│ **Do NOT add:**                                                              │
+│ - Story-specific implementation details                                      │
+│ - Temporary debugging notes                                                  │
+│ - Information already in progress.txt                                        │
+│                                                                              │
+│ Only update AGENTS.md if you have **genuinely reusable knowledge** that woul │
+│ d help future work in that directory.                                        │
+│                                                                              │
+│ ## Quality Requirements                                                      │
+│                                                                              │
+│ - ALL commits must pass your project's quality checks (typecheck, lint, test │
+│ )                                                                            │
+│ - Do NOT commit broken code                                                  │
+│ - Keep changes focused and minimal                                           │
+│ - Follow existing code patterns                                              │
+│                                                                              │
+│ ## Browser Testing (Required for Frontend Stories)                           │
+│                                                                              │
+│ For any story that changes UI, you MUST verify it works in the browser:      │
+│                                                                              │
+│ 1. Load the `dev-browser` skill                                              │
+│ 2. Navigate to the relevant page                                             │
+│ 3. Verify the UI changes work as expected                                    │
+│ 4. Take a screenshot if helpful for the progress log                         │
+│                                                                              │
+│ A frontend story is NOT complete until browser verification passes.          │
+│                                                                              │
+│ ## Stop Condition                                                            │
+│                                                                              │
+│ After completing a user story, check if ALL stories have `passes: true`.     │
+│                                                                              │
+│ If ALL stories are complete and passing, reply with:                         │
+│ <promise>COMPLETE</promise>                                                  │
+│                                                                              │
+│ If there are still stories with `passes: false`, end your response normally  │
+│ (another iteration will pick up the next story).                             │
+│                                                                              │
+│ ## Important                                                                 │
+│                                                                              │
+│ - Work on ONE story per iteration                                            │
+│ - Commit frequently                                                          │
+│ - Keep CI green                                                              │
+│ - Read the Codebase Patterns section in progress.txt before starting         │
+╰──────────────────────────────────────────────────────────────────────────────╯
+• Let me start by reading the PRD and progress log to understand what needs to b
+  e done.
+• Used ReadFile (prd.json)
+• Used ReadFile (progress.txt)
+• Let me understand the current state:
+
+  1. US-001 and US-002 are completed (passes: true)
+  2. The next story to work on is US-003: "Migrate Connections worker to Message
+     nnel"
+
+  Let me read the relevant files to understand the current implementation:
+
+  • src/connections/src/lib.rs - the Connections worker
+  • src/shared/src/port.rs - the Port wrapper we created in US-001
+
+  I need to:
+
+  1. Update WSRust::new() to accept MessagePort parameters instead of SABs
+  2. Replace ws_request with from_cache and from_crypto receivers
+  3. Replace ws_response SAB writer with to_parser port
+  4. Replace polling loop with select! on both receivers
+  5. Keep statusRing SAB writer for main thread status updates
+  6. Route NIP-46 messages through from_crypto channel
+  7. Send WorkerMessage bytes directly through to_parser port
+
+  Let me start by reading the connections worker code.
+• I'll work on US-003: "Migrate Connections worker to MessageChannel". Let me fi
+  rst examine the current implementation.
+• Used ReadFile (src/connections/src/lib.rs)
+• Used ReadFile (src/shared/src/port.rs)
+• Used ReadFile (src/connections/Cargo.toml)
+• Now I understand the structure. I need to:
+
+  1. Update the WSRust::new() constructor to accept MessagePort parameters inste
+     of SABs
+  2. Replace the polling loop with a select! on both receivers (from_cache and f
+     _crypto)
+  3. Replace ws_response SAB writer with to_parser port
+  4. Keep statusRing SAB writer for main thread status updates
+  5. Route NIP-46 messages through the from_crypto channel
+  6. Send WorkerMessage bytes directly through the to_parser port
+
+  Let me also look at how the TypeScript side passes these ports to understand t
+  he expected interface:
+
+  Looking at the progress.txt from US-002, the init message types were updated.
+  Let me check what the current TypeScript side looks like for the connections w
+  orker initialization.
+
+  Actually, looking at the progress log from US-002:
+
+  • InitConnectionsMsg type accepts: statusRing, fromCache, toParser, fromCrypto
+
+  So the new signature should be:
+
+  • status_ring: SharedArrayBuffer (kept)
+  • from_cache: MessagePort (replaces ws_request for cache messages)
+  • from_crypto: MessagePort (replaces ws_signer_request for NIP-46)
+  • to_parser: MessagePort (replaces ws_response and ws_signer_response)
+
+  Let me now update the connections worker.
+
+  Key changes:
+
+  1. Import Port from shared
+  2. Update WSRust::new() signature to accept MessagePort instead of SABs for th
+     hannels
+  3. Use Port::from_receiver() to create receivers from the ports
+  4. Use Port::new() to wrap the to_parser port for sending
+  5. Replace the polling loop with select! on both receivers
+  6. Send responses through the to_parser port instead of SAB
+
+  Let me also check if there's a connection_registry file I should look at to un
+  derstand how messages are sent.
+
+  The registry handles message routing internally through a writer closure, so I
+  'll need to update that closure to use the to_parser port instead of SAB write
+  rs. I should also add web-sys features for MessagePort in the Cargo.toml file.
+• Let me also check the connection registry to understand how messages are sent:
+• Used ReadFile (src/connections/src/connection_registry.rs)
+• Used ReadFile (src/ws/connections/index.ts)
+  File not found
+• The connection registry uses out_writer which is a closure that writes to SAB
+  rings. I need to update this to use the Port instead. Let me also check the Ty
+  peScript side to understand the interface.
+• Used Glob (src/ws/**/*.ts)
+• Used ReadFile (src/index.ts)
+• The TypeScript initialization logic for the connections worker is clear: statu
+  sRing remains a SharedArrayBuffer, while fromCache and fromCrypto are incoming
+  MessagePorts, and toParser is an outgoing MessagePort.
+
+  Now, I need to map this to the Rust side in src/connections/src/lib.rs. The WS
+  Rust::new constructor needs to be updated to accept these ports instead of the
+  old SharedArrayBuffer rings.
+
+  Hmm, looking at how Port::from_receiver works in the shared crate, it bridges
+  a JS MessagePort to a Rust mpsc::Receiver. To handle messages from both fromCa
+  che and fromCrypto concurrently, I'll need to use a select! macro in the main
+  loop.
+
+  Wait, I need to check if futures::select is available. If I use select!, I mig
+  ht need to ensure the receivers are fused or that I'm using a compatible versi
+  on of the futures crate.
+
+  Actually, before I dive into the implementation of the Rust loop, I need to se
+  e how the worker is actually bootstrapped. The TypeScript code calls new Worke
+  r('./connections/index.js'), but the logic for handling the init message and i
+  nstantiating the Rust-generated WASM must be in a TypeScript file within the c
+  onnections worker directory. I need to see how the ports are passed from the p
+  ostMessage call into the WASM constructor.
+
+  Furthermore, I need to verify the dependencies in Cargo.toml. If I'm going to
+  use futures::select! or other async utilities, I need to ensure the futures cr
+  ate is properly declared with the correct features (like std or async-await).
+
+  So, my immediate next steps are to examine the connections worker's entry poin
+  t and its manifest.
+• Now let me check the connections worker's TypeScript entry point to understand
+  the interface:
+• Used ReadFile (src/connections/index.ts)
+• Used ReadFile (src/connections/Cargo.toml)
+• I've confirmed that the frontend expects to pass MessagePort objects to the WA
+  SM module, but the current Rust code is still using the old SharedArrayBuffer
+  logic. To bridge this gap, I need to implement the Port wrapper in Rust.
+
+  Hmm, looking at src/shared/Cargo.toml, we have web-sys for WASM bindings, but
+  it likely doesn't have the MessagePort feature enabled by default. I can't rec
+  eive the ports from JS without that feature flag.
+
+  Actually, once the feature is enabled, I'll need a clean way to convert these
+  JS ports into Rust-friendly channels. Creating a port.rs file in the shared cr
+  ate is the best way to encapsulate this logic. This will allow the connections
+  worker to handle incoming messages from both the cache and crypto ports effici
+  ently. I'll start by updating the dependencies and then implement the port wra
+  pper.
+• Now I have a complete understanding. Let me implement US-003 by updating the c
+  onnections worker to use MessageChannel ports.
+• Used StrReplaceFile (src/connections/Cargo.toml)
+• Used WriteFile (src/connections/src/lib.rs)
+• Now I need to build the connections crate to see if it compiles correctly. Let
+  me run the build command.
+• Now let me build the connections crate to verify the changes compile correctly
+  :
+• Used Shell (cd /root/code/nipworker &...un build:connections 2>&1)
+  Failed with exit code: 1
+• I need to fix the imports - I'm missing StreamExt for the .next() method. Also
+  , the Receiver returns Option<Vec<u8>> but I need to handle it correctly. Let
+  me fix the code.
+• I need to fix the imports and the select! macro usage. The StreamExt trait pro
+  vides the .next() method:
+• Used StrReplaceFile (src/connections/src/lib.rs)
+• Now let me try building again.
+• Used Shell (cd /root/code/nipworker &...un build:connections 2>&1)
+• The build succeeded! Now let me also run the full build to ensure everything s
+  till works together, and then update the progress and PRD.
+• The connections worker builds successfully. Now let me run the full build to e
+  nsure everything still compiles together:
+• Used Shell (cd /root/code/nipworker &...run build 2>&1 | tail -50)
+• The build completed successfully. The TypeScript errors shown are pre-existing
+  (as noted in the progress log from previous stories). Now let me update the pr
+  ogress.txt and mark the story as complete in the PRD.
+
+  Let me update the connections/index.ts to remove the TODO comment since we've
+  implemented US-003:
+• The build passes. Now let me update the TypeScript side to remove the TODO com
+  ment since we've implemented this story:
+• Used StrReplaceFile (src/connections/index.ts)
+• Now let me update the progress.txt and the PRD.
+• Now let me commit the changes and update the PRD:
+• Used Shell (cd /root/code/nipworker &... git add -A && git status)
+• It looks like there are log files that were created, and the prd.json and prog
+  ress.txt have already been modified (probably by previous iterations). Let me
+  check if US-003 is already marked as passing in prd.json, and update it if nee
+  ded.
+
+  Actually, looking at the git status, there are log files and prd.json is modif
+  ied. Let me check the current state of prd.json to see if US-003 is marked as
+  passing.
+• Used Shell (cd /root/code/nipworker &...ached prd.json | head -50)
+• Hmm, the prd.json diff confirms that only US-002 was previously marked as pass
+  ing. I've finished the implementation for US-003, so now I need to update the
+  project requirements to reflect that this story is complete.
+
+  Wait, simply editing the file isn't sufficient according to the instructions.
+  I must use the specific jq command provided to ensure the JSON structure remai
+  ns valid and the update is processed correctly. I'll replace STORY_ID with US-
+  003 in the command. This will toggle the passes field to true for this specifi
+  c user story, allowing me to finalize this step before committing the changes.
+• Let me update the PRD to mark US-003 as passing:
+• Used Shell (cd /root/code/nipworker &... mv prd.json.tmp prd.json)
+• Now let me verify that only US-003 has passes: true (along with the already co
+  mpleted US-001 and US-002):
+• Used Shell (cd /root/code/nipworker &...sses: .passes}]' prd.json)
+• Good, US-003 is now marked as passing. Now let me update progress.txt to add t
+  he entry for US-003.
+• Now let me append to progress.txt:
+• Used Shell (cd /root/code/nipworker &...ray for transfer --- EOF )
+• Now let me commit the changes.
