@@ -1,3 +1,4 @@
+pub mod batch_buffer;
 pub mod buffer;
 pub mod js_interop;
 pub mod json;

@@ -5,6 +5,7 @@ pub mod subscription;
 use crate::crypto_client::CryptoClient;
 use crate::parser::Parser;
 use crate::pipeline::Pipeline;
+use crate::utils::batch_buffer::{add_message_to_batch, create_batch_buffer, flush_all_batches, init_global_batch_manager, remove_batch_buffer};
 use crate::utils::buffer::SharedBufferManager;
 use crate::utils::js_interop::post_worker_message;
 use crate::NostrError;
@@ -85,6 +86,9 @@ impl NetworkManager {
         let publish_manager = publish::PublishManager::new(parser.clone());
         let subscription_manager =
             subscription::SubscriptionManager::new(parser.clone(), crypto_client.clone());
+
+        // Initialize the global BatchBufferManager with the MessagePort
+        init_global_batch_manager(to_main.clone());
 
         let manager = Self {
             to_cache,
@@ -237,6 +241,8 @@ impl NetworkManager {
                         {
                             warn!("Buffer write failed for sub {}: {:?}", sid, e);
                         }
+                        // Also send via batch buffer for MessageChannel delivery
+                        add_message_to_batch(sid, &output);
                         // Retrieve sub by sid and notify only if it's already EOSEd
                         let should_notify = match subs.read() {
                             Ok(g) => g.get(sid).map(|s| s.eosed).unwrap_or(false),
@@ -277,6 +283,8 @@ impl NetworkManager {
                             {
                                 warn!("Buffer write failed for sub {}: {:?}", sid, e);
                             }
+                            // Also send via batch buffer for MessageChannel delivery
+                            add_message_to_batch(sid, &output);
                         }
                     }
                     Err(e) => {
@@ -297,6 +305,8 @@ impl NetworkManager {
                         {
                             warn!("Buffer write failed for sub {}: {:?}", sid, e);
                         }
+                        // Also send via batch buffer for MessageChannel delivery
+                        add_message_to_batch(sid, &output);
                     }
                     Ok(None) => {
                         // info!("Event dropped by pipeline for sub {}", sid); /* dropped by pipeline */
@@ -514,6 +524,9 @@ impl NetworkManager {
             return Ok(());
         }
 
+        // Create a batch buffer for this subscription to send events via MessageChannel
+        create_batch_buffer(&subscription_id);
+
         // Construct and write one REQ frame per relay group:
         // ["REQ", subscription_id, ...filters]
         // for (relay_url, filters) in relay_filters {
@@ -568,6 +581,9 @@ impl NetworkManager {
         if let Ok(mut w) = self.subscriptions.write() {
             w.remove(&subscription_id);
         }
+
+        // Remove and flush the batch buffer for this subscription
+        remove_batch_buffer(&subscription_id);
 
         Ok(())
     }
