@@ -52,3 +52,20 @@ Started: Thu Feb 19 04:40:48 PM CET 2026
   - Buffer type needs to match between main thread (ArrayBuffer) and hooks (ArrayBuffer)
   - The dispatch pattern using `subscription:${subId}` and `publish:${pubId}` events works the same
 ---
+
+## 2026-02-19 16:57 - US-007
+- Removed SAB-related code from TypeScript side
+- Deleted src/lib/SharedBuffer.ts (SharedBufferReader class)
+- Removed unused import of SharedBufferReader from src/index.ts
+- Updated comment in ArrayBufferReader.ts to remove reference to deleted class
+- Typecheck passes (no new errors introduced - only pre-existing errors in generated code)
+- Files changed: src/index.ts, src/lib/ArrayBufferReader.ts, src/lib/SharedBuffer.ts (deleted)
+- **Learnings for future iterations:**
+  - The SharedBufferReader class was only used for SharedArrayBuffer-based communication
+  - ArrayBufferReader is now the sole buffer reading utility for MessageChannel-based communication
+  - Rust parser still has SharedBufferManager code but it's part of a dual-path architecture:
+    - Old SAB path: SharedBufferManager writes to SharedArrayBuffer
+    - New MessageChannel path: add_message_to_batch sends via MessagePort
+  - Both paths are currently active - future cleanup could remove the SAB path from Rust
+  - statusRing SAB is still used for connection status (separate from subscription/publish buffers)
+---
