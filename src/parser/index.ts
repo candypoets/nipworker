@@ -36,12 +36,12 @@ self.addEventListener('message', async (evt: MessageEvent<InitParserMsg | { type
 	if (msg?.type === 'init') {
 		await ensureWasm();
 
-		const { connectionsPort, cachePort, cryptoPort } = msg.payload;
+		const { connectionsPort, cachePort, cryptoPort, mainPort } = msg.payload;
 
 		// Create the Rust worker and start it
-		// Note: Rust expects (from_connections, to_cache, from_cache, to_crypto, from_crypto)
+		// Note: Rust expects (from_connections, to_cache, from_cache, to_crypto, from_crypto, to_main)
 		// Each port is bidirectional, so we pass the same port for send and receive
-		const client = new NostrClient(connectionsPort, cachePort, cachePort, cryptoPort, cryptoPort);
+		const client = new NostrClient(connectionsPort, cachePort, cachePort, cryptoPort, cryptoPort, mainPort);
 		// Resolve the deferred so all queued .then handlers can run
 		resolveInstance?.(client);
 		return;

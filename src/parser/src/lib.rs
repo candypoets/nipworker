@@ -105,6 +105,7 @@ impl NostrClient {
         from_cache: MessagePort,
         to_crypto: MessagePort,
         from_crypto: MessagePort,
+        to_main: MessagePort,
     ) -> Self {
         telemetry::init(tracing::Level::ERROR);
 
@@ -131,6 +132,7 @@ impl NostrClient {
             from_connections_rx,
             from_cache_rx,
             crypto_client.clone(),
+            to_main,
         );
 
         info!("NostrClient components initialized");

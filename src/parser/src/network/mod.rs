@@ -12,6 +12,7 @@ use flatbuffers::FlatBufferBuilder;
 use futures::channel::mpsc;
 use futures::lock::Mutex;
 use js_sys::SharedArrayBuffer;
+use web_sys::MessagePort;
 use rustc_hash::FxHashMap;
 use shared::generated::nostr::fb::{self};
 use shared::types::network::Request;
@@ -53,6 +54,7 @@ enum ShardSource {
 
 pub struct NetworkManager {
     to_cache: Rc<RefCell<Port>>,
+    to_main: Option<MessagePort>,
     publish_manager: publish::PublishManager,
     subscription_manager: subscription::SubscriptionManager,
     subscriptions: Arc<RwLock<FxHashMap<String, Sub>>>,
@@ -78,6 +80,7 @@ impl NetworkManager {
         from_connections: mpsc::Receiver<Vec<u8>>,
         from_cache: mpsc::Receiver<Vec<u8>>,
         crypto_client: Arc<CryptoClient>,
+        to_main: MessagePort,
     ) -> Self {
         let publish_manager = publish::PublishManager::new(parser.clone());
         let subscription_manager =
@@ -85,6 +88,7 @@ impl NetworkManager {
 
         let manager = Self {
             to_cache,
+            to_main: Some(to_main),
             publish_manager,
             subscription_manager,
             subscriptions: Arc::new(RwLock::new(FxHashMap::default())),
