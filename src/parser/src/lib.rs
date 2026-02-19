@@ -6,7 +6,7 @@ use web_sys::MessagePort;
 use shared::{
     telemetry,
     types::{nostr::Template, Event, ParserError, TypesError},
-    SabRing,
+    Port, SabRing,
 };
 use wasm_bindgen::prelude::*;
 
@@ -103,14 +103,18 @@ impl NostrClient {
     pub async fn new(
         db_ring: SharedArrayBuffer,
         cache_request: SharedArrayBuffer, // ws request
-        cache_response: SharedArrayBuffer,
         to_crypto: MessagePort,
         from_crypto: MessagePort,
-        ws_response: SharedArrayBuffer, // ws response
+        from_connections: MessagePort,
+        from_cache: MessagePort,
     ) -> Self {
         telemetry::init(tracing::Level::ERROR);
 
-        info!("Initializing NostrClient with new reposts...");
+        info!("Initializing NostrClient with MessageChannel...");
+
+        // Create receivers from MessagePorts for network messages
+        let from_connections_rx = Port::from_receiver(from_connections);
+        let from_cache_rx = Port::from_receiver(from_cache);
 
         // let signer_manager = Arc::new(SignerManager::new());
         let crypto_client = Arc::new(
@@ -123,17 +127,13 @@ impl NostrClient {
         let network_manager = NetworkManager::new(
             parser.clone(),
             Rc::new(RefCell::new(
-                SabRing::new(cache_request).expect("Failed to create SabRing for ws_request"),
+                SabRing::new(cache_request).expect("Failed to create SabRing for cache_request"),
             )),
             Rc::new(RefCell::new(
-                SabRing::new(cache_response).expect("Failed to create SabRing for cache_response"),
+                SabRing::new(db_ring).expect("Failed to create SabRing for db_ring"),
             )),
-            Rc::new(RefCell::new(
-                SabRing::new(ws_response).expect("Failed to create SabRing for ws_response"),
-            )),
-            Rc::new(RefCell::new(
-                SabRing::new(db_ring).expect("Failed to create SabRing for ws_response"),
-            )),
+            from_connections_rx,
+            from_cache_rx,
             crypto_client.clone(),
         );
 

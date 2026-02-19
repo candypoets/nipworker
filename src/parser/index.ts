@@ -7,6 +7,7 @@ export type InitParserMsg = {
 		fromConnections: MessagePort;
 		fromCache: MessagePort;
 		toCrypto: MessagePort;
+		fromCrypto: MessagePort;
 	};
 };
 
@@ -31,11 +32,10 @@ self.addEventListener('message', async (evt: MessageEvent<InitParserMsg | { type
 	if (msg?.type === 'init') {
 		await ensureWasm();
 
-		const { fromConnections, fromCache, toCrypto } = msg.payload;
+		const { fromConnections, fromCache, toCrypto, fromCrypto } = msg.payload;
 
 		// Create the Rust worker and start it
-		// TODO: Update NostrClient::new() to accept MessagePort parameters (US-007)
-		const client = new NostrClient(fromConnections, fromCache, toCrypto);
+		const client = new NostrClient(fromConnections, fromCache, toCrypto, fromCrypto);
 		// Resolve the deferred so all queued .then handlers can run
 		resolveInstance?.(client);
 		return;

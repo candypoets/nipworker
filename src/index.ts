@@ -98,6 +98,8 @@ export class NostrManager {
 		const cryptoToConn = new MessageChannel();
 		// cryptoToMain: crypto -> main (control responses)
 		const cryptoToMain = new MessageChannel();
+		// cryptoToParser: crypto -> parser (crypto responses)
+		const cryptoToParser = new MessageChannel();
 
 		const connectionURL = new URL('./connections/index.js', import.meta.url);
 		const cacheURL = new URL('./cache/index.js', import.meta.url);
@@ -142,10 +144,11 @@ export class NostrManager {
 				payload: {
 					fromConnections: connToParser.port2,
 					fromCache: parserToCache.port2,
-					toCrypto: parserToCrypto.port1
+					toCrypto: parserToCrypto.port1,
+					fromCrypto: cryptoToParser.port2
 				}
 			} as InitParserMsg,
-			[connToParser.port2, parserToCache.port2, parserToCrypto.port1]
+			[connToParser.port2, parserToCache.port2, parserToCrypto.port1, cryptoToParser.port2]
 		);
 
 		// Transfer ports to crypto worker
@@ -155,10 +158,11 @@ export class NostrManager {
 				payload: {
 					fromParser: parserToCrypto.port2,
 					toConnections: cryptoToConn.port2,
-					toMain: cryptoToMain.port1
+					toMain: cryptoToMain.port1,
+					toParser: cryptoToParser.port1
 				}
 			} as InitCryptoMsg,
-			[parserToCrypto.port2, cryptoToConn.port2, cryptoToMain.port1]
+			[parserToCrypto.port2, cryptoToConn.port2, cryptoToMain.port1, cryptoToParser.port1]
 		);
 
 		// Listen on cryptoToMain.port2 for control responses

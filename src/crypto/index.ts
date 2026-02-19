@@ -9,6 +9,7 @@ export type InitCryptoMsg = {
 		fromParser: MessagePort;
 		toConnections: MessagePort;
 		toMain: MessagePort;
+		toParser: MessagePort;
 		fromConnections?: MessagePort; // Added for US-008
 	};
 };

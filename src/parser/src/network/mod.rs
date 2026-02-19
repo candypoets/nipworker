@@ -9,6 +9,7 @@ use crate::utils::buffer::SharedBufferManager;
 use crate::utils::js_interop::post_worker_message;
 use crate::NostrError;
 use flatbuffers::FlatBufferBuilder;
+use futures::channel::mpsc;
 use futures::lock::Mutex;
 use js_sys::SharedArrayBuffer;
 use rustc_hash::FxHashMap;
@@ -43,9 +44,14 @@ struct Sub {
     forced_shard: Option<usize>, // Optional forced shard routing
 }
 
+/// Tracks the origin of a message for debugging/metrics
+#[derive(Clone, Copy, Debug)]
+enum ShardSource {
+    Network,
+    Cache,
+}
+
 pub struct NetworkManager {
-    ws_response: Rc<RefCell<SabRing>>,
-    cache_response: Rc<RefCell<SabRing>>,
     cache_request: Rc<RefCell<SabRing>>,
     db_ring: Rc<RefCell<SabRing>>,
     publish_manager: publish::PublishManager,
@@ -70,9 +76,9 @@ impl NetworkManager {
     pub fn new(
         parser: Arc<Parser>,
         cache_request: Rc<RefCell<SabRing>>,
-        cache_response: Rc<RefCell<SabRing>>,
-        ws_response: Rc<RefCell<SabRing>>,
         db_ring: Rc<RefCell<SabRing>>,
+        from_connections: mpsc::Receiver<Vec<u8>>,
+        from_cache: mpsc::Receiver<Vec<u8>>,
         crypto_client: Arc<CryptoClient>,
     ) -> Self {
         let publish_manager = publish::PublishManager::new(parser.clone());
@@ -80,9 +86,7 @@ impl NetworkManager {
             subscription::SubscriptionManager::new(parser.clone(), crypto_client.clone());
 
         let manager = Self {
-            ws_response,
             cache_request,
-            cache_response,
             db_ring,
             publish_manager,
             subscription_manager,
@@ -91,7 +95,7 @@ impl NetworkManager {
             slow_rr: Rc::new(RefCell::new(0)),
         };
 
-        manager.start_response_reader();
+        manager.start_response_reader(from_connections, from_cache);
         manager
     }
 
@@ -307,16 +311,16 @@ impl NetworkManager {
         }
     }
 
-    fn start_response_reader(&self) {
+    fn start_response_reader(
+        &self,
+        from_connections: mpsc::Receiver<Vec<u8>>,
+        from_cache: mpsc::Receiver<Vec<u8>>,
+    ) {
         use futures::{channel::mpsc, FutureExt, SinkExt, StreamExt};
-        use gloo_timers::future::TimeoutFuture;
         use std::hash::{Hash, Hasher};
         use tracing::{info_span, warn};
 
         let subs = self.subscriptions.clone();
-
-        let ws_response = self.ws_response.clone();
-        let cache_response = self.cache_response.clone();
 
         // Sharded executors: fixed number of long-lived workers
         // Using module-level NUM_SHARDS and SHARD_CAP
@@ -324,11 +328,11 @@ impl NetworkManager {
         // Create shard channels + workers
         let mut shard_senders = Vec::with_capacity(NUM_SHARDS);
         for shard_idx in 0..NUM_SHARDS {
-            let (tx, mut rx) = mpsc::channel::<(std::sync::Arc<Vec<u8>>, tracing::Span)>(SHARD_CAP);
+            let (tx, mut rx) = mpsc::channel::<(std::sync::Arc<Vec<u8>>, ShardSource, tracing::Span)>(SHARD_CAP);
             let subs_clone = subs.clone();
 
             spawn_local(async move {
-                let mut local_batch: Vec<(std::sync::Arc<Vec<u8>>, tracing::Span)> =
+                let mut local_batch: Vec<(std::sync::Arc<Vec<u8>>, ShardSource, tracing::Span)> =
                     Vec::with_capacity(BATCH_SIZE);
 
                 loop {
@@ -354,104 +358,91 @@ impl NetworkManager {
 
                     // Process in-order within the shard to preserve per-sub ordering
                     let batch = std::mem::take(&mut local_batch);
-                    NetworkManager::handle_message_batch(subs_clone.clone(), batch).await;
+                    // Extract just the bytes and span for processing
+                    let processed_batch: Vec<(std::sync::Arc<Vec<u8>>, tracing::Span)> = batch
+                        .into_iter()
+                        .map(|(bytes, _source, span)| (bytes, span))
+                        .collect();
+                    NetworkManager::handle_message_batch(subs_clone.clone(), processed_batch).await;
                 }
             });
 
             shard_senders.push(tx);
         }
 
-        // Distributor task: alternate reads between cache and ws, route by sub_id to shards
+        // Distributor task: use select! to race between from_connections and from_cache
         spawn_local(async move {
-            let mut empty_backoff_ms: u32 = INITIAL_BACKOFF_MS;
-            let mut prefer_cache = true; // start by preferring cache, then alternate
+            use futures::select;
+
+            let mut from_connections = from_connections.fuse();
+            let mut from_cache = from_cache.fuse();
 
             loop {
-                // Try preferred source first, then fallback to the other
-                let mut took_cache = false;
-
-                let next_bytes = if prefer_cache {
-                    if let Some(bytes) = cache_response.borrow_mut().read_next() {
-                        took_cache = true;
-                        Some(bytes)
-                    } else {
-                        ws_response.borrow_mut().read_next()
+                // Use select! to race between the two receivers
+                let bytes_result = select! {
+                    bytes = from_connections.next() => {
+                        bytes.map(|b| (b, ShardSource::Network))
                     }
-                } else {
-                    if let Some(bytes) = ws_response.borrow_mut().read_next() {
-                        took_cache = false;
-                        Some(bytes)
-                    } else {
-                        if let Some(bytes) = cache_response.borrow_mut().read_next() {
-                            took_cache = true;
-                            Some(bytes)
-                        } else {
-                            None
-                        }
+                    bytes = from_cache.next() => {
+                        bytes.map(|b| (b, ShardSource::Cache))
                     }
                 };
 
-                if let Some(bytes) = next_bytes {
-                    empty_backoff_ms = INITIAL_BACKOFF_MS;
-
-                    // Decode minimally to route by sub_id
-                    let wm = match flatbuffers::root::<fb::WorkerMessage>(&bytes) {
-                        Ok(w) => w,
-                        Err(_) => {
-                            warn!("WorkerMessage decode failed in distributor; dropping frame");
-                            // Flip preference even on decode fail to keep fairness over time
-                            prefer_cache = !prefer_cache;
+                match bytes_result {
+                    Some((bytes, source)) => {
+                        // Decode minimally to route by sub_id
+                        let wm = match flatbuffers::root::<fb::WorkerMessage>(&bytes) {
+                            Ok(w) => w,
+                            Err(_) => {
+                                warn!("WorkerMessage decode failed in distributor; dropping frame");
+                                continue;
+                            }
+                        };
+                        let sid = wm.sub_id().unwrap_or("");
+                        if sid.is_empty() {
+                            warn!("Invalid message: Missing sub_id");
                             continue;
                         }
-                    };
-                    let sid = wm.sub_id().unwrap_or("");
-                    if sid.is_empty() {
-                        warn!("Invalid message: Missing sub_id");
-                        prefer_cache = !prefer_cache;
-                        continue;
-                    }
 
-                    // Sub span for downstream processing
-                    let sub_span = info_span!("sub_request", sub_id = %sid);
+                        // Sub span for downstream processing
+                        let sub_span = info_span!("sub_request", sub_id = %sid);
 
-                    // Compute shard index (respect forced shard if set)
-                    let shard_idx = {
-                        let forced = subs
-                            .read()
-                            .ok()
-                            .and_then(|g| g.get(sid).and_then(|s| s.forced_shard));
-                        if let Some(idx) = forced {
-                            idx.min(NUM_SHARDS - 1)
-                        } else {
-                            let mut hasher = std::collections::hash_map::DefaultHasher::new();
-                            sid.hash(&mut hasher);
-                            // Route non-forced subs only to fast shards (exclude reserved slow shards at the end)
-                            let fast_count = NUM_SHARDS.saturating_sub(SLOW_SHARDS);
-                            if fast_count > 0 {
-                                (hasher.finish() as usize) % fast_count
+                        // Compute shard index (respect forced shard if set)
+                        let shard_idx = {
+                            let forced = subs
+                                .read()
+                                .ok()
+                                .and_then(|g| g.get(sid).and_then(|s| s.forced_shard));
+                            if let Some(idx) = forced {
+                                idx.min(NUM_SHARDS - 1)
                             } else {
-                                // Fallback: if all shards are reserved as slow, spread across all
-                                (hasher.finish() as usize) % NUM_SHARDS
+                                let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                                sid.hash(&mut hasher);
+                                // Route non-forced subs only to fast shards (exclude reserved slow shards at the end)
+                                let fast_count = NUM_SHARDS.saturating_sub(SLOW_SHARDS);
+                                if fast_count > 0 {
+                                    (hasher.finish() as usize) % fast_count
+                                } else {
+                                    // Fallback: if all shards are reserved as slow, spread across all
+                                    (hasher.finish() as usize) % NUM_SHARDS
+                                }
+                            }
+                        };
+
+                        // Send to shard with try_send first to avoid stalling distributor; fall back to await to preserve ordering
+                        let fb_arc = std::sync::Arc::new(bytes);
+                        let mut tx = shard_senders[shard_idx].clone();
+                        if let Err(_e) = tx.try_send((fb_arc.clone(), source, sub_span.clone())) {
+                            if let Err(e) = tx.send((fb_arc, source, sub_span)).await {
+                                warn!("Shard {} send failed: {:?}", shard_idx, e);
                             }
                         }
-                    };
-
-                    // Send to shard with try_send first to avoid stalling distributor; fall back to await to preserve ordering
-                    let fb_arc = std::sync::Arc::new(bytes);
-                    let mut tx = shard_senders[shard_idx].clone();
-                    if let Err(_e) = tx.try_send((fb_arc.clone(), sub_span.clone())) {
-                        if let Err(e) = tx.send((fb_arc, sub_span)).await {
-                            warn!("Shard {} send failed: {:?}", shard_idx, e);
-                        }
                     }
-
-                    // Alternate preference after a successful read
-                    prefer_cache = !took_cache;
-                } else {
-                    // Nothing in either buffer -> backoff
-                    TimeoutFuture::new(empty_backoff_ms).await;
-                    empty_backoff_ms = (empty_backoff_ms.saturating_mul(2)).min(MAX_BACKOFF_MS);
-                    // Keep the same preference to try the same order next time
+                    None => {
+                        // Both channels closed
+                        warn!("Distributor exiting (both channels closed)");
+                        break;
+                    }
                 }
             }
         });

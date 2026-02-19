@@ -455,3 +455,116 @@
   2. Update prd.json to mark US-005 as passing
   3. Append to progress.txt
 • Let me now stage and commit my changes, then update the PRD:
+• Used Shell (cd /root/code/nipworker &... git add -A && git status)
+• Hmm, let me look at the git status again. I see several modifications to the l
+  ogs/ directory. Normally, I try to avoid committing log files, but these appea
+  r to be part of the established project structure here.
+
+  Wait, I also see progress.txt and prd.json have been modified. Since prd.json
+  was already partially updated, I need to ensure my commit is perfectly synchro
+  nized with the official state of the repository.
+
+  Actually, before I commit these files and mark the story as passing in prd.jso
+  n, I need to verify the current content of prd.json. I want to confirm that th
+  e passes: true flag for my user story is exactly where it needs to be and that
+  no other unexpected changes are present in that specific file. This will confi
+  rm that the validation logic will work as expected once I push the update. I'l
+  l check the file content now.
+• Let me commit the changes:
+• Used Shell (cd /root/code/nipworker &...t to MessageChannel" 2>&1)
+• Now let me update the PRD to mark US-005 as passing:
+• Now let me update the PRD to mark US-005 as passing:
+• Used Shell (cd /root/code/nipworker &... mv prd.json.tmp prd.json)
+• Now let me verify only one story has passes: true (US-005):
+• Let me verify only US-005 is now marked as passing:
+• Used Shell (cd /root/code/nipworker &...ories[].passes]' prd.json)
+• Hmm, the previous output was a bit too condensed. I see a list of IDs and bool
+  eans, but I need to be absolutely certain which boolean belongs to which ID. I
+  f the order was preserved, it looks like US-001 through US-005 are all passing
+  , while the rest remain false.
+
+  Wait, I should double-check this mapping before finalizing the report. If I mi
+  sinterpret the sequence, I might miss a regression. Actually, a much better wa
+  y to verify this is to use jq to explicitly join the ID with its corresponding
+  passes status. This will give me a clear, paired view of the results for every
+  story. Let me run a more precise query to confirm the status of all stories.
+• Used Shell (cd /root/code/nipworker &...d): \(.passes)"' prd.json)
+• I have successfully marked US-005 as passing in prd.json. I also notice that U
+  S-001 through US-004 are already marked as true, which aligns with the project
+  history. Wait, I should make sure this update to the PRD is actually persisted
+  in the repository. It's not enough to just modify the file locally; I need to
+  stage and commit this change to ensure the state is saved. I'll add prd.json t
+  o the git index and commit it with a clear message indicating that I'm updatin
+  g the story status.
+• Let me commit the PRD update:
+• Used Shell (cd /root/code/nipworker &...k US-005 as passing" 2>&1)
+• Now let me append the progress to progress.txt:
+• Now let me append the progress to progress.txt:
+• Used Shell (cd /root/code/nipworker &...t progress.txt | tail -25)
+• Let me commit the progress.txt update and then summarize the completion of US-
+  005:
+• Let me commit the progress.txt update:
+• Used Shell (cd /root/code/nipworker &...progress for US-005" 2>&1)
+• Now let me verify the final state and summarize what was done:
+• Let me verify the final state:
+• Used Shell (cd /root/code/nipworker &...ild:parser 2>&1 | tail -5)
+• US-005 is complete. Let me summarize what was done:## Summary of US-005 Implem
+  entation
+
+  Story: Migrate Parser worker - CryptoClient to MessageChannel
+
+  Files Changed:1. src/parser/src/crypto_client.rs - Main implementation2. src/p
+  arser/Cargo.toml - Added web-sys features 3. src/parser/src/lib.rs - Updated N
+  ostrClient constructor signature4. src/crypto/index.ts - Minor update to match
+  new signatures
+
+  Key Changes:
+
+  • Replaced SAB-based communication with MessageChannel ports
+  • CryptoClient::new() now accepts MessagePort parameters
+  • Response pump uses mpsc::Receiver::next().await instead of polling
+  • call_raw() sends requests through Port::send() method
+  • Request/response correlation preserved via HashMap
+
+  Build Status: ✅ Passes
+
+  The next story (US-006) will be about migrating the NetworkManager distributor
+  to use MessageChannel select!.
+• I've completed US-005: Migrate Parser worker - CryptoClient to MessageChannel.
+
+  Summary
+
+  Files Changed:
+
+  • src/parser/src/crypto_client.rs - Migrated from SAB rings to MessageChannel
+    rts
+  • src/parser/Cargo.toml - Added MessagePort and MessageEvent web-sys features
+  • src/parser/src/lib.rs - Updated NostrClient::new() signature to accept Messa
+    Port parameters
+  • src/crypto/index.ts - Added temporary fix for signature compatibility
+
+  Key Changes:
+
+  1. CryptoClient::new() now accepts MessagePort parameters (to_crypto, from_cry
+     ) instead of SharedArrayBuffer
+  2. Replaced req SAB with to_crypto port using Port::new() wrapper
+  3. Replaced resp SAB with from_crypto receiver using Port::from_receiver()
+  4. Updated call_raw() to send SignerRequest through Port::send() method
+  5. Updated response pump to use from_crypto_rx.next().await instead of polling
+     th exponential backoff
+  6. Kept request/response matching by request_id using the existing pending Has
+     p
+
+  Build Status:
+
+  ✅ Parser worker builds successfully with npm run build:parser
+
+  Commits:
+
+  • c401f9a - feat: US-005 - Migrate Parser worker - CryptoClient to MessageChan
+    l
+  • ac1623d - Update PRD: mark US-005 as passing
+  • b5a62fe - Update progress for US-005
+
+  The next story is US-006: Migrate Parser worker - NetworkManager distributor w
+  hich will replace the SAB distributor task with MessageChannel select!.
