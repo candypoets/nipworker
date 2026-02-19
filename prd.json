@@ -87,7 +87,7 @@
         "Build passes"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Reference: src/parser/src/crypto_client.rs lines 1-325"
     },
     {
