@@ -86,22 +86,14 @@ export class NostrManager {
 
 	constructor() {
 		// Create 6 MessageChannels for worker-to-worker communication
-		// cacheToConn: cache -> connections (REQ frames)
-		const cacheToConn = new MessageChannel();
-		// parserToCache: parser -> cache (cache requests)
-		const parserToCache = new MessageChannel();
-		// connToParser: connections -> parser (WebSocket messages)
-		const connToParser = new MessageChannel();
-		// parserToCrypto: parser -> crypto (signing requests)
-		const parserToCrypto = new MessageChannel();
-		// cryptoToConn: crypto -> connections (NIP-46 frames)
-		const cryptoToConn = new MessageChannel();
-		// cryptoToMain: crypto -> main (control responses)
-		const cryptoToMain = new MessageChannel();
-		// cryptoToParser: crypto -> parser (crypto responses)
-		const cryptoToParser = new MessageChannel();
-		// connToCrypto: connections -> crypto (NIP-46 responses)
-		const connToCrypto = new MessageChannel();
+		// Each channel connects two workers - each worker gets one port (which is bidirectional)
+		// Channel naming: workerA_workerB (no direction, just identifies the pair)
+		const parser_cache = new MessageChannel(); // parser ↔ cache
+		const parser_connections = new MessageChannel(); // parser ↔ connections
+		const parser_crypto = new MessageChannel(); // parser ↔ crypto
+		const cache_connections = new MessageChannel(); // cache ↔ connections
+		const crypto_connections = new MessageChannel(); // crypto ↔ connections
+		const crypto_main = new MessageChannel(); // crypto ↔ main
 
 		const connectionURL = new URL('./connections/index.js', import.meta.url);
 		const cacheURL = new URL('./cache/index.js', import.meta.url);
@@ -114,70 +106,63 @@ export class NostrManager {
 		this.crypto = new Worker(cryptoURL, { type: 'module' });
 
 		// Transfer ports to connections worker
+		// Needs: cachePort, parserPort, cryptoPort
 		this.connections.postMessage(
 			{
 				type: 'init',
 				payload: {
 					statusRing,
-					fromCache: cacheToConn.port1,
-					toParser: connToParser.port1,
-					fromCrypto: cryptoToConn.port1,
-					toCrypto: connToCrypto.port1
+					cachePort: cache_connections.port1,
+					parserPort: parser_connections.port1,
+					cryptoPort: crypto_connections.port1
 				}
 			} as InitConnectionsMsg,
-			[cacheToConn.port1, connToParser.port1, cryptoToConn.port1, connToCrypto.port1]
+			[cache_connections.port1, parser_connections.port1, crypto_connections.port1]
 		);
 
 		// Transfer ports to cache worker
+		// Needs: parserPort, connectionsPort
 		this.cache.postMessage(
 			{
 				type: 'init',
 				payload: {
-					fromParser: parserToCache.port1,
-					toConnections: cacheToConn.port2
+					parserPort: parser_cache.port1,
+					connectionsPort: cache_connections.port2
 				}
 			} as InitCacheMsg,
-			[parserToCache.port1, cacheToConn.port2]
+			[parser_cache.port1, cache_connections.port2]
 		);
 
 		// Transfer ports to parser worker
+		// Needs: connectionsPort, cachePort, cryptoPort
 		this.parser.postMessage(
 			{
 				type: 'init',
 				payload: {
-					fromConnections: connToParser.port2,
-					toCache: parserToCache.port2,
-					fromCache: parserToCache.port2,
-					toCrypto: parserToCrypto.port1,
-					fromCrypto: cryptoToParser.port2
+					connectionsPort: parser_connections.port2,
+					cachePort: parser_cache.port2,
+					cryptoPort: parser_crypto.port1
 				}
 			} as InitParserMsg,
-			[connToParser.port2, parserToCache.port2, parserToCrypto.port1, cryptoToParser.port2]
+			[parser_connections.port2, parser_cache.port2, parser_crypto.port1]
 		);
 
 		// Transfer ports to crypto worker
+		// Needs: parserPort, connectionsPort, mainPort
 		this.crypto.postMessage(
 			{
 				type: 'init',
 				payload: {
-					fromParser: parserToCrypto.port2,
-					toConnections: cryptoToConn.port2,
-					toMain: cryptoToMain.port1,
-					toParser: cryptoToParser.port1,
-					fromConnections: connToCrypto.port2
+					parserPort: parser_crypto.port2,
+					connectionsPort: crypto_connections.port2,
+					mainPort: crypto_main.port1
 				}
 			} as InitCryptoMsg,
-			[
-				parserToCrypto.port2,
-				cryptoToConn.port2,
-				cryptoToMain.port1,
-				cryptoToParser.port1,
-				connToCrypto.port2
-			]
+			[parser_crypto.port2, crypto_connections.port2, crypto_main.port1]
 		);
 
-		// Listen on cryptoToMain.port2 for control responses
-		cryptoToMain.port2.onmessage = (event) => {
+		// Listen on crypto_main.port2 for control responses
+		crypto_main.port2.onmessage = (event) => {
 			const msg = event.data;
 			if (msg?.type === 'bunker_discovered') {
 				const { bunker_url } = msg;

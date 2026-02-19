@@ -4,11 +4,12 @@ import wasmUrl from './pkg/rust_worker_bg.wasm?url';
 export type InitParserMsg = {
 	type: 'init';
 	payload: {
-		fromConnections: MessagePort;
-		toCache: MessagePort;
-		fromCache: MessagePort;
-		toCrypto: MessagePort;
-		fromCrypto: MessagePort;
+		/** Port to communicate with connections worker */
+		connectionsPort: MessagePort;
+		/** Port to communicate with cache worker */
+		cachePort: MessagePort;
+		/** Port to communicate with crypto worker */
+		cryptoPort: MessagePort;
 	};
 };
 
@@ -33,10 +34,12 @@ self.addEventListener('message', async (evt: MessageEvent<InitParserMsg | { type
 	if (msg?.type === 'init') {
 		await ensureWasm();
 
-		const { fromConnections, toCache, fromCache, toCrypto, fromCrypto } = msg.payload;
+		const { connectionsPort, cachePort, cryptoPort } = msg.payload;
 
 		// Create the Rust worker and start it
-		const client = new NostrClient(fromConnections, toCache, fromCache, toCrypto, fromCrypto);
+		// Note: Rust expects (from_connections, to_cache, from_cache, to_crypto, from_crypto)
+		// Each port is bidirectional, so we pass the same port for send and receive
+		const client = new NostrClient(connectionsPort, cachePort, cachePort, cryptoPort, cryptoPort);
 		// Resolve the deferred so all queued .then handlers can run
 		resolveInstance?.(client);
 		return;

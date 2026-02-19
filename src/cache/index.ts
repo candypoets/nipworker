@@ -6,8 +6,10 @@ import wasmUrl from './pkg/cache_bg.wasm?url';
 export type InitCacheMsg = {
 	type: 'init';
 	payload: {
-		fromParser: MessagePort;
-		toConnections: MessagePort;
+		/** Port to communicate with parser worker */
+		parserPort: MessagePort;
+		/** Port to communicate with connections worker */
+		connectionsPort: MessagePort;
 	};
 };
 
@@ -30,15 +32,16 @@ self.addEventListener('message', async (evt: MessageEvent<InitCacheMsg | { type:
 	if (msg?.type === 'init') {
 		await ensureWasm();
 
-		const { fromParser, toConnections } = msg.payload;
+		const { parserPort, connectionsPort } = msg.payload;
 
-		console.log('[cache] fromParser port', fromParser);
-		console.log('[cache] toConnections port', toConnections);
+		console.log('[cache] parserPort', parserPort);
+		console.log('[cache] connectionsPort', connectionsPort);
 
 		// Create the Rust worker and start it
 		// Default buffer size: 1MB for general ring buffer usage
 		const maxBufferSize = 1024 * 1024;
-		_instance = new Caching(maxBufferSize, fromParser, toConnections);
+		// Note: Rust expects (maxBufferSize, from_parser, to_connections)
+		_instance = new Caching(maxBufferSize, parserPort, connectionsPort);
 
 		return;
 	}

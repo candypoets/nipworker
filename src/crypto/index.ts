@@ -6,11 +6,12 @@ import wasmUrl from './pkg/crypto_bg.wasm?url';
 export type InitCryptoMsg = {
 	type: 'init';
 	payload: {
-		fromParser: MessagePort;
-		toConnections: MessagePort;
-		toMain: MessagePort;
-		toParser: MessagePort;
-		fromConnections: MessagePort;
+		/** Port to communicate with parser worker */
+		parserPort: MessagePort;
+		/** Port to communicate with connections worker */
+		connectionsPort: MessagePort;
+		/** Port to communicate with main thread */
+		mainPort: MessagePort;
 	};
 };
 
@@ -62,17 +63,16 @@ self.addEventListener('message', async (evt: MessageEvent<any>) => {
 	if (msg?.type === 'init') {
 		await ensureWasm();
 
-		const { fromParser, toConnections, toMain, toParser, fromConnections } = msg.payload;
+		const { parserPort, connectionsPort, mainPort } = msg.payload;
 		console.log('Initializing Crypto');
-		console.log('[crypto] fromParser port', fromParser);
-		console.log('[crypto] toConnections port', toConnections);
-		console.log('[crypto] toMain port', toMain);
-		console.log('[crypto] toParser port', toParser);
-		console.log('[crypto] fromConnections port', fromConnections);
+		console.log('[crypto] parserPort', parserPort);
+		console.log('[crypto] connectionsPort', connectionsPort);
+		console.log('[crypto] mainPort', mainPort);
 
 		// Create the Rust worker and start it with MessageChannel ports
 		// Parameters: toMain, fromParser, toConnections, fromConnections, toParser
-		const crypto = new Crypto(toMain, fromParser, toConnections, fromConnections, toParser);
+		// Each port is bidirectional, so we pass the same port for send and receive
+		const crypto = new Crypto(mainPort, parserPort, connectionsPort, connectionsPort, parserPort);
 		// Resolve to deferred so queued handlers can use the instance
 		resolveInstance?.(crypto);
 

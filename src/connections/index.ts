@@ -7,10 +7,12 @@ export type InitConnectionsMsg = {
 	type: 'init';
 	payload: {
 		statusRing: SharedArrayBuffer;
-		fromCache: MessagePort;
-		toParser: MessagePort;
-		fromCrypto: MessagePort;
-		toCrypto: MessagePort;
+		/** Port to communicate with cache worker */
+		cachePort: MessagePort;
+		/** Port to communicate with parser worker */
+		parserPort: MessagePort;
+		/** Port to communicate with crypto worker */
+		cryptoPort: MessagePort;
 	};
 };
 
@@ -34,16 +36,16 @@ self.addEventListener(
 		if (msg?.type === 'init') {
 			await ensureWasm();
 
-			const { statusRing, fromCache, toParser, fromCrypto, toCrypto } = msg.payload;
+			const { statusRing, cachePort, parserPort, cryptoPort } = msg.payload;
 
 			console.log('[connections] statusRing.len', statusRing.byteLength);
-			console.log('[connections] fromCache port', fromCache);
-			console.log('[connections] toParser port', toParser);
-			console.log('[connections] fromCrypto port', fromCrypto);
-			console.log('[connections] toCrypto port', toCrypto);
+			console.log('[connections] cachePort', cachePort);
+			console.log('[connections] parserPort', parserPort);
+			console.log('[connections] cryptoPort', cryptoPort);
 
 			// Create the Rust worker and start it
-			instance = new WSRust(statusRing, fromCache, toParser, fromCrypto, toCrypto);
+			// Note: Rust expects (statusRing, fromCache, toParser, fromCrypto, toCrypto)
+			instance = new WSRust(statusRing, cachePort, parserPort, cryptoPort, cryptoPort);
 
 			return;
 		}
