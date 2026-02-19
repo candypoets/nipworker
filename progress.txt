@@ -124,3 +124,24 @@
 - The `Port::from_receiver()` abstraction continues to work well - creates ready-to-use mpsc::Receiver
 - No need for complex polling/backoff logic with MessageChannel - `.await` on receiver is sufficient
 ---
+
+## 2026-02-19 13:10:15 - US-007
+- Migrated Parser worker's main lib.rs from SAB rings to MessageChannel ports
+- Updated `NostrClient::new()` signature to accept `to_cache: MessagePort` parameter (5 ports total now)
+- Removed SAB-based `cache_request` and `db_ring` fields from `NetworkManager` struct
+- Replaced SAB-based cache writes with MessageChannel port sends in `open_subscription()` and `publish_event()`
+- Updated `NetworkManager::new()` to accept `to_cache: Rc<RefCell<Port>>` parameter
+- Migrated `SaveToDbPipe` to use MessageChannel port instead of SAB ring
+- Updated `Pipeline::default()` to accept `to_cache` instead of `db_ring`
+- Updated `SubscriptionManager::process_subscription()` and `build_pipeline()` to use `Port`
+- Updated TypeScript `InitParserMsg` type to include `toCache: MessagePort`
+- Updated main thread to pass `parserToCache.port2` to parser worker as `toCache`
+- Build passes with `npm run build:parser` and `npm run build`
+
+**Learnings for future iterations:**
+- The `SaveToDbPipe` sends events to cache via `CacheRequest` FlatBuffer messages through the `to_cache` port
+- When migrating from SAB to MessageChannel, the FlatBuffer message format stays the same - only the transport mechanism changes
+- The `NostrEvent::build_flatbuffer()` method creates the correct type for `CacheRequest.event` field
+- Pipeline event types: `raw` (NostrEvent) takes precedence over `parsed` (ParsedEvent) for cache storage
+- Always verify TypeScript port transfer list matches Rust constructor parameters to avoid runtime errors
+---
