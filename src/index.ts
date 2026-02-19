@@ -143,6 +143,7 @@ export class NostrManager {
 				type: 'init',
 				payload: {
 					fromConnections: connToParser.port2,
+					toCache: parserToCache.port2,
 					fromCache: parserToCache.port2,
 					toCrypto: parserToCrypto.port1,
 					fromCrypto: cryptoToParser.port2

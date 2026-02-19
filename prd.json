@@ -105,7 +105,7 @@
         "Build passes"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "Reference: src/parser/src/network/mod.rs lines 310-458"
     },
     {

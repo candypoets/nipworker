@@ -5,12 +5,12 @@ use crate::NostrError;
 use crate::crypto_client::CryptoClient;
 use shared::generated::nostr::fb::{self};
 use shared::types::Event;
+use shared::Port;
 
 type Result<T> = std::result::Result<T, NostrError>;
 
 use hex::decode_to_slice;
 use rustc_hash::FxHashSet;
-use shared::SabRing;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -219,7 +219,7 @@ impl Pipeline {
     /// Create default pipeline: parsing + save to db + serialize events
     pub fn default(
         parser: Arc<Parser>,
-        db_ring: Rc<RefCell<SabRing>>,
+        to_cache: Rc<RefCell<Port>>,
         subscription_id: String,
     ) -> Result<Self> {
         Self::new(
@@ -231,7 +231,7 @@ impl Pipeline {
                     vec![],
                 ))),
                 PipeType::Parse(ParsePipe::new(parser)),
-                PipeType::SaveToDb(SaveToDbPipe::new(db_ring)),
+                PipeType::SaveToDb(SaveToDbPipe::new(to_cache)),
                 PipeType::SerializeEvents(SerializeEventsPipe::new(subscription_id.clone())),
             ],
             subscription_id,

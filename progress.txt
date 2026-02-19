@@ -100,3 +100,27 @@
 - Keep the pending HashMap for request/response correlation - this pattern works well with MessageChannel
 - When sending through MessagePort, errors need to be handled and pending requests cleaned up
 ---
+
+## 2026-02-19 13:02:05 - US-006
+- Migrated Parser worker's NetworkManager distributor from SAB rings to MessageChannel ports
+- Updated `NetworkManager::new()` to accept `from_connections` and `from_cache` mpsc::Receiver parameters
+- Removed `ws_response` and `cache_response` SAB fields from NetworkManager struct
+- Replaced polling loop with `select!` macro racing between `from_connections` and `from_cache` receivers
+- Added `ShardSource` enum to track message origin (Network vs Cache)
+- Removed `prefer_cache` round-robin logic and exponential backoff (no longer needed with MessageChannel)
+- Kept sharding logic unchanged - messages are still routed to 10 shard workers by sub_id
+- Updated sharding channel to include `ShardSource` for debugging/metrics
+- Added new `cryptoToParser` MessageChannel for crypto responses to parser
+- Updated NostrClient constructor to create receivers from MessagePorts using `Port::from_receiver()`
+- Updated TypeScript types in parser/index.ts and crypto/index.ts for new ports
+- Updated main thread index.ts to create and transfer cryptoToParser port
+- Build passes with `npm run build` - all WASM crates compile successfully
+
+**Learnings for future iterations:**
+- The `select!` macro from `futures` crate works perfectly for racing between multiple receivers
+- With MessageChannel, the distributor task exits cleanly when both channels close (returns `None`)
+- Sharding logic doesn't need to change - just wrap the bytes with metadata before sending to shards
+- When adding a new MessageChannel, need to update: types in both workers, main thread constructor, and transfer lists
+- The `Port::from_receiver()` abstraction continues to work well - creates ready-to-use mpsc::Receiver
+- No need for complex polling/backoff logic with MessageChannel - `.await` on receiver is sufficient
+---

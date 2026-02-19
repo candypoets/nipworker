@@ -1,12 +1,11 @@
 #![allow(async_fn_in_trait)]
 
 use flatbuffers::FlatBufferBuilder;
-use js_sys::SharedArrayBuffer;
 use web_sys::MessagePort;
 use shared::{
     telemetry,
     types::{nostr::Template, Event, ParserError, TypesError},
-    Port, SabRing,
+    Port,
 };
 use wasm_bindgen::prelude::*;
 
@@ -101,12 +100,11 @@ pub struct NostrClient {
 impl NostrClient {
     #[wasm_bindgen(constructor)]
     pub async fn new(
-        db_ring: SharedArrayBuffer,
-        cache_request: SharedArrayBuffer, // ws request
+        from_connections: MessagePort,
+        to_cache: MessagePort,
+        from_cache: MessagePort,
         to_crypto: MessagePort,
         from_crypto: MessagePort,
-        from_connections: MessagePort,
-        from_cache: MessagePort,
     ) -> Self {
         telemetry::init(tracing::Level::ERROR);
 
@@ -115,6 +113,9 @@ impl NostrClient {
         // Create receivers from MessagePorts for network messages
         let from_connections_rx = Port::from_receiver(from_connections);
         let from_cache_rx = Port::from_receiver(from_cache);
+
+        // Wrap to_cache port for sending cache requests
+        let to_cache_port = Rc::new(RefCell::new(Port::new(to_cache)));
 
         // let signer_manager = Arc::new(SignerManager::new());
         let crypto_client = Arc::new(
@@ -126,12 +127,7 @@ impl NostrClient {
 
         let network_manager = NetworkManager::new(
             parser.clone(),
-            Rc::new(RefCell::new(
-                SabRing::new(cache_request).expect("Failed to create SabRing for cache_request"),
-            )),
-            Rc::new(RefCell::new(
-                SabRing::new(db_ring).expect("Failed to create SabRing for db_ring"),
-            )),
+            to_cache_port,
             from_connections_rx,
             from_cache_rx,
             crypto_client.clone(),

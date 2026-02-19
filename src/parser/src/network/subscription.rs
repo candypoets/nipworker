@@ -3,11 +3,11 @@ use crate::pipeline::pipes::*;
 use crate::pipeline::{PipeType, Pipeline};
 use shared::generated::nostr::fb;
 use shared::types::network::Request;
+use shared::Port;
 
 use crate::NostrError;
 use crate::crypto_client::CryptoClient;
 use rustc_hash::FxHashMap;
-use shared::SabRing;
 
 type Result<T> = std::result::Result<T, NostrError>;
 use std::cell::RefCell;
@@ -83,7 +83,7 @@ impl SubscriptionManager {
     pub async fn process_subscription(
         &self,
         subscription_id: &String,
-        db_ring: Rc<RefCell<SabRing>>,
+        to_cache: Rc<RefCell<Port>>,
         _requests: Vec<Request>,
         config: &fb::SubscriptionConfig<'_>,
     ) -> Result<Pipeline> {
@@ -91,7 +91,7 @@ impl SubscriptionManager {
         let _permit = self.acquire_permit().await;
 
         // Create pipeline based on config
-        let pipeline = self.build_pipeline(config.pipeline(), db_ring, self.crypto_client.clone(), subscription_id.clone())?;
+        let pipeline = self.build_pipeline(config.pipeline(), to_cache, self.crypto_client.clone(), subscription_id.clone())?;
 
         // let (network_requests, events) =
         //     match self.cache_processor.process_local_requests(_requests).await {
@@ -214,7 +214,7 @@ impl SubscriptionManager {
     fn build_pipeline(
         &self,
         pipeline_config: Option<fb::PipelineConfig<'_>>,
-        db_ring: Rc<RefCell<SabRing>>,
+        to_cache: Rc<RefCell<Port>>,
         crypto_client: Arc<CryptoClient>,
         subscription_id: String,
     ) -> Result<Pipeline> {
@@ -228,7 +228,7 @@ impl SubscriptionManager {
                             PipeType::Parse(ParsePipe::new(self.parser.clone()))
                         }
                         fb::PipeConfig::SaveToDbPipeConfig => {
-                            PipeType::SaveToDb(SaveToDbPipe::new(db_ring.clone()))
+                            PipeType::SaveToDb(SaveToDbPipe::new(to_cache.clone()))
                         }
                         fb::PipeConfig::SerializeEventsPipeConfig => PipeType::SerializeEvents(
                             SerializeEventsPipe::new(subscription_id.clone()),
@@ -275,14 +275,14 @@ impl SubscriptionManager {
                     pipes.push(pipe);
                 }
                 if pipes.is_empty() {
-                    Pipeline::default(self.parser.clone(), db_ring.clone(), subscription_id)
+                    Pipeline::default(self.parser.clone(), to_cache.clone(), subscription_id)
                 } else {
                     Pipeline::new(pipes, subscription_id)
                 }
             }
             None => {
                 // Use default pipeline
-                Pipeline::default(self.parser.clone(), db_ring.clone(), subscription_id)
+                Pipeline::default(self.parser.clone(), to_cache.clone(), subscription_id)
             }
         }
     }

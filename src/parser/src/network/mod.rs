@@ -16,7 +16,7 @@ use rustc_hash::FxHashMap;
 use shared::generated::nostr::fb::{self};
 use shared::types::network::Request;
 use shared::types::nostr::Template;
-use shared::SabRing;
+use shared::Port;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Arc, RwLock};
@@ -52,8 +52,7 @@ enum ShardSource {
 }
 
 pub struct NetworkManager {
-    cache_request: Rc<RefCell<SabRing>>,
-    db_ring: Rc<RefCell<SabRing>>,
+    to_cache: Rc<RefCell<Port>>,
     publish_manager: publish::PublishManager,
     subscription_manager: subscription::SubscriptionManager,
     subscriptions: Arc<RwLock<FxHashMap<String, Sub>>>,
@@ -75,8 +74,7 @@ fn unquote_simple(s: &str) -> &str {
 impl NetworkManager {
     pub fn new(
         parser: Arc<Parser>,
-        cache_request: Rc<RefCell<SabRing>>,
-        db_ring: Rc<RefCell<SabRing>>,
+        to_cache: Rc<RefCell<Port>>,
         from_connections: mpsc::Receiver<Vec<u8>>,
         from_cache: mpsc::Receiver<Vec<u8>>,
         crypto_client: Arc<CryptoClient>,
@@ -86,8 +84,7 @@ impl NetworkManager {
             subscription::SubscriptionManager::new(parser.clone(), crypto_client.clone());
 
         let manager = Self {
-            cache_request,
-            db_ring,
+            to_cache,
             publish_manager,
             subscription_manager,
             subscriptions: Arc::new(RwLock::new(FxHashMap::default())),
@@ -472,7 +469,7 @@ impl NetworkManager {
             .subscription_manager
             .process_subscription(
                 &subscription_id,
-                self.db_ring.clone(),
+                self.to_cache.clone(),
                 parsed_requests,
                 config,
             )
@@ -554,8 +551,8 @@ impl NetworkManager {
             builder.finish(cache_req, None);
             let bytes = builder.finished_data().to_vec();
 
-            // Write raw CacheRequest bytes to the cache_request ring
-            self.cache_request.borrow_mut().write(&bytes);
+            // Send CacheRequest bytes through the MessageChannel port
+            let _ = self.to_cache.borrow().send(&bytes);
         }
 
         Ok(())
@@ -632,8 +629,8 @@ impl NetworkManager {
             builder.finish(cache_req, None);
             let bytes = builder.finished_data().to_vec();
 
-            // Write raw CacheRequest bytes to the cache_request ring
-            self.cache_request.borrow_mut().write(&bytes);
+            // Send CacheRequest bytes through the MessageChannel port
+            let _ = self.to_cache.borrow().send(&bytes);
         }
 
         // for relay_url in &all_relays {
