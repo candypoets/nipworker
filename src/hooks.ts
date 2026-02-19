@@ -1,5 +1,5 @@
 import { Event, EventTemplate } from 'nostr-tools';
-import { SharedBufferReader } from 'src/lib/SharedBuffer';
+import { ArrayBufferReader } from 'src/lib/ArrayBufferReader';
 // import { nipWorker, statusRing } from '.';
 import { WorkerMessage } from './generated/nostr/fb';
 import { RequestObject, statusRing, manager, type SubscriptionConfig } from '.';
@@ -62,7 +62,7 @@ export function useSubscription(
 		return () => {};
 	}
 
-	let buffer: SharedArrayBuffer | null = null;
+	let buffer: ArrayBuffer | null = null;
 	let lastReadPos = 4;
 	let running = true;
 	let hasUnsubscribed = false;
@@ -83,13 +83,13 @@ export function useSubscription(
 		if (processing) return; // Avoid overlapping runs
 		processing = true;
 		try {
-			let result = SharedBufferReader.readMessages(buffer, lastReadPos);
+			let result = ArrayBufferReader.readMessages(buffer, lastReadPos);
 			while (result.hasNewData && buffer) {
 				for (const message of result.messages) {
 					callback(message);
 				}
 				lastReadPos = result.newReadPosition;
-				result = SharedBufferReader.readMessages(buffer, lastReadPos);
+				result = ArrayBufferReader.readMessages(buffer, lastReadPos);
 			}
 		} catch (e) {
 			// Guard against null buffer in race conditions
@@ -152,7 +152,7 @@ export function usePublish(
 		return () => {};
 	}
 
-	let buffer: SharedArrayBuffer | null = null;
+	let buffer: ArrayBuffer | null = null;
 	let lastReadPos: number = 4;
 	let running = true;
 
@@ -171,7 +171,7 @@ export function usePublish(
 		if (!running || !buffer) {
 			return;
 		}
-		const result = SharedBufferReader.readMessages(buffer, lastReadPos);
+		const result = ArrayBufferReader.readMessages(buffer, lastReadPos);
 		if (result.hasNewData) {
 			result.messages.forEach((message: WorkerMessage) => {
 				callback(message);
