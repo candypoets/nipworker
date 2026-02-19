@@ -4,6 +4,7 @@ use crate::db::NostrDB;
 use crate::utils::wrap_event_with_worker_message;
 use flatbuffers::FlatBufferBuilder;
 use futures::channel::mpsc;
+use futures::SinkExt;
 use futures::StreamExt;
 use serde_json::{Map, Value};
 use shared::generated::nostr::fb;
@@ -16,6 +17,8 @@ use web_sys::MessagePort;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
+
+const MAX_CONCURRENT_QUERIES: usize = 10;
 
 mod db;
 mod utils;
@@ -380,43 +383,90 @@ impl Caching {
         }
     }
 
-    /// Start multiple worker loops to process cache requests concurrently
+    /// Check if request is an event persist (has event field set)
+    fn is_persist_request(bytes: &[u8]) -> bool {
+        match flatbuffers::root::<fb::CacheRequest>(bytes) {
+            Ok(req) => req.event().is_some(),
+            Err(_) => false,
+        }
+    }
+
+    /// Start cache workers: 1 single-threaded writer for event persistence,
+    /// plus a semaphore pool for concurrent queries
     fn start(&self, mut from_parser_rx: mpsc::Receiver<Vec<u8>>) {
-        info!("starting cache");
+        info!(
+            "starting cache: 1 writer thread + {} query workers",
+            MAX_CONCURRENT_QUERIES
+        );
 
-        // TODO: Add sharded semaphore for parallelism. The old SAB architecture had
-        // 10 workers polling the ring buffer. With MessageChannel we currently have
-        // only 1 worker, which is a bottleneck under high load. Consider:
-        // 1. Sharded processing like NetworkManager (NUM_SHARDS = 10)
-        // 2. Semaphore-based concurrency limiting like SubscriptionManager
-        // 3. Separate pools for event persistence vs lookup requests
-        // This would prevent the single cache worker from being overwhelmed when
-        // the parser's SaveToDbPipe sends events from multiple shards concurrently.
-
-        // With MessageChannel, we don't need multiple workers polling a shared ring.
-        // Each message is delivered to exactly one receiver, so we use a single
-        // worker task. If we need more parallelism, we can spawn multiple cache
-        // workers each with their own port pair.
         let to_connections = self.to_connections.clone();
         let to_parser = self.to_parser.clone();
         let database = self.database.clone();
 
+        // Channel for routing persist requests to single writer
+        let (writer_tx, mut writer_rx) = mpsc::channel::<Vec<u8>>(128);
+
+        // Semaphore for limiting concurrent query operations
+        let query_semaphore = Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_QUERIES));
+
+        // === SINGLE WRITER THREAD (Event Persistence) ===
+        // Event writes must be sequential to avoid IndexedDB transaction conflicts
+        let db_writer = database.clone();
+        let tc_writer = to_connections.clone();
+        let tp_writer = to_parser.clone();
         spawn_local(async move {
             loop {
-                // Wait for next message from the parser
-                match from_parser_rx.next().await {
+                match writer_rx.next().await {
                     Some(bytes) => {
-                        Caching::process_cache_request(
-                            &database,
-                            &to_connections,
-                            &to_parser,
-                            &bytes,
-                        )
-                        .await;
+                        Caching::process_cache_request(&db_writer, &tc_writer, &tp_writer, &bytes)
+                            .await;
                     }
                     None => {
-                        // Channel closed, exit the loop
-                        info!("Cache worker channel closed, exiting");
+                        info!("Cache writer channel closed, exiting");
+                        break;
+                    }
+                }
+            }
+        });
+
+        // === DISTRIBUTOR: Route to writer or query pool ===
+        spawn_local(async move {
+            loop {
+                match from_parser_rx.next().await {
+                    Some(bytes) => {
+                        if Caching::is_persist_request(&bytes) {
+                            // Persist: route to single writer thread
+                            if let Err(e) = writer_tx.clone().send(bytes).await {
+                                warn!("Failed to send to writer: {:?}", e);
+                            }
+                        } else {
+                            // Query: acquire semaphore permit and process concurrently
+                            let permit = match query_semaphore.clone().try_acquire_owned() {
+                                Ok(p) => p,
+                                Err(_) => {
+                                    // If at capacity, wait for a permit
+                                    match query_semaphore.clone().acquire_owned().await {
+                                        Ok(p) => p,
+                                        Err(e) => {
+                                            warn!("Semaphore closed: {:?}", e);
+                                            continue;
+                                        }
+                                    }
+                                }
+                            };
+
+                            let db = database.clone();
+                            let tc = to_connections.clone();
+                            let tp = to_parser.clone();
+
+                            spawn_local(async move {
+                                let _permit = permit; // Hold until done
+                                Caching::process_cache_request(&db, &tc, &tp, &bytes).await;
+                            });
+                        }
+                    }
+                    None => {
+                        info!("Cache distributor channel closed, exiting");
                         break;
                     }
                 }

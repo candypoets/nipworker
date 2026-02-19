@@ -1,175 +1,111 @@
 {
-  "project": "NIPWorker",
-  "branchName": "ralph/messagechannel-migration",
-  "description": "Migrate worker-to-worker communication from SAB rings to MessageChannel ports",
-  "userStories": [
-    {
-      "id": "US-001",
-      "title": "Create Port wrapper module in shared crate",
-      "description": "As a developer, I need a thin wrapper around MessagePort to enable async message reception in Rust workers.",
-      "acceptanceCriteria": [
-        "Create Port struct wrapping web_sys::MessagePort in src/shared/src/port.rs",
-        "Implement from_receiver(port) -> mpsc::Receiver<Vec<u8>> method",
-        "Use Closure::wrap to bridge JS onmessage to Rust mpsc::channel",
-        "Channel buffer size of 10 for natural backpressure",
-        "Add port.rs to src/shared/src/lib.rs exports",
-        "Build passes with npm run build",
-        "Typecheck passes"
-      ],
-      "priority": 1,
-      "passes": true,
-      "notes": "Foundation module - all other stories depend on this"
-    },
-    {
-      "id": "US-002",
-      "title": "Setup MessageChannels in TypeScript main thread",
-      "description": "As a developer, I need to create and transfer MessageChannel ports to all workers during initialization.",
-      "acceptanceCriteria": [
-        "Create 6 MessageChannels: cacheToConn, parserToCache, connToParser, parserToCrypto, cryptoToConn, cryptoToMain",
-        "Transfer correct port ends to each worker's init message",
-        "Remove SAB creation for: ws_request, ws_response, ws_crypto_request, ws_crypto_response, cache_request, cache_response, crypto_request, crypto_response, dbRing",
-        "Keep SAB for: statusRing, per-subscription buffers",
-        "Update InitConnectionsMsg, InitCacheMsg, InitParserMsg, InitCryptoMsg types",
-        "All workers initialize without errors",
-        "Build passes"
-      ],
-      "priority": 2,
-      "passes": true,
-      "notes": "Reference: src/index.ts lines 62-153 (NostrManager constructor)"
-    },
-    {
-      "id": "US-003",
-      "title": "Migrate Connections worker to MessageChannel",
-      "description": "As a developer, I need to replace SAB polling with MessageChannel receivers in the Connections worker.",
-      "acceptanceCriteria": [
-        "Update WSRust::new() to accept MessagePort parameters instead of SABs",
-        "Replace ws_request with from_cache and from_crypto receivers",
-        "Replace ws_response SAB writer with to_parser port",
-        "Replace polling loop with select! on both receivers",
-        "Keep statusRing SAB writer for main thread status updates",
-        "Route NIP-46 messages through from_crypto channel",
-        "Send WorkerMessage bytes directly through to_parser port",
-        "Build passes with npm run build:connections"
-      ],
-      "priority": 3,
-      "passes": true,
-      "notes": "Reference: src/connections/src/lib.rs lines 37-232"
-    },
-    {
-      "id": "US-004",
-      "title": "Migrate Cache worker to MessageChannel",
-      "description": "As a developer, I need to replace SAB rings with MessageChannel ports in the Cache worker.",
-      "acceptanceCriteria": [
-        "Update Caching::new() to accept MessagePort parameters",
-        "Replace cache_request, cache_response, ws_request SABs with ports",
-        "Replace db_ring - merge into single from_parser receiver",
-        "Update 10 worker loops to use from_parser.next().await",
-        "Differentiate message types: if event.is_some() persist, if requests.is_some() lookup",
-        "Send cache responses through to_parser port as WorkerMessage bytes",
-        "Send REQ frames through to_connections port as JSON envelope bytes",
-        "Build passes with npm run build:cache"
-      ],
-      "priority": 4,
-      "passes": true,
-      "notes": "Reference: src/cache/src/lib.rs lines 22-403, src/cache/src/db/index.rs"
-    },
-    {
-      "id": "US-005",
-      "title": "Migrate Parser worker - CryptoClient to MessageChannel",
-      "description": "As a developer, I need to update the CryptoClient to use MessageChannel instead of SAB rings.",
-      "acceptanceCriteria": [
-        "Update CryptoClient::new() to accept MessagePort instead of SABs",
-        "Replace req SAB with to_crypto port",
-        "Replace resp SAB with from_crypto receiver",
-        "Update call_raw() to send SignerRequest through port",
-        "Update response pump to use from_crypto.next().await",
-        "Keep request/response matching by request_id",
-        "Build passes"
-      ],
-      "priority": 5,
-      "passes": true,
-      "notes": "Reference: src/parser/src/crypto_client.rs lines 1-325"
-    },
-    {
-      "id": "US-006",
-      "title": "Migrate Parser worker - NetworkManager distributor",
-      "description": "As a developer, I need to replace the SAB distributor task with MessageChannel select!.",
-      "acceptanceCriteria": [
-        "Replace ws_response SAB with from_connections receiver",
-        "Replace cache_response SAB with from_cache receiver",
-        "Remove prefer_cache round-robin logic",
-        "Remove exponential backoff (sleep_ms, empty_backoff_ms)",
-        "Use select! to race from_connections and from_cache",
-        "Keep existing sharding logic unchanged",
-        "Keep ShardSource enum to track message origin",
-        "Build passes"
-      ],
-      "priority": 6,
-      "passes": true,
-      "notes": "Reference: src/parser/src/network/mod.rs lines 310-458"
-    },
-    {
-      "id": "US-007",
-      "title": "Migrate Parser worker - main lib.rs",
-      "description": "As a developer, I need to update the Parser worker initialization and message handling.",
-      "acceptanceCriteria": [
-        "Update NostrClient::new() signature to accept all MessagePort parameters",
-        "Create Port::receiver() for each inbound port",
-        "Pass receivers to NetworkManager::new()",
-        "Pass ports to CryptoClient::new()",
-        "Remove db_ring parameter (now merged into cache channel)",
-        "Update open_subscription to send CacheRequest through port",
-        "Build passes with npm run build:parser"
-      ],
-      "priority": 7,
-      "passes": true,
-      "notes": "Reference: src/parser/src/lib.rs lines 92-349"
-    },
-    {
-      "id": "US-008",
-      "title": "Migrate Crypto worker to MessageChannel",
-      "description": "As a developer, I need to replace SAB rings with MessageChannel in the Crypto worker.",
-      "acceptanceCriteria": [
-        "Update Crypto::new() to accept MessagePort parameters",
-        "Replace svc_req/svc_resp SABs with from_parser/to_parser ports",
-        "Replace ws_req/ws_resp SABs with to_connections/from_connections ports",
-        "Update service loop to use select! on from_parser",
-        "Update NIP-46 transport to use ports instead of SAB",
-        "Send control responses through to_main port",
-        "Build passes with npm run build:crypto"
-      ],
-      "priority": 8,
-      "passes": true,
-      "notes": "Reference: src/crypto/src/lib.rs lines 57-727, src/crypto/src/signers/nip46/mod.rs"
-    },
-    {
-      "id": "US-009",
-      "title": "Update SaveToDbPipe to use MessageChannel",
-      "description": "As a developer, I need to update the SaveToDbPipe to send through the MessageChannel.",
-      "acceptanceCriteria": [
-        "Replace db_ring SAB with to_cache port",
-        "Update SaveToDbPipe::new() to accept port",
-        "In process(), send CacheRequest with event field set through port",
-        "Build passes"
-      ],
-      "priority": 9,
-      "passes": true,
-      "notes": "Reference: src/parser/src/pipeline/pipes/save_to_db.rs lines 1-56"
-    },
-    {
-      "id": "US-010",
-      "title": "Integration testing - Full build and verification",
-      "description": "As a developer, I need to verify the entire system works end-to-end.",
-      "acceptanceCriteria": [
-        "npm run build completes without errors",
-        "All WASM crates compile successfully",
-        "TypeScript bundle builds without errors",
-        "Worker initialization logs show correct port transfers",
-        "No SAB-related errors in console"
-      ],
-      "priority": 10,
-      "passes": false,
-      "notes": "Final verification story - run full integration tests"
-    }
-  ]
+	"project": "NIPWorker",
+	"branchName": "ralph/sab-to-messagechannel",
+	"description": "Migrate from SharedArrayBuffer to MessageChannel with batched transferable ArrayBuffers for better browser compatibility",
+	"userStories": [
+		{
+			"id": "US-001",
+			"title": "Create ArrayBufferReader utility class",
+			"description": "As a developer, I need an ArrayBufferReader class that works like SharedBufferReader but for non-shared ArrayBuffers.",
+			"acceptanceCriteria": [
+				"Create src/lib/ArrayBufferReader.ts based on SharedBufferReader",
+				"Same API: initializeBuffer(), writeMessage(), readMessages(), hasNewData()",
+				"Works with regular ArrayBuffer instead of SharedArrayBuffer",
+				"Typecheck passes"
+			],
+			"priority": 1,
+			"passes": false,
+			"notes": ""
+		},
+		{
+			"id": "US-002",
+			"title": "Create single MessageChannel for parser-main communication",
+			"description": "As a developer, I want a single MessageChannel between main thread and parser worker for all subscriptions.",
+			"acceptanceCriteria": [
+				"Create ONE MessageChannel in NostrManager constructor",
+				"Transfer port2 to parser worker during init (like other worker ports)",
+				"Store port1 locally for bidirectional communication",
+				"port1.onmessage receives { subId, data: Uint8Array } for any subscription",
+				"Write received data to the correct subscription's ArrayBuffer using subId",
+				"DISPATCH subscription:${subId} to wake hooks",
+				"Typecheck passes"
+			],
+			"priority": 2,
+			"passes": false,
+			"notes": "Single shared channel - subId identifies which subscription the events belong to"
+		},
+		{
+			"id": "US-003",
+			"title": "Use shared MessageChannel for publish operations",
+			"description": "As a developer, I want publish operations to use the same shared MessageChannel.",
+			"acceptanceCriteria": [
+				"Publish operations send via the same shared port1",
+				"Publish creates local ArrayBuffer for status responses",
+				"Store publish ArrayBuffer in publishes Map keyed by pubId",
+				"port1.onmessage handles both subscription and publish responses (distinguished by id)",
+				"Typecheck passes"
+			],
+			"priority": 3,
+			"passes": false,
+			"notes": "Same channel, pubId identifies publish operations"
+		},
+		{
+			"id": "US-004",
+			"title": "Update parser worker to accept MessagePort",
+			"description": "As a developer, I want the parser worker to receive the shared MessagePort during init.",
+			"acceptanceCriteria": [
+				"Update InitParserMsg type to include mainPort",
+				"Parser worker receives port during initialization (like other ports)",
+				"NetworkManager stores the port for sending batched events",
+				"Typecheck passes"
+			],
+			"priority": 4,
+			"passes": false,
+			"notes": "Single shared port - used for all subscriptions"
+		},
+		{
+			"id": "US-005",
+			"title": "Implement batched event sending in parser worker",
+			"description": "As a developer, I want the parser worker to batch events before sending through MessageChannel for efficiency.",
+			"acceptanceCriteria": [
+				"Create BatchBuffer struct in Rust to accumulate events",
+				"Batch when: buffer > 16KB OR timeout > 50ms",
+				"Data format: [4-byte len][WorkerMessage][4-byte len][WorkerMessage]... (SAME as SAB)",
+				"Send via port.postMessage({ subId, data }, [data.buffer]) with transferable",
+				"Typecheck passes"
+			],
+			"priority": 5,
+			"passes": false,
+			"notes": "Performance: Same 2-copy overhead as current SAB implementation. Future: zero-copy batch queue if needed."
+		},
+		{
+			"id": "US-006",
+			"title": "Update hooks to use ArrayBufferReader",
+			"description": "As a developer, I want useSubscription and usePublish hooks to read from ArrayBuffer instead of SharedArrayBuffer.",
+			"acceptanceCriteria": [
+				"Update useSubscription to use ArrayBufferReader",
+				"Update usePublish to use ArrayBufferReader",
+				"Same callback interface (receives WorkerMessage)",
+				"Typecheck passes"
+			],
+			"priority": 6,
+			"passes": false,
+			"notes": ""
+		},
+		{
+			"id": "US-007",
+			"title": "Remove SAB-related code",
+			"description": "As a developer, I want to clean up all SharedArrayBuffer related code after migration.",
+			"acceptanceCriteria": [
+				"Remove SharedBufferReader class (or deprecate if needed elsewhere)",
+				"Remove SharedBufferManager from Rust parser",
+				"Remove initializeRingHeader if no longer needed",
+				"Update or remove statusRing usage in hooks",
+				"Typecheck passes"
+			],
+			"priority": 7,
+			"passes": false,
+			"notes": ""
+		}
+	]
 }
