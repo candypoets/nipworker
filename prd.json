@@ -31,7 +31,7 @@
         "Typecheck passes"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Single shared channel - subId identifies which subscription the events belong to"
     },
     {
@@ -46,7 +46,7 @@
         "Typecheck passes"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Same channel, pubId identifies publish operations"
     },
     {

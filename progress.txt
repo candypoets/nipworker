@@ -16,3 +16,39 @@ Started: Thu Feb 19 04:40:48 PM CET 2026
   - Both use same 4-byte length prefix format for messages
   - WorkerMessage is the FlatBuffer type used for all worker communication
 ---
+
+## 2026-02-19 16:43 - US-002
+- Created single MessageChannel for parser-main communication
+- Added `parser_main` MessageChannel in NostrManager constructor
+- Transfer port2 to parser worker during init (like other worker ports)
+- Store port1 locally in `parserMainPort` for bidirectional communication
+- Implemented `onmessage` handler that receives { subId, data: Uint8Array }
+- Writes received data to the correct subscription's ArrayBuffer using subId
+- Dispatches `subscription:${subId}` event to wake hooks when data arrives
+- Also handles publish responses via `publish:${pubId}`
+- Updated `InitParserMsg` type to include `mainPort: MessagePort`
+- Changed subscription and publish buffers from `SharedArrayBuffer` to `ArrayBuffer`
+- Updated all return types: subscribe(), getBuffer(), publish() now return ArrayBuffer
+- Typecheck passes (no new errors introduced)
+- Files changed: src/index.ts, src/parser/index.ts
+- **Learnings for future iterations:**
+  - MessageChannel ports are bidirectional - we pass port2 to worker, keep port1 in main
+  - The `onmessage` handler routes data by subId to either subscriptions or publishes Map
+  - Same ArrayBufferReader class (from US-001) can be used for both subscription and publish buffers
+  - The dispatch pattern uses EventTarget to wake hooks: `subscription:${subId}` or `publish:${pubId}`
+  - This architecture is simpler than SAB - no atomic operations, just message passing
+---
+
+## 2026-02-19 16:45 - US-003
+- Updated useSubscription and usePublish hooks to use ArrayBufferReader instead of SharedBufferReader
+- Changed buffer type from `SharedArrayBuffer | null` to `ArrayBuffer | null` in both hooks
+- All SharedBufferReader.readMessages calls changed to ArrayBufferReader.readMessages
+- Same callback interface preserved (receives WorkerMessage)
+- Typecheck passes (no new errors introduced - only pre-existing unused variable warning)
+- Files changed: src/hooks.ts
+- **Learnings for future iterations:**
+  - The ArrayBufferReader has the same API as SharedBufferReader: readMessages(buffer, lastReadPos)
+  - Both return { hasNewData, messages, newReadPosition }
+  - Buffer type needs to match between main thread (ArrayBuffer) and hooks (ArrayBuffer)
+  - The dispatch pattern using `subscription:${subId}` and `publish:${pubId}` events works the same
+---
