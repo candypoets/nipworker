@@ -1,3 +1,22 @@
-# Ralph Progress Log
-Started: Thu Feb 19 12:41:16 PM CET 2026
+## Codebase Patterns
+- The shared crate uses `futures::channel::mpsc` (not tokio) for async channels in WASM
+- When adding web-sys features, must specify them in Cargo.toml: `web-sys = { version = "0.3", features = ["MessagePort", "MessageChannel", "MessageEvent"] }`
+- Use `Closure::wrap` + `forget()` for JS event handlers that need to live for the page lifetime
+- The shared crate is at `src/shared/` (not at project root) - run cargo commands from there
+
+## 2026-02-19 12:41:16 - US-001
+- Created `src/shared/src/port.rs` - a thin wrapper around `web_sys::MessagePort` for async message reception
+- Updated `src/shared/Cargo.toml` to add `futures` and `web-sys` dependencies
+- Updated `src/shared/src/lib.rs` to export the `port` module and `Port` struct
+- Implemented `Port::from_receiver(port)` -> `mpsc::Receiver<Vec<u8>>` with buffer size 10
+- Implemented `Port::send(&self, bytes)` for sending messages through the port
+- Build passes with `npm run build` - TypeScript errors are pre-existing in generated FlatBuffers code
+
+**Learnings for future iterations:**
+- The project uses `futures::channel::mpsc` (not tokio) - use `futures = { version = "0.3", default-features = false, features = ["std"] }`
+- `web-sys` features must be explicitly enabled: `MessagePort`, `MessageChannel`, `MessageEvent`
+- Use `try_send()` in JS callbacks to avoid blocking
+- When extracting data from `MessageEvent`, handle both `ArrayBuffer` and `Uint8Array` types
+- The `shared` crate builds as `rlib` and is linked into WASM cdylib crates
+- Run cargo commands from `src/shared/`, not project root
 ---
