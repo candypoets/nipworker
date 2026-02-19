@@ -17,10 +17,10 @@ import {
 	TemplateT,
 	UnsubscribeT
 } from './generated/nostr/fb';
-import { InitConnectionsMsg } from './connections';
-import { InitCacheMsg } from './cache';
-import { InitParserMsg } from './parser';
-import { InitCryptoMsg } from './crypto';
+import { InitConnectionsMsg } from './connections/index';
+import { InitCacheMsg } from './cache/index';
+import { InitParserMsg } from './parser/index';
+import { InitCryptoMsg } from './crypto/index';
 export * from './lib/NostrUtils';
 
 // Idempotent header initializer for rings created on the TS side.
@@ -85,19 +85,19 @@ export class NostrManager {
 	public PERPETUAL_SUBSCRIPTIONS = ['notifications', 'starterpack'];
 
 	constructor() {
-		const wsRequest = initializeRingHeader(1 * 1024 * 1024);
-		const wsResponse = initializeRingHeader(5 * 1024 * 1024);
-
-		const wsCryptoRequest = initializeRingHeader(512 * 1024);
-		const wsCryptoResponse = initializeRingHeader(512 * 1024);
-
-		const cacheRequest = initializeRingHeader(1 * 1024 * 1024);
-		const cacheResponse = initializeRingHeader(10 * 1024 * 1024);
-
-		const dbRing = initializeRingHeader(2 * 1024 * 1024);
-
-		const cryptoRequest = initializeRingHeader(512 * 1024);
-		const cryptoResponse = initializeRingHeader(512 * 1024);
+		// Create 6 MessageChannels for worker-to-worker communication
+		// cacheToConn: cache -> connections (REQ frames)
+		const cacheToConn = new MessageChannel();
+		// parserToCache: parser -> cache (cache requests)
+		const parserToCache = new MessageChannel();
+		// connToParser: connections -> parser (WebSocket messages)
+		const connToParser = new MessageChannel();
+		// parserToCrypto: parser -> crypto (signing requests)
+		const parserToCrypto = new MessageChannel();
+		// cryptoToConn: crypto -> connections (NIP-46 frames)
+		const cryptoToConn = new MessageChannel();
+		// cryptoToMain: crypto -> main (control responses)
+		const cryptoToMain = new MessageChannel();
 
 		const connectionURL = new URL('./connections/index.js', import.meta.url);
 		const cacheURL = new URL('./cache/index.js', import.meta.url);
@@ -109,48 +109,93 @@ export class NostrManager {
 		this.parser = new Worker(parserURL, { type: 'module' });
 		this.crypto = new Worker(cryptoURL, { type: 'module' });
 
-		this.connections.postMessage({
-			type: 'init',
-			payload: {
-				ws_request: wsRequest,
-				ws_response: wsResponse,
-				statusRing,
-				ws_crypto_request: wsCryptoRequest,
-				ws_crypto_response: wsCryptoResponse
-			}
-		} as InitConnectionsMsg);
+		// Transfer ports to connections worker
+		this.connections.postMessage(
+			{
+				type: 'init',
+				payload: {
+					statusRing,
+					fromCache: cacheToConn.port1,
+					toParser: connToParser.port1,
+					fromCrypto: cryptoToConn.port1
+				}
+			} as InitConnectionsMsg,
+			[cacheToConn.port1, connToParser.port1, cryptoToConn.port1]
+		);
 
-		this.cache.postMessage({
-			type: 'init',
-			payload: {
-				cache_request: cacheRequest,
-				cache_response: cacheResponse,
-				ws_request: wsRequest,
-				ingestRing: dbRing
-			}
-		} as InitCacheMsg);
+		// Transfer ports to cache worker
+		this.cache.postMessage(
+			{
+				type: 'init',
+				payload: {
+					fromParser: parserToCache.port1,
+					toConnections: cacheToConn.port2
+				}
+			} as InitCacheMsg,
+			[parserToCache.port1, cacheToConn.port2]
+		);
 
-		this.parser.postMessage({
-			type: 'init',
-			payload: {
-				ingestRing: dbRing,
-				cacheRequest,
-				cacheResponse,
-				cryptoRequest,
-				cryptoResponse,
-				wsResponse
-			}
-		} as InitParserMsg);
+		// Transfer ports to parser worker
+		this.parser.postMessage(
+			{
+				type: 'init',
+				payload: {
+					fromConnections: connToParser.port2,
+					fromCache: parserToCache.port2,
+					toCrypto: parserToCrypto.port1
+				}
+			} as InitParserMsg,
+			[connToParser.port2, parserToCache.port2, parserToCrypto.port1]
+		);
 
-		this.crypto.postMessage({
-			type: 'init',
-			payload: {
-				cryptoRequest,
-				cryptoResponse,
-				wsCryptoRequest,
-				wsCryptoResponse
+		// Transfer ports to crypto worker
+		this.crypto.postMessage(
+			{
+				type: 'init',
+				payload: {
+					fromParser: parserToCrypto.port2,
+					toConnections: cryptoToConn.port2,
+					toMain: cryptoToMain.port1
+				}
+			} as InitCryptoMsg,
+			[parserToCrypto.port2, cryptoToConn.port2, cryptoToMain.port1]
+		);
+
+		// Listen on cryptoToMain.port2 for control responses
+		cryptoToMain.port2.onmessage = (event) => {
+			const msg = event.data;
+			if (msg?.type === 'bunker_discovered') {
+				const { bunker_url } = msg;
+				if (this.activePubkey && this._pendingSession && this._pendingSession.type === 'nip46_qr') {
+					const clientSecret = this._pendingSession.payload.clientSecret;
+					this.saveSession(this.activePubkey!, 'nip46_bunker', {
+						url: bunker_url,
+						clientSecret
+					});
+				}
+				return;
 			}
-		} as InitCryptoMsg);
+
+			if (msg.type === 'response') {
+				if (msg.op === 'get_pubkey') {
+					if (msg.ok) {
+						this.activePubkey = msg.result;
+						if (this._pendingSession) {
+							this.saveSession(
+								this.activePubkey!,
+								this._pendingSession.type,
+								this._pendingSession.payload
+							);
+							this._pendingSession = null;
+						}
+					}
+					this.dispatch('auth', this.activePubkey);
+				} else if (msg.op === 'sign_event' && msg.ok) {
+					const parsed = JSON.parse(msg.result);
+					this.signCB(parsed);
+				}
+			}
+		};
 
 		this.setupWorkerListener();
 		this.restoreSession();
@@ -178,6 +223,8 @@ export class NostrManager {
 			}
 		};
 
+		// NIP-07 extension requests are still handled via crypto worker postMessage
+		// (these require main thread access to window.nostr)
 		this.crypto.onmessage = async (event) => {
 			const msg = event.data;
 			// Handle NIP-07 extension requests from the worker
@@ -221,40 +268,6 @@ export class NostrManager {
 					});
 				}
 				return;
-			}
-
-			if (msg?.type === 'bunker_discovered') {
-				const { bunker_url } = msg;
-				if (this.activePubkey && this._pendingSession && this._pendingSession.type === 'nip46_qr') {
-					// We just discovered a bunker via QR code
-					const clientSecret = this._pendingSession.payload.clientSecret;
-					this.saveSession(this.activePubkey, 'nip46_bunker', {
-						url: bunker_url,
-						clientSecret
-					});
-				}
-				return;
-			}
-
-			// Handle standard responses
-			if (msg.type === 'response') {
-				if (msg.op === 'get_pubkey') {
-					if (msg.ok) {
-						this.activePubkey = msg.result;
-						if (this._pendingSession) {
-							this.saveSession(
-								this.activePubkey!,
-								this._pendingSession.type,
-								this._pendingSession.payload
-							);
-							this._pendingSession = null;
-						}
-					}
-					this.dispatch('auth', this.activePubkey);
-				} else if (msg.op === 'sign_event' && msg.ok) {
-					const parsed = JSON.parse(msg.result);
-					this.signCB(parsed);
-				}
 			}
 		};
 	}

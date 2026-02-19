@@ -6,10 +6,9 @@ import wasmUrl from './pkg/crypto_bg.wasm?url';
 export type InitCryptoMsg = {
 	type: 'init';
 	payload: {
-		wsCryptoRequest: SharedArrayBuffer;
-		wsCryptoResponse: SharedArrayBuffer;
-		cryptoRequest: SharedArrayBuffer;
-		cryptoResponse: SharedArrayBuffer;
+		fromParser: MessagePort;
+		toConnections: MessagePort;
+		toMain: MessagePort;
 	};
 };
 
@@ -61,9 +60,15 @@ self.addEventListener('message', async (evt: MessageEvent<any>) => {
 	if (msg?.type === 'init') {
 		await ensureWasm();
 
-		const { cryptoRequest, cryptoResponse, wsCryptoRequest, wsCryptoResponse } = msg.payload;
+		const { fromParser, toConnections, toMain } = msg.payload;
 		console.log('Initializing Crypto');
-		const crypto = new Crypto(cryptoRequest, cryptoResponse, wsCryptoRequest, wsCryptoResponse);
+		console.log('[crypto] fromParser port', fromParser);
+		console.log('[crypto] toConnections port', toConnections);
+		console.log('[crypto] toMain port', toMain);
+
+		// Create the Rust worker and start it
+		// TODO: Update Crypto::new() to accept MessagePort parameters (US-008)
+		const crypto = new Crypto(fromParser, toConnections, toMain);
 		// Resolve to deferred so queued handlers can use the instance
 		resolveInstance?.(crypto);
 

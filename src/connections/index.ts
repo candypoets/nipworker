@@ -6,11 +6,10 @@ import wasmUrl from './pkg/connections_bg.wasm?url';
 export type InitConnectionsMsg = {
 	type: 'init';
 	payload: {
-		ws_request: SharedArrayBuffer;
-		ws_response: SharedArrayBuffer;
 		statusRing: SharedArrayBuffer;
-		ws_signer_request?: SharedArrayBuffer;
-		ws_signer_response?: SharedArrayBuffer;
+		fromCache: MessagePort;
+		toParser: MessagePort;
+		fromCrypto: MessagePort;
 	};
 };
 
@@ -34,23 +33,16 @@ self.addEventListener(
 		if (msg?.type === 'init') {
 			await ensureWasm();
 
-			const { ws_request, ws_response, statusRing, ws_signer_request, ws_signer_response } =
-				msg.payload;
+			const { statusRing, fromCache, toParser, fromCrypto } = msg.payload;
 
-			console.log('[connections] ws_request.len', ws_request.byteLength);
-			console.log('[connections] ws_response.len', ws_response.byteLength);
 			console.log('[connections] statusRing.len', statusRing.byteLength);
-			console.log('[connections] ws_signer_request.present', !!ws_signer_request);
-			console.log('[connections] ws_signer_response.present', !!ws_signer_response);
+			console.log('[connections] fromCache port', fromCache);
+			console.log('[connections] toParser port', toParser);
+			console.log('[connections] fromCrypto port', fromCrypto);
 
 			// Create the Rust worker and start it
-			instance = new WSRust(
-				ws_request,
-				ws_response,
-				statusRing,
-				ws_signer_request,
-				ws_signer_response
-			);
+			// TODO: Update WSRust::new() to accept MessagePort parameters (US-003)
+			instance = new WSRust(statusRing, fromCache, toParser, fromCrypto);
 
 			return;
 		}

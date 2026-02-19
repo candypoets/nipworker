@@ -6,15 +6,14 @@ import wasmUrl from './pkg/cache_bg.wasm?url';
 export type InitCacheMsg = {
 	type: 'init';
 	payload: {
-		ingestRing: SharedArrayBuffer;
-		cache_request: SharedArrayBuffer;
-		cache_response: SharedArrayBuffer;
-		ws_request: SharedArrayBuffer;
+		fromParser: MessagePort;
+		toConnections: MessagePort;
 	};
 };
 
 let wasmReady: Promise<any> | null = null;
-let instance: any | null = null;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+let _instance: any | null = null;
 
 async function ensureWasm() {
 	if (!wasmReady) {
@@ -31,15 +30,14 @@ self.addEventListener('message', async (evt: MessageEvent<InitCacheMsg | { type:
 	if (msg?.type === 'init') {
 		await ensureWasm();
 
-		const { cache_request, cache_response, ws_request, ingestRing } = msg.payload;
+		const { fromParser, toConnections } = msg.payload;
 
-		console.log('[cache] cache_request.len', cache_request.byteLength);
-		console.log('[cache] cache_response.len', cache_response.byteLength);
-		console.log('[cache] ws_request.len', ws_request.byteLength);
-		console.log('[cache] ingestRing.len', ingestRing.byteLength);
+		console.log('[cache] fromParser port', fromParser);
+		console.log('[cache] toConnections port', toConnections);
 
 		// Create the Rust worker and start it
-		instance = new Caching(5 * 1024 * 1024, ingestRing, cache_request, cache_response, ws_request);
+		// TODO: Update Caching::new() to accept MessagePort parameters (US-004)
+		_instance = new Caching(fromParser, toConnections);
 
 		return;
 	}
