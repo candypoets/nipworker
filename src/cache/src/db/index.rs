@@ -70,6 +70,36 @@ impl NostrDB<ShardedRingBufferStorage> {
             default_relay_counter: Arc::new(RwLock::new(0)),
         }
     }
+
+    /// Create a new NostrDB without an ingest ring (for MessageChannel-based architecture)
+    pub fn new(
+        db_name: String,
+        max_buffer_size: usize,
+        default_relays: Vec<String>,
+        indexer_relays: Vec<String>,
+    ) -> Self {
+        let storage = ShardedRingBufferStorage::new_default(
+            &db_name,
+            max_buffer_size, // default kinds ring size
+            2 * 1024 * 1024, // kind 0 ring size
+            2 * 1024 * 1024, // kind 4 ring size
+            1 * 1024 * 1024, // kind 7375 ring size
+            1 * 1024 * 1024,
+            DatabaseConfig::default(),
+        );
+
+        Self {
+            indexes: DatabaseIndexes::new(),
+            storage,
+            ingest_ring: None,
+            is_initialized: Arc::new(RwLock::new(false)),
+            default_relays,
+            indexer_relays,
+            relay_hints: Arc::new(RwLock::new(FxHashMap::default())),
+            indexer_relay_counter: Arc::new(RwLock::new(0)),
+            default_relay_counter: Arc::new(RwLock::new(0)),
+        }
+    }
 }
 
 impl<S: EventStorage> NostrDB<S> {
@@ -181,6 +211,69 @@ impl<S: EventStorage> NostrDB<S> {
         Err(DatabaseError::StorageError(
             "FB decode error: expected ParsedEvent or NostrEvent".to_string(),
         ))
+    }
+
+    /// Add an event directly from a NostrEvent flatbuffer (for MessageChannel-based architecture)
+    pub async fn add_event_from_fb(&self, event: NostrEvent<'_>) -> Result<()> {
+        // Serialize the flatbuffer event to bytes for storage
+        // Since we can't directly serialize a flatbuffer table, we need to create a new one
+        let mut builder = flatbuffers::FlatBufferBuilder::new();
+        
+        // Create the NostrEvent in the builder
+        let id = builder.create_string(event.id());
+        let pubkey = builder.create_string(event.pubkey());
+        let sig = builder.create_string(event.sig());
+        let content = builder.create_string(event.content());
+        
+        // Copy tags
+        let tags_vec = event.tags();
+        let mut tags_wip: Vec<flatbuffers::WIPOffset<fb::StringVec<'_>>> = Vec::new();
+        for i in 0..tags_vec.len() {
+            let tag = tags_vec.get(i);
+            if let Some(items) = tag.items() {
+                let item_strings: Vec<_> = (0..items.len())
+                    .map(|j| builder.create_string(items.get(j)))
+                    .collect();
+                let items_vec = builder.create_vector(&item_strings);
+                tags_wip.push(fb::StringVec::create(
+                    &mut builder,
+                    &fb::StringVecArgs { items: Some(items_vec) },
+                ));
+            }
+        }
+        let tags = builder.create_vector(&tags_wip);
+        
+        let event_fb = fb::NostrEvent::create(
+            &mut builder,
+            &fb::NostrEventArgs {
+                id: Some(id),
+                pubkey: Some(pubkey),
+                created_at: event.created_at(),
+                kind: event.kind(),
+                tags: Some(tags),
+                content: Some(content),
+                sig: Some(sig),
+            },
+        );
+        builder.finish(event_fb, None);
+        let bytes = builder.finished_data().to_vec();
+        
+        // Store and index the event
+        let offset = if let Some(sharded) = self
+            .storage
+            .as_any()
+            .downcast_ref::<ShardedRingBufferStorage>()
+        {
+            sharded
+                .add_event_for_kind(event.kind() as u32, &bytes)
+                .await?
+        } else {
+            self.storage.add_event_data(&bytes).await?
+        };
+
+        // Index the event
+        self.index_nostr_event(event, offset);
+        Ok(())
     }
 
     #[allow(non_snake_case)]

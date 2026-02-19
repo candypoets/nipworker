@@ -36,8 +36,9 @@ self.addEventListener('message', async (evt: MessageEvent<InitCacheMsg | { type:
 		console.log('[cache] toConnections port', toConnections);
 
 		// Create the Rust worker and start it
-		// TODO: Update Caching::new() to accept MessagePort parameters (US-004)
-		_instance = new Caching(fromParser, toConnections);
+		// Default buffer size: 1MB for general ring buffer usage
+		const maxBufferSize = 1024 * 1024;
+		_instance = new Caching(maxBufferSize, fromParser, toConnections);
 
 		return;
 	}
