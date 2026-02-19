@@ -84,8 +84,15 @@ naddr(optionalEncoding?:any): ByteString|Uint8Array|null {
   return offset ? this.bb!.__stringByteString(this.bb_pos + offset, optionalEncoding) : null;
 }
 
+content(): ByteString|null
+content(optionalEncoding:flatbuffers.Encoding): ByteString|Uint8Array|null
+content(optionalEncoding?:any): ByteString|Uint8Array|null {
+  const offset = this.bb!.__offset(this.bb_pos, 20);
+  return offset ? this.bb!.__stringByteString(this.bb_pos + offset, optionalEncoding) : null;
+}
+
 static startKind30023Parsed(builder:flatbuffers.Builder) {
-  builder.startObject(8);
+  builder.startObject(9);
 }
 
 static addSlug(builder:flatbuffers.Builder, slugOffset:flatbuffers.Offset) {
@@ -132,12 +139,16 @@ static addNaddr(builder:flatbuffers.Builder, naddrOffset:flatbuffers.Offset) {
   builder.addFieldOffset(7, naddrOffset, 0);
 }
 
+static addContent(builder:flatbuffers.Builder, contentOffset:flatbuffers.Offset) {
+  builder.addFieldOffset(8, contentOffset, 0);
+}
+
 static endKind30023Parsed(builder:flatbuffers.Builder):flatbuffers.Offset {
   const offset = builder.endObject();
   return offset;
 }
 
-static createKind30023Parsed(builder:flatbuffers.Builder, slugOffset:flatbuffers.Offset, titleOffset:flatbuffers.Offset, summaryOffset:flatbuffers.Offset, imageOffset:flatbuffers.Offset, canonicalOffset:flatbuffers.Offset, topicsOffset:flatbuffers.Offset, publishedAt:bigint, naddrOffset:flatbuffers.Offset):flatbuffers.Offset {
+static createKind30023Parsed(builder:flatbuffers.Builder, slugOffset:flatbuffers.Offset, titleOffset:flatbuffers.Offset, summaryOffset:flatbuffers.Offset, imageOffset:flatbuffers.Offset, canonicalOffset:flatbuffers.Offset, topicsOffset:flatbuffers.Offset, publishedAt:bigint, naddrOffset:flatbuffers.Offset, contentOffset:flatbuffers.Offset):flatbuffers.Offset {
   Kind30023Parsed.startKind30023Parsed(builder);
   Kind30023Parsed.addSlug(builder, slugOffset);
   Kind30023Parsed.addTitle(builder, titleOffset);
@@ -147,6 +158,7 @@ static createKind30023Parsed(builder:flatbuffers.Builder, slugOffset:flatbuffers
   Kind30023Parsed.addTopics(builder, topicsOffset);
   Kind30023Parsed.addPublishedAt(builder, publishedAt);
   Kind30023Parsed.addNaddr(builder, naddrOffset);
+  Kind30023Parsed.addContent(builder, contentOffset);
   return Kind30023Parsed.endKind30023Parsed(builder);
 }
 
@@ -159,7 +171,8 @@ unpack(): Kind30023ParsedT {
     this.canonical(),
     this.bb!.createScalarList<string>(this.topics.bind(this), this.topicsLength()),
     this.publishedAt(),
-    this.naddr()
+    this.naddr(),
+    this.content()
   );
 }
 
@@ -173,6 +186,7 @@ unpackTo(_o: Kind30023ParsedT): void {
   _o.topics = this.bb!.createScalarList<string>(this.topics.bind(this), this.topicsLength());
   _o.publishedAt = this.publishedAt();
   _o.naddr = this.naddr();
+  _o.content = this.content();
 }
 }
 
@@ -185,7 +199,8 @@ constructor(
   public canonical: ByteString|Uint8Array|null = null,
   public topics: (string)[] = [],
   public publishedAt: bigint = BigInt('0'),
-  public naddr: ByteString|Uint8Array|null = null
+  public naddr: ByteString|Uint8Array|null = null,
+  public content: ByteString|Uint8Array|null = null
 ){}
 
 
@@ -197,6 +212,7 @@ pack(builder:flatbuffers.Builder): flatbuffers.Offset {
   const canonical = (this.canonical !== null ? builder.createString(this.canonical!) : 0);
   const topics = Kind30023Parsed.createTopicsVector(builder, builder.createObjectOffsetList(this.topics));
   const naddr = (this.naddr !== null ? builder.createString(this.naddr!) : 0);
+  const content = (this.content !== null ? builder.createString(this.content!) : 0);
 
   return Kind30023Parsed.createKind30023Parsed(builder,
     slug,
@@ -206,7 +222,8 @@ pack(builder:flatbuffers.Builder): flatbuffers.Offset {
     canonical,
     topics,
     this.publishedAt,
-    naddr
+    naddr,
+    content
   );
 }
 }

@@ -565,6 +565,7 @@ version = "0.1.0"
 dependencies = [
  "console_error_panic_hook",
  "flatbuffers",
+ "futures",
  "hex",
  "js-sys",
  "rustc-hash",
@@ -572,6 +573,7 @@ dependencies = [
  "tracing",
  "tracing-wasm",
  "wasm-bindgen",
+ "web-sys",
 ]
 
 [[package]]

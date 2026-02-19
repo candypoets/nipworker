@@ -5,9 +5,6 @@ use shared::{
 }; // brings `fb::...` into scope
 
 /// Parsed representation for NIP-23 (kind 30023) long-form content.
-///
-/// Intentionally does NOT parse or transform `event.content` (markdown/body).
-/// The frontend should render the markdown as needed.
 pub struct Kind30023Parsed {
     /// Unique slug (PRE "d" tag)
     pub slug: Option<String>,
@@ -25,6 +22,8 @@ pub struct Kind30023Parsed {
     pub published_at: Option<u64>,
     /// PRE address string in "a" tuple form: "30023:<author_pubkey_hex>:<d>"
     pub naddr: Option<String>,
+    /// Markdown content/body of the article
+    pub content: String,
 }
 
 impl Parser {
@@ -65,6 +64,7 @@ impl Parser {
             topics,
             published_at,
             naddr,
+            content: event.content.clone(),
         };
 
         // No additional network requests needed for long-form parsing
@@ -84,6 +84,7 @@ pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
     let image = parsed.image.as_ref().map(|s| builder.create_string(s));
     let canonical = parsed.canonical.as_ref().map(|s| builder.create_string(s));
     let naddr = parsed.naddr.as_ref().map(|s| builder.create_string(s));
+    let content = builder.create_string(&parsed.content);
 
     // Topics vector
     let topic_offsets: Vec<_> = parsed
@@ -107,6 +108,7 @@ pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
         // FlatBuffers scalars are not Option; use a default of 0 when absent
         published_at: parsed.published_at.unwrap_or(0),
         naddr,
+        content: Some(content),
     };
 
     let offset = fb::Kind30023Parsed::create(builder, &args);

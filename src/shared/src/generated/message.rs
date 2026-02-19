@@ -15462,6 +15462,7 @@ impl<'a> Kind30023Parsed<'a> {
   pub const VT_TOPICS: flatbuffers::VOffsetT = 14;
   pub const VT_PUBLISHED_AT: flatbuffers::VOffsetT = 16;
   pub const VT_NADDR: flatbuffers::VOffsetT = 18;
+  pub const VT_CONTENT: flatbuffers::VOffsetT = 20;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -15474,6 +15475,7 @@ impl<'a> Kind30023Parsed<'a> {
   ) -> flatbuffers::WIPOffset<Kind30023Parsed<'bldr>> {
     let mut builder = Kind30023ParsedBuilder::new(_fbb);
     builder.add_published_at(args.published_at);
+    if let Some(x) = args.content { builder.add_content(x); }
     if let Some(x) = args.naddr { builder.add_naddr(x); }
     if let Some(x) = args.topics { builder.add_topics(x); }
     if let Some(x) = args.canonical { builder.add_canonical(x); }
@@ -15507,6 +15509,9 @@ impl<'a> Kind30023Parsed<'a> {
     let naddr = self.naddr().map(|x| {
       x.to_string()
     });
+    let content = self.content().map(|x| {
+      x.to_string()
+    });
     Kind30023ParsedT {
       slug,
       title,
@@ -15516,6 +15521,7 @@ impl<'a> Kind30023Parsed<'a> {
       topics,
       published_at,
       naddr,
+      content,
     }
   }
 
@@ -15575,6 +15581,13 @@ impl<'a> Kind30023Parsed<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Kind30023Parsed::VT_NADDR, None)}
   }
+  #[inline]
+  pub fn content(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Kind30023Parsed::VT_CONTENT, None)}
+  }
 }
 
 impl flatbuffers::Verifiable for Kind30023Parsed<'_> {
@@ -15592,6 +15605,7 @@ impl flatbuffers::Verifiable for Kind30023Parsed<'_> {
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("topics", Self::VT_TOPICS, false)?
      .visit_field::<u64>("published_at", Self::VT_PUBLISHED_AT, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("naddr", Self::VT_NADDR, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("content", Self::VT_CONTENT, false)?
      .finish();
     Ok(())
   }
@@ -15605,6 +15619,7 @@ pub struct Kind30023ParsedArgs<'a> {
     pub topics: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>,
     pub published_at: u64,
     pub naddr: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub content: Option<flatbuffers::WIPOffset<&'a str>>,
 }
 impl<'a> Default for Kind30023ParsedArgs<'a> {
   #[inline]
@@ -15618,6 +15633,7 @@ impl<'a> Default for Kind30023ParsedArgs<'a> {
       topics: None,
       published_at: 0,
       naddr: None,
+      content: None,
     }
   }
 }
@@ -15660,6 +15676,10 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> Kind30023ParsedBuilder<'a, 'b, 
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind30023Parsed::VT_NADDR, naddr);
   }
   #[inline]
+  pub fn add_content(&mut self, content: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind30023Parsed::VT_CONTENT, content);
+  }
+  #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> Kind30023ParsedBuilder<'a, 'b, A> {
     let start = _fbb.start_table();
     Kind30023ParsedBuilder {
@@ -15685,6 +15705,7 @@ impl core::fmt::Debug for Kind30023Parsed<'_> {
       ds.field("topics", &self.topics());
       ds.field("published_at", &self.published_at());
       ds.field("naddr", &self.naddr());
+      ds.field("content", &self.content());
       ds.finish()
   }
 }
@@ -15699,6 +15720,7 @@ pub struct Kind30023ParsedT {
   pub topics: Option<Vec<String>>,
   pub published_at: u64,
   pub naddr: Option<String>,
+  pub content: Option<String>,
 }
 impl Default for Kind30023ParsedT {
   fn default() -> Self {
@@ -15711,6 +15733,7 @@ impl Default for Kind30023ParsedT {
       topics: None,
       published_at: 0,
       naddr: None,
+      content: None,
     }
   }
 }
@@ -15741,6 +15764,9 @@ impl Kind30023ParsedT {
     let naddr = self.naddr.as_ref().map(|x|{
       _fbb.create_string(x)
     });
+    let content = self.content.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
     Kind30023Parsed::create(_fbb, &Kind30023ParsedArgs{
       slug,
       title,
@@ -15750,6 +15776,7 @@ impl Kind30023ParsedT {
       topics,
       published_at,
       naddr,
+      content,
     })
   }
 }
