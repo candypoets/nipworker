@@ -4,18 +4,20 @@ use serde_json::Value;
 use shared::generated::nostr::fb;
 use shared::types::{Event, Keys, PublicKey, SecretKey};
 use shared::utils::extract_first_three;
-use shared::SabRing;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use tracing::{debug, info, warn};
 use wasm_bindgen_futures::spawn_local;
 
+use futures_channel::mpsc;
+use futures_util::StreamExt;
+
 pub struct Pump;
 
 impl Pump {
     pub fn spawn(
-        ws_resp: Rc<RefCell<SabRing>>,
+        mut from_connections_rx: mpsc::Receiver<Vec<u8>>,
         sub_id: String,
         remote_pk_str: String,
         pending: Rc<RefCell<HashMap<String, Result<String, String>>>>,
@@ -60,7 +62,7 @@ impl Pump {
             };
 
             Self::run_pump_loop(
-                ws_resp,
+                &mut from_connections_rx,
                 sub_id,
                 pending,
                 discovered_remote_pubkey,
@@ -70,6 +72,8 @@ impl Pump {
                 on_discovery,
             )
             .await;
+
+            info!("[nip46] response pump ended");
         };
 
         spawn_local(pump_task);
@@ -77,7 +81,7 @@ impl Pump {
     }
 
     async fn run_pump_loop(
-        ws_resp: Rc<RefCell<SabRing>>,
+        from_connections_rx: &mut mpsc::Receiver<Vec<u8>>,
         sub_id: String,
         pending: Rc<RefCell<HashMap<String, Result<String, String>>>>,
         discovered_remote_pubkey: Rc<RefCell<Option<String>>>,
@@ -86,32 +90,29 @@ impl Pump {
         decrypt_helper: impl Fn(&str, &str) -> Result<String, String>,
         on_discovery: Rc<RefCell<Option<Rc<dyn Fn(String)>>>>,
     ) {
-        let mut sleep_ms: u32 = 8;
-        let max_sleep: u32 = 256;
-
         loop {
-            let maybe = { ws_resp.borrow_mut().read_next() };
+            // Use .next().await instead of polling with timeout
+            let bytes_opt = from_connections_rx.next().await;
 
-            if let Some(bytes) = maybe {
-                sleep_ms = 8;
-
-                Self::handle_nip46_frame(
-                    &bytes,
-                    &sub_id,
-                    &pending,
-                    &discovered_remote_pubkey,
-                    &client_pk,
-                    &expected_secret,
-                    &decrypt_helper,
-                    &on_discovery,
-                )
-                .await;
-
-                continue;
+            match bytes_opt {
+                Some(bytes) => {
+                    Self::handle_nip46_frame(
+                        &bytes,
+                        &sub_id,
+                        &pending,
+                        &discovered_remote_pubkey,
+                        &client_pk,
+                        &expected_secret,
+                        &decrypt_helper,
+                        &on_discovery,
+                    )
+                    .await;
+                }
+                None => {
+                    info!("[nip46] from_connections channel closed, exiting pump loop");
+                    break;
+                }
             }
-
-            TimeoutFuture::new(sleep_ms).await;
-            sleep_ms = (sleep_ms * 2).min(max_sleep);
         }
     }
 

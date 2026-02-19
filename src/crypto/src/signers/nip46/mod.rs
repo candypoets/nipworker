@@ -2,12 +2,14 @@ use gloo_timers::future::TimeoutFuture;
 use js_sys::Date;
 use serde_json::{json, Value};
 use shared::types::Keys;
-use shared::SabRing;
+use shared::Port;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 use tracing::{debug, info};
 use wasm_bindgen::prelude::*;
+
+use futures_channel::mpsc;
 
 pub mod config;
 pub mod crypto;
@@ -34,15 +36,15 @@ pub struct Nip46Signer {
     // Sub-modules
     crypto: Crypto,
     transport: Transport,
-    ws_resp: Rc<RefCell<SabRing>>,
+    from_connections_rx: Rc<RefCell<Option<mpsc::Receiver<Vec<u8>>>>>,
     on_discovery: Rc<RefCell<Option<Rc<dyn Fn(String)>>>>,
 }
 
 impl Nip46Signer {
     pub fn new(
         cfg: Nip46Config,
-        ws_req: Rc<RefCell<SabRing>>,
-        ws_resp: Rc<RefCell<SabRing>>,
+        to_connections: Rc<RefCell<Port>>,
+        from_connections_rx: mpsc::Receiver<Vec<u8>>,
         client_keys: Option<Keys>,
     ) -> Self {
         let client_keys = client_keys.unwrap_or_else(Keys::generate);
@@ -58,7 +60,7 @@ impl Nip46Signer {
         );
 
         let transport = Transport::new(
-            ws_req,
+            to_connections,
             cfg.relays.clone(),
             cfg.app_name.clone(),
             client_keys.clone(),
@@ -76,7 +78,7 @@ impl Nip46Signer {
             discovered_remote_pubkey: Rc::new(RefCell::new(None)),
             crypto,
             transport,
-            ws_resp,
+            from_connections_rx: Rc::new(RefCell::new(Some(from_connections_rx))),
             on_discovery: Rc::new(RefCell::new(None)),
         }
     }
@@ -283,18 +285,24 @@ impl Nip46Signer {
         }
         self.pump_started.set(true);
 
-        Pump::spawn(
-            self.ws_resp.clone(),
-            self.sub_id.clone(),
-            self.cfg.remote_signer_pubkey.clone(),
-            self.pending.clone(),
-            self.discovered_remote_pubkey.clone(),
-            self.client_pubkey_hex.clone(),
-            self.cfg.expected_secret.clone(),
-            self.client_keys.clone(),
-            self.cfg.use_nip44,
-            self.on_discovery.clone(),
-        );
+        // Take the receiver from the Option
+        let rx = self.from_connections_rx.borrow_mut().take();
+        if let Some(from_connections_rx) = rx {
+            Pump::spawn(
+                from_connections_rx,
+                self.sub_id.clone(),
+                self.cfg.remote_signer_pubkey.clone(),
+                self.pending.clone(),
+                self.discovered_remote_pubkey.clone(),
+                self.client_pubkey_hex.clone(),
+                self.cfg.expected_secret.clone(),
+                self.client_keys.clone(),
+                self.cfg.use_nip44,
+                self.on_discovery.clone(),
+            );
+        } else {
+            debug!("[nip46] pump already spawned (receiver already taken)");
+        }
     }
 
     fn next_id(&self) -> String {

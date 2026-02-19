@@ -14,7 +14,7 @@ crate-type = ["cdylib", "rlib"]
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
-web-sys = { version = "0.3", features = ["Window"] }
+web-sys = { version = "0.3", features = ["Window", "MessagePort", "MessageEvent"] }
 gloo-timers = { version = "0.3", features = ["futures"] }
 
 # Logging / errors
@@ -30,6 +30,7 @@ serde_json = "1"
 serde-wasm-bindgen = "0.5"
 
 # Channels for simple oneshot/futures patterns (browser-friendly)
+futures-util = { version = "0.3", default-features = false, features = ["std", "async-await-macro"] }
 futures-channel = "0.3"
 
 # Workspace-local shared utilities (SAB ring, telemetry)

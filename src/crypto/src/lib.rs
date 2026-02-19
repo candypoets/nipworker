@@ -3,11 +3,16 @@
 #![allow(dead_code)]
 
 use js_sys::SharedArrayBuffer;
-use shared::{init_with_component, types::Keys, utils::crypto::verify_proof_dleq_string, SabRing};
+use shared::{init_with_component, types::Keys, utils::crypto::verify_proof_dleq_string, Port, SabRing};
 use tracing::{error, info, warn};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
+use web_sys::MessagePort;
 
+use futures_channel::mpsc;
+use futures_util::select;
+use futures_util::FutureExt;
+use futures_util::StreamExt;
 use gloo_timers::future::TimeoutFuture;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -41,28 +46,24 @@ struct NostrconnectUrl {
 }
 
 /// A cryptographic operations worker that:
-/// - Wires four SAB rings:
-///   - crypto_service_request  (parser -> crypto)
-///   - crypto_service_response (crypto -> parser)
-///   - ws_request_crypto       (crypto -> connections)
-///   - ws_response_crypto      (connections -> crypto)
-/// - Exposes direct methods for frontend (bypassing SAB).
+/// - Wires four MessageChannel ports:
+///   - from_parser  (parser -> crypto): SignerRequest messages
+///   - to_parser    (crypto -> parser): SignerResponse messages
+///   - to_connections (crypto -> connections): NIP-46 frames
+///   - from_connections (connections -> crypto): NIP-46 responses
+///   - to_main      (crypto -> main): Control responses
+/// - Exposes direct methods for frontend (bypass MessageChannel).
 ///
 /// NOTE:
-/// - The service protocol (SignerRequest/SignerResponse) is intended to be FlatBuffers.
-///   This initial version simply echoes back payloads to prove the pipe and will
-///   be swapped to FlatBuffers once the schema is generated in `generated`.
-/// - NIP-46 transport wiring is scaffolded. It publishes/consumes frames via the
-///   dedicated ws SABs. Business logic will be implemented after schema/types land.
+/// - The service protocol (SignerRequest/SignerResponse) uses FlatBuffers.
+/// - NIP-46 transport uses MessageChannel ports instead of SAB rings.
 #[wasm_bindgen]
 pub struct Crypto {
-    // Parser <-> Crypto SABs (SPSC each)
-    svc_req: Rc<RefCell<SabRing>>,
-    svc_resp: Rc<RefCell<SabRing>>,
+    // Parser <-> Crypto ports
+    to_parser: Rc<RefCell<Port>>,
 
-    // Crypto <-> Connections SABs (SPSC each)
-    ws_req: Rc<RefCell<SabRing>>,
-    ws_resp: Rc<RefCell<SabRing>>,
+    // Crypto <-> Connections ports for NIP-46
+    to_connections: Rc<RefCell<Port>>,
 
     // Simple runtime state
     active: Rc<RefCell<ActiveSigner>>,
@@ -78,32 +79,42 @@ enum ActiveSigner {
 
 #[wasm_bindgen]
 impl Crypto {
-    /// new(crypto_service_request, crypto_service_response, ws_request_crypto, ws_response_crypto)
+    /// new(toMain, fromParser, toConnections, fromConnections, toParser)
+    /// 
+    /// Parameters:
+    /// - to_main: MessagePort for sending control responses to main thread
+    /// - from_parser: MessagePort for receiving SignerRequest from parser
+    /// - to_connections: MessagePort for sending NIP-46 frames to connections
+    /// - from_connections: MessagePort for receiving NIP-46 responses from connections
+    /// - to_parser: MessagePort for sending SignerResponse to parser
     #[wasm_bindgen(constructor)]
     pub fn new(
-        crypto_service_request: SharedArrayBuffer,
-        crypto_service_response: SharedArrayBuffer,
-        ws_request_crypto: SharedArrayBuffer,
-        ws_response_crypto: SharedArrayBuffer,
+        to_main: MessagePort,
+        from_parser: MessagePort,
+        to_connections: MessagePort,
+        from_connections: MessagePort,
+        to_parser: MessagePort,
     ) -> Result<Crypto, JsValue> {
         init_with_component(tracing::Level::ERROR, "crypto");
 
-        let svc_req = Rc::new(RefCell::new(SabRing::new(crypto_service_request)?));
-        let svc_resp = Rc::new(RefCell::new(SabRing::new(crypto_service_response)?));
-        let ws_req = Rc::new(RefCell::new(SabRing::new(ws_request_crypto)?));
-        let ws_resp = Rc::new(RefCell::new(SabRing::new(ws_response_crypto)?));
+        // Create receivers from MessagePorts
+        let from_parser_rx = Port::from_receiver(from_parser);
+        let from_connections_rx = Port::from_receiver(from_connections);
 
-        info!("[crypto] initialized SAB rings");
+        // Wrap sender ports
+        let to_parser_port = Rc::new(RefCell::new(Port::new(to_parser)));
+        let to_connections_port = Rc::new(RefCell::new(Port::new(to_connections)));
+        let to_main_port = Port::new(to_main);
+
+        info!("[crypto] initialized MessageChannel ports");
 
         let crypto = Crypto {
-            svc_req,
-            svc_resp,
-            ws_req,
-            ws_resp,
+            to_parser: to_parser_port.clone(),
+            to_connections: to_connections_port.clone(),
             active: Rc::new(RefCell::new(ActiveSigner::Unset)),
         };
 
-        crypto.start_service_loop();
+        crypto.start_service_loop(from_parser_rx, from_connections_rx, to_main_port);
 
         Ok(crypto)
     }
@@ -145,6 +156,7 @@ impl Crypto {
         &self,
         bunker_url: String,
         client_secret: Option<String>,
+        from_connections: MessagePort,
     ) -> Result<(), JsValue> {
         // Parse the bunker URL to extract remote pubkey and relays
         let parsed = Self::parse_bunker_url(&bunker_url)?;
@@ -168,11 +180,14 @@ impl Crypto {
             None
         };
 
-        // Create fresh SAB views for the NIP-46 signer
+        // Create receiver from the MessagePort
+        let from_connections_rx = Port::from_receiver(from_connections);
+
+        // Create NIP-46 signer with MessageChannel ports
         let nip46 = Rc::new(Nip46Signer::new(
             cfg,
-            self.ws_req.clone(),
-            self.ws_resp.clone(),
+            self.to_connections.clone(),
+            from_connections_rx,
             client_keys,
         ));
         let signer_weak = Rc::downgrade(&self.active);
@@ -215,6 +230,7 @@ impl Crypto {
         &self,
         nostrconnect_url: String,
         client_secret: Option<String>,
+        from_connections: MessagePort,
     ) -> Result<(), JsValue> {
         // Parse the nostrconnect URL
         let parsed = Self::parse_nostrconnect_url(&nostrconnect_url)?;
@@ -238,11 +254,14 @@ impl Crypto {
             None
         };
 
-        // Create fresh SAB views for the NIP-46 signer
+        // Create receiver from the MessagePort
+        let from_connections_rx = Port::from_receiver(from_connections);
+
+        // Create NIP-46 signer with MessageChannel ports
         let nip46 = Rc::new(Nip46Signer::new(
             cfg,
-            self.ws_req.clone(),
-            self.ws_resp.clone(),
+            self.to_connections.clone(),
+            from_connections_rx,
             client_keys,
         ));
         let signer_weak = Rc::downgrade(&self.active);
@@ -479,33 +498,64 @@ impl Crypto {
 }
 
 impl Crypto {
-    // Service loop: drains signer_service_request and writes signer_service_response.
-    // For now, this echoes the payload back in a trivial envelope to prove the pipe.
-    fn start_service_loop(&self) {
-        let svc_req = self.svc_req.clone();
-        let svc_resp = self.svc_resp.clone();
+    // Service loop: processes signer requests from parser and writes responses back.
+    // Uses select! to race between from_parser and from_connections receivers.
+    fn start_service_loop(
+        &self,
+        mut from_parser_rx: mpsc::Receiver<Vec<u8>>,
+        mut from_connections_rx: mpsc::Receiver<Vec<u8>>,
+        to_main: Port,
+    ) {
+        let to_parser = self.to_parser.clone();
         let active = self.active.clone();
 
         spawn_local(async move {
-            let mut sleep_ms: u32 = 8;
-            let max_sleep: u32 = 256;
+            info!("[crypto] service loop started with MessageChannel");
 
             loop {
-                let maybe = { svc_req.borrow_mut().read_next() };
-
-                if let Some(bytes) = maybe {
-                    sleep_ms = 8;
-
-                    // Decode SignerRequest FlatBuffer
-                    let req = match flatbuffers::root::<shared::generated::nostr::fb::SignerRequest>(
-                        &bytes,
-                    ) {
-                        Ok(r) => r,
-                        Err(e) => {
-                            warn!("[crypto][svc] failed to decode SignerRequest: {:?}", e);
-                            continue;
+                // Use select! to race between the two receivers
+                let bytes_opt: Option<Vec<u8>> = select! {
+                    bytes_opt = from_parser_rx.next().fuse() => {
+                        if bytes_opt.is_some() {
+                            info!("[crypto] Received message from parser port");
+                        } else {
+                            info!("[crypto] Parser channel closed");
                         }
-                    };
+                        bytes_opt
+                    }
+                    bytes_opt = from_connections_rx.next().fuse() => {
+                        if bytes_opt.is_some() {
+                            info!("[crypto] Received message from connections port (NIP-46)");
+                        } else {
+                            info!("[crypto] Connections channel closed");
+                        }
+                        bytes_opt
+                    }
+                };
+
+                // Break if both channels closed
+                let bytes = match bytes_opt {
+                    Some(b) => b,
+                    None => {
+                        info!("[crypto] All channels closed, exiting service loop");
+                        break;
+                    }
+                };
+
+                // Process the request (from either channel)
+                // Note: NIP-46 responses are handled by the Pump in the Nip46Signer
+                // This service loop handles SignerRequest from parser
+
+                // Decode SignerRequest FlatBuffer
+                let req = match flatbuffers::root::<shared::generated::nostr::fb::SignerRequest>(
+                    &bytes,
+                ) {
+                    Ok(r) => r,
+                    Err(e) => {
+                        warn!("[crypto][svc] failed to decode SignerRequest: {:?}", e);
+                        continue;
+                    }
+                };
 
                     let rid = req.request_id();
                     let op = req.op();
@@ -675,53 +725,33 @@ impl Crypto {
                         }
                     };
 
-                    // Encode SignerResponse FlatBuffer (no ok flag; use result/error)
-                    let mut fbb = flatbuffers::FlatBufferBuilder::new();
-                    let (result_off, err_off) = match result {
-                        Ok(s) => (Some(fbb.create_string(&s)), None),
-                        Err(e) => (None, Some(fbb.create_string(&e))),
-                    };
-                    let resp = shared::generated::nostr::fb::SignerResponse::create(
-                        &mut fbb,
-                        &shared::generated::nostr::fb::SignerResponseArgs {
-                            request_id: rid,
-                            result: result_off,
-                            error: err_off,
-                        },
-                    );
-                    fbb.finish(resp, None);
-                    let out = fbb.finished_data();
-                    let _ = svc_resp.borrow_mut().write(out);
-
-                    continue;
+                // Encode SignerResponse FlatBuffer (no ok flag; use result/error)
+                let mut fbb = flatbuffers::FlatBufferBuilder::new();
+                let (result_off, err_off) = match result {
+                    Ok(s) => (Some(fbb.create_string(&s)), None),
+                    Err(e) => (None, Some(fbb.create_string(&e))),
+                };
+                let resp = shared::generated::nostr::fb::SignerResponse::create(
+                    &mut fbb,
+                    &shared::generated::nostr::fb::SignerResponseArgs {
+                        request_id: rid,
+                        result: result_off,
+                        error: err_off,
+                    },
+                );
+                fbb.finish(resp, None);
+                let out = fbb.finished_data();
+                
+                // Send response through to_parser port
+                if let Err(e) = to_parser.borrow().send(out) {
+                    warn!("[crypto] failed to send SignerResponse through to_parser port: {:?}", e);
                 }
-
-                TimeoutFuture::new(sleep_ms).await;
-                sleep_ms = (sleep_ms * 2).min(max_sleep);
             }
+
+            info!("[crypto] service loop ended");
         });
 
         info!("[crypto] service loop spawned");
-    }
-
-    // NIP-46 pump: drains ws_response_signer and logs frames.
-    // Later this will decrypt and correlate RPC replies by id.
-
-    // Helper to send Envelope { relays, frames } to connections via ws_request_signer.
-    // connections expects JSON that matches its Envelope { relays: Vec<String>, frames: Vec<String> }.
-    #[allow(unused)]
-    fn publish_frames(&self, relays: &[String], frames: &[String]) -> Result<(), JsValue> {
-        let env = serde_json::json!({
-            "relays": relays,
-            "frames": frames,
-        });
-        let bytes = serde_json::to_vec(&env)
-            .map_err(|e| JsValue::from_str(&format!("serialize envelope: {}", e)))?;
-        let ok = self.ws_req.borrow_mut().write(&bytes);
-        if !ok {
-            warn!("[crypto] ws_req ring full, frame dropped");
-        }
-        Ok(())
     }
 }
 

@@ -1,7 +1,7 @@
 use k256::schnorr::SigningKey;
 use serde_json::json;
 use shared::types::{Event, EventId, Keys, UnsignedEvent};
-use shared::SabRing;
+use shared::Port;
 use signature::hazmat::{PrehashSigner, PrehashVerifier};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -9,7 +9,7 @@ use tracing::{info, warn};
 use wasm_bindgen::prelude::*;
 
 pub struct Transport {
-    ws_req: Rc<RefCell<SabRing>>,
+    to_connections: Rc<RefCell<Port>>,
     relays: Vec<String>,
     app_name: Option<String>,
     client_keys: Keys,
@@ -18,14 +18,14 @@ pub struct Transport {
 
 impl Transport {
     pub fn new(
-        ws_req: Rc<RefCell<SabRing>>,
+        to_connections: Rc<RefCell<Port>>,
         relays: Vec<String>,
         app_name: Option<String>,
         client_keys: Keys,
     ) -> Self {
         let client_pubkey_hex = client_keys.public_key().to_hex();
         Self {
-            ws_req,
+            to_connections,
             relays,
             app_name,
             client_keys,
@@ -131,16 +131,12 @@ impl Transport {
 
         match serde_json::to_vec(&env) {
             Ok(buf) => {
-                let ok = self.ws_req.borrow_mut().write(&buf);
-                if ok {
-                    info!(
-                        "[nip46] publish_frames: successfully wrote {} bytes to ws_req ring",
-                        buf.len()
-                    );
+                if let Err(e) = self.to_connections.borrow().send(&buf) {
+                    warn!("[nip46] failed to send frames through port: {:?}", e);
                 } else {
-                    warn!(
-                        "[nip46] ws_req ring full, dropped {} frame(s)",
-                        frames.len()
+                    info!(
+                        "[nip46] publish_frames: successfully sent {} bytes through to_connections port",
+                        buf.len()
                     );
                 }
             }
