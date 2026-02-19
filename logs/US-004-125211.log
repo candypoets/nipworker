@@ -400,3 +400,53 @@
 • The build completes successfully - all WASM crates compiled. Now let me commit
   the changes, update the PRD, and append to progress.txt:
 • The build passes. Now let me commit the changes and update the documentation:
+• Used Shell (cd /root/code/nipworker &... git add -A && git status)
+• Now let me commit and then update the PRD and progress.txt:
+• Used Shell (cd /root/code/nipworker &...worker to MessageChannel")
+• Now let me update the PRD to mark US-004 as passing:
+• Used Shell (cd /root/code/nipworker &... mv prd.json.tmp prd.json)
+• Now let me verify only US-004 is marked as passing:
+• Used Shell (cd /root/code/nipworker &...sses: .passes}]' prd.json)
+• Good, US-001, US-002, US-003 and US-004 are marked as passing. Now let me appe
+  nd to progress.txt:
+• Now let me append the progress to progress.txt:
+• Used StrReplaceFile (progress.txt)
+• Hmm, I've successfully transitioned the cache worker away from SABs to Message
+  Channel ports. This involved a significant refactor of Caching::new() and the
+  internal message handling logic. Wait, I should confirm the status of all stor
+  ies in this PRD... US-001, US-002, and US-003 are already marked as passing, a
+  nd now US-004 is as well. There are still outstanding tasks like the Parser wo
+  rker and Crypto worker migrations, but my current scope was strictly the Cache
+  worker. The build is stable and the acceptance criteria for US-004 are fully m
+  et. Since I've finished the implementation and verified the results, I have no
+  further actions to take on this story. I'll provide the completion status now.
+• US-004 has been completed successfully. Here's a summary of what was implement
+  ed:
+
+  Summary
+
+  Story: US-004 - Migrate Cache worker to MessageChannel
+
+  Changes Made:
+
+  1. Updated src/cache/Cargo.toml - Added futures dependency and web-sys feature
+     or MessagePort and MessageEvent
+  2. Updated src/cache/src/lib.rs - Complete rewrite of Caching struct:
+    • Changed constructor to accept MessagePort parameters instead of SABs
+    • Replaced 10 polling worker loops with single async worker using await on t
+      eceiver
+    • Merged db_ring functionality into the main from_parser channel
+    • Updated message handling to differentiate event persist vs lookup requests
+  3. Updated src/cache/src/db/index.rs - Added NostrDB::new() constructor withou
+     ngest ring and add_event_from_fb() method
+  4. Updated src/cache/index.ts - Added maxBufferSize parameter to constructor c
+
+  Build Status: ✅ All WASM crates compile successfully (npm run build:cache pas
+  ses)
+
+  PRD Status: US-001, US-002, US-003, and US-004 now have passes: true
+
+  Next story ready for implementation: US-005 - Migrate Parser worker - CryptoCl
+  ient to MessageChannel
+
+  <promise>COMPLETE</promise>

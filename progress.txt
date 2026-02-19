@@ -19,6 +19,25 @@
 - When extracting data from `MessageEvent`, handle both `ArrayBuffer` and `Uint8Array` types
 - The `shared` crate builds as `rlib` and is linked into WASM cdylib crates
 - Run cargo commands from `src/shared/`, not project root
+## 2026-02-19 12:52:11 - US-004
+- Migrated Cache worker from SAB rings to MessageChannel ports
+- Updated `Caching::new()` to accept `MessagePort` parameters: `from_parser` and `to_connections`
+- Removed SAB-based fields: `cache_request`, `cache_response`, `ws_request` rings
+- Replaced 10 polling worker loops with single async worker using `from_parser_rx.next().await`
+- Updated message handling to differentiate between event persist (event.is_some()) and lookup (requests.is_some())
+- Cache responses (WorkerMessage bytes) and REQ frames (JSON envelopes) both sent through `to_connections` port
+- Added `NostrDB::new()` constructor without ingest ring for MessageChannel architecture
+- Added `NostrDB::add_event_from_fb()` method for persisting events directly from flatbuffer
+- Updated `src/cache/Cargo.toml` to add `futures` and `web-sys` MessagePort/MessageEvent features
+- Updated `src/cache/index.ts` to pass `maxBufferSize` parameter to Rust constructor
+- Build passes with `npm run build:cache`
+
+**Learnings for future iterations:**
+- With MessageChannel, each message is delivered to exactly one receiver, so we don't need multiple workers polling the same ring
+- A single async worker with `.await` on the receiver is more efficient than polling loops with exponential backoff
+- Both cache responses and REQ frames go through the same `to_connections` port - the parser/connections differentiate by message format
+- When moving from SAB to MessageChannel, db_ring functionality merges into the main `from_parser` channel
+- The `Port::from_receiver()` and `Port::send()` abstractions from US-001 work well for the cache worker
 ---
 
 ## 2026-02-19 12:45:08 - US-002

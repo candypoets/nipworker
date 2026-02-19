@@ -89,6 +89,8 @@ features = [
     "ErrorEvent",
     "Event",
     "BinaryType",
+    "MessagePort",
+    "MessageEvent",
 ]
 
 [features]

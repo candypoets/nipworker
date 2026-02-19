@@ -2,6 +2,7 @@
 
 use flatbuffers::FlatBufferBuilder;
 use js_sys::SharedArrayBuffer;
+use web_sys::MessagePort;
 use shared::{
     telemetry,
     types::{nostr::Template, Event, ParserError, TypesError},
@@ -103,8 +104,8 @@ impl NostrClient {
         db_ring: SharedArrayBuffer,
         cache_request: SharedArrayBuffer, // ws request
         cache_response: SharedArrayBuffer,
-        crypto_request: SharedArrayBuffer,
-        crypto_response: SharedArrayBuffer,
+        to_crypto: MessagePort,
+        from_crypto: MessagePort,
         ws_response: SharedArrayBuffer, // ws response
     ) -> Self {
         telemetry::init(tracing::Level::ERROR);
@@ -113,7 +114,7 @@ impl NostrClient {
 
         // let signer_manager = Arc::new(SignerManager::new());
         let crypto_client = Arc::new(
-            CryptoClient::new(crypto_request, crypto_response)
+            CryptoClient::new(to_crypto, from_crypto)
                 .expect("Failed to initialize signer client"),
         );
 

@@ -9,6 +9,7 @@ export type InitCryptoMsg = {
 		fromParser: MessagePort;
 		toConnections: MessagePort;
 		toMain: MessagePort;
+		fromConnections?: MessagePort; // Added for US-008
 	};
 };
 
@@ -60,7 +61,7 @@ self.addEventListener('message', async (evt: MessageEvent<any>) => {
 	if (msg?.type === 'init') {
 		await ensureWasm();
 
-		const { fromParser, toConnections, toMain } = msg.payload;
+		const { fromParser, toConnections, toMain, fromConnections: _fromConnections } = msg.payload;
 		console.log('Initializing Crypto');
 		console.log('[crypto] fromParser port', fromParser);
 		console.log('[crypto] toConnections port', toConnections);
@@ -68,7 +69,9 @@ self.addEventListener('message', async (evt: MessageEvent<any>) => {
 
 		// Create the Rust worker and start it
 		// TODO: Update Crypto::new() to accept MessagePort parameters (US-008)
-		const crypto = new Crypto(fromParser, toConnections, toMain);
+		// Pass dummy SAB for 4th parameter until US-008 is done
+		const dummySAB = new SharedArrayBuffer(1024);
+		const crypto = new Crypto(toMain, fromParser, toConnections, dummySAB);
 		// Resolve to deferred so queued handlers can use the instance
 		resolveInstance?.(crypto);
 

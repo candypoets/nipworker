@@ -70,7 +70,7 @@
         "Build passes with npm run build:cache"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Reference: src/cache/src/lib.rs lines 22-403, src/cache/src/db/index.rs"
     },
     {

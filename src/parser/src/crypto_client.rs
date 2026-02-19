@@ -1,109 +1,96 @@
 use flatbuffers::FlatBufferBuilder;
-use gloo_timers::future::TimeoutFuture;
-use js_sys::SharedArrayBuffer;
+use futures::channel::mpsc;
+use futures::StreamExt;
 use shared::generated::nostr::fb;
-use shared::SabRing;
+use shared::Port;
 use std::cell::Cell;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
+use web_sys::MessagePort;
 
-/// Parser-facing client for the signer service SABs.
+/// Parser-facing client for the signer service using MessageChannel ports.
 ///
 /// This is a minimal client that:
-/// - writes requests into `crypto_service_request`
-/// - reads responses from `crypto_service_response`
+/// - writes requests into `to_crypto` port
+/// - reads responses from `from_crypto` receiver
 ///
-/// Encoding is a placeholder JSON envelope until the FlatBuffers schema is finalized:
-/// { "request_id": u64, "op": "<string>", "payload": <json> }
-///
-/// The service currently echoes back payloads to prove the pipe. Once the full
-/// FlatBuffers path is wired, this client can be updated to encode/decode FB
-/// while keeping the same async API for parser users.
+/// Encoding uses FlatBuffers SignerRequest/SignerResponse.
 pub struct CryptoClient {
-	req: Rc<RefCell<SabRing>>,
-	resp: Rc<RefCell<SabRing>>,
+	to_crypto: Port,
 	pending: Rc<RefCell<HashMap<u64, futures_channel::oneshot::Sender<Result<String, String>>>>>,
 	next_id: Rc<Cell<u64>>,
 	pump_started: Rc<Cell<bool>>,
 }
 
 impl CryptoClient {
-	/// Construct a client from two SABs:
-	/// - crypto_service_request (writer)
-	/// - crypto_service_response (reader)
-	pub fn new(
-		crypto_service_request: SharedArrayBuffer,
-		crypto_service_response: SharedArrayBuffer,
-	) -> Result<Self, JsValue> {
-		let req = Rc::new(RefCell::new(SabRing::new(crypto_service_request)?));
-		let resp = Rc::new(RefCell::new(SabRing::new(crypto_service_response)?));
+	/// Construct a client from two MessagePort ends:
+	/// - to_crypto: port for sending requests to crypto worker
+	/// - from_crypto: port for receiving responses from crypto worker
+	pub fn new(to_crypto: MessagePort, from_crypto: MessagePort) -> Result<Self, JsValue> {
+		let to_crypto_port = Port::new(to_crypto);
+		let from_crypto_rx = Port::from_receiver(from_crypto);
 
 		let client = Self {
-			req,
-			resp,
+			to_crypto: to_crypto_port,
 			pending: Rc::new(RefCell::new(HashMap::new())),
 			next_id: Rc::new(Cell::new(1)),
 			pump_started: Rc::new(Cell::new(false)),
 		};
 
-		client.ensure_pump();
-		info!("[crypto-client] initialized");
+		client.ensure_pump(from_crypto_rx);
+		info!("[crypto-client] initialized with MessageChannel");
 		Ok(client)
 	}
 
 	/// Ensure the single background pump is running to drain responses and
 	/// deliver them to awaiting request futures.
-	fn ensure_pump(&self) {
+	fn ensure_pump(&self, mut from_crypto_rx: mpsc::Receiver<Vec<u8>>) {
 		if self.pump_started.get() {
 			return;
 		}
 		self.pump_started.set(true);
 
-		let resp = self.resp.clone();
 		let pending = self.pending.clone();
 
 		spawn_local(async move {
-			let mut sleep_ms: u32 = 8;
-			let max_sleep: u32 = 256;
-
 			loop {
-				let maybe = { resp.borrow_mut().read_next() };
-				if let Some(bytes) = maybe {
-					sleep_ms = 8;
+				match from_crypto_rx.next().await {
+					Some(bytes) => {
+						// Decode FlatBuffers SignerResponse and forward raw result/error to callers
+						match flatbuffers::root::<fb::SignerResponse>(&bytes) {
+							Ok(resp) => {
+								let rid = resp.request_id();
+								let result_str = resp.result().unwrap_or("");
+								let error_str = resp.error().unwrap_or("");
 
-					// Decode FlatBuffers SignerResponse and forward raw result/error to callers
-					match flatbuffers::root::<fb::SignerResponse>(&bytes) {
-						Ok(resp) => {
-							let rid = resp.request_id();
-							let result_str = resp.result().unwrap_or("");
-							let error_str = resp.error().unwrap_or("");
-
-							if let Some(tx) = pending.borrow_mut().remove(&rid) {
-								if !error_str.is_empty() {
-									let _ = tx.send(Err(error_str.to_string()));
+								if let Some(tx) = pending.borrow_mut().remove(&rid) {
+									if !error_str.is_empty() {
+										let _ = tx.send(Err(error_str.to_string()));
+									} else {
+										let _ = tx.send(Ok(result_str.to_string()));
+									}
 								} else {
-									let _ = tx.send(Ok(result_str.to_string()));
+									warn!("[crypto-client] response for unknown request_id={rid}");
 								}
-							} else {
-								warn!("[crypto-client] response for unknown request_id={rid}");
+							}
+							Err(e) => {
+								warn!(
+									"[crypto-client] failed to decode SignerResponse FB: {:?}",
+									e
+								);
 							}
 						}
-						Err(e) => {
-							warn!(
-								"[crypto-client] failed to decode SignerResponse FB: {:?}",
-								e
-							);
-						}
 					}
-					continue;
+					None => {
+						// Channel closed, exit the pump
+						info!("[crypto-client] response channel closed, pump exiting");
+						break;
+					}
 				}
-
-				TimeoutFuture::new(sleep_ms).await;
-				sleep_ms = (sleep_ms * 2).min(max_sleep);
 			}
 		});
 
@@ -168,11 +155,10 @@ impl CryptoClient {
 		fbb.finish(req, None);
 		let out = fbb.finished_data();
 
-		// Write to ring
-		let ok = self.req.borrow_mut().write(out);
-		if !ok {
+		// Send through MessagePort
+		if let Err(e) = self.to_crypto.send(out) {
 			self.pending.borrow_mut().remove(&rid);
-			return Err("crypto_service_request ring full (write dropped)".to_string());
+			return Err(format!("failed to send request through port: {:?}", e));
 		}
 
 		// Await response (no timeout here; the service loop applies backpressure)
