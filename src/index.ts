@@ -2,6 +2,7 @@ import * as flatbuffers from 'flatbuffers';
 import type { EventTemplate, NostrEvent } from 'nostr-tools';
 
 import { SharedBufferReader } from 'src/lib/SharedBuffer';
+import { ArrayBufferReader } from 'src/lib/ArrayBufferReader';
 
 import { RequestObject, SubscriptionConfig } from 'src/types';
 import {
@@ -68,12 +69,12 @@ export class NostrManager {
 	private subscriptions = new Map<
 		string,
 		{
-			buffer: SharedArrayBuffer;
+			buffer: ArrayBuffer;
 			options: SubscriptionConfig;
 			refCount: number;
 		}
 	>();
-	private publishes = new Map<string, { buffer: SharedArrayBuffer }>();
+	private publishes = new Map<string, { buffer: ArrayBuffer }>();
 	// private signers = new Map<string, string>(); // name -> last payload
 
 	private activePubkey: string | null = null;
@@ -82,10 +83,13 @@ export class NostrManager {
 	private signCB = (_event: any) => {};
 	private eventTarget = new EventTarget();
 
+	// MessageChannel for parser-main communication
+	private parserMainPort: MessagePort;
+
 	public PERPETUAL_SUBSCRIPTIONS = ['notifications', 'starterpack'];
 
 	constructor() {
-		// Create 6 MessageChannels for worker-to-worker communication
+		// Create 7 MessageChannels for worker-to-worker communication
 		// Each channel connects two workers - each worker gets one port (which is bidirectional)
 		// Channel naming: workerA_workerB (no direction, just identifies the pair)
 		const parser_cache = new MessageChannel(); // parser ↔ cache
@@ -94,6 +98,7 @@ export class NostrManager {
 		const cache_connections = new MessageChannel(); // cache ↔ connections
 		const crypto_connections = new MessageChannel(); // crypto ↔ connections
 		const crypto_main = new MessageChannel(); // crypto ↔ main
+		const parser_main = new MessageChannel(); // parser ↔ main (for batched events)
 
 		const connectionURL = new URL('./connections/index.js', import.meta.url);
 		const cacheURL = new URL('./cache/index.js', import.meta.url);
@@ -133,18 +138,42 @@ export class NostrManager {
 			[parser_cache.port1, cache_connections.port2]
 		);
 
+		// Store parser_main port1 for receiving batched events from parser
+		this.parserMainPort = parser_main.port1;
+
+		// Set up message handler for incoming batched events
+		this.parserMainPort.onmessage = (event) => {
+			const { subId, data } = event.data;
+			if (!subId || !data) return;
+
+			// Find subscription or publish buffer and write data
+			const subscription = this.subscriptions.get(subId);
+			if (subscription) {
+				ArrayBufferReader.writeMessage(subscription.buffer, data);
+				this.dispatch(`subscription:${subId}`, subId);
+				return;
+			}
+
+			const publish = this.publishes.get(subId);
+			if (publish) {
+				ArrayBufferReader.writeMessage(publish.buffer, data);
+				this.dispatch(`publish:${subId}`, subId);
+			}
+		};
+
 		// Transfer ports to parser worker
-		// Needs: connectionsPort, cachePort, cryptoPort
+		// Needs: connectionsPort, cachePort, cryptoPort, mainPort
 		this.parser.postMessage(
 			{
 				type: 'init',
 				payload: {
 					connectionsPort: parser_connections.port2,
 					cachePort: parser_cache.port2,
-					cryptoPort: parser_crypto.port1
+					cryptoPort: parser_crypto.port1,
+					mainPort: parser_main.port2
 				}
 			} as InitParserMsg,
-			[parser_connections.port2, parser_cache.port2, parser_crypto.port1]
+			[parser_connections.port2, parser_cache.port2, parser_crypto.port1, parser_main.port2]
 		);
 
 		// Transfer ports to crypto worker
@@ -307,7 +336,7 @@ export class NostrManager {
 		subscriptionId: string,
 		requests: RequestObject[],
 		options: SubscriptionConfig
-	): SharedArrayBuffer {
+	): ArrayBuffer {
 		const subId = this.createShortId(subscriptionId);
 		const existingSubscription = this.subscriptions.get(subId);
 		if (existingSubscription) {
@@ -316,9 +345,9 @@ export class NostrManager {
 		}
 
 		const totalLimit = requests.reduce((sum, req) => sum + (req.limit || 100), 0);
-		const bufferSize = SharedBufferReader.calculateBufferSize(totalLimit, options.bytesPerEvent);
-		const buffer = new SharedArrayBuffer(bufferSize);
-		SharedBufferReader.initializeBuffer(buffer);
+		const bufferSize = ArrayBufferReader.calculateBufferSize(totalLimit, options.bytesPerEvent);
+		const buffer = new ArrayBuffer(bufferSize);
+		ArrayBufferReader.initializeBuffer(buffer);
 
 		this.subscriptions.set(subId, { buffer, options, refCount: 1 });
 
@@ -366,7 +395,7 @@ export class NostrManager {
 		return buffer;
 	}
 
-	getBuffer(subId: string): SharedArrayBuffer | undefined {
+	getBuffer(subId: string): ArrayBuffer | undefined {
 		const existingSubscription = this.subscriptions.get(subId);
 		if (existingSubscription) {
 			existingSubscription.refCount++;
@@ -383,9 +412,9 @@ export class NostrManager {
 		}
 	}
 
-	publish(publish_id: string, event: NostrEvent, defaultRelays: string[] = []): SharedArrayBuffer {
-		const buffer = new SharedArrayBuffer(3072);
-		SharedBufferReader.initializeBuffer(buffer);
+	publish(publish_id: string, event: NostrEvent, defaultRelays: string[] = []): ArrayBuffer {
+		const buffer = new ArrayBuffer(3072);
+		ArrayBufferReader.initializeBuffer(buffer);
 
 		const templateT = new TemplateT(
 			event.kind,

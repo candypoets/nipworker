@@ -10,6 +10,8 @@ export type InitParserMsg = {
 		cachePort: MessagePort;
 		/** Port to communicate with crypto worker */
 		cryptoPort: MessagePort;
+		/** Port to communicate with main thread (for batched events) */
+		mainPort: MessagePort;
 	};
 };
 

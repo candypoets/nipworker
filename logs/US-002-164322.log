@@ -1,0 +1,401 @@
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ # Ralph Agent Instructions                                                   │
+│                                                                              │
+│ You are an autonomous coding agent working on a software project.            │
+│                                                                              │
+│ ## 🛡️ CRITICAL SAFETY RULES - NEVER VIOLATE                                   │
+│                                                                              │
+│ ### System Resource Protection                                               │
+│ The following actions are **STRICTLY PROHIBITED** and will cause harm to the │
+│ host system:                                                                 │
+│                                                                              │
+│ **Docker/Container Management:**                                             │
+│ - **NEVER** run `docker stop` without an explicit container name or ID       │
+│ - **NEVER** use `docker stop $(docker ps -q)` or any pattern that stops mult │
+│ iple/all containers                                                          │
+│ - **NEVER** run `docker rm -f $(docker ps -aq)` or similar mass-removal comm │
+│ ands                                                                         │
+│ - **ALWAYS** verify container names with `docker ps --filter name=<pattern>` │
+│ before stopping                                                              │
+│ - **ONLY** stop containers that were explicitly created by this session      │
+│ - **ONLY** stop containers using their explicit name: `docker stop <exact-co │
+│ ntainer-name>`                                                               │
+│                                                                              │
+│ **Process Management:**                                                      │
+│ - **NEVER** run `killall`, `pkill`, or similar commands without specific pro │
+│ cess names                                                                   │
+│ - **NEVER** use `kill -9` on system processes or processes you didn't start  │
+│ - **ONLY** terminate processes you explicitly started in this session        │
+│                                                                              │
+│ **Port/Network Conflicts:**                                                  │
+│ - If a port is in use, **USE A DIFFERENT PORT** instead of killing the proce │
+│ ss using it                                                                  │
+│ - Check what's running on a port with `lsof -i :<port>` or `ss -tlnp | grep  │
+│ <port>`                                                                      │
+│ - Prefer random/high ports (e.g., `docker run -p 0:8080`) to avoid conflicts │
+│                                                                              │
+│ **General Safety:**                                                          │
+│ - **NEVER** run commands that affect system-wide state unless explicitly req │
+│ uired by the PRD                                                             │
+│ - **NEVER** use wildcards or glob patterns with destructive commands (`rm`,  │
+│ `kill`, `stop`)                                                              │
+│ - When in doubt, be explicit and specific with resource names                │
+│                                                                              │
+│ ---                                                                          │
+│                                                                              │
+│ ## Your Task                                                                 │
+│                                                                              │
+│ 1. Read the PRD at `prd.json` (in the same directory as this file)           │
+│ 2. Read the progress log at `progress.txt` (check Codebase Patterns section  │
+│ first)                                                                       │
+│ 3. Check you're on the correct branch from PRD `branchName`. If not, check i │
+│ t out or create from main.                                                   │
+│ 4. Pick the **highest priority** user story where `passes: false`            │
+│ 5. Implement that single user story                                          │
+│ 6. Run quality checks (e.g., typecheck, lint, test - use whatever your proje │
+│ ct requires)                                                                 │
+│ 7. Update AGENTS.md files if you discover reusable patterns (see below)      │
+│ 8. If checks pass, commit ALL changes with message: `feat: [Story ID] - [Sto │
+│ ry Title]`                                                                   │
+│ 9. Update the PRD to set `passes: true` for the completed story - use this e │
+│ xact jq command (replace STORY_ID with the actual ID like "US-001"):         │
+│    ```bash                                                                   │
+│    jq '.userStories |= map(if .id == "STORY_ID" then . + {"passes": true} el │
+│ se . end)' prd.json > prd.json.tmp && mv prd.json.tmp prd.json               │
+│    ```                                                                       │
+│    ⚠️ CRITICAL: Only update the SINGLE story you just completed - do NOT upda │
+│ te all stories!                                                              │
+│ 10. Verify only ONE story has passes: true - run this to confirm:            │
+│     ```bash                                                                  │
+│     jq '[.userStories[].id, .userStories[].passes]' prd.json                 │
+│     ```                                                                      │
+│ 11. Append your progress to `progress.txt`                                   │
+│                                                                              │
+│ ## Progress Report Format                                                    │
+│                                                                              │
+│ APPEND to progress.txt (never replace, always append):                       │
+│ ```                                                                          │
+│ ## [Date/Time] - [Story ID]                                                  │
+│ - What was implemented                                                       │
+│ - Files changed                                                              │
+│ - **Learnings for future iterations:**                                       │
+│   - Patterns discovered (e.g., "this codebase uses X for Y")                 │
+│   - Gotchas encountered (e.g., "don't forget to update Z when changing W")   │
+│   - Useful context (e.g., "the evaluation panel is in component X")          │
+│ ---                                                                          │
+│ ```                                                                          │
+│                                                                              │
+│ The learnings section is critical - it helps future iterations avoid repeati │
+│ ng mistakes and understand the codebase better.                              │
+│                                                                              │
+│ ## Consolidate Patterns                                                      │
+│                                                                              │
+│ If you discover a **reusable pattern** that future iterations should know, a │
+│ dd it to the `## Codebase Patterns` section at the TOP of progress.txt (crea │
+│ te it if it doesn't exist). This section should consolidate the most importa │
+│ nt learnings:                                                                │
+│                                                                              │
+│ ```                                                                          │
+│ ## Codebase Patterns                                                         │
+│ - Example: Use `sql<number>` template for aggregations                       │
+│ - Example: Always use `IF NOT EXISTS` for migrations                         │
+│ - Example: Export types from actions.ts for UI components                    │
+│ ```                                                                          │
+│                                                                              │
+│ Only add patterns that are **general and reusable**, not story-specific deta │
+│ ils.                                                                         │
+│                                                                              │
+│ ## Update AGENTS.md Files                                                    │
+│                                                                              │
+│ Before committing, check if any edited files have learnings worth preserving │
+│ in nearby AGENTS.md files:                                                   │
+│                                                                              │
+│ 1. **Identify directories with edited files** - Look at which directories yo │
+│ u modified                                                                   │
+│ 2. **Check for existing AGENTS.md** - Look for AGENTS.md in those directorie │
+│ s or parent directories                                                      │
+│ 3. **Add valuable learnings** - If you discovered something future developer │
+│ s/agents should know:                                                        │
+│    - API patterns or conventions specific to that module                     │
+│    - Gotchas or non-obvious requirements                                     │
+│    - Dependencies between files                                              │
+│    - Testing approaches for that area                                        │
+│    - Configuration or environment requirements                               │
+│                                                                              │
+│ **Examples of good AGENTS.md additions:**                                    │
+│ - "When modifying X, also update Y to keep them in sync"                     │
+│ - "This module uses pattern Z for all API calls"                             │
+│ - "Tests require the dev server running on PORT 3000"                        │
+│ - "Field names must match the template exactly"                              │
+│                                                                              │
+│ **Do NOT add:**                                                              │
+│ - Story-specific implementation details                                      │
+│ - Temporary debugging notes                                                  │
+│ - Information already in progress.txt                                        │
+│                                                                              │
+│ Only update AGENTS.md if you have **genuinely reusable knowledge** that woul │
+│ d help future work in that directory.                                        │
+│                                                                              │
+│ ## Quality Requirements                                                      │
+│                                                                              │
+│ - ALL commits must pass your project's quality checks (typecheck, lint, test │
+│ )                                                                            │
+│ - Do NOT commit broken code                                                  │
+│ - Keep changes focused and minimal                                           │
+│ - Follow existing code patterns                                              │
+│                                                                              │
+│ ## Browser Testing (Required for Frontend Stories)                           │
+│                                                                              │
+│ For any story that changes UI, you MUST verify it works in the browser:      │
+│                                                                              │
+│ 1. Load the `dev-browser` skill                                              │
+│ 2. Navigate to the relevant page                                             │
+│ 3. Verify the UI changes work as expected                                    │
+│ 4. Take a screenshot if helpful for the progress log                         │
+│                                                                              │
+│ A frontend story is NOT complete until browser verification passes.          │
+│                                                                              │
+│ ## Stop Condition                                                            │
+│                                                                              │
+│ After completing a user story, check if ALL stories have `passes: true`.     │
+│                                                                              │
+│ If ALL stories are complete and passing, reply with:                         │
+│ <promise>COMPLETE</promise>                                                  │
+│                                                                              │
+│ If there are still stories with `passes: false`, end your response normally  │
+│ (another iteration will pick up the next story).                             │
+│                                                                              │
+│ ## Important                                                                 │
+│                                                                              │
+│ - Work on ONE story per iteration                                            │
+│ - Commit frequently                                                          │
+│ - Keep CI green                                                              │
+│ - Read the Codebase Patterns section in progress.txt before starting         │
+╰──────────────────────────────────────────────────────────────────────────────╯
+• Let me start by reading the PRD and progress files to understand what needs to
+  be done.
+• Used ReadFile (prd.json)
+• Used ReadFile (progress.txt)
+• Used Shell (cd /root/worktrees/nipwor...sagechannel && git branch)
+• Okay, I've confirmed that US-001 is complete. Now I'm moving to US-002: creati
+  ng a single MessageChannel for parser-main communication. This is a core archi
+  tectural change, so I can't just start writing code in a vacuum. I need to und
+  erstand the current state of the NostrManager and how it currently interacts w
+  ith the parser worker.
+
+  Wait, if I'm setting up a MessageChannel, I need to see how other workers are
+  initialized to ensure I follow the same pattern. Is the parser worker logic is
+  olated, or is it part of a more complex orchestration in index.ts?
+
+  Actually, looking at the file structure, src/lib/SharedBufferReader.ts probabl
+  y holds the logic for the current communication method. Understanding that is
+  crucial because US-002 involves transitioning away from shared buffer reads.
+
+  But I also need to see how the parser itself is defined. If I'm going to pass
+  port2 to it, I need to know its interface and how it handles incoming connecti
+  ons. Checking src/workers/parser.ts is a must.
+
+  So, the plan is to first examine the main entry point to see the initializatio
+  n flow, then look at the current shared buffer implementation to understand wh
+  at needs to be replaced, and finally inspect the parser worker to see how it r
+  eceives data. This holistic view will ensure the MessageChannel is implemented
+  correctly without breaking existing functionality.
+• I'm on the correct branch ralph/sab-to-messagechannel. US-001 is complete. Now
+  I need to implement US-002: Create single MessageChannel for parser-main commu
+  nication.
+
+  Let me explore the codebase to understand the current structure:
+• Used ReadFile (src/index.ts)
+• Used ReadFile (src/lib/SharedBufferReader.ts)
+  File not found
+• Used ReadFile (src/workers/parser.ts)
+  File not found
+• Let me find the correct paths for these files.
+• Let me find the correct file paths:
+• Used Glob (src/**/*.ts)
+• Used ReadFile (src/lib/ArrayBufferReader.ts)
+• Good, now I understand the structure. Let me also look at the SharedBuffer.ts
+  to understand how the current SharedBufferReader works, and look at the parser
+  /index.ts to see how the InitParserMsg is defined.
+• Used ReadFile (src/lib/SharedBuffer.ts)
+• Used ReadFile (src/parser/index.ts)
+• Now I understand the codebase structure. I need to implement US-002 which invo
+  lves:
+
+  1. Creating ONE MessageChannel in NostrManager constructor for parser-main com
+     ication
+  2. Transfer port2 to parser worker during init
+  3. Store port1 locally for bidirectional communication
+  4. port1.onmessage receives { subId, data: Uint8Array } for any subscription
+  5. Write received data to the correct subscription's ArrayBuffer using subId
+  6. DISPATCH subscription:${subId} to wake hooks
+
+  Let me also check the hooks.ts to understand how subscriptions are used:
+• Used ReadFile (src/hooks.ts)
+• I've analyzed the current state of NostrManager. Right now, it relies on Share
+  dArrayBuffer for high-performance data transfer, specifically using a SharedBu
+  fferReader for the statusRing. While this works, it limits compatibility in en
+  vironments where SharedArrayBuffer is disabled or requires specific cross-orig
+  in isolation. To make the library more robust, I need to implement a MessageCh
+  annel as a fallback or replacement pathway.
+
+  Looking at src/lib/index.ts, the NostrManager is the central hub. I see the in
+  itialization sequence in the constructor where it sets up various workers. Hmm
+  ... if I want to introduce a MessageChannel for the parser, I should follow th
+  e existing pattern used for other workers. The code already initializes severa
+  l MessageChannel instances for inter-worker communication. I'll need to add a
+  new one specifically for the main thread to communicate with the parser worker
+  .
+
+  Wait, let me look closer at the subscribe method. It currently returns a Share
+  dArrayBuffer. If I'm migrating to MessageChannel or providing it as an alterna
+  tive, I need a place to store the incoming messages. A Map<string, ArrayBuffer
+  > keyed by subscription ID seems like the right approach. When a message arriv
+  es on port1, I'll need to look up the correct buffer and append the data.
+
+  Actually, I should also consider the onmessage handler for port1. It needs to
+  be robust. If I receive a message, I need to write it to the correct subscript
+  ion's ArrayBuffer and then dispatch an event to notify any listening hooks. Th
+  is dispatch mechanism is already in place via this.dispatch, so I should lever
+  age that to maintain consistency with the existing architecture.
+
+  But before I start refactoring the return types of subscribe or publish, I nee
+  d to get the infrastructure in place. The first logical step is to modify the
+  NostrManager constructor. I need to create the MessageChannel, store port1 for
+  local use, and transfer port2 to the parser worker during its initialization.
+
+  Wait, I also noticed the ArrayBufferReader mentioned in the requirements. I'll
+  eventually need to use that to read the data I'm storing in the Map, but for n
+  ow, the immediate priority is establishing the communication line. I'll also n
+  eed to maintain the statusRing and the SharedBufferReader for now to avoid bre
+  aking existing functionality while I transition the system.
+
+  Looking at the constructor, I can see exactly where the worker initialization
+  happens. I'll add the MessageChannel creation right there, alongside the other
+  channels. This will allow me to pass the port2 to the parser worker's postMess
+  age call. I also need to set up the onmessage listener on port1 to handle the
+  incoming data and route it correctly.
+
+  So, the plan is:
+
+  1. Add a parserMain MessageChannel to the constructor.
+  2. Add a subBuffers Map to the class to hold the ArrayBuffer for each subscrip
+     n.
+  3. Update the constructor to initialize the port and set up the message handle
+  4. Pass port2 to the parser worker.
+
+  This approach ensures that the foundation is laid for US-002. I will proceed w
+  ith modifying src/lib/index.ts to include these changes, focusing specifically
+  on the constructor and the new class properties.
+• Now I understand the structure. I need to implement US-002 by modifying src/in
+  dex.ts to:
+
+  1. Create a MessageChannel for parser-main communication
+  2. Transfer port2 to parser worker during init
+  3. Store port1 locally and handle incoming messages
+  4. Store received data in subscription's ArrayBuffer
+
+  Let me make the changes:
+• Used StrReplaceFile (src/index.ts)
+• Now I need to update the InitParserMsg type in src/parser/index.ts to include
+  the mainPort. Let me do that.
+• Now let me update the InitParserMsg type to include the mainPort:
+• Used StrReplaceFile (src/parser/index.ts)
+• Now let me run typecheck to make sure everything compiles correctly.
+• Now let me run typecheck to verify the changes:
+• Used Shell (cd /root/worktrees/nipwor...ld:types 2>&1 | head -100)
+• The type errors I'm seeing are all pre-existing issues in the generated code a
+  nd the missing WASM pkg modules. None of them are related to my changes. The k
+  ey thing is that my changes to src/index.ts and src/parser/index.ts don't intr
+  oduce any new errors.
+
+  Let me check specifically if there are any errors in the files I modified:
+• Let me check for errors specifically in the files I modified:
+• Used Shell (cd /root/worktrees/nipwor... src/parser/index.ts 2>&1)
+  Failed with exit code: 2
+• The errors are mostly pre-existing issues with the generated code and WASM mod
+  ules. The key errors related to my changes are:
+
+  1. Cannot find module 'src/lib/SharedBuffer' - I need to check if this file ex
+     s
+  2. Cannot find module 'src/lib/ArrayBufferReader' - I need to check this path
+
+  Let me check the actual file paths and see if there's an issue with the import
+  paths. These errors are likely due to running tsc without the proper path reso
+  lution. Let me check the tsconfig to see how paths are configured.
+• Let me check the tsconfig and verify the file paths:
+• Used ReadFile (tsconfig.json)
+• Used Shell (cd /root/worktrees/nipwor...hannel && ls -la src/lib/)
+• I see - the files exist, but I need to check the actual file contents. Let me
+  check what happened to SharedBuffer.ts and also see if my ArrayBufferReader im
+  port is correct. The path src/lib/SharedBuffer should resolve to src/lib/Share
+  dBuffer.ts or src/lib/SharedBuffer/index.ts.
+
+  Looking at my code, I imported from src/lib/SharedBuffer but the file is src/l
+  ib/SharedBuffer.ts. Let me check if there's an issue with the file naming. Act
+  ually looking at the original code in index.ts, it had:
+
+  import { SharedBufferReader } from 'src/lib/SharedBuffer';
+
+  So it seems the convention is to import from src/lib/SharedBuffer which should
+  resolve to src/lib/SharedBuffer.ts (without the .ts extension). This should wo
+  rk with TypeScript's module resolution.
+
+  Let me run the actual type check via the npm script which is configured proper
+  ly:
+• Let me run the actual typecheck via the npm script:
+• Used Shell (cd /root/worktrees/nipwor...ror TS[0-9]+)" | head -30)
+• The errors shown are all in generated code and cache/connections/crypto - no e
+  rrors in src/index.ts, src/parser/index.ts or src/hooks.ts. My changes don't i
+  ntroduce any new errors.
+
+  Let me verify my changes are correct by checking the specific files I modified
+  :
+• No errors in the files I modified. The errors are all pre-existing issues in g
+  enerated code and WASM modules. Let me verify my changes look correct:
+• Used Shell (cd /root/worktrees/nipwor... src/index.ts | head -100)
+• Used Shell (cd /root/worktrees/nipwor... diff src/parser/index.ts)
+• Hmm, looking at the state of the repository, I've successfully swapped out the
+  SharedArrayBuffer logic for the standard ArrayBuffer paired with a MessageChan
+  nel. This is a significant shift in how the main thread and the parser worker
+  communicate. Previously, the SharedArrayBuffer allowed for a shared memory spa
+  ce that both sides could read from and write to directly. Now, with the Messag
+  eChannel, we've moved to a message-passing architecture.
+
+  Wait, let me look closer at the implementation details. I modified NostrManage
+  r in src/index.ts to establish a parser_main channel. One port is kept in the
+  main thread, and the other is transferred to the worker. This transfer is cruc
+  ial—once port2 is sent to the worker, the main thread can no longer use it. Th
+  e main thread holds port1 and listens for onmessage events.
+
+  But how does the data actually get into the subscription's buffer now? Ah, rig
+  ht. I implemented a handler in NostrManager that receives a subId and a data p
+  ayload from the worker. It then looks up the corresponding subscription in the
+  subscriptions map and writes that data into the subscription's local ArrayBuff
+  er using ArrayBufferReader.writeMessage(). This maintains the same API for the
+  rest of the application while decoupling the communication mechanism.
+
+  Actually, looking at src/parser/index.ts, I also needed to update the InitPars
+  erMsg type. The parser worker now needs to know about this mainPort to send da
+  ta back. By adding mainPort: MessagePort to the initialization payload, the wo
+  rker can store this port and use it to post messages back to the main thread.
+  This bidirectional link is now the lifeline for all subscription updates.
+
+  I also noticed that I had to change the return types of subscribe(), getBuffer
+  (), and publish(). They were explicitly returning SharedArrayBuffer, which is
+  a specific type of ArrayBuffer. Since we're no longer using shared memory, ret
+  urning a standard ArrayBuffer is the correct approach, though it requires upda
+  ting the type definitions throughout the call stack to ensure consistency.
+
+  Everything seems to be in order. The code is clean, the types are updated, and
+  the logic for dispatching events based on subId is robust. The pre-existing ty
+  pe errors in the generated code haven't been exacerbated by these changes, whi
+  ch is a good sign for the isolation of this refactor.
+
+  Now that the implementation phase is complete, I need to formalize these chang
+  es in the version control history. The logical next step is to stage all the m
+  odified files—including the new implementation in src/index.ts, the worker ini
+  tialization in src/parser/index.ts, and any other related files—and create a c
+  ommit. This will capture the transition from SAB to the MessageChannel approac
+  h, providing a clear checkpoint for this architectural improvement.
+• The changes look good. Let me commit these changes:

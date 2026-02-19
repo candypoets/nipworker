@@ -1,0 +1,182 @@
+## Codebase Patterns
+- The shared crate uses `futures::channel::mpsc` (not tokio) for async channels in WASM
+- When adding web-sys features, must specify them in Cargo.toml: `web-sys = { version = "0.3", features = ["MessagePort", "MessageChannel", "MessageEvent"] }`
+- Use `Closure::wrap` + `forget()` for JS event handlers that need to live for the page lifetime
+- The shared crate is at `src/shared/` (not at project root) - run cargo commands from there
+
+## 2026-02-19 12:41:16 - US-001
+- Created `src/shared/src/port.rs` - a thin wrapper around `web_sys::MessagePort` for async message reception
+- Updated `src/shared/Cargo.toml` to add `futures` and `web-sys` dependencies
+- Updated `src/shared/src/lib.rs` to export the `port` module and `Port` struct
+- Implemented `Port::from_receiver(port)` -> `mpsc::Receiver<Vec<u8>>` with buffer size 10
+- Implemented `Port::send(&self, bytes)` for sending messages through the port
+- Build passes with `npm run build` - TypeScript errors are pre-existing in generated FlatBuffers code
+
+**Learnings for future iterations:**
+- The project uses `futures::channel::mpsc` (not tokio) - use `futures = { version = "0.3", default-features = false, features = ["std"] }`
+- `web-sys` features must be explicitly enabled: `MessagePort`, `MessageChannel`, `MessageEvent`
+- Use `try_send()` in JS callbacks to avoid blocking
+- When extracting data from `MessageEvent`, handle both `ArrayBuffer` and `Uint8Array` types
+- The `shared` crate builds as `rlib` and is linked into WASM cdylib crates
+- Run cargo commands from `src/shared/`, not project root
+## 2026-02-19 12:52:11 - US-004
+- Migrated Cache worker from SAB rings to MessageChannel ports
+- Updated `Caching::new()` to accept `MessagePort` parameters: `from_parser` and `to_connections`
+- Removed SAB-based fields: `cache_request`, `cache_response`, `ws_request` rings
+- Replaced 10 polling worker loops with single async worker using `from_parser_rx.next().await`
+- Updated message handling to differentiate between event persist (event.is_some()) and lookup (requests.is_some())
+- Cache responses (WorkerMessage bytes) and REQ frames (JSON envelopes) both sent through `to_connections` port
+- Added `NostrDB::new()` constructor without ingest ring for MessageChannel architecture
+- Added `NostrDB::add_event_from_fb()` method for persisting events directly from flatbuffer
+- Updated `src/cache/Cargo.toml` to add `futures` and `web-sys` MessagePort/MessageEvent features
+- Updated `src/cache/index.ts` to pass `maxBufferSize` parameter to Rust constructor
+- Build passes with `npm run build:cache`
+
+**Learnings for future iterations:**
+- With MessageChannel, each message is delivered to exactly one receiver, so we don't need multiple workers polling the same ring
+- A single async worker with `.await` on the receiver is more efficient than polling loops with exponential backoff
+- Both cache responses and REQ frames go through the same `to_connections` port - the parser/connections differentiate by message format
+- When moving from SAB to MessageChannel, db_ring functionality merges into the main `from_parser` channel
+- The `Port::from_receiver()` and `Port::send()` abstractions from US-001 work well for the cache worker
+---
+
+## 2026-02-19 12:45:08 - US-002
+- Created 6 MessageChannels in NostrManager constructor: cacheToConn, parserToCache, connToParser, parserToCrypto, cryptoToConn, cryptoToMain
+- Updated InitConnectionsMsg type to accept MessagePort parameters: statusRing, fromCache, toParser, fromCrypto
+- Updated InitCacheMsg type to accept MessagePort parameters: fromParser, toConnections
+- Updated InitParserMsg type to accept MessagePort parameters: fromConnections, fromCache, toCrypto
+- Updated InitCryptoMsg type to accept MessagePort parameters: fromParser, toConnections, toMain
+- Removed SAB creation for: ws_request, ws_response, ws_crypto_request, ws_crypto_response, cache_request, cache_response, dbRing, crypto_request, crypto_response
+- Kept statusRing SAB for main thread status updates (per requirements)
+- Transferred correct port ends to each worker's init message using postMessage with transfer list
+- Moved crypto control response handling (bunker_discovered, get_pubkey, sign_event responses) to cryptoToMain.port2 onmessage handler
+- Updated all worker index.ts files to use new port-based parameters with TODO comments referencing future stories
+- Build passes - all TypeScript errors are either pre-existing or expected WASM signature mismatches
+
+**Learnings for future iterations:**
+- When transferring MessagePorts, must include them in the transfer list: `worker.postMessage(data, [port1, port2])`
+- The `cryptoToMain` channel replaces the need for crypto worker to send control responses through the main thread postMessage
+- Worker initialization now cleanly separates: port-based channels (MessageChannel) vs subscription data (SAB)
+- The statusRing SAB is kept as-is since it broadcasts to main thread without requiring a dedicated channel
+- Type imports from './connections' needed to be updated to './connections/index' for proper resolution
+---
+
+## 2026-02-19 12:49:46 - US-003
+- Updated `src/connections/src/lib.rs` to use MessageChannel ports instead of SAB rings
+- Changed `WSRust::new()` signature to accept `MessagePort` parameters: `status_ring`, `from_cache`, `to_parser`, `from_crypto`
+- Added `web-sys` features for `MessagePort` and `MessageEvent` in `src/connections/Cargo.toml`
+- Created receivers using `Port::from_receiver()` for both `from_cache` and `from_crypto` ports
+- Wrapped `to_parser` port using `Port::new()` for sending WorkerMessage bytes
+- Replaced polling loop with `select!` macro racing between `from_cache_rx` and `from_crypto_rx`
+- NIP-46 messages now route through the `from_crypto` channel
+- Removed `ws_request`, `ws_signer_request`, `ws_response`, `ws_signer_response` SAB-based fields
+- Updated `src/connections/index.ts` to remove TODO comment
+- Build passes with `npm run build:connections`
+
+**Learnings for future iterations:**
+- Use `futures::StreamExt` for the `.next()` method on `mpsc::Receiver`
+- The `select!` macro requires `FutureExt` for `.fuse()` and `StreamExt` for `.next()`
+- When a receiver returns `None`, the channel is closed - break the loop appropriately
+- Keep the `statusRing` SAB unchanged as it's still used for main thread status updates
+- The `Port::send()` method handles the conversion to Uint8Array for transfer
+---
+
+## 2026-02-19 12:57:05 - US-005
+- Migrated Parser worker's CryptoClient from SAB rings to MessageChannel ports
+- Updated `CryptoClient::new()` to accept `MessagePort` parameters instead of `SharedArrayBuffer`
+- Replaced `req` SAB with `to_crypto` port (Port wrapper for sending)
+- Replaced `resp` SAB with `from_crypto` receiver (mpsc::Receiver<Vec<u8>>)
+- Updated `call_raw()` to send SignerRequest through `Port::send()` method
+- Replaced polling loop with `from_crypto_rx.next().await` in response pump
+- Kept request/response matching by request_id using HashMap
+- Updated parser Cargo.toml to add `MessagePort` and `MessageEvent` web-sys features
+- Updated `lib.rs` NostrClient constructor signature to accept MessagePort parameters (partial US-007 work)
+- Build passes with `npm run build:parser`
+
+**Learnings for future iterations:**
+- The `Port::from_receiver()` abstraction from US-001 works perfectly for receiving messages in CryptoClient
+- Using `futures::StreamExt::next().await` on the receiver is much cleaner than polling with exponential backoff
+- The response pump can exit cleanly when the channel closes (receiver returns None)
+- Keep the pending HashMap for request/response correlation - this pattern works well with MessageChannel
+- When sending through MessagePort, errors need to be handled and pending requests cleaned up
+---
+
+## 2026-02-19 13:02:05 - US-006
+- Migrated Parser worker's NetworkManager distributor from SAB rings to MessageChannel ports
+- Updated `NetworkManager::new()` to accept `from_connections` and `from_cache` mpsc::Receiver parameters
+- Removed `ws_response` and `cache_response` SAB fields from NetworkManager struct
+- Replaced polling loop with `select!` macro racing between `from_connections` and `from_cache` receivers
+- Added `ShardSource` enum to track message origin (Network vs Cache)
+- Removed `prefer_cache` round-robin logic and exponential backoff (no longer needed with MessageChannel)
+- Kept sharding logic unchanged - messages are still routed to 10 shard workers by sub_id
+- Updated sharding channel to include `ShardSource` for debugging/metrics
+- Added new `cryptoToParser` MessageChannel for crypto responses to parser
+- Updated NostrClient constructor to create receivers from MessagePorts using `Port::from_receiver()`
+- Updated TypeScript types in parser/index.ts and crypto/index.ts for new ports
+- Updated main thread index.ts to create and transfer cryptoToParser port
+- Build passes with `npm run build` - all WASM crates compile successfully
+
+**Learnings for future iterations:**
+- The `select!` macro from `futures` crate works perfectly for racing between multiple receivers
+- With MessageChannel, the distributor task exits cleanly when both channels close (returns `None`)
+- Sharding logic doesn't need to change - just wrap the bytes with metadata before sending to shards
+- When adding a new MessageChannel, need to update: types in both workers, main thread constructor, and transfer lists
+- The `Port::from_receiver()` abstraction continues to work well - creates ready-to-use mpsc::Receiver
+- No need for complex polling/backoff logic with MessageChannel - `.await` on receiver is sufficient
+---
+
+## 2026-02-19 13:10:15 - US-007
+- Migrated Parser worker's main lib.rs from SAB rings to MessageChannel ports
+- Updated `NostrClient::new()` signature to accept `to_cache: MessagePort` parameter (5 ports total now)
+- Removed SAB-based `cache_request` and `db_ring` fields from `NetworkManager` struct
+- Replaced SAB-based cache writes with MessageChannel port sends in `open_subscription()` and `publish_event()`
+- Updated `NetworkManager::new()` to accept `to_cache: Rc<RefCell<Port>>` parameter
+- Migrated `SaveToDbPipe` to use MessageChannel port instead of SAB ring
+- Updated `Pipeline::default()` to accept `to_cache` instead of `db_ring`
+- Updated `SubscriptionManager::process_subscription()` and `build_pipeline()` to use `Port`
+- Updated TypeScript `InitParserMsg` type to include `toCache: MessagePort`
+- Updated main thread to pass `parserToCache.port2` to parser worker as `toCache`
+- Build passes with `npm run build:parser` and `npm run build`
+
+**Learnings for future iterations:**
+- The `SaveToDbPipe` sends events to cache via `CacheRequest` FlatBuffer messages through the `to_cache` port
+- When migrating from SAB to MessageChannel, the FlatBuffer message format stays the same - only the transport mechanism changes
+- The `NostrEvent::build_flatbuffer()` method creates the correct type for `CacheRequest.event` field
+- Pipeline event types: `raw` (NostrEvent) takes precedence over `parsed` (ParsedEvent) for cache storage
+- Always verify TypeScript port transfer list matches Rust constructor parameters to avoid runtime errors
+---
+
+## 2026-02-19 13:21:38 - US-008
+- Migrated Crypto worker from SAB rings to MessageChannel ports
+- Updated `Crypto::new()` to accept 5 MessagePort parameters: toMain, fromParser, toConnections, fromConnections, toParser
+- Updated `start_service_loop()` to use `select!` macro racing between from_parser and from_connections receivers
+- Migrated NIP-46 Pump to use `mpsc::Receiver<Vec<u8>>` instead of polling SAB ring
+- Migrated NIP-46 Transport to use `Port::send()` for sending frames through MessageChannel
+- Updated Nip46Signer to accept MessageChannel ports and pass them to Pump/Transport
+- Updated NIP-46 methods (set_nip46_bunker, set_nip46_qr) to accept from_connections MessagePort
+- Updated TypeScript crypto/index.ts to pass all 5 ports to Rust constructor
+- Added `futures-util` dependency with async-await-macro feature to Cargo.toml
+- Build passes with `npm run build` and `npm run build:crypto`
+
+**Learnings for future iterations:**
+- The `futures-util` crate (not `futures`) should be used with `async-await-macro` feature for the `select!` macro in WASM
+- When using `select!` with `mpsc::Receiver`, the `next().fuse()` pattern works well for racing between channels
+- The NIP-46 Pump spawns its own task with the from_connections receiver, separate from the main service loop
+- When a channel closes (returns `None`), the loop should exit cleanly - no need for complex error handling
+- All 5 MessagePorts must be properly transferred in the TypeScript transfer list
+---
+
+## 2026-02-19 13:34:54 - US-009
+- Verified SaveToDbPipe is already migrated to MessageChannel
+- The SaveToDbPipe uses `Rc<RefCell<Port>>` for the `to_cache` port
+- Sends CacheRequest with event field through the port using `Port::send()`
+- Properly integrated in Pipeline::default() and build_pipeline() in subscription.rs
+- Build passes with `npm run build`
+
+**Learnings for future iterations:**
+- The SaveToDbPipe was actually migrated as part of US-007 but the PRD wasn't updated
+- The pipe sends events to cache as CacheRequest FlatBuffer messages through the to_cache port
+- The CacheRequest has event field set for persist operations
+- Integration points: Pipeline::default() for default pipelines, build_pipeline() for configured pipelines
+- Both paths properly clone/pass the to_cache port to SaveToDbPipe::new()
+---

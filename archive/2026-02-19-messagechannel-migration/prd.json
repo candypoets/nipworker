@@ -1,0 +1,111 @@
+{
+	"project": "NIPWorker",
+	"branchName": "ralph/sab-to-messagechannel",
+	"description": "Migrate from SharedArrayBuffer to MessageChannel with batched transferable ArrayBuffers for better browser compatibility",
+	"userStories": [
+		{
+			"id": "US-001",
+			"title": "Create ArrayBufferReader utility class",
+			"description": "As a developer, I need an ArrayBufferReader class that works like SharedBufferReader but for non-shared ArrayBuffers.",
+			"acceptanceCriteria": [
+				"Create src/lib/ArrayBufferReader.ts based on SharedBufferReader",
+				"Same API: initializeBuffer(), writeMessage(), readMessages(), hasNewData()",
+				"Works with regular ArrayBuffer instead of SharedArrayBuffer",
+				"Typecheck passes"
+			],
+			"priority": 1,
+			"passes": false,
+			"notes": ""
+		},
+		{
+			"id": "US-002",
+			"title": "Create single MessageChannel for parser-main communication",
+			"description": "As a developer, I want a single MessageChannel between main thread and parser worker for all subscriptions.",
+			"acceptanceCriteria": [
+				"Create ONE MessageChannel in NostrManager constructor",
+				"Transfer port2 to parser worker during init (like other worker ports)",
+				"Store port1 locally for bidirectional communication",
+				"port1.onmessage receives { subId, data: Uint8Array } for any subscription",
+				"Write received data to the correct subscription's ArrayBuffer using subId",
+				"DISPATCH subscription:${subId} to wake hooks",
+				"Typecheck passes"
+			],
+			"priority": 2,
+			"passes": false,
+			"notes": "Single shared channel - subId identifies which subscription the events belong to"
+		},
+		{
+			"id": "US-003",
+			"title": "Use shared MessageChannel for publish operations",
+			"description": "As a developer, I want publish operations to use the same shared MessageChannel.",
+			"acceptanceCriteria": [
+				"Publish operations send via the same shared port1",
+				"Publish creates local ArrayBuffer for status responses",
+				"Store publish ArrayBuffer in publishes Map keyed by pubId",
+				"port1.onmessage handles both subscription and publish responses (distinguished by id)",
+				"Typecheck passes"
+			],
+			"priority": 3,
+			"passes": false,
+			"notes": "Same channel, pubId identifies publish operations"
+		},
+		{
+			"id": "US-004",
+			"title": "Update parser worker to accept MessagePort",
+			"description": "As a developer, I want the parser worker to receive the shared MessagePort during init.",
+			"acceptanceCriteria": [
+				"Update InitParserMsg type to include mainPort",
+				"Parser worker receives port during initialization (like other ports)",
+				"NetworkManager stores the port for sending batched events",
+				"Typecheck passes"
+			],
+			"priority": 4,
+			"passes": false,
+			"notes": "Single shared port - used for all subscriptions"
+		},
+		{
+			"id": "US-005",
+			"title": "Implement batched event sending in parser worker",
+			"description": "As a developer, I want the parser worker to batch events before sending through MessageChannel for efficiency.",
+			"acceptanceCriteria": [
+				"Create BatchBuffer struct in Rust to accumulate events",
+				"Batch when: buffer > 16KB OR timeout > 50ms",
+				"Data format: [4-byte len][WorkerMessage][4-byte len][WorkerMessage]... (SAME as SAB)",
+				"Send via port.postMessage({ subId, data }, [data.buffer]) with transferable",
+				"Typecheck passes"
+			],
+			"priority": 5,
+			"passes": false,
+			"notes": "Performance: Same 2-copy overhead as current SAB implementation. Future: zero-copy batch queue if needed."
+		},
+		{
+			"id": "US-006",
+			"title": "Update hooks to use ArrayBufferReader",
+			"description": "As a developer, I want useSubscription and usePublish hooks to read from ArrayBuffer instead of SharedArrayBuffer.",
+			"acceptanceCriteria": [
+				"Update useSubscription to use ArrayBufferReader",
+				"Update usePublish to use ArrayBufferReader",
+				"Same callback interface (receives WorkerMessage)",
+				"Typecheck passes"
+			],
+			"priority": 6,
+			"passes": false,
+			"notes": ""
+		},
+		{
+			"id": "US-007",
+			"title": "Remove SAB-related code",
+			"description": "As a developer, I want to clean up all SharedArrayBuffer related code after migration.",
+			"acceptanceCriteria": [
+				"Remove SharedBufferReader class (or deprecate if needed elsewhere)",
+				"Remove SharedBufferManager from Rust parser",
+				"Remove initializeRingHeader if no longer needed",
+				"Update or remove statusRing usage in hooks",
+				"Typecheck passes"
+			],
+			"priority": 7,
+			"passes": false,
+			"notes": ""
+		}
+	]
+}
