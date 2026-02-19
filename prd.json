@@ -139,7 +139,7 @@
         "Build passes with npm run build:crypto"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "notes": "Reference: src/crypto/src/lib.rs lines 57-727, src/crypto/src/signers/nip46/mod.rs"
     },
     {
@@ -153,7 +153,7 @@
         "Build passes"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "notes": "Reference: src/parser/src/pipeline/pipes/save_to_db.rs lines 1-56"
     },
     {

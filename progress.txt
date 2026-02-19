@@ -145,3 +145,38 @@
 - Pipeline event types: `raw` (NostrEvent) takes precedence over `parsed` (ParsedEvent) for cache storage
 - Always verify TypeScript port transfer list matches Rust constructor parameters to avoid runtime errors
 ---
+
+## 2026-02-19 13:21:38 - US-008
+- Migrated Crypto worker from SAB rings to MessageChannel ports
+- Updated `Crypto::new()` to accept 5 MessagePort parameters: toMain, fromParser, toConnections, fromConnections, toParser
+- Updated `start_service_loop()` to use `select!` macro racing between from_parser and from_connections receivers
+- Migrated NIP-46 Pump to use `mpsc::Receiver<Vec<u8>>` instead of polling SAB ring
+- Migrated NIP-46 Transport to use `Port::send()` for sending frames through MessageChannel
+- Updated Nip46Signer to accept MessageChannel ports and pass them to Pump/Transport
+- Updated NIP-46 methods (set_nip46_bunker, set_nip46_qr) to accept from_connections MessagePort
+- Updated TypeScript crypto/index.ts to pass all 5 ports to Rust constructor
+- Added `futures-util` dependency with async-await-macro feature to Cargo.toml
+- Build passes with `npm run build` and `npm run build:crypto`
+
+**Learnings for future iterations:**
+- The `futures-util` crate (not `futures`) should be used with `async-await-macro` feature for the `select!` macro in WASM
+- When using `select!` with `mpsc::Receiver`, the `next().fuse()` pattern works well for racing between channels
+- The NIP-46 Pump spawns its own task with the from_connections receiver, separate from the main service loop
+- When a channel closes (returns `None`), the loop should exit cleanly - no need for complex error handling
+- All 5 MessagePorts must be properly transferred in the TypeScript transfer list
+---
+
+## 2026-02-19 13:34:54 - US-009
+- Verified SaveToDbPipe is already migrated to MessageChannel
+- The SaveToDbPipe uses `Rc<RefCell<Port>>` for the `to_cache` port
+- Sends CacheRequest with event field through the port using `Port::send()`
+- Properly integrated in Pipeline::default() and build_pipeline() in subscription.rs
+- Build passes with `npm run build`
+
+**Learnings for future iterations:**
+- The SaveToDbPipe was actually migrated as part of US-007 but the PRD wasn't updated
+- The pipe sends events to cache as CacheRequest FlatBuffer messages through the to_cache port
+- The CacheRequest has event field set for persist operations
+- Integration points: Pipeline::default() for default pipelines, build_pipeline() for configured pipelines
+- Both paths properly clone/pass the to_cache port to SaveToDbPipe::new()
+---

@@ -694,3 +694,57 @@
 • Let me clean up the unused imports and commit:
 • Used Shell (cd /root/code/nipworker && git status)
 • Good, all the expected files have been modified. Let me commit the changes.
+• Used Shell (cd /root/code/nipworker &...r to MessageChannel" 2>&1)
+• Now let me update the PRD to mark US-008 as passed.
+• Now let me update the PRD to mark US-008 as complete:
+• Used Shell (cd /root/code/nipworker &... mv prd.json.tmp prd.json)
+• Let me verify the PRD update.
+• Used Shell (cd /root/code/nipworker &...ories[].passes]' prd.json)
+• The PRD has been updated correctly - US-008 now has passes: true and only US-0
+  09 and US-010 remain as passes: false.Now let me append to the progress.txt fi
+  le.
+• Now let me append to the progress log:
+• Used Shell (cd /root/code/nipworker &...ho "Progress log updated")
+• Now let me check if there are any remaining stories to implement.
+• Let me verify what's remaining:
+• Used Shell (cd /root/code/nipworker &...== false) | .id' prd.json)
+• There are still two more stories to complete: US-009 (Update SaveToDbPipe to u
+  se MessageChannel) and US-010 (Integration testing). Since this was US-008 and
+  there are still more stories with passes: false, I should not return the COMPL
+  ETE message. Let me just summarize what was done.
+• US-008 is complete. There are still two remaining stories (US-009 and US-010)
+  that need to be implemented.
+
+  Summary
+
+  I have successfully completed US-008: Migrate Crypto worker to MessageChannel.
+  Here's what was implemented:
+
+  Changes Made:
+
+  1. Cargo.toml - Added futures-util dependency with async-await-macro feature f
+     select! macro support, and added MessagePort/MessageEvent web-sys features
+  2. src/crypto/src/lib.rs - Complete migration:
+    • Updated Crypto struct to use Port wrappers instead of SAB rings
+    • Updated constructor to accept 5 MessagePort parameters
+    • Replaced polling loop with select! macro racing between from_parser and fr
+      onnections receivers
+    • Updated set_nip46_bunker and set_nip46_qr to accept from_connections port
+      NIP-46 signer
+  3. src/crypto/src/signers/nip46/pump.rs - Migrated from SAB polling to mpsc::R
+     iver:
+    • Updated Pump::spawn() to accept receiver instead of SAB
+    • Replaced polling loop with next().await on the receiver
+    • Added proper channel close handling
+  4. src/crypto/src/signers/nip46/transport.rs - Updated to use Port for sending
+    • Changed from SabRing to Rc<RefCell<Port>>
+    • Updated publish_frames() to use Port::send()
+  5. src/crypto/src/signers/nip46/mod.rs - Updated Nip46Signer:
+    • Changed constructor to accept to_connections port and from_connections rec
+      r
+    • Updated spawn_pump_once() to pass receiver to Pump
+  6. src/crypto/index.ts - Updated TypeScript:
+    • Made fromConnections port required in InitCryptoMsg type
+    • Updated init handler to pass all 5 ports to Rust constructor
+
+  All builds pass successfully (npm run build and npm run build:crypto).
