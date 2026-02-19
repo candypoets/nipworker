@@ -1,7 +1,6 @@
 import * as flatbuffers from 'flatbuffers';
 import type { EventTemplate, NostrEvent } from 'nostr-tools';
 
-import { SharedBufferReader } from 'src/lib/SharedBuffer';
 import { ArrayBufferReader } from 'src/lib/ArrayBufferReader';
 
 import { RequestObject, SubscriptionConfig } from 'src/types';

@@ -6,7 +6,7 @@ import { WorkerMessage } from 'src/generated/nostr/fb';
  * Header format: [0-3]: Write position (4 bytes, little endian)
  * Data format: [4+]: [4-byte length][FlatBuffer message][4-byte length][FlatBuffer message]...
  * 
- * Similar to SharedBufferReader but works with regular ArrayBuffer instead of SharedArrayBuffer.
+ * Utility for reading from ArrayBuffer with 4-byte header approach.
  * Used for MessageChannel-based communication between main thread and workers.
  */
 export class ArrayBufferReader {
