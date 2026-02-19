@@ -80,3 +80,23 @@
 - Keep the `statusRing` SAB unchanged as it's still used for main thread status updates
 - The `Port::send()` method handles the conversion to Uint8Array for transfer
 ---
+
+## 2026-02-19 12:57:05 - US-005
+- Migrated Parser worker's CryptoClient from SAB rings to MessageChannel ports
+- Updated `CryptoClient::new()` to accept `MessagePort` parameters instead of `SharedArrayBuffer`
+- Replaced `req` SAB with `to_crypto` port (Port wrapper for sending)
+- Replaced `resp` SAB with `from_crypto` receiver (mpsc::Receiver<Vec<u8>>)
+- Updated `call_raw()` to send SignerRequest through `Port::send()` method
+- Replaced polling loop with `from_crypto_rx.next().await` in response pump
+- Kept request/response matching by request_id using HashMap
+- Updated parser Cargo.toml to add `MessagePort` and `MessageEvent` web-sys features
+- Updated `lib.rs` NostrClient constructor signature to accept MessagePort parameters (partial US-007 work)
+- Build passes with `npm run build:parser`
+
+**Learnings for future iterations:**
+- The `Port::from_receiver()` abstraction from US-001 works perfectly for receiving messages in CryptoClient
+- Using `futures::StreamExt::next().await` on the receiver is much cleaner than polling with exponential backoff
+- The response pump can exit cleanly when the channel closes (receiver returns None)
+- Keep the pending HashMap for request/response correlation - this pattern works well with MessageChannel
+- When sending through MessagePort, errors need to be handled and pending requests cleaned up
+---
