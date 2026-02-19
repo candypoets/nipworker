@@ -39,8 +39,15 @@ impl Nip07Signer {
 
     /// NIP-04 Encrypt via `window.nostr.nip04.encrypt(pubkey, plaintext)`.
     pub async fn nip04_encrypt(&self, pubkey: &str, plaintext: &str) -> Result<String, JsValue> {
+        // For self-encryption (empty pubkey), get our own public key
+        let recipient = if pubkey.is_empty() {
+            self.get_public_key().await?
+        } else {
+            pubkey.to_string()
+        };
+
         let payload = js_sys::Object::new();
-        js_sys::Reflect::set(&payload, &"pubkey".into(), &JsValue::from_str(pubkey))?;
+        js_sys::Reflect::set(&payload, &"pubkey".into(), &JsValue::from_str(&recipient))?;
         js_sys::Reflect::set(&payload, &"plaintext".into(), &JsValue::from_str(plaintext))?;
 
         let promise = call_extension("nip04Encrypt", payload.into());
@@ -72,8 +79,15 @@ impl Nip07Signer {
 
     /// NIP-44 Encrypt via `window.nostr.nip44.encrypt(pubkey, plaintext)`.
     pub async fn nip44_encrypt(&self, pubkey: &str, plaintext: &str) -> Result<String, JsValue> {
+        // For self-encryption (empty pubkey), get our own public key
+        let recipient = if pubkey.is_empty() {
+            self.get_public_key().await?
+        } else {
+            pubkey.to_string()
+        };
+
         let payload = js_sys::Object::new();
-        js_sys::Reflect::set(&payload, &"pubkey".into(), &JsValue::from_str(pubkey))?;
+        js_sys::Reflect::set(&payload, &"pubkey".into(), &JsValue::from_str(&recipient))?;
         js_sys::Reflect::set(&payload, &"plaintext".into(), &JsValue::from_str(plaintext))?;
 
         let promise = call_extension("nip44Encrypt", payload.into());

@@ -479,10 +479,32 @@ export class NostrManager {
 		}
 	}
 
-	public logout() {
+	public logout(): void {
+		this._pendingSession = null;
 		this.activePubkey = null;
+		this.crypto.postMessage({ type: 'clear_signer' });
 		localStorage.removeItem('nostr_active_pubkey');
 		this.dispatch('logout');
+	}
+
+	public removeAccount(): void {
+		const currentPubkey = this.activePubkey;
+		if (!currentPubkey) return;
+
+		// Remove current account from storage
+		const accounts = this.getAccounts();
+		delete accounts[currentPubkey];
+		localStorage.setItem('nostr_signer_accounts', JSON.stringify(accounts));
+
+		// Check for other accounts to switch to
+		const remainingPubkeys = Object.keys(accounts);
+		if (remainingPubkeys.length > 0) {
+			// Switch to first available account
+			this.switchAccount(remainingPubkeys[0]);
+		} else {
+			// No other accounts - perform full logout
+			this.logout();
+		}
 	}
 
 	cleanup(): void {

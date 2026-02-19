@@ -182,6 +182,11 @@ self.addEventListener('message', async (evt: MessageEvent<any>) => {
 					break;
 				}
 
+				case 'clear_signer': {
+					c.clearSigner();
+					break;
+				}
+
 				default: {
 					console.error('Unknown message type:', m.type);
 				}

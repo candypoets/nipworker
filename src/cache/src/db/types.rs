@@ -34,12 +34,15 @@ pub struct DatabaseStats {
 }
 
 /// Query filter for internal use
+#[allow(non_snake_case)]
 pub struct QueryFilter {
     pub ids: Option<Vec<String>>,     // was Vec<EventId>
     pub authors: Option<Vec<String>>, // was Vec<PublicKey>
     pub kinds: Option<Vec<u16>>,      // keep u16 (fb uses ushort)
-    pub e_tags: Option<Vec<String>>,
-    pub p_tags: Option<Vec<String>>,
+    pub e_tags: Option<Vec<String>>,  // lowercase e (NIP-10)
+    pub E_tags: Option<Vec<String>>, // uppercase E (NIP-22)
+    pub p_tags: Option<Vec<String>>, // lowercase p (NIP-10)
+    pub P_tags: Option<Vec<String>>, // uppercase P (NIP-22)
     pub a_tags: Option<Vec<String>>,
     pub d_tags: Option<Vec<String>>,
     pub since: Option<u32>, // use u32 (fb since/until are i32)
@@ -55,7 +58,9 @@ impl QueryFilter {
             authors: None,
             kinds: None,
             e_tags: None,
+            E_tags: None,
             p_tags: None,
+            P_tags: None,
             a_tags: None,
             d_tags: None,
             since: None,
@@ -124,14 +129,17 @@ pub type TagIndex = Rc<RefCell<FxHashMap<String, FxHashSet<String>>>>;
 // pub type RelayIndex = Rc<RefCell<FxHashMap<String, ProcessedNostrEvent>>>;
 
 /// Database indexes for fast querying (concurrent)
+#[allow(non_snake_case)]
 pub struct DatabaseIndexes {
     /// Primary index: event_id -> event
     pub events_by_id: EventIdIndex,
     /// Secondary indexes
     pub events_by_kind: KindIndex,
     pub events_by_pubkey: PubkeyIndex,
-    pub events_by_e_tag: TagIndex,
-    pub events_by_p_tag: TagIndex,
+    pub events_by_e_tag: TagIndex,   // lowercase e (NIP-10)
+    pub events_by_E_tag: TagIndex,  // uppercase E (NIP-22)
+    pub events_by_p_tag: TagIndex,  // lowercase p (NIP-10)
+    pub events_by_P_tag: TagIndex,  // uppercase P (NIP-22)
     pub events_by_a_tag: TagIndex,
     pub events_by_d_tag: TagIndex,
     // pub profiles_by_pubkey: ProfileIndex,
@@ -146,7 +154,9 @@ impl DatabaseIndexes {
             events_by_kind: Rc::new(RefCell::new(FxHashMap::default())),
             events_by_pubkey: Rc::new(RefCell::new(FxHashMap::default())),
             events_by_e_tag: Rc::new(RefCell::new(FxHashMap::default())),
+            events_by_E_tag: Rc::new(RefCell::new(FxHashMap::default())),
             events_by_p_tag: Rc::new(RefCell::new(FxHashMap::default())),
+            events_by_P_tag: Rc::new(RefCell::new(FxHashMap::default())),
             events_by_a_tag: Rc::new(RefCell::new(FxHashMap::default())),
             events_by_d_tag: Rc::new(RefCell::new(FxHashMap::default())),
             // profiles_by_pubkey: Rc::new(RefCell::new(FxHashMap::default())),
@@ -160,7 +170,9 @@ impl DatabaseIndexes {
         self.events_by_kind.borrow_mut().clear();
         self.events_by_pubkey.borrow_mut().clear();
         self.events_by_e_tag.borrow_mut().clear();
+        self.events_by_E_tag.borrow_mut().clear();
         self.events_by_p_tag.borrow_mut().clear();
+        self.events_by_P_tag.borrow_mut().clear();
         self.events_by_a_tag.borrow_mut().clear();
         self.events_by_d_tag.borrow_mut().clear();
         // self.profiles_by_pubkey.borrow_mut().clear();

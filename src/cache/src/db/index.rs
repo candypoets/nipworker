@@ -183,6 +183,7 @@ impl<S: EventStorage> NostrDB<S> {
         ))
     }
 
+    #[allow(non_snake_case)]
     fn query_filter_from_fb_request(fb_req: &Request<'_>) -> Result<QueryFilter> {
         let mut f = QueryFilter::new();
 
@@ -213,7 +214,9 @@ impl<S: EventStorage> NostrDB<S> {
         // tags vector: StringVec where items[0] is key ("e"/"#e" etc), items[1..] are values
         if let Some(tags_vec) = fb_req.tags() {
             let mut e_tags: Vec<String> = Vec::new();
+            let mut E_tags: Vec<String> = Vec::new();
             let mut p_tags: Vec<String> = Vec::new();
+            let mut P_tags: Vec<String> = Vec::new();
             let mut a_tags: Vec<String> = Vec::new();
             let mut d_tags: Vec<String> = Vec::new();
 
@@ -229,7 +232,9 @@ impl<S: EventStorage> NostrDB<S> {
                             (1..items.len()).map(|j| items.get(j).to_string()).collect();
                         match key.as_str() {
                             "e" => e_tags.extend(values),
+                            "E" => E_tags.extend(values),
                             "p" => p_tags.extend(values),
+                            "P" => P_tags.extend(values),
                             "a" => a_tags.extend(values),
                             "d" => d_tags.extend(values),
                             _ => { /* ignore unknown filter tags */ }
@@ -240,8 +245,14 @@ impl<S: EventStorage> NostrDB<S> {
             if !e_tags.is_empty() {
                 f.e_tags = Some(e_tags);
             }
+            if !E_tags.is_empty() {
+                f.E_tags = Some(E_tags);
+            }
             if !p_tags.is_empty() {
                 f.p_tags = Some(p_tags);
+            }
+            if !P_tags.is_empty() {
+                f.P_tags = Some(P_tags);
             }
             if !a_tags.is_empty() {
                 f.a_tags = Some(a_tags);
@@ -386,9 +397,27 @@ impl<S: EventStorage> NostrDB<S> {
                                 .or_insert_with(FxHashSet::default)
                                 .insert(event_id.to_string());
                         }
+                        "E" => {
+                            // Uppercase E - NIP-22 "E" tag (event id reference)
+                            self.indexes
+                                .events_by_E_tag
+                                .borrow_mut()
+                                .entry(tag_value.to_string())
+                                .or_insert_with(FxHashSet::default)
+                                .insert(event_id.to_string());
+                        }
                         "p" => {
                             self.indexes
                                 .events_by_p_tag
+                                .borrow_mut()
+                                .entry(tag_value.to_string())
+                                .or_insert_with(FxHashSet::default)
+                                .insert(event_id.to_string());
+                        }
+                        "P" => {
+                            // Uppercase P - NIP-22 "P" tag (pubkey reference)
+                            self.indexes
+                                .events_by_P_tag
                                 .borrow_mut()
                                 .entry(tag_value.to_string())
                                 .or_insert_with(FxHashSet::default)
@@ -459,9 +488,27 @@ impl<S: EventStorage> NostrDB<S> {
                                 .or_insert_with(FxHashSet::default)
                                 .insert(event_id.to_string());
                         }
+                        "E" => {
+                            // Uppercase E - NIP-22 "E" tag (event id reference)
+                            self.indexes
+                                .events_by_E_tag
+                                .borrow_mut()
+                                .entry(tag_value.to_string())
+                                .or_insert_with(FxHashSet::default)
+                                .insert(event_id.to_string());
+                        }
                         "p" => {
                             self.indexes
                                 .events_by_p_tag
+                                .borrow_mut()
+                                .entry(tag_value.to_string())
+                                .or_insert_with(FxHashSet::default)
+                                .insert(event_id.to_string());
+                        }
+                        "P" => {
+                            // Uppercase P - NIP-22 "P" tag (pubkey reference)
+                            self.indexes
+                                .events_by_P_tag
                                 .borrow_mut()
                                 .entry(tag_value.to_string())
                                 .or_insert_with(FxHashSet::default)
@@ -490,6 +537,7 @@ impl<S: EventStorage> NostrDB<S> {
         }
     }
 
+    #[allow(non_snake_case)]
     pub fn query_events_with_filter(&self, filter: QueryFilter) -> Result<QueryResult> {
         let start_time = js_sys::Date::now();
         // Start with candidate sets from indexed fields
@@ -544,11 +592,35 @@ impl<S: EventStorage> NostrDB<S> {
             use_full_scan = false;
         }
 
+        // Filter by E_tags (uppercase - NIP-22)
+        if let Some(E_tags) = &filter.E_tags {
+            let mut tag_events = FxHashSet::default();
+            for tag in E_tags {
+                if let Some(event_ids) = self.indexes.events_by_E_tag.borrow().get(tag) {
+                    tag_events.extend(event_ids.iter().cloned());
+                }
+            }
+            candidate_sets.push(tag_events);
+            use_full_scan = false;
+        }
+
         // Filter by p_tags
         if let Some(p_tags) = &filter.p_tags {
             let mut tag_events = FxHashSet::default();
             for tag in p_tags {
                 if let Some(event_ids) = self.indexes.events_by_p_tag.borrow().get(tag) {
+                    tag_events.extend(event_ids.iter().cloned());
+                }
+            }
+            candidate_sets.push(tag_events);
+            use_full_scan = false;
+        }
+
+        // Filter by P_tags (uppercase - NIP-22)
+        if let Some(P_tags) = &filter.P_tags {
+            let mut tag_events = FxHashSet::default();
+            for tag in P_tags {
+                if let Some(event_ids) = self.indexes.events_by_P_tag.borrow().get(tag) {
                     tag_events.extend(event_ids.iter().cloned());
                 }
             }

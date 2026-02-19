@@ -130,6 +130,13 @@ impl Crypto {
         info!("[crypto] active signer = NIP-07");
     }
 
+    /// Clear the active signer (logout).
+    #[wasm_bindgen(js_name = "clearSigner")]
+    pub fn clear_signer(&self) {
+        *self.active.borrow_mut() = ActiveSigner::Unset;
+        info!("[crypto] signer cleared");
+    }
+
     /// Configure NIP-46 remote signer. Takes remote signer pubkey (hex) and relays.
     /// Configure NIP-46 remote signer using a bunker URL.
     /// This is for the "Direct connection initiated by remote-signer" flow.
