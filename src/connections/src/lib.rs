@@ -46,13 +46,14 @@ pub struct WSRust {
 
 #[wasm_bindgen]
 impl WSRust {
-    /// new(statusRing: SharedArrayBuffer, fromCache: MessagePort, toParser: MessagePort, fromCrypto: MessagePort)
+    /// new(statusRing: SharedArrayBuffer, fromCache: MessagePort, toParser: MessagePort, fromCrypto: MessagePort, toCrypto: MessagePort)
     #[wasm_bindgen(constructor)]
     pub fn new(
         status_ring: SharedArrayBuffer,
         from_cache: MessagePort,
         to_parser: MessagePort,
         from_crypto: MessagePort,
+        to_crypto: MessagePort,
     ) -> Result<WSRust, JsValue> {
         telemetry::init(tracing::Level::ERROR);
 
@@ -63,8 +64,9 @@ impl WSRust {
         let from_cache_rx = Port::from_receiver(from_cache);
         let from_crypto_rx = Port::from_receiver(from_crypto);
 
-        // Wrap the to_parser port for sending
+        // Wrap the to_parser and to_crypto ports for sending
         let to_parser_port = Port::new(to_parser);
+        let _to_crypto_port = Port::new(to_crypto); // Used for sending NIP-46 responses to crypto
 
         // Wire status writer
         let status_cell = status_ring.clone();

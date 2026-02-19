@@ -24,6 +24,8 @@ mod utils;
 pub struct Caching {
     /// Port to send messages to connections worker
     to_connections: Rc<RefCell<Port>>,
+    /// Port to send messages back to parser worker
+    to_parser: Rc<RefCell<Port>>,
     /// Database instance
     database: Arc<NostrDB>,
 }
@@ -53,7 +55,8 @@ impl Caching {
         info!("instanciating cache");
 
         let to_connections = Rc::new(RefCell::new(Port::new(to_connections)));
-        let from_parser_rx = Port::from_receiver(from_parser);
+        let from_parser_rx = Port::from_receiver(from_parser.clone());
+        let to_parser = Rc::new(RefCell::new(Port::new(from_parser)));
 
         let database = Arc::new(NostrDB::new(
             "nostr".to_string(),
@@ -70,6 +73,7 @@ impl Caching {
 
         let caching = Caching {
             to_connections,
+            to_parser,
             database,
         };
 
@@ -146,6 +150,7 @@ impl Caching {
     async fn process_cache_request(
         database: &Arc<NostrDB>,
         to_connections: &Rc<RefCell<Port>>,
+        to_parser: &Rc<RefCell<Port>>,
         bytes: &[u8],
     ) {
         let cache_req = match flatbuffers::root::<fb::CacheRequest>(bytes) {
@@ -167,7 +172,7 @@ impl Caching {
 
         // Otherwise, this is a lookup request (requests field should be set)
         if let Some(vec) = cache_req.requests() {
-            Self::handle_lookup_request(database, to_connections, &sub_id, cache_req.requests()).await;
+            Self::handle_lookup_request(database, to_connections, to_parser, &sub_id, cache_req.requests()).await;
         }
     }
 
@@ -259,6 +264,7 @@ impl Caching {
     async fn handle_lookup_request(
         database: &Arc<NostrDB>,
         to_connections: &Rc<RefCell<Port>>,
+        to_parser: &Rc<RefCell<Port>>,
         sub_id: &str,
         requests: Option<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<fb::Request<'_>>>>,
     ) {
@@ -282,16 +288,11 @@ impl Caching {
             );
         }
 
-        // Create a port reference for sending cached events
-        let port = to_connections.borrow();
-
-        // 1) Send cached WorkerMessage bytes through to_parser
-        // Note: In the new architecture, cache responses go through to_connections
-        // which forwards to the parser. The format is different - we send wrapped events.
+        // 1) Send cached WorkerMessage bytes directly to parser
         for ev_bytes in cached_events {
             if let Some(wm) = wrap_event_with_worker_message(sub_id, &ev_bytes) {
-                if let Err(e) = port.send(&wm) {
-                    warn!("Failed to send cached event: {:?}", e);
+                if let Err(e) = to_parser.borrow().send(&wm) {
+                    warn!("Failed to send cached event to parser: {:?}", e);
                 }
             } else {
                 warn!("Failed to wrap cached event into WorkerMessage");
@@ -346,7 +347,7 @@ impl Caching {
 
                 let env_str = env.to_string();
 
-                if let Err(e) = port.send(env_str.as_bytes()) {
+                if let Err(e) = to_connections.borrow().send(env_str.as_bytes()) {
                     warn!("Failed to send REQ frame to connections: {:?}", e);
                 }
             }
@@ -373,7 +374,7 @@ impl Caching {
             builder.finish(msg, None);
             let eoce_bytes = builder.finished_data().to_vec();
 
-            if let Err(e) = port.send(&eoce_bytes) {
+            if let Err(e) = to_connections.borrow().send(&eoce_bytes) {
                 warn!("Failed to send EOCE: {:?}", e);
             }
         }
@@ -383,11 +384,21 @@ impl Caching {
     fn start(&self, mut from_parser_rx: mpsc::Receiver<Vec<u8>>) {
         info!("starting cache");
 
+        // TODO: Add sharded semaphore for parallelism. The old SAB architecture had
+        // 10 workers polling the ring buffer. With MessageChannel we currently have
+        // only 1 worker, which is a bottleneck under high load. Consider:
+        // 1. Sharded processing like NetworkManager (NUM_SHARDS = 10)
+        // 2. Semaphore-based concurrency limiting like SubscriptionManager
+        // 3. Separate pools for event persistence vs lookup requests
+        // This would prevent the single cache worker from being overwhelmed when
+        // the parser's SaveToDbPipe sends events from multiple shards concurrently.
+
         // With MessageChannel, we don't need multiple workers polling a shared ring.
         // Each message is delivered to exactly one receiver, so we use a single
         // worker task. If we need more parallelism, we can spawn multiple cache
         // workers each with their own port pair.
         let to_connections = self.to_connections.clone();
+        let to_parser = self.to_parser.clone();
         let database = self.database.clone();
 
         spawn_local(async move {
@@ -398,6 +409,7 @@ impl Caching {
                         Caching::process_cache_request(
                             &database,
                             &to_connections,
+                            &to_parser,
                             &bytes,
                         )
                         .await;

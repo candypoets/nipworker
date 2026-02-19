@@ -22,11 +22,14 @@ impl SaveToDbPipe {
     fn send_nostr_event_to_cache(&self, event_offset: flatbuffers::WIPOffset<fb::NostrEvent<'_>>) {
         let mut builder = FlatBufferBuilder::new();
 
+        // Create the subscription id string
+        let sub_id_offset = builder.create_string("save_to_db");
+
         // Create the CacheRequest with only the event field set
         let cache_req = fb::CacheRequest::create(
             &mut builder,
             &fb::CacheRequestArgs {
-                sub_id: None,
+                sub_id: Some(sub_id_offset),
                 requests: None,
                 event: Some(event_offset),
                 relays: None,

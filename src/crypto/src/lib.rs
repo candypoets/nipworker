@@ -500,11 +500,21 @@ impl Crypto {
 impl Crypto {
     // Service loop: processes signer requests from parser and writes responses back.
     // Uses select! to race between from_parser and from_connections receivers.
+    //
+    // TODO: The to_main MessagePort parameter is currently UNUSED. All control responses
+    // (bunker_discovered, pubkey, sign_event responses) still use postMessage() to the
+    // main thread. The cryptoToMain MessageChannel was created but never wired up.
+    // Either:
+    //   1. Route control responses through to_main Port instead of post_message()
+    //   2. Remove the to_main parameter entirely and use postMessage for everything
+    //   3. Keep both: Port for structured control, postMessage for NIP-07 extension
+    //
+    // Currently option 3 is happening by accident - postMessage for everything.
     fn start_service_loop(
         &self,
         mut from_parser_rx: mpsc::Receiver<Vec<u8>>,
         mut from_connections_rx: mpsc::Receiver<Vec<u8>>,
-        to_main: Port,
+        _to_main: Port,  // UNUSED - see TODO above
     ) {
         let to_parser = self.to_parser.clone();
         let active = self.active.clone();

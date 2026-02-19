@@ -100,6 +100,8 @@ export class NostrManager {
 		const cryptoToMain = new MessageChannel();
 		// cryptoToParser: crypto -> parser (crypto responses)
 		const cryptoToParser = new MessageChannel();
+		// connToCrypto: connections -> crypto (NIP-46 responses)
+		const connToCrypto = new MessageChannel();
 
 		const connectionURL = new URL('./connections/index.js', import.meta.url);
 		const cacheURL = new URL('./cache/index.js', import.meta.url);
@@ -119,10 +121,11 @@ export class NostrManager {
 					statusRing,
 					fromCache: cacheToConn.port1,
 					toParser: connToParser.port1,
-					fromCrypto: cryptoToConn.port1
+					fromCrypto: cryptoToConn.port1,
+					toCrypto: connToCrypto.port1
 				}
 			} as InitConnectionsMsg,
-			[cacheToConn.port1, connToParser.port1, cryptoToConn.port1]
+			[cacheToConn.port1, connToParser.port1, cryptoToConn.port1, connToCrypto.port1]
 		);
 
 		// Transfer ports to cache worker
@@ -160,10 +163,17 @@ export class NostrManager {
 					fromParser: parserToCrypto.port2,
 					toConnections: cryptoToConn.port2,
 					toMain: cryptoToMain.port1,
-					toParser: cryptoToParser.port1
+					toParser: cryptoToParser.port1,
+					fromConnections: connToCrypto.port2
 				}
 			} as InitCryptoMsg,
-			[parserToCrypto.port2, cryptoToConn.port2, cryptoToMain.port1, cryptoToParser.port1]
+			[
+				parserToCrypto.port2,
+				cryptoToConn.port2,
+				cryptoToMain.port1,
+				cryptoToParser.port1,
+				connToCrypto.port2
+			]
 		);
 
 		// Listen on cryptoToMain.port2 for control responses
@@ -251,7 +261,6 @@ export class NostrManager {
 							result = await nostr.nip04.encrypt(payload.pubkey, payload.plaintext);
 							break;
 						case 'nip04Decrypt':
-							console.log('nip04Decrypt', payload.pubkey);
 							result = await nostr.nip04.decrypt(payload.pubkey, payload.ciphertext);
 							break;
 						case 'nip44Encrypt':
@@ -528,13 +537,13 @@ export class NostrManager {
 	cleanup(): void {
 		const beforeCount = this.subscriptions.size;
 		const subscriptionsToDelete: string[] = [];
-		
+
 		for (const [subId, subscription] of this.subscriptions.entries()) {
 			if (subscription.refCount <= 0 && !this.PERPETUAL_SUBSCRIPTIONS.includes(subId)) {
 				subscriptionsToDelete.push(subId);
 			}
 		}
-		
+
 		// Actually remove and tell workers to drop them
 		for (const subId of subscriptionsToDelete) {
 			// Send Unsubscribe message to parser
@@ -543,10 +552,10 @@ export class NostrManager {
 			const builder = new flatbuffers.Builder(256);
 			builder.finish(mainT.pack(builder));
 			this.postToWorker({ serializedMessage: builder.asUint8Array() });
-			
+
 			// Tell connections worker to close relay subscriptions
 			this.connections.postMessage(subId);
-			
+
 			// Remove from local subscriptions map
 			this.subscriptions.delete(subId);
 		}
