@@ -31,7 +31,10 @@ export function useRelayStatus(onStatus: StatusHandler) {
 	// Handler for real-time updates
 	const handleStatus = (event: globalThis.Event) => {
 		if (stopped) return;
-		const customEvent = event as globalThis.CustomEvent<{ status: 'connected' | 'failed' | 'close'; url: string }>;
+		const customEvent = event as globalThis.CustomEvent<{
+			status: 'connected' | 'failed' | 'close';
+			url: string;
+		}>;
 		const { status, url } = customEvent.detail;
 		onStatus(status, url);
 	};

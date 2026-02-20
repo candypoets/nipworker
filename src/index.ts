@@ -125,7 +125,9 @@ export class NostrManager {
 		// Set up message handler for incoming batched events from parser
 		this.parserMainPort.onmessage = (event) => {
 			const { subId, data } = event.data;
+			console.log('[main] parserMainPort received message:', { subId, dataSize: data?.byteLength });
 			if (!subId || !data) {
+				console.log('[main] ignoring message - missing subId or data');
 				return;
 			}
 
@@ -133,6 +135,7 @@ export class NostrManager {
 			// Note: data is already batched with [4-byte len][payload] format
 			const subscription = this.subscriptions.get(subId);
 			if (subscription) {
+				console.log('[main] found subscription for subId:', subId);
 				const written = ArrayBufferReader.writeBatchedData(subscription.buffer, data, subId);
 				if (written) {
 					this.dispatch(`subscription:${subId}`, subId);
@@ -142,20 +145,26 @@ export class NostrManager {
 
 			const publish = this.publishes.get(subId);
 			if (publish) {
+				console.log('[main] found publish for subId:', subId);
 				const written = ArrayBufferReader.writeBatchedData(publish.buffer, data, subId);
 				if (written) {
 					this.dispatch(`publish:${subId}`, subId);
 				}
+				return;
 			}
+
+			console.log('[main] no subscription or publish found for subId:', subId);
 		};
 
 		// Set up message handler for relay status from connections worker
 		this.connectionsMainPort = connections_main.port1;
 		this.connectionsMainPort.onmessage = (event) => {
-			const { type, status, url } = event.data;
+			const { type, status, url } = JSON.parse(event.data);
 			if (type === 'relay:status' && url && status) {
 				this.relayStatuses.set(url, { status, timestamp: Date.now() });
 				this.dispatch('relay:status', { status, url });
+			} else {
+				console.log('[main] ignoring message - type:', type, 'url:', url, 'status:', status);
 			}
 		};
 
@@ -191,7 +200,6 @@ export class NostrManager {
 		// Listen on crypto_main.port2 for control responses
 		crypto_main.port2.onmessage = (event) => {
 			const msg = event.data;
-			console.log('[main] crypto response:', msg);
 			if (msg?.type === 'bunker_discovered') {
 				const { bunker_url } = msg;
 				if (this.activePubkey && this._pendingSession && this._pendingSession.type === 'nip46_qr') {
@@ -223,11 +231,9 @@ export class NostrManager {
 
 	private handleCryptoResponse(msg: any) {
 		if (msg.op === 'get_pubkey') {
-			console.log('[main] get_pubkey response:', { ok: msg.ok, result: msg.result, pendingSession: this._pendingSession });
 			if (msg.ok) {
 				this.activePubkey = msg.result;
 				if (this._pendingSession) {
-					console.log('[main] saving session:', this._pendingSession.type);
 					this.saveSession(
 						this.activePubkey!,
 						this._pendingSession.type,
@@ -263,11 +269,9 @@ export class NostrManager {
 		// (these require main thread access to window.nostr)
 		this.crypto.onmessage = async (event) => {
 			const msg = event.data;
-			console.log('[main] crypto worker onmessage:', msg);
 
 			// Handle control responses (get_pubkey, sign_event, etc.)
 			if (msg?.type === 'response') {
-				console.log('[main] handling response in crypto.onmessage:', msg);
 				this.handleCryptoResponse(msg);
 				return;
 			}
@@ -353,7 +357,6 @@ export class NostrManager {
 		requests: RequestObject[],
 		options: SubscriptionConfig
 	): ArrayBuffer {
-		console.log('subscribe', subscriptionId);
 		const subId = this.createShortId(subscriptionId);
 		const existingSubscription = this.subscriptions.get(subId);
 		if (existingSubscription) {

@@ -146,8 +146,8 @@ impl NetworkManager {
             return;
         }
 
-        // Extract pipeline and publish_id with short-lived lock
-        let (pipeline_arc, publish_id) = {
+        // Extract pipeline, publish_id, and eosed status with short-lived lock
+        let (pipeline_arc, publish_id, eosed) = {
             let guard = match subs.read() {
                 Ok(g) => g,
                 Err(_) => {
@@ -162,6 +162,7 @@ impl NetworkManager {
             (
                 Arc::clone(&sub.pipeline),
                 sub.publish_id.clone(),
+                sub.eosed,
             )
         };
 
@@ -203,11 +204,22 @@ impl NetworkManager {
                     "OK" => {
                         // OK: forward to UI, and notify any publish waiter
                         let msg = cs.message().unwrap_or("");
+                        info!("[network] OK status received: sid={}, url={}, msg={}", sid, url, msg);
+                        
+                        // For publishes, translate event.id to publish_id so main thread can find it
+                        let batch_sub_id = if let Some(ref pid) = publish_id {
+                            info!("[network] translating event.id {} to publish_id {} for main thread", sid, pid);
+                            pid.as_str()
+                        } else {
+                            sid
+                        };
+                        
                         // Send via batch buffer for MessageChannel delivery
                         let status_bytes = serialize_connection_status(url, msg, "");
-                        add_message_to_batch(sid, &status_bytes);
+                        add_message_to_batch(batch_sub_id, &status_bytes);
                         // OK needs low latency - flush immediately
-                        flush_batch(sid);
+                        flush_batch(batch_sub_id);
+                        info!("[network] OK status flushed to batch for batch_sub_id={}", batch_sub_id);
                     }
                     other => {
                         warn!("Unexpected ConnectionStatus '{}' for sub {}", other, sid);
@@ -240,7 +252,10 @@ impl NetworkManager {
                     Ok(Some(output)) => {
                         // Send via batch buffer for MessageChannel delivery
                         add_message_to_batch(sid, &output);
-                        // Network events batch like cache events, flush on EOSE
+                        // If sub is already eosed, flush immediately to avoid losing events
+                        if eosed {
+                            flush_batch(sid);
+                        }
                     }
                     Ok(None) => {
                         // info!("Event dropped by pipeline for sub {}", sid); /* dropped by pipeline */
@@ -565,18 +580,24 @@ impl NetworkManager {
         template: &Template,
         default_relays: &Vec<String>,
     ) -> Result<()> {
+        info!("[network] publish_event called: publish_id={}", publish_id);
+
         let event = self
             .publish_manager
             .publish_event(publish_id.clone(), template)
             .await?;
 
+        info!("[network] event prepared: id={:?}", event.id);
+
+        // Store by event.id so OK responses from connections worker can be routed
+        let event_id = event.id.to_string();
         if let Ok(mut w) = self.subscriptions.write() {
             w.insert(
-                event.id.to_string(),
+                event_id.clone(),
                 Sub {
                     pipeline: Arc::new(Mutex::new(Pipeline::new(vec![], "".to_string()).unwrap())),
                     eosed: false,
-                    publish_id: Some(publish_id.clone()),
+                    publish_id: Some(publish_id.clone()),  // Store publish_id for translation
                     forced_shard: None,
                 },
             );
@@ -587,10 +608,16 @@ impl NetworkManager {
             );
         }
 
+        // Create batch buffer using publish_id (main thread looks up by publish_id)
+        // OK responses come with event.id, but we translate to publish_id before sending to main
+        create_batch_buffer(&publish_id);
+        info!("[network] created batch buffer for publish_id: {}, event_id: {}", publish_id, event_id);
+
         {
             let mut builder = FlatBufferBuilder::new();
 
-            let sid = builder.create_string(&event.id.to_string());
+            // Use event_id as sub_id (connections worker sends OK with event.id)
+            let sid = builder.create_string(&event_id);
 
             let fb_event = event.build_flatbuffer(&mut builder);
 

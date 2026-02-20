@@ -18,7 +18,7 @@ impl PublishManager {
     }
 
     pub async fn publish_event(&self, publish_id: String, template: &Template) -> Result<Event> {
-        info!("Publishing event with ID {}", publish_id);
+        info!("[publish_manager] Publishing event with ID {}", publish_id);
 
         // Prepare the event using parser
         let event = match self.parser.prepare(template).await {

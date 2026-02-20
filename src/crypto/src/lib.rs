@@ -96,7 +96,7 @@ impl Crypto {
         from_connections: MessagePort,
         to_parser: MessagePort,
     ) -> Result<Crypto, JsValue> {
-        init_with_component(tracing::Level::INFO, "crypto");
+        init_with_component(tracing::Level::ERROR, "crypto");
 
         // Create receivers from MessagePorts
         let from_parser_rx = Port::from_receiver(from_parser);

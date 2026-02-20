@@ -1,13 +1,13 @@
 #![allow(async_fn_in_trait)]
 
 use flatbuffers::FlatBufferBuilder;
-use web_sys::MessagePort;
 use shared::{
     telemetry,
     types::{nostr::Template, Event, ParserError, TypesError},
     Port,
 };
 use wasm_bindgen::prelude::*;
+use web_sys::MessagePort;
 
 pub mod crypto_client;
 pub mod network;
@@ -107,7 +107,7 @@ impl NostrClient {
         from_crypto: MessagePort,
         to_main: MessagePort,
     ) -> Self {
-        telemetry::init(tracing::Level::ERROR);
+        telemetry::init(tracing::Level::DEBUG);
 
         info!("Initializing NostrClient with MessageChannel...");
 
@@ -120,8 +120,7 @@ impl NostrClient {
 
         // let signer_manager = Arc::new(SignerManager::new());
         let crypto_client = Arc::new(
-            CryptoClient::new(to_crypto, from_crypto)
-                .expect("Failed to initialize signer client"),
+            CryptoClient::new(to_crypto, from_crypto).expect("Failed to initialize signer client"),
         );
 
         let parser = Arc::new(Parser::new(crypto_client.clone()));
@@ -149,18 +148,6 @@ impl NostrClient {
             .close_subscription(subscription_id)
             .await
             .map_err(|e| JsValue::from_str(&format!("Failed to close subscription: {}", e)))
-    }
-
-    async fn sign_event(&self, template: String) -> Result<(), JsValue> {
-        // Sign the event using the signer manager
-        let signed_event = self
-            .crypto_client
-            .sign_event(template.clone())
-            .await
-            .map_err(|e| JsValue::from_str(&format!("Failed to sign event: {}", e)))?;
-        let js_value = JsValue::from_str(&signed_event);
-        post_worker_message(&js_value);
-        Ok(())
     }
 
     pub async fn get_public_key(&self) -> Result<(), JsValue> {
@@ -277,10 +264,17 @@ impl NostrClient {
                     .map(|i| publish.relays().get(i).to_string())
                     .collect();
 
+                info!(
+                    "[parser] received Publish message: publish_id={}, kind={}, relays={:?}",
+                    publish_id, template.kind, relays
+                );
+
                 self.network_manager
                     .publish_event(publish_id, &template, &relays)
                     .await
                     .map_err(|e| JsValue::from_str(&format!("Failed to publish event: {}", e)))?;
+
+                info!("[parser] publish_event completed successfully");
             }
 
             fb::MainContent::SignEvent => {
