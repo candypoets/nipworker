@@ -84,14 +84,6 @@ export class ByteString {
 			return s;
 		}
 
-		// Non-ASCII: decode directly
-		// For SAB: make a safe copy first
-		const buf = v.buffer;
-		if (buf instanceof SharedArrayBuffer) {
-			const safeCopy = new Uint8Array(v);
-			return UTF8_DECODER.decode(safeCopy);
-		}
-
 		return UTF8_DECODER.decode(v);
 	}
 

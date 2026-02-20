@@ -4,6 +4,9 @@ import type { EventTemplate, NostrEvent } from 'nostr-tools';
 import { ArrayBufferReader } from 'src/lib/ArrayBufferReader';
 
 import { RequestObject, SubscriptionConfig } from 'src/types';
+import { InitCacheMsg } from './cache/index';
+import { InitConnectionsMsg } from './connections/index';
+import { InitCryptoMsg } from './crypto/index';
 import {
 	GetPublicKeyT,
 	MainContent,
@@ -17,44 +20,9 @@ import {
 	TemplateT,
 	UnsubscribeT
 } from './generated/nostr/fb';
-import { InitConnectionsMsg } from './connections/index';
-import { InitCacheMsg } from './cache/index';
 import { InitParserMsg } from './parser/index';
-import { InitCryptoMsg } from './crypto/index';
 export * from './lib/NostrUtils';
-
-// Idempotent header initializer for rings created on the TS side.
-export function initializeRingHeader(size: number): SharedArrayBuffer {
-	const buffer = new SharedArrayBuffer(size);
-	const HEADER = 32;
-	const view = new DataView(buffer);
-	const total = buffer.byteLength;
-
-	if (total < HEADER) {
-		throw new Error(`Ring buffer too small: ${total} bytes`);
-	}
-
-	const cap = view.getUint32(0, true);
-	if (cap !== 0) {
-		return buffer;
-	}
-	const capacity = total - HEADER;
-	if (capacity <= 0) {
-		throw new Error(`Invalid ring capacity computed from total=${total}`);
-	}
-
-	// Initialize header: capacity, head=0, tail=0, seq=0, reserved=0
-	view.setUint32(0, capacity, true); // capacity
-	view.setUint32(4, 0, true); // head
-	view.setUint32(8, 0, true); // tail
-	view.setUint32(12, 0, true); // seq
-	for (let off = 16; off < 32; off += 4) {
-		view.setUint32(off, 0, true);
-	}
-	return buffer;
-}
-
-export const statusRing = initializeRingHeader(512 * 1024);
+export * from './types';
 
 /**
  * NostrManager handles worker orchestration and session persistence.
@@ -74,7 +42,6 @@ export class NostrManager {
 		}
 	>();
 	private publishes = new Map<string, { buffer: ArrayBuffer }>();
-	// private signers = new Map<string, string>(); // name -> last payload
 
 	private activePubkey: string | null = null;
 	private _pendingSession: { type: string; payload: any } | null = null;
@@ -84,6 +51,15 @@ export class NostrManager {
 
 	// MessageChannel for parser-main communication
 	private parserMainPort: MessagePort;
+
+	// MessageChannel for connections-main communication (relay status)
+	private connectionsMainPort: MessagePort;
+
+	// Relay status cache: url -> {status, timestamp}
+	private relayStatuses = new Map<
+		string,
+		{ status: 'connected' | 'failed' | 'close'; timestamp: number }
+	>();
 
 	public PERPETUAL_SUBSCRIPTIONS = ['notifications', 'starterpack'];
 
@@ -98,6 +74,7 @@ export class NostrManager {
 		const crypto_connections = new MessageChannel(); // crypto ↔ connections
 		const crypto_main = new MessageChannel(); // crypto ↔ main
 		const parser_main = new MessageChannel(); // parser ↔ main (for batched events)
+		const connections_main = new MessageChannel(); // connections ↔ main (for relay status)
 
 		const connectionURL = new URL('./connections/index.js', import.meta.url);
 		const cacheURL = new URL('./cache/index.js', import.meta.url);
@@ -110,18 +87,23 @@ export class NostrManager {
 		this.crypto = new Worker(cryptoURL, { type: 'module' });
 
 		// Transfer ports to connections worker
-		// Needs: cachePort, parserPort, cryptoPort
+		// Needs: mainPort, cachePort, parserPort, cryptoPort
 		this.connections.postMessage(
 			{
 				type: 'init',
 				payload: {
-					statusRing,
+					mainPort: connections_main.port2,
 					cachePort: cache_connections.port1,
 					parserPort: parser_connections.port1,
 					cryptoPort: crypto_connections.port1
 				}
 			} as InitConnectionsMsg,
-			[cache_connections.port1, parser_connections.port1, crypto_connections.port1]
+			[
+				connections_main.port2,
+				cache_connections.port1,
+				parser_connections.port1,
+				crypto_connections.port1
+			]
 		);
 
 		// Transfer ports to cache worker
@@ -140,7 +122,7 @@ export class NostrManager {
 		// Store parser_main port1 for receiving batched events from parser
 		this.parserMainPort = parser_main.port1;
 
-		// Set up message handler for incoming batched events
+		// Set up message handler for incoming batched events from parser
 		this.parserMainPort.onmessage = (event) => {
 			const { subId, data } = event.data;
 			if (!subId || !data) {
@@ -153,7 +135,6 @@ export class NostrManager {
 			if (subscription) {
 				const written = ArrayBufferReader.writeBatchedData(subscription.buffer, data, subId);
 				if (written) {
-					console.log('dipatch' + subId);
 					this.dispatch(`subscription:${subId}`, subId);
 				}
 				return;
@@ -165,6 +146,16 @@ export class NostrManager {
 				if (written) {
 					this.dispatch(`publish:${subId}`, subId);
 				}
+			}
+		};
+
+		// Set up message handler for relay status from connections worker
+		this.connectionsMainPort = connections_main.port1;
+		this.connectionsMainPort.onmessage = (event) => {
+			const { type, status, url } = event.data;
+			if (type === 'relay:status' && url && status) {
+				this.relayStatuses.set(url, { status, timestamp: Date.now() });
+				this.dispatch('relay:status', { status, url });
 			}
 		};
 
@@ -200,6 +191,7 @@ export class NostrManager {
 		// Listen on crypto_main.port2 for control responses
 		crypto_main.port2.onmessage = (event) => {
 			const msg = event.data;
+			console.log('[main] crypto response:', msg);
 			if (msg?.type === 'bunker_discovered') {
 				const { bunker_url } = msg;
 				if (this.activePubkey && this._pendingSession && this._pendingSession.type === 'nip46_qr') {
@@ -213,23 +205,7 @@ export class NostrManager {
 			}
 
 			if (msg.type === 'response') {
-				if (msg.op === 'get_pubkey') {
-					if (msg.ok) {
-						this.activePubkey = msg.result;
-						if (this._pendingSession) {
-							this.saveSession(
-								this.activePubkey!,
-								this._pendingSession.type,
-								this._pendingSession.payload
-							);
-							this._pendingSession = null;
-						}
-					}
-					this.dispatch('auth', this.activePubkey);
-				} else if (msg.op === 'sign_event' && msg.ok) {
-					const parsed = JSON.parse(msg.result);
-					this.signCB(parsed);
-				}
+				this.handleCryptoResponse(msg);
 			}
 		};
 
@@ -242,6 +218,30 @@ export class NostrManager {
 			this.parser.postMessage(message, transfer);
 		} else {
 			this.parser.postMessage(message);
+		}
+	}
+
+	private handleCryptoResponse(msg: any) {
+		if (msg.op === 'get_pubkey') {
+			console.log('[main] get_pubkey response:', { ok: msg.ok, result: msg.result, pendingSession: this._pendingSession });
+			if (msg.ok) {
+				this.activePubkey = msg.result;
+				if (this._pendingSession) {
+					console.log('[main] saving session:', this._pendingSession.type);
+					this.saveSession(
+						this.activePubkey!,
+						this._pendingSession.type,
+						this._pendingSession.payload
+					);
+					this._pendingSession = null;
+				} else {
+					console.log('[main] no pending session to save');
+				}
+			}
+			this.dispatch('auth', this.activePubkey);
+		} else if (msg.op === 'sign_event' && msg.ok) {
+			const parsed = JSON.parse(msg.result);
+			this.signCB(parsed);
 		}
 	}
 
@@ -263,6 +263,15 @@ export class NostrManager {
 		// (these require main thread access to window.nostr)
 		this.crypto.onmessage = async (event) => {
 			const msg = event.data;
+			console.log('[main] crypto worker onmessage:', msg);
+
+			// Handle control responses (get_pubkey, sign_event, etc.)
+			if (msg?.type === 'response') {
+				console.log('[main] handling response in crypto.onmessage:', msg);
+				this.handleCryptoResponse(msg);
+				return;
+			}
+
 			// Handle NIP-07 extension requests from the worker
 			if (msg?.type === 'extension_request') {
 				const { id, op, payload } = msg;
@@ -344,6 +353,7 @@ export class NostrManager {
 		requests: RequestObject[],
 		options: SubscriptionConfig
 	): ArrayBuffer {
+		console.log('subscribe', subscriptionId);
 		const subId = this.createShortId(subscriptionId);
 		const existingSubscription = this.subscriptions.get(subId);
 		if (existingSubscription) {
@@ -413,6 +423,14 @@ export class NostrManager {
 		return undefined;
 	}
 
+	/**
+	 * Get current relay statuses. Returns a Map of relay URL to status.
+	 * Use this for initial state when mounting useRelayStatus.
+	 */
+	getRelayStatuses(): Map<string, { status: 'connected' | 'failed' | 'close'; timestamp: number }> {
+		return new Map(this.relayStatuses);
+	}
+
 	unsubscribe(subscriptionId: string): void {
 		const subId = subscriptionId.length < 64 ? subscriptionId : this.createShortId(subscriptionId);
 		const subscription = this.subscriptions.get(subId);
@@ -461,6 +479,7 @@ export class NostrManager {
 		// Trigger pubkey discovery to validate and save session
 		if (name === 'privkey' || name === 'nip07' || name === 'nip46_bunker' || name === 'nip46_qr') {
 			this._pendingSession = { type: name, payload };
+			console.log('[main] set pending session:', name);
 			this.crypto.postMessage({ type: 'get_pubkey' });
 		}
 	}
@@ -554,7 +573,10 @@ export class NostrManager {
 		const remainingPubkeys = Object.keys(accounts);
 		if (remainingPubkeys.length > 0) {
 			// Switch to first available account
-			this.switchAccount(remainingPubkeys[0]);
+			const nextPubkey = remainingPubkeys[0];
+			if (nextPubkey) {
+				this.switchAccount(nextPubkey);
+			}
 		} else {
 			// No other accounts - perform full logout
 			this.logout();
@@ -562,7 +584,6 @@ export class NostrManager {
 	}
 
 	cleanup(): void {
-		const beforeCount = this.subscriptions.size;
 		const subscriptionsToDelete: string[] = [];
 
 		for (const [subId, subscription] of this.subscriptions.entries()) {
@@ -592,4 +613,3 @@ export class NostrManager {
 }
 
 export const manager = new NostrManager();
-export * from './types';

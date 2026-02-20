@@ -58,6 +58,7 @@ impl PrivateKeySigner {
 
     /// Return the public key (hex, x-only).
     pub fn get_public_key(&self) -> Result<String> {
+        info!("[pk] get_public_key called: {}", self.pubkey_hex);
         Ok(self.pubkey_hex.clone())
     }
 

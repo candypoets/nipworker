@@ -3,16 +3,12 @@ use crate::db::types::{
     intersect_event_sets, DatabaseConfig, DatabaseError, DatabaseIndexes, EventStorage,
     QueryFilter, QueryResult,
 };
-use js_sys::SharedArrayBuffer;
 use rustc_hash::{FxHashMap, FxHashSet};
 use shared::generated::nostr::fb::{self, NostrEvent, ParsedEvent, Request};
-use shared::SabRing;
 
 type Result<T> = std::result::Result<T, DatabaseError>;
 
-use std::cell::RefCell;
 use std::future::Future;
-use std::rc::Rc;
 use std::sync::{Arc, RwLock};
 use tracing::{info, warn};
 
@@ -22,56 +18,16 @@ pub struct NostrDB<S = ShardedRingBufferStorage> {
     indexes: DatabaseIndexes,
     /// Persistent storage backend
     storage: S,
-    ingest_ring: Option<Rc<RefCell<SabRing>>>,
     /// Initialization state
     is_initialized: Arc<RwLock<bool>>,
     /// Default relays for nostr operations
     pub default_relays: Vec<String>,
     /// Indexer relays for nostr operations
     pub indexer_relays: Vec<String>,
-    /// Relay hints for pubkeys
-    pub relay_hints: Arc<RwLock<FxHashMap<String, Vec<String>>>>,
-    /// Counter for round-robin indexer relay selection
-    indexer_relay_counter: Arc<RwLock<usize>>,
-    /// Counter for round-robin default relay selection
-    default_relay_counter: Arc<RwLock<usize>>,
 }
 
 impl NostrDB<ShardedRingBufferStorage> {
-    pub fn new_with_ringbuffer(
-        db_name: String,
-        max_buffer_size: usize,
-        ingest_sab: SharedArrayBuffer,
-        default_relays: Vec<String>,
-        indexer_relays: Vec<String>,
-    ) -> Self {
-        let storage = ShardedRingBufferStorage::new_default(
-            &db_name,
-            max_buffer_size, // default kinds ring size
-            2 * 1024 * 1024, // kind 0 ring size
-            2 * 1024 * 1024, // kind 4 ring size
-            1 * 1024 * 1024, // kind 7375 ring size
-            1 * 1024 * 1024,
-            DatabaseConfig::default(),
-        );
-
-        let ring = SabRing::new(ingest_sab).expect("invalid ingest SAB");
-
-        // let storage = RingBufferStorage::new(db_name, buffer_key, max_buffer_size, config.clone());
-        Self {
-            indexes: DatabaseIndexes::new(),
-            storage,
-            ingest_ring: Some(Rc::new(RefCell::new(ring))),
-            is_initialized: Arc::new(RwLock::new(false)),
-            default_relays,
-            indexer_relays,
-            relay_hints: Arc::new(RwLock::new(FxHashMap::default())),
-            indexer_relay_counter: Arc::new(RwLock::new(0)),
-            default_relay_counter: Arc::new(RwLock::new(0)),
-        }
-    }
-
-    /// Create a new NostrDB without an ingest ring (for MessageChannel-based architecture)
+    /// Create a new NostrDB instance
     pub fn new(
         db_name: String,
         max_buffer_size: usize,
@@ -91,13 +47,9 @@ impl NostrDB<ShardedRingBufferStorage> {
         Self {
             indexes: DatabaseIndexes::new(),
             storage,
-            ingest_ring: None,
             is_initialized: Arc::new(RwLock::new(false)),
             default_relays,
             indexer_relays,
-            relay_hints: Arc::new(RwLock::new(FxHashMap::default())),
-            indexer_relay_counter: Arc::new(RwLock::new(0)),
-            default_relay_counter: Arc::new(RwLock::new(0)),
         }
     }
 }
@@ -144,30 +96,6 @@ impl<S: EventStorage> NostrDB<S> {
             .is_initialized
             .read()
             .unwrap_or_else(|_| panic!("Lock poisoned"))
-    }
-
-    // Drain the ingest SAB and index any new events
-    pub async fn sync_from_ingest_ring(&self) -> Result<usize> {
-        let Some(ring_rc) = &self.ingest_ring else {
-            return Ok(0);
-        };
-        let mut count = 0usize;
-        loop {
-            let payload_opt = {
-                let mut ring = ring_rc.borrow_mut();
-                ring.read_next()
-            };
-            let Some(payload) = payload_opt else {
-                break;
-            };
-            // Each payload is expected to be a WorkerMessage (serialized)
-            if let Err(e) = self.add_worker_message_bytes(&payload).await {
-                warn!("Failed to ingest WorkerMessage: {}", e);
-            } else {
-                count += 1;
-            }
-        }
-        Ok(count)
     }
 
     pub async fn add_worker_message_bytes(&self, bytes: &[u8]) -> Result<()> {
@@ -218,13 +146,13 @@ impl<S: EventStorage> NostrDB<S> {
         // Serialize the flatbuffer event to bytes for storage
         // Since we can't directly serialize a flatbuffer table, we need to create a new one
         let mut builder = flatbuffers::FlatBufferBuilder::new();
-        
+
         // Create the NostrEvent in the builder
         let id = builder.create_string(event.id());
         let pubkey = builder.create_string(event.pubkey());
         let sig = builder.create_string(event.sig());
         let content = builder.create_string(event.content());
-        
+
         // Copy tags
         let tags_vec = event.tags();
         let mut tags_wip: Vec<flatbuffers::WIPOffset<fb::StringVec<'_>>> = Vec::new();
@@ -237,12 +165,14 @@ impl<S: EventStorage> NostrDB<S> {
                 let items_vec = builder.create_vector(&item_strings);
                 tags_wip.push(fb::StringVec::create(
                     &mut builder,
-                    &fb::StringVecArgs { items: Some(items_vec) },
+                    &fb::StringVecArgs {
+                        items: Some(items_vec),
+                    },
                 ));
             }
         }
         let tags = builder.create_vector(&tags_wip);
-        
+
         let event_fb = fb::NostrEvent::create(
             &mut builder,
             &fb::NostrEventArgs {
@@ -257,7 +187,7 @@ impl<S: EventStorage> NostrDB<S> {
         );
         builder.finish(event_fb, None);
         let bytes = builder.finished_data().to_vec();
-        
+
         // Store and index the event
         let offset = if let Some(sharded) = self
             .storage
@@ -856,7 +786,6 @@ impl<S: EventStorage> NostrDB<S> {
         &self,
         fb_reqs: Option<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<Request<'_>>>>,
     ) -> Result<(Vec<usize>, Vec<Vec<u8>>)> {
-        self.sync_from_ingest_ring().await?;
         let mut remaining_indices: Vec<usize> = Vec::new();
         let mut all_events: Vec<Vec<u8>> = Vec::new();
 

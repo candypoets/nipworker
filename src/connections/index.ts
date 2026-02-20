@@ -6,7 +6,8 @@ import wasmUrl from './pkg/connections_bg.wasm?url';
 export type InitConnectionsMsg = {
 	type: 'init';
 	payload: {
-		statusRing: SharedArrayBuffer;
+		/** Port to communicate with main thread (for relay status) */
+		mainPort: MessagePort;
 		/** Port to communicate with cache worker */
 		cachePort: MessagePort;
 		/** Port to communicate with parser worker */
@@ -36,16 +37,11 @@ self.addEventListener(
 		if (msg?.type === 'init') {
 			await ensureWasm();
 
-			const { statusRing, cachePort, parserPort, cryptoPort } = msg.payload;
-
-			console.log('[connections] statusRing.len', statusRing.byteLength);
-			console.log('[connections] cachePort', cachePort);
-			console.log('[connections] parserPort', parserPort);
-			console.log('[connections] cryptoPort', cryptoPort);
+			const { mainPort, cachePort, parserPort, cryptoPort } = msg.payload;
 
 			// Create the Rust worker and start it
-			// Note: Rust expects (statusRing, fromCache, toParser, fromCrypto, toCrypto)
-			instance = new WSRust(statusRing, cachePort, parserPort, cryptoPort, cryptoPort);
+			// Note: Rust expects (toMain, fromCache, toParser, fromCrypto, toCrypto)
+			instance = new WSRust(mainPort, cachePort, parserPort, cryptoPort, cryptoPort);
 
 			return;
 		}

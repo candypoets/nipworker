@@ -1,12 +1,10 @@
 use serde_json::Value;
-use shared::{telemetry, Port, SabRing};
+use shared::{telemetry, Port};
 use tracing::{error, info, warn};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 use web_sys::MessagePort;
 
-use js_sys::SharedArrayBuffer;
-use std::cell::RefCell;
 use std::rc::Rc;
 
 use futures::channel::mpsc;
@@ -29,16 +27,6 @@ struct Envelope {
     frames: Vec<String>,
 }
 
-fn write_status_line(status_ring: &mut SabRing, status: &str, url: &str) {
-    // Simple ASCII: "status|url"
-    // Frontend splits on the first '|' to parse.
-    let mut line = String::with_capacity(status.len() + 1 + url.len());
-    line.push_str(status);
-    line.push('|');
-    line.push_str(url);
-    status_ring.write(line.as_bytes());
-}
-
 #[wasm_bindgen]
 pub struct WSRust {
     registry: ConnectionRegistry,
@@ -46,10 +34,10 @@ pub struct WSRust {
 
 #[wasm_bindgen]
 impl WSRust {
-    /// new(statusRing: SharedArrayBuffer, fromCache: MessagePort, toParser: MessagePort, fromCrypto: MessagePort, toCrypto: MessagePort)
+    /// new(toMain: MessagePort, fromCache: MessagePort, toParser: MessagePort, fromCrypto: MessagePort, toCrypto: MessagePort)
     #[wasm_bindgen(constructor)]
     pub fn new(
-        status_ring: SharedArrayBuffer,
+        to_main: MessagePort,
         from_cache: MessagePort,
         to_parser: MessagePort,
         from_crypto: MessagePort,
@@ -58,7 +46,6 @@ impl WSRust {
         telemetry::init(tracing::Level::ERROR);
 
         info!("instanciating connections");
-        let status_ring = Rc::new(RefCell::new(SabRing::new(status_ring)?));
 
         // Create receivers from the MessagePorts
         let from_cache_rx = Port::from_receiver(from_cache);
@@ -68,11 +55,15 @@ impl WSRust {
         let to_parser_port = Port::new(to_parser);
         let _to_crypto_port = Port::new(to_crypto); // Used for sending NIP-46 responses to crypto
 
-        // Wire status writer
-        let status_cell = status_ring.clone();
+        // Wire status writer - sends status updates via MessagePort to main thread
+        let to_main_for_status = to_main.clone();
         let status_writer = Rc::new(move |status: &str, url: &str| {
-            let mut ring = status_cell.borrow_mut();
-            write_status_line(&mut ring, status, url);
+            let msg = serde_json::json!({
+                "type": "relay:status",
+                "status": status,
+                "url": url
+            });
+            let _ = to_main_for_status.post_message(&wasm_bindgen::JsValue::from_str(&msg.to_string()));
         });
 
         // Create the writer closure that sends through the to_parser port

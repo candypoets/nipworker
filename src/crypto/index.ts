@@ -160,17 +160,29 @@ self.addEventListener('message', async (evt: MessageEvent<any>) => {
 				}
 
 				case 'get_pubkey': {
+					console.log('[crypto] get_pubkey handler');
 					try {
 						const pk = await c.getPublicKeyDirect();
-						(self as any).postMessage({
+						console.log('[crypto] got pubkey:', pk);
+						const response = {
 							id: m.id,
 							type: 'response',
 							op: 'get_pubkey',
 							ok: true,
 							result: pk
-						});
+						};
+						console.log('[crypto] posting response:', response);
+						(self as any).postMessage(response);
+						console.log('[crypto] posted response');
 					} catch (e: any) {
-						console.error('Error getting public key:', e);
+						console.error('[crypto] Error getting public key:', e);
+						(self as any).postMessage({
+							id: m.id,
+							type: 'response',
+							op: 'get_pubkey',
+							ok: false,
+							error: e.message || String(e)
+						});
 					}
 					break;
 				}

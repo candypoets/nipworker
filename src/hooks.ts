@@ -1,9 +1,7 @@
 import { Event, EventTemplate } from 'nostr-tools';
 import { ArrayBufferReader } from 'src/lib/ArrayBufferReader';
-// import { nipWorker, statusRing } from '.';
 import { WorkerMessage } from './generated/nostr/fb';
-import { RequestObject, statusRing, manager, type SubscriptionConfig } from '.';
-import { ByteRingBuffer } from './ws/ring-buffer'; // existing helper
+import { RequestObject, manager, type SubscriptionConfig } from '.';
 // Re-export type guard utilities for hooks users
 export {
 	isParsedEvent,
@@ -14,50 +12,37 @@ export {
 	asNostrEvent
 } from './lib/NarrowTypes';
 
-const decoder = new TextDecoder();
-
 // Provide a handler from your app (e.g., React setState or Redux dispatch)
 export type StatusHandler = (status: 'connected' | 'failed' | 'close', url: string) => void;
 
+/**
+ * Hook to receive relay connection status updates.
+ * Immediately calls handler with current statuses, then subscribes to real-time updates.
+ */
 export function useRelayStatus(onStatus: StatusHandler) {
-	const ring = new ByteRingBuffer(statusRing);
-
 	let stopped = false;
-	let backoffMs = 10;
-	const MIN_BACKOFF_MS = 10;
-	const MAX_BACKOFF_MS = 100;
 
-	const loop = async () => {
-		while (!stopped) {
-			let processed = 0;
+	// Get current statuses immediately
+	const statuses = manager.getRelayStatuses();
+	for (const [url, { status }] of statuses) {
+		onStatus(status, url);
+	}
 
-			while (true) {
-				const record = ring.read();
-				if (!record) break;
-
-				processed++;
-				const line = decoder.decode(record);
-				const sep = line.indexOf('|');
-				if (sep > 0) {
-					const status = line.slice(0, sep) as 'connected' | 'failed' | 'close';
-					const url = line.slice(sep + 1);
-					if (status === 'connected' || status === 'failed' || status === 'close') {
-						onStatus(status, url);
-					}
-				}
-			}
-
-			backoffMs = processed > 0 ? MIN_BACKOFF_MS : Math.min(backoffMs * 2, MAX_BACKOFF_MS);
-			await new Promise((r) => setTimeout(r, backoffMs));
-		}
+	// Handler for real-time updates
+	const handleStatus = (event: globalThis.Event) => {
+		if (stopped) return;
+		const customEvent = event as globalThis.CustomEvent<{ status: 'connected' | 'failed' | 'close'; url: string }>;
+		const { status, url } = customEvent.detail;
+		onStatus(status, url);
 	};
 
-	// Fire-and-forget
-	loop();
+	// Subscribe to updates
+	manager.addEventListener('relay:status', handleStatus as globalThis.EventListener);
 
 	// Return a stop handle
 	return () => {
 		stopped = true;
+		manager.removeEventListener('relay:status', handleStatus as globalThis.EventListener);
 	};
 }
 
