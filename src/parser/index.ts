@@ -41,7 +41,7 @@ self.addEventListener('message', async (evt: MessageEvent<InitParserMsg | { type
 		// Create the Rust worker and start it
 		// Note: Rust expects (from_connections, to_cache, from_cache, to_crypto, from_crypto, to_main)
 		// Each port is bidirectional, so we pass the same port for send and receive
-		const client = new NostrClient(connectionsPort, cachePort, cachePort, cryptoPort, cryptoPort, mainPort);
+		const client = await new NostrClient(connectionsPort, cachePort, cachePort, cryptoPort, cryptoPort, mainPort);
 		// Resolve the deferred so all queued .then handlers can run
 		resolveInstance?.(client);
 		return;
@@ -55,5 +55,7 @@ self.addEventListener('message', async (evt: MessageEvent<InitParserMsg | { type
 	// All non-init messages: await the client promise, then process
 	instanceReady.then((c) => {
 		c.handle_message(msg);
+	}).catch((err) => {
+		console.error('[parser worker] Error handling message:', err);
 	});
 });

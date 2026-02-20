@@ -54,12 +54,41 @@ export class ArrayBufferReader {
 	}
 
 	/**
+	 * Write raw batched data (already length-prefixed) to the ArrayBuffer.
+	 * Use this when the data already contains [4-byte len][payload] format.
+	 * @param buffer The ArrayBuffer to write to
+	 * @param data The batched data (already with length prefixes)
+	 * @returns True if written successfully, false if buffer is full
+	 */
+	static writeBatchedData(buffer: ArrayBuffer, data: Uint8Array, _debugId?: string): boolean {
+		const view = new DataView(buffer);
+		const uint8View = new Uint8Array(buffer);
+
+		// Get current write position
+		const currentWritePosition = view.getUint32(0, true);
+
+		// Check if there's enough space
+		if (currentWritePosition + data.length > buffer.byteLength) {
+			return false;
+		}
+
+		// Write the data directly (it's already length-prefixed)
+		uint8View.set(data, currentWritePosition);
+
+		// Update the write position header
+		const newWritePosition = currentWritePosition + data.length;
+		view.setUint32(0, newWritePosition, true);
+
+		return true;
+	}
+
+	/**
 	 * Read new messages from ArrayBuffer since last read position
 	 * @param buffer The ArrayBuffer to read from
 	 * @param lastReadPosition Last position read (default: 0, meaning read from beginning)
 	 * @returns Object containing new messages and updated read position
 	 */
-	static readMessages(buffer: ArrayBuffer, lastReadPosition: number = 0) {
+	static readMessages(buffer: ArrayBuffer, lastReadPosition: number = 0, _debugId?: string) {
 		const view = new DataView(buffer);
 		const uint8View = new Uint8Array(buffer);
 

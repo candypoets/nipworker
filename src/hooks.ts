@@ -4,6 +4,15 @@ import { ArrayBufferReader } from 'src/lib/ArrayBufferReader';
 import { WorkerMessage } from './generated/nostr/fb';
 import { RequestObject, statusRing, manager, type SubscriptionConfig } from '.';
 import { ByteRingBuffer } from './ws/ring-buffer'; // existing helper
+// Re-export type guard utilities for hooks users
+export {
+	isParsedEvent,
+	isNostrEvent,
+	isConnectionStatus,
+	isEoce,
+	asParsedEvent,
+	asNostrEvent
+} from './lib/NarrowTypes';
 
 const decoder = new TextDecoder();
 
@@ -67,9 +76,7 @@ export function useSubscription(
 	let running = true;
 	let hasUnsubscribed = false;
 	let hasSubscribed = false;
-	let originId = subId;
 	subId = manager.createShortId(subId);
-	// const manager = nipWorker.getManager(subId);
 
 	// Reentrancy/coalescing flags
 	let scheduled = false;
@@ -80,7 +87,7 @@ export function useSubscription(
 			processing = false;
 			return;
 		}
-		if (processing) return; // Avoid overlapping runs
+		if (processing) return;
 		processing = true;
 		try {
 			let result = ArrayBufferReader.readMessages(buffer, lastReadPos);
@@ -92,7 +99,7 @@ export function useSubscription(
 				result = ArrayBufferReader.readMessages(buffer, lastReadPos);
 			}
 		} catch (e) {
-			// Guard against null buffer in race conditions
+			console.error('[useSubscription processEvents] error:', e);
 		} finally {
 			processing = false;
 		}
@@ -110,30 +117,21 @@ export function useSubscription(
 
 	const unsubscribe = (): void => {
 		if (hasUnsubscribed) return;
-
-		running = false; // Stop scheduling new work
-
+		running = false;
 		if (hasSubscribed) {
-			// Remove the exact same listener function that was added
 			manager.removeEventListener(`subscription:${subId}`, scheduleProcess);
 			manager.unsubscribe(subId);
 			hasUnsubscribed = true;
 		}
-
-		// Defer buffer cleanup to allow pending microtasks to complete
 		Promise.resolve().then(() => {
 			buffer = null;
 			lastReadPos = 4;
 		});
 	};
+
 	buffer = manager.subscribe(subId, requests, options);
 	hasSubscribed = true;
-
-	// Add the listener using the exact same function reference for proper removal
 	manager.addEventListener(`subscription:${subId}`, scheduleProcess);
-
-	// setInterval(scheduleProcess, 1000);
-	// Prime initial drain
 	scheduleProcess();
 
 	return unsubscribe;

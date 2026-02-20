@@ -143,20 +143,28 @@ export class NostrManager {
 		// Set up message handler for incoming batched events
 		this.parserMainPort.onmessage = (event) => {
 			const { subId, data } = event.data;
-			if (!subId || !data) return;
+			if (!subId || !data) {
+				return;
+			}
 
 			// Find subscription or publish buffer and write data
+			// Note: data is already batched with [4-byte len][payload] format
 			const subscription = this.subscriptions.get(subId);
 			if (subscription) {
-				ArrayBufferReader.writeMessage(subscription.buffer, data);
-				this.dispatch(`subscription:${subId}`, subId);
+				const written = ArrayBufferReader.writeBatchedData(subscription.buffer, data, subId);
+				if (written) {
+					console.log('dipatch' + subId);
+					this.dispatch(`subscription:${subId}`, subId);
+				}
 				return;
 			}
 
 			const publish = this.publishes.get(subId);
 			if (publish) {
-				ArrayBufferReader.writeMessage(publish.buffer, data);
-				this.dispatch(`publish:${subId}`, subId);
+				const written = ArrayBufferReader.writeBatchedData(publish.buffer, data, subId);
+				if (written) {
+					this.dispatch(`publish:${subId}`, subId);
+				}
 			}
 		};
 
@@ -389,7 +397,9 @@ export class NostrManager {
 		const mainT = new MainMessageT(MainContent.Subscribe, subscribeT);
 		const builder = new flatbuffers.Builder(2048);
 		builder.finish(mainT.pack(builder));
-		this.postToWorker({ serializedMessage: builder.asUint8Array(), sharedBuffer: buffer });
+		const uint8Array = builder.asUint8Array();
+		// Transfer the underlying buffer for zero-copy
+		this.postToWorker({ serializedMessage: uint8Array }, [uint8Array.buffer]);
 
 		return buffer;
 	}
@@ -425,7 +435,9 @@ export class NostrManager {
 		const mainT = new MainMessageT(MainContent.Publish, publishT);
 		const builder = new flatbuffers.Builder(2048);
 		builder.finish(mainT.pack(builder));
-		this.postToWorker({ serializedMessage: builder.asUint8Array(), sharedBuffer: buffer });
+		const uint8Array = builder.asUint8Array();
+		// Transfer the underlying buffer for zero-copy
+		this.postToWorker({ serializedMessage: uint8Array }, [uint8Array.buffer]);
 		this.publishes.set(publish_id, { buffer });
 		return buffer;
 	}
@@ -462,7 +474,9 @@ export class NostrManager {
 		const mainT = new MainMessageT(MainContent.GetPublicKey, new GetPublicKeyT());
 		const builder = new flatbuffers.Builder(2048);
 		builder.finish(mainT.pack(builder));
-		this.parser.postMessage(builder.asUint8Array());
+		const uint8Array = builder.asUint8Array();
+		// Transfer the underlying buffer for zero-copy
+		this.parser.postMessage({ serializedMessage: uint8Array }, [uint8Array.buffer]);
 	}
 
 	setNip46Bunker(bunkerUrl: string): void {
@@ -564,7 +578,9 @@ export class NostrManager {
 			const mainT = new MainMessageT(MainContent.Unsubscribe, unsubscribeT);
 			const builder = new flatbuffers.Builder(256);
 			builder.finish(mainT.pack(builder));
-			this.postToWorker({ serializedMessage: builder.asUint8Array() });
+			const uint8Array = builder.asUint8Array();
+			// Transfer the underlying buffer for zero-copy
+			this.postToWorker({ serializedMessage: uint8Array }, [uint8Array.buffer]);
 
 			// Tell connections worker to close relay subscriptions
 			this.connections.postMessage(subId);

@@ -211,35 +211,20 @@ impl NostrClient {
     }
 
     pub async fn handle_message(&self, message_obj: &JsValue) -> Result<(), JsValue> {
-        // Extract serialized message and optional SharedArrayBuffer
-        let (message_bytes, shared_buffer) = if message_obj.is_instance_of::<Uint8Array>() {
+        // Extract serialized message
+        let message_bytes = if message_obj.is_instance_of::<Uint8Array>() {
             // Legacy format - just Uint8Array (check this first to avoid it being caught as an Object)
             let uint8_array: Uint8Array = message_obj.clone().dyn_into()?;
-            (uint8_array.to_vec(), None)
+            uint8_array.to_vec()
         } else if let Some(obj) = message_obj.dyn_ref::<js_sys::Object>() {
-            // New format with serializedMessage and sharedBuffer
+            // New format with serializedMessage
             if js_sys::Reflect::has(obj, &JsValue::from_str("serializedMessage")).unwrap_or(false) {
                 let serialized_msg =
                     js_sys::Reflect::get(obj, &JsValue::from_str("serializedMessage"))?;
                 let message_uint8 = js_sys::Uint8Array::from(serialized_msg);
                 let mut message_bytes = vec![0u8; message_uint8.length() as usize];
                 message_uint8.copy_to(&mut message_bytes);
-
-                // SharedArrayBuffer is optional - only Subscribe and Publish require it
-                let shared_buffer = if js_sys::Reflect::has(obj, &JsValue::from_str("sharedBuffer"))
-                    .unwrap_or(false)
-                {
-                    let buffer = js_sys::Reflect::get(obj, &JsValue::from_str("sharedBuffer"))?;
-                    Some(
-                        buffer
-                            .dyn_into::<js_sys::SharedArrayBuffer>()
-                            .map_err(|_| JsValue::from_str("Invalid SharedArrayBuffer"))?,
-                    )
-                } else {
-                    None
-                };
-
-                (message_bytes, shared_buffer)
+                message_bytes
             } else {
                 return Err(JsValue::from_str("Missing serializedMessage field"));
             }
@@ -255,9 +240,6 @@ impl NostrClient {
         match main_message.content_type() {
             fb::MainContent::Subscribe => {
                 let subscribe = main_message.content_as_subscribe().unwrap();
-                let shared_buffer = shared_buffer
-                    .ok_or_else(|| JsValue::from_str("Subscribe requires SharedArrayBuffer"))?;
-
                 let subscription_id = subscribe.subscription_id().to_string();
 
                 // Convert FlatBuffer requests to your Request type
@@ -271,7 +253,7 @@ impl NostrClient {
                 let fb_config = subscribe.config();
 
                 self.network_manager
-                    .open_subscription(subscription_id, shared_buffer, &requests, &fb_config)
+                    .open_subscription(subscription_id, &requests, &fb_config)
                     .await
                     .map_err(|e| {
                         JsValue::from_str(&format!("Failed to open subscription: {}", e))
@@ -289,9 +271,6 @@ impl NostrClient {
 
             fb::MainContent::Publish => {
                 let publish = main_message.content_as_publish().unwrap();
-                let shared_buffer = shared_buffer
-                    .ok_or_else(|| JsValue::from_str("Publish requires SharedArrayBuffer"))?;
-
                 let publish_id = publish.publish_id().to_string();
                 let template = Template::from_flatbuffer(&publish.template());
                 let relays: Vec<String> = (0..publish.relays().len())
@@ -299,7 +278,7 @@ impl NostrClient {
                     .collect();
 
                 self.network_manager
-                    .publish_event(publish_id, &template, &relays, shared_buffer)
+                    .publish_event(publish_id, &template, &relays)
                     .await
                     .map_err(|e| JsValue::from_str(&format!("Failed to publish event: {}", e)))?;
             }

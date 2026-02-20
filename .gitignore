@@ -5,3 +5,4 @@ src/*/dist
 src/*/pkg
 node_modules
 dist
+logs/

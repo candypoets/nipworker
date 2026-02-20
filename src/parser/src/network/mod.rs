@@ -5,14 +5,13 @@ pub mod subscription;
 use crate::crypto_client::CryptoClient;
 use crate::parser::Parser;
 use crate::pipeline::Pipeline;
-use crate::utils::batch_buffer::{add_message_to_batch, create_batch_buffer, flush_all_batches, init_global_batch_manager, remove_batch_buffer};
-use crate::utils::buffer::SharedBufferManager;
+use crate::utils::batch_buffer::{add_message_to_batch, create_batch_buffer, flush_all_batches, flush_batch, init_global_batch_manager, remove_batch_buffer};
+use crate::utils::buffer::{serialize_connection_status, serialize_eoce};
 use crate::utils::js_interop::post_worker_message;
 use crate::NostrError;
 use flatbuffers::FlatBufferBuilder;
 use futures::channel::mpsc;
 use futures::lock::Mutex;
-use js_sys::SharedArrayBuffer;
 use web_sys::MessagePort;
 use rustc_hash::FxHashMap;
 use shared::generated::nostr::fb::{self};
@@ -40,7 +39,6 @@ const SLOW_SHARDS: usize = 2; // last N shards reserved for slow subs
 
 struct Sub {
     pipeline: Arc<Mutex<Pipeline>>,
-    buffer: SharedArrayBuffer,
     eosed: bool,
     publish_id: Option<String>,
     forced_shard: Option<usize>, // Optional forced shard routing
@@ -148,8 +146,8 @@ impl NetworkManager {
             return;
         }
 
-        // Extract pipeline and buffer with short-lived lock
-        let (pipeline_arc, buffer, publish_id) = {
+        // Extract pipeline and publish_id with short-lived lock
+        let (pipeline_arc, publish_id) = {
             let guard = match subs.read() {
                 Ok(g) => g,
                 Err(_) => {
@@ -163,7 +161,6 @@ impl NetworkManager {
             };
             (
                 Arc::clone(&sub.pipeline),
-                sub.buffer.clone(),
                 sub.publish_id.clone(),
             )
         };
@@ -192,8 +189,11 @@ impl NetworkManager {
                     }
                     "EOSE" => {
                         info!("EOSE received for sub {} on relay {:?}", sid, url);
-                        SharedBufferManager::send_connection_status(&buffer, url, "EOSE", "").await;
-                        post_worker_message(&JsValue::from_str(sid));
+                        // Send via batch buffer for MessageChannel delivery
+                        let status_bytes = serialize_connection_status(url, "EOSE", "");
+                        add_message_to_batch(sid, &status_bytes);
+                        // EOSE is important - flush immediately
+                        flush_batch(sid);
                         if let Ok(mut w) = subs.write() {
                             if let Some(sub) = w.get_mut(sid) {
                                 sub.eosed = true;
@@ -203,11 +203,11 @@ impl NetworkManager {
                     "OK" => {
                         // OK: forward to UI, and notify any publish waiter
                         let msg = cs.message().unwrap_or("");
-                        SharedBufferManager::send_connection_status(&buffer, url, msg, "").await;
-
-                        if let Some(pub_id) = publish_id {
-                            post_worker_message(&JsValue::from_str(&pub_id));
-                        }
+                        // Send via batch buffer for MessageChannel delivery
+                        let status_bytes = serialize_connection_status(url, msg, "");
+                        add_message_to_batch(sid, &status_bytes);
+                        // OK needs low latency - flush immediately
+                        flush_batch(sid);
                     }
                     other => {
                         warn!("Unexpected ConnectionStatus '{}' for sub {}", other, sid);
@@ -216,8 +216,11 @@ impl NetworkManager {
             }
             fb::MessageType::Eoce => {
                 info!("EOCE received for sub {}", sid);
-                SharedBufferManager::send_eoce(&buffer).await;
-                post_worker_message(&JsValue::from_str(sid));
+                // Send via batch buffer for MessageChannel delivery
+                let eoce_bytes = serialize_eoce();
+                add_message_to_batch(sid, &eoce_bytes);
+                // EOCE marks end of cache - flush any batched cache events immediately
+                flush_batch(sid);
             }
             fb::MessageType::Raw => {
                 // info!("Processing raw message for sub {}", sid);
@@ -235,25 +238,9 @@ impl NetworkManager {
                 let mut pipeline_guard = pipeline_arc.lock().await;
                 match pipeline_guard.process(raw_msg).await {
                     Ok(Some(output)) => {
-                        // info!("Writing output to buffer for sub {}", sid);
-                        let _write_span = info_span!("buffer_write", sub_id = %sid).entered();
-                        if let Err(e) = SharedBufferManager::write_to_buffer(&buffer, &output).await
-                        {
-                            warn!("Buffer write failed for sub {}: {:?}", sid, e);
-                        }
-                        // Also send via batch buffer for MessageChannel delivery
+                        // Send via batch buffer for MessageChannel delivery
                         add_message_to_batch(sid, &output);
-                        // Retrieve sub by sid and notify only if it's already EOSEd
-                        let should_notify = match subs.read() {
-                            Ok(g) => g.get(sid).map(|s| s.eosed).unwrap_or(false),
-                            Err(_) => false,
-                        };
-
-                        info!("Notifying after EOSE for sub {}", sid);
-
-                        if should_notify {
-                            post_worker_message(&JsValue::from_str(sid));
-                        }
+                        // Network events batch like cache events, flush on EOSE
                     }
                     Ok(None) => {
                         // info!("Event dropped by pipeline for sub {}", sid); /* dropped by pipeline */
@@ -276,14 +263,7 @@ impl NetworkManager {
                     Ok(outputs) => {
                         // Process each output in the vector
                         for output in outputs {
-                            let _write_span =
-                                info_span!("cache_buffer_write", sub_id = %sid).entered();
-                            if let Err(e) =
-                                SharedBufferManager::write_to_buffer(&buffer, &output).await
-                            {
-                                warn!("Buffer write failed for sub {}: {:?}", sid, e);
-                            }
-                            // Also send via batch buffer for MessageChannel delivery
+                            // Send via batch buffer for MessageChannel delivery
                             add_message_to_batch(sid, &output);
                         }
                     }
@@ -299,17 +279,11 @@ impl NetworkManager {
                     .await
                 {
                     Ok(Some(output)) => {
-                        // info!("Writing output to buffer for sub {}", sid);
-                        let _write_span = info_span!("buffer_write", sub_id = %sid).entered();
-                        if let Err(e) = SharedBufferManager::write_to_buffer(&buffer, &output).await
-                        {
-                            warn!("Buffer write failed for sub {}: {:?}", sid, e);
-                        }
-                        // Also send via batch buffer for MessageChannel delivery
+                        // Send via batch buffer for MessageChannel delivery
                         add_message_to_batch(sid, &output);
                     }
                     Ok(None) => {
-                        // info!("Event dropped by pipeline for sub {}", sid); /* dropped by pipeline */
+                        // Event dropped by pipeline
                     }
                     Err(e) => {
                         warn!("Pipeline process failed for sub {}: {:?}", sid, e);
@@ -462,7 +436,6 @@ impl NetworkManager {
     pub async fn open_subscription(
         &self,
         subscription_id: String,
-        shared_buffer: SharedArrayBuffer,
         requests: &Vec<fb::Request<'_>>,
         config: &fb::SubscriptionConfig<'_>,
     ) -> Result<()> {
@@ -509,9 +482,7 @@ impl NetworkManager {
                 subscription_id.clone(),
                 Sub {
                     pipeline: Arc::new(Mutex::new(pipeline)),
-                    buffer: shared_buffer.clone(),
                     eosed: false,
-                    // relay_urls: relay_filters.keys().cloned().collect(),
                     publish_id: None,
                     forced_shard,
                 },
@@ -593,7 +564,6 @@ impl NetworkManager {
         publish_id: String,
         template: &Template,
         default_relays: &Vec<String>,
-        shared_buffer: SharedArrayBuffer,
     ) -> Result<()> {
         let event = self
             .publish_manager
@@ -605,9 +575,7 @@ impl NetworkManager {
                 event.id.to_string(),
                 Sub {
                     pipeline: Arc::new(Mutex::new(Pipeline::new(vec![], "".to_string()).unwrap())),
-                    buffer: shared_buffer.clone(),
                     eosed: false,
-                    // relay_urls: all_relays.clone(),
                     publish_id: Some(publish_id.clone()),
                     forced_shard: None,
                 },

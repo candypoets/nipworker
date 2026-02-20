@@ -13,7 +13,7 @@
 use js_sys::{Array, Object, Reflect, Uint8Array};
 use std::cell::RefCell;
 use std::rc::Rc;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 use wasm_bindgen::JsValue;
 use web_sys::MessagePort;
 
@@ -76,6 +76,13 @@ pub fn create_batch_buffer(sub_id: &str) {
 pub fn remove_batch_buffer(sub_id: &str) {
     with_global_batch_manager_mut(|manager| {
         manager.remove(sub_id);
+    });
+}
+
+/// Flush a specific subscription's batch buffer via the global manager.
+pub fn flush_batch(sub_id: &str) {
+    with_global_batch_manager_mut(|manager| {
+        manager.flush_sub(sub_id);
     });
 }
 
