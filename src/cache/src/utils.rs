@@ -327,11 +327,13 @@ fn build_image_data<'a>(
 ) -> WIPOffset<fb::ImageData<'a>> {
     let url = builder.create_string(v.url());
     let alt = v.alt().map(|s| builder.create_string(s));
+    let dim = v.dim().map(|s| builder.create_string(s));
     fb::ImageData::create(
         builder,
         &fb::ImageDataArgs {
             url: Some(url),
             alt,
+            dim,
         },
     )
 }

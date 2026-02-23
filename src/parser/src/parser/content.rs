@@ -15,6 +15,7 @@ pub struct MediaItem {
 pub struct Image {
     pub url: String,
     pub alt: Option<String>,
+    pub dim: Option<String>, // Dimensions in "widthxheight" format (e.g., "1920x1080")
 }
 
 #[derive(Debug, Clone)]
@@ -38,7 +39,8 @@ pub enum ContentData {
     Image {
         url: String,
         alt: Option<String>,
-    },
+        dim: Option<String>,
+},
     Video {
         url: String,
         thumbnail: Option<String>,
@@ -85,6 +87,15 @@ impl ContentBlock {
 
 pub struct ContentParser {
     patterns: Vec<Pattern>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ImetaData {
+    pub url: String,
+    pub alt: Option<String>,
+    pub dim: Option<String>, // Dimensions in "widthxheight" format (e.g., "1920x1080")
+    pub blurhash: Option<String>,
+    pub mime_type: Option<String>,
 }
 
 struct Pattern {
@@ -305,10 +316,11 @@ impl ContentParser {
                                 items: media_group
                                     .iter()
                                     .filter_map(|block| match &block.data {
-                                        Some(ContentData::Image { url, alt }) => Some(MediaItem {
+                                        Some(ContentData::Image { url, alt, dim }) => Some(MediaItem {
                                             image: Some(Image {
                                                 url: url.clone(),
                                                 alt: alt.clone(),
+                                                dim: dim.clone(),
                                             }),
                                             video: None,
                                         }),
@@ -348,10 +360,11 @@ impl ContentParser {
                             items: media_group
                                 .iter()
                                 .filter_map(|block| match &block.data {
-                                    Some(ContentData::Image { url, alt }) => Some(MediaItem {
+                                    Some(ContentData::Image { url, alt, dim }) => Some(MediaItem {
                                         image: Some(Image {
                                             url: url.clone(),
                                             alt: alt.clone(),
+                                            dim: dim.clone(),
                                         }),
                                         video: None,
                                     }),
@@ -408,11 +421,12 @@ impl ContentParser {
 
         for b in &blocks {
             match (&b.block_type[..], &b.data) {
-                ("image", Some(ContentData::Image { url, alt })) => {
+                ("image", Some(ContentData::Image { url, alt, dim })) => {
                     media_items.push(MediaItem {
                         image: Some(Image {
                             url: url.clone(),
                             alt: alt.clone(),
+                            dim: dim.clone(),
                         }),
                         video: None,
                     });
@@ -433,6 +447,7 @@ impl ContentParser {
                                 image: Some(Image {
                                     url: img.url.clone(),
                                     alt: img.alt.clone(),
+                                    dim: img.dim.clone(),
                                 }),
                                 video: None,
                             });
@@ -552,6 +567,7 @@ impl ContentParser {
                             ContentData::Image {
                                 url: img.url,
                                 alt: img.alt,
+                                dim: img.dim,
                             },
                         ),
                     );
@@ -649,6 +665,7 @@ fn process_image(text: &str, _caps: &regex::Captures) -> Result<ContentBlock> {
         ContentBlock::new("image".to_string(), text.to_string()).with_data(ContentData::Image {
             url: text.to_string(),
             alt: None,
+            dim: None,
         }),
     )
 }
@@ -788,6 +805,42 @@ pub fn parse_content(content: &str) -> Result<Vec<ContentBlock>> {
     parser.parse_content(content)
 }
 
+/// Enrich image blocks with imeta data after parsing
+pub fn enrich_images_with_imeta(
+    blocks: &mut [ContentBlock],
+    imeta_map: &std::collections::HashMap<String, ImetaData>,
+) {
+    for block in blocks.iter_mut() {
+        if block.block_type == "image" {
+            if let Some(ContentData::Image { url, alt, dim }) = &mut block.data {
+                if let Some(imeta) = imeta_map.get(url) {
+                    if alt.is_none() && imeta.alt.is_some() {
+                        *alt = imeta.alt.clone();
+                    }
+                    if dim.is_none() && imeta.dim.is_some() {
+                        *dim = imeta.dim.clone();
+                    }
+                }
+            }
+        } else if block.block_type == "mediaGrid" {
+            if let Some(ContentData::MediaGroup { items }) = &mut block.data {
+                for item in items.iter_mut() {
+                    if let Some(img) = &mut item.image {
+                        if let Some(imeta) = imeta_map.get(&img.url) {
+                            if img.alt.is_none() && imeta.alt.is_some() {
+                                img.alt = imeta.alt.clone();
+                            }
+                            if img.dim.is_none() && imeta.dim.is_some() {
+                                img.dim = imeta.dim.clone();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 pub fn serialize_content_data<'a, A: flatbuffers::Allocator + 'a>(
     builder: &mut flatbuffers::FlatBufferBuilder<'a, A>,
     data: &ContentData,
@@ -827,14 +880,16 @@ pub fn serialize_content_data<'a, A: flatbuffers::Allocator + 'a>(
             );
             (fb::ContentData::CashuData, Some(cashu_fb.as_union_value()))
         }
-        ContentData::Image { url, alt } => {
+        ContentData::Image { url, alt, dim } => {
             let url_off = builder.create_string(url);
             let alt_off = alt.as_ref().map(|a| builder.create_string(a));
+            let dim_off = dim.as_ref().map(|d| builder.create_string(d));
             let image_fb = fb::ImageData::create(
                 builder,
                 &fb::ImageDataArgs {
                     url: Some(url_off),
                     alt: alt_off,
+                    dim: dim_off,
                 },
             );
             (fb::ContentData::ImageData, Some(image_fb.as_union_value()))
@@ -859,11 +914,13 @@ pub fn serialize_content_data<'a, A: flatbuffers::Allocator + 'a>(
                     let img_off = item.image.as_ref().map(|img| {
                         let url_off = builder.create_string(&img.url);
                         let alt_off = img.alt.as_ref().map(|a| builder.create_string(a));
+                        let dim_off = img.dim.as_ref().map(|d| builder.create_string(d));
                         fb::ImageData::create(
                             builder,
                             &fb::ImageDataArgs {
                                 url: Some(url_off),
                                 alt: alt_off,
+                                dim: dim_off,
                             },
                         )
                     });

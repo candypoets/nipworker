@@ -16,6 +16,7 @@ table CashuData {
 table ImageData {
   url: string (required);
   alt: string;
+  dim: string; // Dimensions in "widthxheight" format (e.g., "1920x1080")
 }
 
 table VideoData {

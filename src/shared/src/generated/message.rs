@@ -3273,6 +3273,7 @@ impl<'a> flatbuffers::Follow<'a> for ImageData<'a> {
 impl<'a> ImageData<'a> {
   pub const VT_URL: flatbuffers::VOffsetT = 4;
   pub const VT_ALT: flatbuffers::VOffsetT = 6;
+  pub const VT_DIM: flatbuffers::VOffsetT = 8;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -3284,6 +3285,7 @@ impl<'a> ImageData<'a> {
     args: &'args ImageDataArgs<'args>
   ) -> flatbuffers::WIPOffset<ImageData<'bldr>> {
     let mut builder = ImageDataBuilder::new(_fbb);
+    if let Some(x) = args.dim { builder.add_dim(x); }
     if let Some(x) = args.alt { builder.add_alt(x); }
     if let Some(x) = args.url { builder.add_url(x); }
     builder.finish()
@@ -3297,9 +3299,13 @@ impl<'a> ImageData<'a> {
     let alt = self.alt().map(|x| {
       x.to_string()
     });
+    let dim = self.dim().map(|x| {
+      x.to_string()
+    });
     ImageDataT {
       url,
       alt,
+      dim,
     }
   }
 
@@ -3317,6 +3323,13 @@ impl<'a> ImageData<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(ImageData::VT_ALT, None)}
   }
+  #[inline]
+  pub fn dim(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(ImageData::VT_DIM, None)}
+  }
 }
 
 impl flatbuffers::Verifiable for ImageData<'_> {
@@ -3328,6 +3341,7 @@ impl flatbuffers::Verifiable for ImageData<'_> {
     v.visit_table(pos)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("url", Self::VT_URL, true)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("alt", Self::VT_ALT, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("dim", Self::VT_DIM, false)?
      .finish();
     Ok(())
   }
@@ -3335,6 +3349,7 @@ impl flatbuffers::Verifiable for ImageData<'_> {
 pub struct ImageDataArgs<'a> {
     pub url: Option<flatbuffers::WIPOffset<&'a str>>,
     pub alt: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub dim: Option<flatbuffers::WIPOffset<&'a str>>,
 }
 impl<'a> Default for ImageDataArgs<'a> {
   #[inline]
@@ -3342,6 +3357,7 @@ impl<'a> Default for ImageDataArgs<'a> {
     ImageDataArgs {
       url: None, // required field
       alt: None,
+      dim: None,
     }
   }
 }
@@ -3358,6 +3374,10 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> ImageDataBuilder<'a, 'b, A> {
   #[inline]
   pub fn add_alt(&mut self, alt: flatbuffers::WIPOffset<&'b  str>) {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(ImageData::VT_ALT, alt);
+  }
+  #[inline]
+  pub fn add_dim(&mut self, dim: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(ImageData::VT_DIM, dim);
   }
   #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> ImageDataBuilder<'a, 'b, A> {
@@ -3380,6 +3400,7 @@ impl core::fmt::Debug for ImageData<'_> {
     let mut ds = f.debug_struct("ImageData");
       ds.field("url", &self.url());
       ds.field("alt", &self.alt());
+      ds.field("dim", &self.dim());
       ds.finish()
   }
 }
@@ -3388,12 +3409,14 @@ impl core::fmt::Debug for ImageData<'_> {
 pub struct ImageDataT {
   pub url: String,
   pub alt: Option<String>,
+  pub dim: Option<String>,
 }
 impl Default for ImageDataT {
   fn default() -> Self {
     Self {
       url: "".to_string(),
       alt: None,
+      dim: None,
     }
   }
 }
@@ -3409,9 +3432,13 @@ impl ImageDataT {
     let alt = self.alt.as_ref().map(|x|{
       _fbb.create_string(x)
     });
+    let dim = self.dim.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
     ImageData::create(_fbb, &ImageDataArgs{
       url,
       alt,
+      dim,
     })
   }
 }

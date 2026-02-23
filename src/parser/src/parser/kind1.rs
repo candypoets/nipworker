@@ -1,7 +1,10 @@
 use std::borrow::Cow;
 
 use crate::parser::{
-    content::{parse_content, serialize_content_data, ContentBlock, ContentParser},
+    content::{
+        enrich_images_with_imeta, parse_content, serialize_content_data, ContentBlock, ContentParser,
+        ImetaData,
+    },
     Parser,
 };
 use crate::parser::{ParserError, Result};
@@ -105,9 +108,15 @@ impl Parser {
             }
         }
 
+        // Extract imeta tags from event for image metadata enrichment
+        let imeta_map = extract_imeta_tags(&event.tags);
+
         // Parse content into structured blocks
         match parse_content(&event.content) {
-            Ok(content_blocks) => {
+            Ok(mut content_blocks) => {
+                // Enrich images with imeta data (dimensions, alt text, etc.)
+                enrich_images_with_imeta(&mut content_blocks, &imeta_map);
+
                 let parsed_blocks: Vec<ContentBlock> = content_blocks
                     .into_iter()
                     .map(|block| ContentBlock {
@@ -606,4 +615,55 @@ impl Parser {
             None
         }
     }
+}
+
+/// Extract imeta tags from event tags and build a map of URL -> ImetaData
+/// imeta tags follow NIP-92 format: ["imeta", "url <url>", "dim <wxh>", "alt <text>", ...]
+fn extract_imeta_tags(
+    tags: &[Vec<String>],
+) -> std::collections::HashMap<String, ImetaData> {
+    let mut imeta_map = std::collections::HashMap::new();
+
+    for tag in tags {
+        if tag.len() < 2 || tag[0] != "imeta" {
+            continue;
+        }
+
+        let mut url = None;
+        let mut alt = None;
+        let mut dim = None;
+        let mut blurhash = None;
+        let mut mime_type = None;
+
+        // Parse each field in the imeta tag (skip tag[0] which is "imeta")
+        for field in &tag[1..] {
+            if let Some((key, value)) = field.split_once(' ') {
+                let value = value.trim();
+                match key {
+                    "url" => url = Some(value.to_string()),
+                    "alt" => alt = Some(value.to_string()),
+                    "dim" => dim = Some(value.to_string()),
+                    "blurhash" => blurhash = Some(value.to_string()),
+                    "m" => mime_type = Some(value.to_string()),
+                    _ => {} // Ignore unknown fields
+                }
+            }
+        }
+
+        // Only add if we have a URL
+        if let Some(url) = url {
+            imeta_map.insert(
+                url.clone(),
+                ImetaData {
+                    url,
+                    alt,
+                    dim,
+                    blurhash,
+                    mime_type,
+                },
+            );
+        }
+    }
+
+    imeta_map
 }

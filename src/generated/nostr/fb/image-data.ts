@@ -39,8 +39,15 @@ alt(optionalEncoding?:any): ByteString|Uint8Array|null {
   return offset ? this.bb!.__stringByteString(this.bb_pos + offset, optionalEncoding) : null;
 }
 
+dim(): ByteString|null
+dim(optionalEncoding:flatbuffers.Encoding): ByteString|Uint8Array|null
+dim(optionalEncoding?:any): ByteString|Uint8Array|null {
+  const offset = this.bb!.__offset(this.bb_pos, 8);
+  return offset ? this.bb!.__stringByteString(this.bb_pos + offset, optionalEncoding) : null;
+}
+
 static startImageData(builder:flatbuffers.Builder) {
-  builder.startObject(2);
+  builder.startObject(3);
 }
 
 static addUrl(builder:flatbuffers.Builder, urlOffset:flatbuffers.Offset) {
@@ -51,23 +58,29 @@ static addAlt(builder:flatbuffers.Builder, altOffset:flatbuffers.Offset) {
   builder.addFieldOffset(1, altOffset, 0);
 }
 
+static addDim(builder:flatbuffers.Builder, dimOffset:flatbuffers.Offset) {
+  builder.addFieldOffset(2, dimOffset, 0);
+}
+
 static endImageData(builder:flatbuffers.Builder):flatbuffers.Offset {
   const offset = builder.endObject();
   builder.requiredField(offset, 4) // url
   return offset;
 }
 
-static createImageData(builder:flatbuffers.Builder, urlOffset:flatbuffers.Offset, altOffset:flatbuffers.Offset):flatbuffers.Offset {
+static createImageData(builder:flatbuffers.Builder, urlOffset:flatbuffers.Offset, altOffset:flatbuffers.Offset, dimOffset:flatbuffers.Offset):flatbuffers.Offset {
   ImageData.startImageData(builder);
   ImageData.addUrl(builder, urlOffset);
   ImageData.addAlt(builder, altOffset);
+  ImageData.addDim(builder, dimOffset);
   return ImageData.endImageData(builder);
 }
 
 unpack(): ImageDataT {
   return new ImageDataT(
     this.url(),
-    this.alt()
+    this.alt(),
+    this.dim()
   );
 }
 
@@ -75,23 +88,27 @@ unpack(): ImageDataT {
 unpackTo(_o: ImageDataT): void {
   _o.url = this.url();
   _o.alt = this.alt();
+  _o.dim = this.dim();
 }
 }
 
 export class ImageDataT implements flatbuffers.IGeneratedObject {
 constructor(
   public url: ByteString|Uint8Array|null = null,
-  public alt: ByteString|Uint8Array|null = null
+  public alt: ByteString|Uint8Array|null = null,
+  public dim: ByteString|Uint8Array|null = null
 ){}
 
 
 pack(builder:flatbuffers.Builder): flatbuffers.Offset {
   const url = (this.url !== null ? builder.createString(this.url!) : 0);
   const alt = (this.alt !== null ? builder.createString(this.alt!) : 0);
+  const dim = (this.dim !== null ? builder.createString(this.dim!) : 0);
 
   return ImageData.createImageData(builder,
     url,
-    alt
+    alt,
+    dim
   );
 }
 }
