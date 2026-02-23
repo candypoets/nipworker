@@ -1,8 +1,8 @@
 **/.DS_STORE
-src/**/target
-src/*/node_modules
-src/*/dist
-src/*/pkg
+**/target
+*/node_modules
+*/dist
+*/pkg
 node_modules
 dist
 logs/
