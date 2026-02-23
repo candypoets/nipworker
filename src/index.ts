@@ -125,7 +125,7 @@ export class NostrManager {
 		// Set up message handler for incoming batched events from parser
 		this.parserMainPort.onmessage = (event) => {
 			const { subId, data } = event.data;
-			console.log('[main] parserMainPort received message:', { subId, dataSize: data?.byteLength });
+			// console.log('[main] parserMainPort received message:', { subId, dataSize: data?.byteLength });
 			if (!subId || !data) {
 				console.log('[main] ignoring message - missing subId or data');
 				return;
@@ -135,7 +135,7 @@ export class NostrManager {
 			// Note: data is already batched with [4-byte len][payload] format
 			const subscription = this.subscriptions.get(subId);
 			if (subscription) {
-				console.log('[main] found subscription for subId:', subId);
+				// console.log('[main] found subscription for subId:', subId);
 				const written = ArrayBufferReader.writeBatchedData(subscription.buffer, data, subId);
 				if (written) {
 					this.dispatch(`subscription:${subId}`, subId);
@@ -145,7 +145,7 @@ export class NostrManager {
 
 			const publish = this.publishes.get(subId);
 			if (publish) {
-				console.log('[main] found publish for subId:', subId);
+				// console.log('[main] found publish for subId:', subId);
 				const written = ArrayBufferReader.writeBatchedData(publish.buffer, data, subId);
 				if (written) {
 					this.dispatch(`publish:${subId}`, subId);
