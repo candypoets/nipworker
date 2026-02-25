@@ -7,6 +7,7 @@ import * as flatbuffers from 'flatbuffers';
 
 import { CounterPipeConfig, CounterPipeConfigT } from '../../nostr/fb/counter-pipe-config.js';
 import { KindFilterPipeConfig, KindFilterPipeConfigT } from '../../nostr/fb/kind-filter-pipe-config.js';
+import { MuteFilterPipeConfig, MuteFilterPipeConfigT } from '../../nostr/fb/mute-filter-pipe-config.js';
 import { NpubLimiterPipeConfig, NpubLimiterPipeConfigT } from '../../nostr/fb/npub-limiter-pipe-config.js';
 import { ParsePipeConfig, ParsePipeConfigT } from '../../nostr/fb/parse-pipe-config.js';
 import { PipeConfig, unionToPipeConfig, unionListToPipeConfig } from '../../nostr/fb/pipe-config.js';
@@ -93,7 +94,7 @@ unpackTo(_o: PipeT): void {
 export class PipeT implements flatbuffers.IGeneratedObject {
 constructor(
   public configType: PipeConfig = PipeConfig.NONE,
-  public config: CounterPipeConfigT|KindFilterPipeConfigT|NpubLimiterPipeConfigT|ParsePipeConfigT|ProofVerificationPipeConfigT|SaveToDbPipeConfigT|SerializeEventsPipeConfigT|null = null
+  public config: CounterPipeConfigT|KindFilterPipeConfigT|MuteFilterPipeConfigT|NpubLimiterPipeConfigT|ParsePipeConfigT|ProofVerificationPipeConfigT|SaveToDbPipeConfigT|SerializeEventsPipeConfigT|null = null
 ){}
 
 

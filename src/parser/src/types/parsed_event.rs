@@ -6,9 +6,9 @@ use shared::types::nostr::Event;
 use shared::{generated::nostr::fb, types::TypesError};
 
 use crate::parser::{
-    Kind0Parsed, Kind10002Parsed, Kind10019Parsed, Kind17375Parsed, Kind17Parsed, Kind1Parsed,
-    Kind3Parsed, Kind4Parsed, Kind6Parsed, Kind7374Parsed, Kind7375Parsed, Kind7376Parsed,
-    Kind7Parsed, Kind9321Parsed, Kind9735Parsed,
+    Kind0Parsed, Kind10002Parsed, Kind10019Parsed, Kind1111Parsed, Kind17375Parsed, Kind17Parsed,
+    Kind1Parsed, Kind20Parsed, Kind22Parsed, Kind3Parsed, Kind4Parsed, Kind6Parsed, Kind7374Parsed,
+    Kind7375Parsed, Kind7376Parsed, Kind7Parsed, Kind9321Parsed, Kind9735Parsed,
 };
 
 /// Strongly typed parsed data for different event kinds
@@ -20,6 +20,9 @@ pub enum ParsedData {
     Kind6(Kind6Parsed),
     Kind7(Kind7Parsed),
     Kind17(Kind17Parsed),
+    Kind20(Kind20Parsed),
+    Kind22(Kind22Parsed),
+    Kind1111(Kind1111Parsed),
     Kind7374(Kind7374Parsed),
     Kind7375(Kind7375Parsed),
     Kind7376(Kind7376Parsed),
@@ -75,6 +78,18 @@ impl ParsedData {
             ParsedData::Kind17(data) => {
                 let offset = crate::parser::kind17::build_flatbuffer(data, builder)?;
                 Ok((fb::ParsedData::Kind17Parsed, offset.as_union_value()))
+            }
+            ParsedData::Kind20(data) => {
+                let offset = crate::parser::kind20::build_flatbuffer(data, builder)?;
+                Ok((fb::ParsedData::Kind20Parsed, offset.as_union_value()))
+            }
+            ParsedData::Kind22(data) => {
+                let offset = crate::parser::kind22::build_flatbuffer(data, builder)?;
+                Ok((fb::ParsedData::Kind22Parsed, offset.as_union_value()))
+            }
+            ParsedData::Kind1111(data) => {
+                let offset = crate::parser::kind1111::build_flatbuffer(data, builder)?;
+                Ok((fb::ParsedData::Kind1111Parsed, offset.as_union_value()))
             }
             ParsedData::Kind7374(data) => {
                 let offset = crate::parser::kind7374::build_flatbuffer(data, builder)?;

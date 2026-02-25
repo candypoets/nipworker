@@ -1,0 +1,30 @@
+include "../common.fbs";
+
+namespace nostr.fb;
+
+// Short-form video events (NIP-71)
+// Kind 22: Short vertical videos (TikTok/Reels-like)
+
+table VideoVariant {
+  url: string (required);
+  mime_type: string;           // "m" field (e.g., "video/mp4")
+  dim: string;                 // Dimensions (e.g., "1080x1920")
+  blurhash: string;            // Thumbnail blurhash
+  hash: string;                // "x" field - video hash
+  duration: float;             // Duration in seconds
+  bitrate: ulong;              // Bitrate in bits/sec
+  image: string;               // Thumbnail/preview image URL
+  fallback: [string];          // Fallback URLs
+}
+
+table Kind22Parsed {
+  title: string (required);    // "title" tag
+  description: string;         // .content (plaintext summary)
+  videos: [VideoVariant] (required); // Video variants (different resolutions)
+  alt: string;                 // "alt" tag (accessibility description)
+  content_warning: string;     // "content-warning" tag
+  duration: float;             // Duration in seconds
+  published_at: ulong;         // "published_at" tag (original publish time)
+  hashtags: [string];          // "t" tags
+  participants: [ProfilePointer]; // "p" tags (participants in video)
+}

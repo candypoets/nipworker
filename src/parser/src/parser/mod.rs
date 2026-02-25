@@ -12,8 +12,11 @@ pub mod kind0;
 pub mod kind1;
 pub mod kind10002;
 pub mod kind10019;
+pub mod kind1111;
 pub mod kind17;
 pub mod kind17375;
+pub mod kind20;
+pub mod kind22;
 pub mod kind3;
 pub mod kind30023;
 pub mod kind4;
@@ -34,8 +37,11 @@ pub use kind0::{Kind0Parsed, Nip05Response, ProfilePointer};
 pub use kind1::{EventPointer, Kind1Parsed, ProfilePointer as Kind1ProfilePointer};
 pub use kind10002::{Kind10002Parsed, RelayInfo};
 pub use kind10019::{Kind10019Parsed, MintInfo};
+pub use kind1111::Kind1111Parsed;
 pub use kind17::Kind17Parsed;
 pub use kind17375::Kind17375Parsed;
+pub use kind20::Kind20Parsed;
+pub use kind22::Kind22Parsed;
 pub use kind3::{Contact, Kind3Parsed};
 pub use kind30023::Kind30023Parsed;
 pub use kind4::Kind4Parsed;
@@ -94,6 +100,18 @@ impl Parser {
             17 => {
                 let (parsed, requests) = self.parse_kind_17(&event)?;
                 (Some(ParsedData::Kind17(parsed)), requests)
+            }
+            20 => {
+                let (parsed, requests) = self.parse_kind_20(&event)?;
+                (Some(ParsedData::Kind20(parsed)), requests)
+            }
+            22 => {
+                let (parsed, requests) = self.parse_kind_22(&event)?;
+                (Some(ParsedData::Kind22(parsed)), requests)
+            }
+            1111 => {
+                let (parsed, requests) = self.parse_kind_1111(&event)?;
+                (Some(ParsedData::Kind1111(parsed)), requests)
             }
             7374 => {
                 let (parsed, requests) = self.parse_kind_7374(&event).await?;
@@ -173,6 +191,10 @@ impl Parser {
 
     pub async fn prepare(&self, template: &Template) -> Result<Event> {
         let kind = template.kind;
+        let kind_u32 = kind as u32;
+        let is_nip51 = (10000..20000).contains(&kind_u32)
+            || (30000..40000).contains(&kind_u32)
+            || kind_u32 == 39089;
 
         match kind {
             4 => self.prepare_kind_4(template).await,
@@ -183,6 +205,7 @@ impl Parser {
             10019 => self.prepare_kind_10019(template).await,
             9735 => self.prepare_kind_9735(template).await,
             17375 => self.prepare_kind_17375(template).await,
+            _ if is_nip51 => self.prepare_nip51(template).await,
             _ => {
                 let template_json = template.to_json();
                 // Call the async signer client and await the result

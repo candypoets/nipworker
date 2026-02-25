@@ -877,10 +877,10 @@ impl SignerTypeT {
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_PIPE_CONFIG: u8 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MAX_PIPE_CONFIG: u8 = 7;
+pub const ENUM_MAX_PIPE_CONFIG: u8 = 8;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_PIPE_CONFIG: [PipeConfig; 8] = [
+pub const ENUM_VALUES_PIPE_CONFIG: [PipeConfig; 9] = [
   PipeConfig::NONE,
   PipeConfig::ParsePipeConfig,
   PipeConfig::KindFilterPipeConfig,
@@ -889,6 +889,7 @@ pub const ENUM_VALUES_PIPE_CONFIG: [PipeConfig; 8] = [
   PipeConfig::SaveToDbPipeConfig,
   PipeConfig::SerializeEventsPipeConfig,
   PipeConfig::ProofVerificationPipeConfig,
+  PipeConfig::MuteFilterPipeConfig,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -904,9 +905,10 @@ impl PipeConfig {
   pub const SaveToDbPipeConfig: Self = Self(5);
   pub const SerializeEventsPipeConfig: Self = Self(6);
   pub const ProofVerificationPipeConfig: Self = Self(7);
+  pub const MuteFilterPipeConfig: Self = Self(8);
 
   pub const ENUM_MIN: u8 = 0;
-  pub const ENUM_MAX: u8 = 7;
+  pub const ENUM_MAX: u8 = 8;
   pub const ENUM_VALUES: &'static [Self] = &[
     Self::NONE,
     Self::ParsePipeConfig,
@@ -916,6 +918,7 @@ impl PipeConfig {
     Self::SaveToDbPipeConfig,
     Self::SerializeEventsPipeConfig,
     Self::ProofVerificationPipeConfig,
+    Self::MuteFilterPipeConfig,
   ];
   /// Returns the variant's name or "" if unknown.
   pub fn variant_name(self) -> Option<&'static str> {
@@ -928,6 +931,7 @@ impl PipeConfig {
       Self::SaveToDbPipeConfig => Some("SaveToDbPipeConfig"),
       Self::SerializeEventsPipeConfig => Some("SerializeEventsPipeConfig"),
       Self::ProofVerificationPipeConfig => Some("ProofVerificationPipeConfig"),
+      Self::MuteFilterPipeConfig => Some("MuteFilterPipeConfig"),
       _ => None,
     }
   }
@@ -997,6 +1001,7 @@ pub enum PipeConfigT {
   SaveToDbPipeConfig(Box<SaveToDbPipeConfigT>),
   SerializeEventsPipeConfig(Box<SerializeEventsPipeConfigT>),
   ProofVerificationPipeConfig(Box<ProofVerificationPipeConfigT>),
+  MuteFilterPipeConfig(Box<MuteFilterPipeConfigT>),
 }
 impl Default for PipeConfigT {
   fn default() -> Self {
@@ -1014,6 +1019,7 @@ impl PipeConfigT {
       Self::SaveToDbPipeConfig(_) => PipeConfig::SaveToDbPipeConfig,
       Self::SerializeEventsPipeConfig(_) => PipeConfig::SerializeEventsPipeConfig,
       Self::ProofVerificationPipeConfig(_) => PipeConfig::ProofVerificationPipeConfig,
+      Self::MuteFilterPipeConfig(_) => PipeConfig::MuteFilterPipeConfig,
     }
   }
   pub fn pack<'b, A: flatbuffers::Allocator + 'b>(&self, fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>) -> Option<flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>> {
@@ -1026,6 +1032,7 @@ impl PipeConfigT {
       Self::SaveToDbPipeConfig(v) => Some(v.pack(fbb).as_union_value()),
       Self::SerializeEventsPipeConfig(v) => Some(v.pack(fbb).as_union_value()),
       Self::ProofVerificationPipeConfig(v) => Some(v.pack(fbb).as_union_value()),
+      Self::MuteFilterPipeConfig(v) => Some(v.pack(fbb).as_union_value()),
     }
   }
   /// If the union variant matches, return the owned ParsePipeConfigT, setting the union to NONE.
@@ -1174,6 +1181,27 @@ impl PipeConfigT {
   /// If the union variant matches, return a mutable reference to the ProofVerificationPipeConfigT.
   pub fn as_proof_verification_pipe_config_mut(&mut self) -> Option<&mut ProofVerificationPipeConfigT> {
     if let Self::ProofVerificationPipeConfig(v) = self { Some(v.as_mut()) } else { None }
+  }
+  /// If the union variant matches, return the owned MuteFilterPipeConfigT, setting the union to NONE.
+  pub fn take_mute_filter_pipe_config(&mut self) -> Option<Box<MuteFilterPipeConfigT>> {
+    if let Self::MuteFilterPipeConfig(_) = self {
+      let v = core::mem::replace(self, Self::NONE);
+      if let Self::MuteFilterPipeConfig(w) = v {
+        Some(w)
+      } else {
+        unreachable!()
+      }
+    } else {
+      None
+    }
+  }
+  /// If the union variant matches, return a reference to the MuteFilterPipeConfigT.
+  pub fn as_mute_filter_pipe_config(&self) -> Option<&MuteFilterPipeConfigT> {
+    if let Self::MuteFilterPipeConfig(v) = self { Some(v.as_ref()) } else { None }
+  }
+  /// If the union variant matches, return a mutable reference to the MuteFilterPipeConfigT.
+  pub fn as_mute_filter_pipe_config_mut(&mut self) -> Option<&mut MuteFilterPipeConfigT> {
+    if let Self::MuteFilterPipeConfig(v) = self { Some(v.as_mut()) } else { None }
   }
 }
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
@@ -1573,7 +1601,7 @@ pub const ENUM_MIN_PARSED_DATA_UNION: u32 = 0;
 pub const ENUM_MAX_PARSED_DATA_UNION: u32 = 52000;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_PARSED_DATA_UNION: [ParsedDataUnion; 19] = [
+pub const ENUM_VALUES_PARSED_DATA_UNION: [ParsedDataUnion; 22] = [
   ParsedDataUnion::Kind0Parsed,
   ParsedDataUnion::Kind1Parsed,
   ParsedDataUnion::Kind3Parsed,
@@ -1581,6 +1609,9 @@ pub const ENUM_VALUES_PARSED_DATA_UNION: [ParsedDataUnion; 19] = [
   ParsedDataUnion::Kind6Parsed,
   ParsedDataUnion::Kind7Parsed,
   ParsedDataUnion::Kind17Parsed,
+  ParsedDataUnion::Kind20Parsed,
+  ParsedDataUnion::Kind22Parsed,
+  ParsedDataUnion::Kind1111Parsed,
   ParsedDataUnion::Kind7374Parsed,
   ParsedDataUnion::Kind7375Parsed,
   ParsedDataUnion::Kind7376Parsed,
@@ -1607,6 +1638,9 @@ impl ParsedDataUnion {
   pub const Kind6Parsed: Self = Self(6);
   pub const Kind7Parsed: Self = Self(7);
   pub const Kind17Parsed: Self = Self(17);
+  pub const Kind20Parsed: Self = Self(20);
+  pub const Kind22Parsed: Self = Self(22);
+  pub const Kind1111Parsed: Self = Self(1111);
   pub const Kind7374Parsed: Self = Self(7374);
   pub const Kind7375Parsed: Self = Self(7375);
   pub const Kind7376Parsed: Self = Self(7376);
@@ -1630,6 +1664,9 @@ impl ParsedDataUnion {
     Self::Kind6Parsed,
     Self::Kind7Parsed,
     Self::Kind17Parsed,
+    Self::Kind20Parsed,
+    Self::Kind22Parsed,
+    Self::Kind1111Parsed,
     Self::Kind7374Parsed,
     Self::Kind7375Parsed,
     Self::Kind7376Parsed,
@@ -1653,6 +1690,9 @@ impl ParsedDataUnion {
       Self::Kind6Parsed => Some("Kind6Parsed"),
       Self::Kind7Parsed => Some("Kind7Parsed"),
       Self::Kind17Parsed => Some("Kind17Parsed"),
+      Self::Kind20Parsed => Some("Kind20Parsed"),
+      Self::Kind22Parsed => Some("Kind22Parsed"),
+      Self::Kind1111Parsed => Some("Kind1111Parsed"),
       Self::Kind7374Parsed => Some("Kind7374Parsed"),
       Self::Kind7375Parsed => Some("Kind7375Parsed"),
       Self::Kind7376Parsed => Some("Kind7376Parsed"),
@@ -1723,10 +1763,10 @@ impl flatbuffers::SimpleToVerifyInSlice for ParsedDataUnion {}
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_PARSED_DATA: u8 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MAX_PARSED_DATA: u8 = 18;
+pub const ENUM_MAX_PARSED_DATA: u8 = 21;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_PARSED_DATA: [ParsedData; 19] = [
+pub const ENUM_VALUES_PARSED_DATA: [ParsedData; 22] = [
   ParsedData::NONE,
   ParsedData::Kind0Parsed,
   ParsedData::Kind1Parsed,
@@ -1735,6 +1775,9 @@ pub const ENUM_VALUES_PARSED_DATA: [ParsedData; 19] = [
   ParsedData::Kind6Parsed,
   ParsedData::Kind7Parsed,
   ParsedData::Kind17Parsed,
+  ParsedData::Kind20Parsed,
+  ParsedData::Kind22Parsed,
+  ParsedData::Kind1111Parsed,
   ParsedData::Kind10002Parsed,
   ParsedData::Kind10019Parsed,
   ParsedData::Kind17375Parsed,
@@ -1761,20 +1804,23 @@ impl ParsedData {
   pub const Kind6Parsed: Self = Self(5);
   pub const Kind7Parsed: Self = Self(6);
   pub const Kind17Parsed: Self = Self(7);
-  pub const Kind10002Parsed: Self = Self(8);
-  pub const Kind10019Parsed: Self = Self(9);
-  pub const Kind17375Parsed: Self = Self(10);
-  pub const Kind7374Parsed: Self = Self(11);
-  pub const Kind7375Parsed: Self = Self(12);
-  pub const Kind7376Parsed: Self = Self(13);
-  pub const Kind9321Parsed: Self = Self(14);
-  pub const Kind9735Parsed: Self = Self(15);
-  pub const Kind30023Parsed: Self = Self(16);
-  pub const ListParsed: Self = Self(17);
-  pub const PreGenericParsed: Self = Self(18);
+  pub const Kind20Parsed: Self = Self(8);
+  pub const Kind22Parsed: Self = Self(9);
+  pub const Kind1111Parsed: Self = Self(10);
+  pub const Kind10002Parsed: Self = Self(11);
+  pub const Kind10019Parsed: Self = Self(12);
+  pub const Kind17375Parsed: Self = Self(13);
+  pub const Kind7374Parsed: Self = Self(14);
+  pub const Kind7375Parsed: Self = Self(15);
+  pub const Kind7376Parsed: Self = Self(16);
+  pub const Kind9321Parsed: Self = Self(17);
+  pub const Kind9735Parsed: Self = Self(18);
+  pub const Kind30023Parsed: Self = Self(19);
+  pub const ListParsed: Self = Self(20);
+  pub const PreGenericParsed: Self = Self(21);
 
   pub const ENUM_MIN: u8 = 0;
-  pub const ENUM_MAX: u8 = 18;
+  pub const ENUM_MAX: u8 = 21;
   pub const ENUM_VALUES: &'static [Self] = &[
     Self::NONE,
     Self::Kind0Parsed,
@@ -1784,6 +1830,9 @@ impl ParsedData {
     Self::Kind6Parsed,
     Self::Kind7Parsed,
     Self::Kind17Parsed,
+    Self::Kind20Parsed,
+    Self::Kind22Parsed,
+    Self::Kind1111Parsed,
     Self::Kind10002Parsed,
     Self::Kind10019Parsed,
     Self::Kind17375Parsed,
@@ -1807,6 +1856,9 @@ impl ParsedData {
       Self::Kind6Parsed => Some("Kind6Parsed"),
       Self::Kind7Parsed => Some("Kind7Parsed"),
       Self::Kind17Parsed => Some("Kind17Parsed"),
+      Self::Kind20Parsed => Some("Kind20Parsed"),
+      Self::Kind22Parsed => Some("Kind22Parsed"),
+      Self::Kind1111Parsed => Some("Kind1111Parsed"),
       Self::Kind10002Parsed => Some("Kind10002Parsed"),
       Self::Kind10019Parsed => Some("Kind10019Parsed"),
       Self::Kind17375Parsed => Some("Kind17375Parsed"),
@@ -1887,6 +1939,9 @@ pub enum ParsedDataT {
   Kind6Parsed(Box<Kind6ParsedT>),
   Kind7Parsed(Box<Kind7ParsedT>),
   Kind17Parsed(Box<Kind17ParsedT>),
+  Kind20Parsed(Box<Kind20ParsedT>),
+  Kind22Parsed(Box<Kind22ParsedT>),
+  Kind1111Parsed(Box<Kind1111ParsedT>),
   Kind10002Parsed(Box<Kind10002ParsedT>),
   Kind10019Parsed(Box<Kind10019ParsedT>),
   Kind17375Parsed(Box<Kind17375ParsedT>),
@@ -1915,6 +1970,9 @@ impl ParsedDataT {
       Self::Kind6Parsed(_) => ParsedData::Kind6Parsed,
       Self::Kind7Parsed(_) => ParsedData::Kind7Parsed,
       Self::Kind17Parsed(_) => ParsedData::Kind17Parsed,
+      Self::Kind20Parsed(_) => ParsedData::Kind20Parsed,
+      Self::Kind22Parsed(_) => ParsedData::Kind22Parsed,
+      Self::Kind1111Parsed(_) => ParsedData::Kind1111Parsed,
       Self::Kind10002Parsed(_) => ParsedData::Kind10002Parsed,
       Self::Kind10019Parsed(_) => ParsedData::Kind10019Parsed,
       Self::Kind17375Parsed(_) => ParsedData::Kind17375Parsed,
@@ -1938,6 +1996,9 @@ impl ParsedDataT {
       Self::Kind6Parsed(v) => Some(v.pack(fbb).as_union_value()),
       Self::Kind7Parsed(v) => Some(v.pack(fbb).as_union_value()),
       Self::Kind17Parsed(v) => Some(v.pack(fbb).as_union_value()),
+      Self::Kind20Parsed(v) => Some(v.pack(fbb).as_union_value()),
+      Self::Kind22Parsed(v) => Some(v.pack(fbb).as_union_value()),
+      Self::Kind1111Parsed(v) => Some(v.pack(fbb).as_union_value()),
       Self::Kind10002Parsed(v) => Some(v.pack(fbb).as_union_value()),
       Self::Kind10019Parsed(v) => Some(v.pack(fbb).as_union_value()),
       Self::Kind17375Parsed(v) => Some(v.pack(fbb).as_union_value()),
@@ -2097,6 +2158,69 @@ impl ParsedDataT {
   /// If the union variant matches, return a mutable reference to the Kind17ParsedT.
   pub fn as_kind_17_parsed_mut(&mut self) -> Option<&mut Kind17ParsedT> {
     if let Self::Kind17Parsed(v) = self { Some(v.as_mut()) } else { None }
+  }
+  /// If the union variant matches, return the owned Kind20ParsedT, setting the union to NONE.
+  pub fn take_kind_20_parsed(&mut self) -> Option<Box<Kind20ParsedT>> {
+    if let Self::Kind20Parsed(_) = self {
+      let v = core::mem::replace(self, Self::NONE);
+      if let Self::Kind20Parsed(w) = v {
+        Some(w)
+      } else {
+        unreachable!()
+      }
+    } else {
+      None
+    }
+  }
+  /// If the union variant matches, return a reference to the Kind20ParsedT.
+  pub fn as_kind_20_parsed(&self) -> Option<&Kind20ParsedT> {
+    if let Self::Kind20Parsed(v) = self { Some(v.as_ref()) } else { None }
+  }
+  /// If the union variant matches, return a mutable reference to the Kind20ParsedT.
+  pub fn as_kind_20_parsed_mut(&mut self) -> Option<&mut Kind20ParsedT> {
+    if let Self::Kind20Parsed(v) = self { Some(v.as_mut()) } else { None }
+  }
+  /// If the union variant matches, return the owned Kind22ParsedT, setting the union to NONE.
+  pub fn take_kind_22_parsed(&mut self) -> Option<Box<Kind22ParsedT>> {
+    if let Self::Kind22Parsed(_) = self {
+      let v = core::mem::replace(self, Self::NONE);
+      if let Self::Kind22Parsed(w) = v {
+        Some(w)
+      } else {
+        unreachable!()
+      }
+    } else {
+      None
+    }
+  }
+  /// If the union variant matches, return a reference to the Kind22ParsedT.
+  pub fn as_kind_22_parsed(&self) -> Option<&Kind22ParsedT> {
+    if let Self::Kind22Parsed(v) = self { Some(v.as_ref()) } else { None }
+  }
+  /// If the union variant matches, return a mutable reference to the Kind22ParsedT.
+  pub fn as_kind_22_parsed_mut(&mut self) -> Option<&mut Kind22ParsedT> {
+    if let Self::Kind22Parsed(v) = self { Some(v.as_mut()) } else { None }
+  }
+  /// If the union variant matches, return the owned Kind1111ParsedT, setting the union to NONE.
+  pub fn take_kind_1111_parsed(&mut self) -> Option<Box<Kind1111ParsedT>> {
+    if let Self::Kind1111Parsed(_) = self {
+      let v = core::mem::replace(self, Self::NONE);
+      if let Self::Kind1111Parsed(w) = v {
+        Some(w)
+      } else {
+        unreachable!()
+      }
+    } else {
+      None
+    }
+  }
+  /// If the union variant matches, return a reference to the Kind1111ParsedT.
+  pub fn as_kind_1111_parsed(&self) -> Option<&Kind1111ParsedT> {
+    if let Self::Kind1111Parsed(v) = self { Some(v.as_ref()) } else { None }
+  }
+  /// If the union variant matches, return a mutable reference to the Kind1111ParsedT.
+  pub fn as_kind_1111_parsed_mut(&mut self) -> Option<&mut Kind1111ParsedT> {
+    if let Self::Kind1111Parsed(v) = self { Some(v.as_mut()) } else { None }
   }
   /// If the union variant matches, return the owned Kind10002ParsedT, setting the union to NONE.
   pub fn take_kind_10002_parsed(&mut self) -> Option<Box<Kind10002ParsedT>> {
@@ -9240,6 +9364,217 @@ impl ProofVerificationPipeConfigT {
     })
   }
 }
+pub enum MuteFilterPipeConfigOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct MuteFilterPipeConfig<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for MuteFilterPipeConfig<'a> {
+  type Inner = MuteFilterPipeConfig<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> MuteFilterPipeConfig<'a> {
+  pub const VT_PUBKEYS: flatbuffers::VOffsetT = 4;
+  pub const VT_HASHTAGS: flatbuffers::VOffsetT = 6;
+  pub const VT_WORDS: flatbuffers::VOffsetT = 8;
+  pub const VT_EVENT_IDS: flatbuffers::VOffsetT = 10;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    MuteFilterPipeConfig { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args MuteFilterPipeConfigArgs<'args>
+  ) -> flatbuffers::WIPOffset<MuteFilterPipeConfig<'bldr>> {
+    let mut builder = MuteFilterPipeConfigBuilder::new(_fbb);
+    if let Some(x) = args.event_ids { builder.add_event_ids(x); }
+    if let Some(x) = args.words { builder.add_words(x); }
+    if let Some(x) = args.hashtags { builder.add_hashtags(x); }
+    if let Some(x) = args.pubkeys { builder.add_pubkeys(x); }
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> MuteFilterPipeConfigT {
+    let pubkeys = self.pubkeys().map(|x| {
+      x.iter().map(|s| s.to_string()).collect()
+    });
+    let hashtags = self.hashtags().map(|x| {
+      x.iter().map(|s| s.to_string()).collect()
+    });
+    let words = self.words().map(|x| {
+      x.iter().map(|s| s.to_string()).collect()
+    });
+    let event_ids = self.event_ids().map(|x| {
+      x.iter().map(|s| s.to_string()).collect()
+    });
+    MuteFilterPipeConfigT {
+      pubkeys,
+      hashtags,
+      words,
+      event_ids,
+    }
+  }
+
+  #[inline]
+  pub fn pubkeys(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>(MuteFilterPipeConfig::VT_PUBKEYS, None)}
+  }
+  #[inline]
+  pub fn hashtags(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>(MuteFilterPipeConfig::VT_HASHTAGS, None)}
+  }
+  #[inline]
+  pub fn words(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>(MuteFilterPipeConfig::VT_WORDS, None)}
+  }
+  #[inline]
+  pub fn event_ids(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>(MuteFilterPipeConfig::VT_EVENT_IDS, None)}
+  }
+}
+
+impl flatbuffers::Verifiable for MuteFilterPipeConfig<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("pubkeys", Self::VT_PUBKEYS, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("hashtags", Self::VT_HASHTAGS, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("words", Self::VT_WORDS, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("event_ids", Self::VT_EVENT_IDS, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct MuteFilterPipeConfigArgs<'a> {
+    pub pubkeys: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>,
+    pub hashtags: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>,
+    pub words: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>,
+    pub event_ids: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>,
+}
+impl<'a> Default for MuteFilterPipeConfigArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    MuteFilterPipeConfigArgs {
+      pubkeys: None,
+      hashtags: None,
+      words: None,
+      event_ids: None,
+    }
+  }
+}
+
+pub struct MuteFilterPipeConfigBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> MuteFilterPipeConfigBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_pubkeys(&mut self, pubkeys: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<&'b  str>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(MuteFilterPipeConfig::VT_PUBKEYS, pubkeys);
+  }
+  #[inline]
+  pub fn add_hashtags(&mut self, hashtags: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<&'b  str>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(MuteFilterPipeConfig::VT_HASHTAGS, hashtags);
+  }
+  #[inline]
+  pub fn add_words(&mut self, words: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<&'b  str>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(MuteFilterPipeConfig::VT_WORDS, words);
+  }
+  #[inline]
+  pub fn add_event_ids(&mut self, event_ids: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<&'b  str>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(MuteFilterPipeConfig::VT_EVENT_IDS, event_ids);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> MuteFilterPipeConfigBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    MuteFilterPipeConfigBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<MuteFilterPipeConfig<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for MuteFilterPipeConfig<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("MuteFilterPipeConfig");
+      ds.field("pubkeys", &self.pubkeys());
+      ds.field("hashtags", &self.hashtags());
+      ds.field("words", &self.words());
+      ds.field("event_ids", &self.event_ids());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct MuteFilterPipeConfigT {
+  pub pubkeys: Option<Vec<String>>,
+  pub hashtags: Option<Vec<String>>,
+  pub words: Option<Vec<String>>,
+  pub event_ids: Option<Vec<String>>,
+}
+impl Default for MuteFilterPipeConfigT {
+  fn default() -> Self {
+    Self {
+      pubkeys: None,
+      hashtags: None,
+      words: None,
+      event_ids: None,
+    }
+  }
+}
+impl MuteFilterPipeConfigT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<MuteFilterPipeConfig<'b>> {
+    let pubkeys = self.pubkeys.as_ref().map(|x|{
+      let w: Vec<_> = x.iter().map(|s| _fbb.create_string(s)).collect();_fbb.create_vector(&w)
+    });
+    let hashtags = self.hashtags.as_ref().map(|x|{
+      let w: Vec<_> = x.iter().map(|s| _fbb.create_string(s)).collect();_fbb.create_vector(&w)
+    });
+    let words = self.words.as_ref().map(|x|{
+      let w: Vec<_> = x.iter().map(|s| _fbb.create_string(s)).collect();_fbb.create_vector(&w)
+    });
+    let event_ids = self.event_ids.as_ref().map(|x|{
+      let w: Vec<_> = x.iter().map(|s| _fbb.create_string(s)).collect();_fbb.create_vector(&w)
+    });
+    MuteFilterPipeConfig::create(_fbb, &MuteFilterPipeConfigArgs{
+      pubkeys,
+      hashtags,
+      words,
+      event_ids,
+    })
+  }
+}
 pub enum PipeOffset {}
 #[derive(Copy, Clone, PartialEq)]
 
@@ -9310,6 +9645,11 @@ impl<'a> Pipe<'a> {
       PipeConfig::ProofVerificationPipeConfig => PipeConfigT::ProofVerificationPipeConfig(Box::new(
         self.config_as_proof_verification_pipe_config()
             .expect("Invalid union table, expected `PipeConfig::ProofVerificationPipeConfig`.")
+            .unpack()
+      )),
+      PipeConfig::MuteFilterPipeConfig => PipeConfigT::MuteFilterPipeConfig(Box::new(
+        self.config_as_mute_filter_pipe_config()
+            .expect("Invalid union table, expected `PipeConfig::MuteFilterPipeConfig`.")
             .unpack()
       )),
       _ => PipeConfigT::NONE,
@@ -9431,6 +9771,20 @@ impl<'a> Pipe<'a> {
     }
   }
 
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn config_as_mute_filter_pipe_config(&self) -> Option<MuteFilterPipeConfig<'a>> {
+    if self.config_type() == PipeConfig::MuteFilterPipeConfig {
+      let u = self.config();
+      // Safety:
+      // Created from a valid Table for this object
+      // Which contains a valid union in this slot
+      Some(unsafe { MuteFilterPipeConfig::init_from_table(u) })
+    } else {
+      None
+    }
+  }
+
 }
 
 impl flatbuffers::Verifiable for Pipe<'_> {
@@ -9449,6 +9803,7 @@ impl flatbuffers::Verifiable for Pipe<'_> {
           PipeConfig::SaveToDbPipeConfig => v.verify_union_variant::<flatbuffers::ForwardsUOffset<SaveToDbPipeConfig>>("PipeConfig::SaveToDbPipeConfig", pos),
           PipeConfig::SerializeEventsPipeConfig => v.verify_union_variant::<flatbuffers::ForwardsUOffset<SerializeEventsPipeConfig>>("PipeConfig::SerializeEventsPipeConfig", pos),
           PipeConfig::ProofVerificationPipeConfig => v.verify_union_variant::<flatbuffers::ForwardsUOffset<ProofVerificationPipeConfig>>("PipeConfig::ProofVerificationPipeConfig", pos),
+          PipeConfig::MuteFilterPipeConfig => v.verify_union_variant::<flatbuffers::ForwardsUOffset<MuteFilterPipeConfig>>("PipeConfig::MuteFilterPipeConfig", pos),
           _ => Ok(()),
         }
      })?
@@ -9548,6 +9903,13 @@ impl core::fmt::Debug for Pipe<'_> {
         },
         PipeConfig::ProofVerificationPipeConfig => {
           if let Some(x) = self.config_as_proof_verification_pipe_config() {
+            ds.field("config", &x)
+          } else {
+            ds.field("config", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        PipeConfig::MuteFilterPipeConfig => {
+          if let Some(x) = self.config_as_mute_filter_pipe_config() {
             ds.field("config", &x)
           } else {
             ds.field("config", &"InvalidFlatbuffer: Union discriminant does not match value.")
@@ -9953,6 +10315,7 @@ impl<'a> SubscriptionConfig<'a> {
   pub const VT_FORCE: flatbuffers::VOffsetT = 16;
   pub const VT_BYTES_PER_EVENT: flatbuffers::VOffsetT = 18;
   pub const VT_IS_SLOW: flatbuffers::VOffsetT = 20;
+  pub const VT_PAGINATION: flatbuffers::VOffsetT = 22;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -9965,6 +10328,7 @@ impl<'a> SubscriptionConfig<'a> {
   ) -> flatbuffers::WIPOffset<SubscriptionConfig<'bldr>> {
     let mut builder = SubscriptionConfigBuilder::new(_fbb);
     builder.add_timeout_ms(args.timeout_ms);
+    if let Some(x) = args.pagination { builder.add_pagination(x); }
     builder.add_bytes_per_event(args.bytes_per_event);
     builder.add_max_events(args.max_events);
     if let Some(x) = args.pipeline { builder.add_pipeline(x); }
@@ -9988,6 +10352,9 @@ impl<'a> SubscriptionConfig<'a> {
     let force = self.force();
     let bytes_per_event = self.bytes_per_event();
     let is_slow = self.is_slow();
+    let pagination = self.pagination().map(|x| {
+      x.to_string()
+    });
     SubscriptionConfigT {
       pipeline,
       close_on_eose,
@@ -9998,6 +10365,7 @@ impl<'a> SubscriptionConfig<'a> {
       force,
       bytes_per_event,
       is_slow,
+      pagination,
     }
   }
 
@@ -10064,6 +10432,13 @@ impl<'a> SubscriptionConfig<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<bool>(SubscriptionConfig::VT_IS_SLOW, Some(false)).unwrap()}
   }
+  #[inline]
+  pub fn pagination(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(SubscriptionConfig::VT_PAGINATION, None)}
+  }
 }
 
 impl flatbuffers::Verifiable for SubscriptionConfig<'_> {
@@ -10082,6 +10457,7 @@ impl flatbuffers::Verifiable for SubscriptionConfig<'_> {
      .visit_field::<bool>("force", Self::VT_FORCE, false)?
      .visit_field::<u32>("bytes_per_event", Self::VT_BYTES_PER_EVENT, false)?
      .visit_field::<bool>("is_slow", Self::VT_IS_SLOW, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("pagination", Self::VT_PAGINATION, false)?
      .finish();
     Ok(())
   }
@@ -10096,6 +10472,7 @@ pub struct SubscriptionConfigArgs<'a> {
     pub force: bool,
     pub bytes_per_event: u32,
     pub is_slow: bool,
+    pub pagination: Option<flatbuffers::WIPOffset<&'a str>>,
 }
 impl<'a> Default for SubscriptionConfigArgs<'a> {
   #[inline]
@@ -10110,6 +10487,7 @@ impl<'a> Default for SubscriptionConfigArgs<'a> {
       force: false,
       bytes_per_event: 0,
       is_slow: false,
+      pagination: None,
     }
   }
 }
@@ -10156,6 +10534,10 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> SubscriptionConfigBuilder<'a, '
     self.fbb_.push_slot::<bool>(SubscriptionConfig::VT_IS_SLOW, is_slow, false);
   }
   #[inline]
+  pub fn add_pagination(&mut self, pagination: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(SubscriptionConfig::VT_PAGINATION, pagination);
+  }
+  #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> SubscriptionConfigBuilder<'a, 'b, A> {
     let start = _fbb.start_table();
     SubscriptionConfigBuilder {
@@ -10182,6 +10564,7 @@ impl core::fmt::Debug for SubscriptionConfig<'_> {
       ds.field("force", &self.force());
       ds.field("bytes_per_event", &self.bytes_per_event());
       ds.field("is_slow", &self.is_slow());
+      ds.field("pagination", &self.pagination());
       ds.finish()
   }
 }
@@ -10197,6 +10580,7 @@ pub struct SubscriptionConfigT {
   pub force: bool,
   pub bytes_per_event: u32,
   pub is_slow: bool,
+  pub pagination: Option<String>,
 }
 impl Default for SubscriptionConfigT {
   fn default() -> Self {
@@ -10210,6 +10594,7 @@ impl Default for SubscriptionConfigT {
       force: false,
       bytes_per_event: 0,
       is_slow: false,
+      pagination: None,
     }
   }
 }
@@ -10229,6 +10614,9 @@ impl SubscriptionConfigT {
     let force = self.force;
     let bytes_per_event = self.bytes_per_event;
     let is_slow = self.is_slow;
+    let pagination = self.pagination.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
     SubscriptionConfig::create(_fbb, &SubscriptionConfigArgs{
       pipeline,
       close_on_eose,
@@ -10239,6 +10627,7 @@ impl SubscriptionConfigT {
       force,
       bytes_per_event,
       is_slow,
+      pagination,
     })
   }
 }
@@ -15807,6 +16196,1865 @@ impl Kind30023ParsedT {
     })
   }
 }
+pub enum ImetaTagOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct ImetaTag<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for ImetaTag<'a> {
+  type Inner = ImetaTag<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> ImetaTag<'a> {
+  pub const VT_URL: flatbuffers::VOffsetT = 4;
+  pub const VT_MIME_TYPE: flatbuffers::VOffsetT = 6;
+  pub const VT_DIM: flatbuffers::VOffsetT = 8;
+  pub const VT_ALT: flatbuffers::VOffsetT = 10;
+  pub const VT_BLURHASH: flatbuffers::VOffsetT = 12;
+  pub const VT_HASH: flatbuffers::VOffsetT = 14;
+  pub const VT_FALLBACK: flatbuffers::VOffsetT = 16;
+  pub const VT_ANNOTATE_USER: flatbuffers::VOffsetT = 18;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    ImetaTag { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args ImetaTagArgs<'args>
+  ) -> flatbuffers::WIPOffset<ImetaTag<'bldr>> {
+    let mut builder = ImetaTagBuilder::new(_fbb);
+    if let Some(x) = args.annotate_user { builder.add_annotate_user(x); }
+    if let Some(x) = args.fallback { builder.add_fallback(x); }
+    if let Some(x) = args.hash { builder.add_hash(x); }
+    if let Some(x) = args.blurhash { builder.add_blurhash(x); }
+    if let Some(x) = args.alt { builder.add_alt(x); }
+    if let Some(x) = args.dim { builder.add_dim(x); }
+    if let Some(x) = args.mime_type { builder.add_mime_type(x); }
+    if let Some(x) = args.url { builder.add_url(x); }
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> ImetaTagT {
+    let url = {
+      let x = self.url();
+      x.to_string()
+    };
+    let mime_type = self.mime_type().map(|x| {
+      x.to_string()
+    });
+    let dim = self.dim().map(|x| {
+      x.to_string()
+    });
+    let alt = self.alt().map(|x| {
+      x.to_string()
+    });
+    let blurhash = self.blurhash().map(|x| {
+      x.to_string()
+    });
+    let hash = self.hash().map(|x| {
+      x.to_string()
+    });
+    let fallback = self.fallback().map(|x| {
+      x.iter().map(|s| s.to_string()).collect()
+    });
+    let annotate_user = self.annotate_user().map(|x| {
+      x.to_string()
+    });
+    ImetaTagT {
+      url,
+      mime_type,
+      dim,
+      alt,
+      blurhash,
+      hash,
+      fallback,
+      annotate_user,
+    }
+  }
+
+  #[inline]
+  pub fn url(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(ImetaTag::VT_URL, None).unwrap()}
+  }
+  #[inline]
+  pub fn mime_type(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(ImetaTag::VT_MIME_TYPE, None)}
+  }
+  #[inline]
+  pub fn dim(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(ImetaTag::VT_DIM, None)}
+  }
+  #[inline]
+  pub fn alt(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(ImetaTag::VT_ALT, None)}
+  }
+  #[inline]
+  pub fn blurhash(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(ImetaTag::VT_BLURHASH, None)}
+  }
+  #[inline]
+  pub fn hash(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(ImetaTag::VT_HASH, None)}
+  }
+  #[inline]
+  pub fn fallback(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>(ImetaTag::VT_FALLBACK, None)}
+  }
+  #[inline]
+  pub fn annotate_user(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(ImetaTag::VT_ANNOTATE_USER, None)}
+  }
+}
+
+impl flatbuffers::Verifiable for ImetaTag<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("url", Self::VT_URL, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("mime_type", Self::VT_MIME_TYPE, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("dim", Self::VT_DIM, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("alt", Self::VT_ALT, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("blurhash", Self::VT_BLURHASH, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("hash", Self::VT_HASH, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("fallback", Self::VT_FALLBACK, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("annotate_user", Self::VT_ANNOTATE_USER, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct ImetaTagArgs<'a> {
+    pub url: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub mime_type: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub dim: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub alt: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub blurhash: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub hash: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub fallback: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>,
+    pub annotate_user: Option<flatbuffers::WIPOffset<&'a str>>,
+}
+impl<'a> Default for ImetaTagArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    ImetaTagArgs {
+      url: None, // required field
+      mime_type: None,
+      dim: None,
+      alt: None,
+      blurhash: None,
+      hash: None,
+      fallback: None,
+      annotate_user: None,
+    }
+  }
+}
+
+pub struct ImetaTagBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> ImetaTagBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_url(&mut self, url: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(ImetaTag::VT_URL, url);
+  }
+  #[inline]
+  pub fn add_mime_type(&mut self, mime_type: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(ImetaTag::VT_MIME_TYPE, mime_type);
+  }
+  #[inline]
+  pub fn add_dim(&mut self, dim: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(ImetaTag::VT_DIM, dim);
+  }
+  #[inline]
+  pub fn add_alt(&mut self, alt: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(ImetaTag::VT_ALT, alt);
+  }
+  #[inline]
+  pub fn add_blurhash(&mut self, blurhash: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(ImetaTag::VT_BLURHASH, blurhash);
+  }
+  #[inline]
+  pub fn add_hash(&mut self, hash: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(ImetaTag::VT_HASH, hash);
+  }
+  #[inline]
+  pub fn add_fallback(&mut self, fallback: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<&'b  str>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(ImetaTag::VT_FALLBACK, fallback);
+  }
+  #[inline]
+  pub fn add_annotate_user(&mut self, annotate_user: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(ImetaTag::VT_ANNOTATE_USER, annotate_user);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> ImetaTagBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    ImetaTagBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<ImetaTag<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, ImetaTag::VT_URL,"url");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for ImetaTag<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("ImetaTag");
+      ds.field("url", &self.url());
+      ds.field("mime_type", &self.mime_type());
+      ds.field("dim", &self.dim());
+      ds.field("alt", &self.alt());
+      ds.field("blurhash", &self.blurhash());
+      ds.field("hash", &self.hash());
+      ds.field("fallback", &self.fallback());
+      ds.field("annotate_user", &self.annotate_user());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImetaTagT {
+  pub url: String,
+  pub mime_type: Option<String>,
+  pub dim: Option<String>,
+  pub alt: Option<String>,
+  pub blurhash: Option<String>,
+  pub hash: Option<String>,
+  pub fallback: Option<Vec<String>>,
+  pub annotate_user: Option<String>,
+}
+impl Default for ImetaTagT {
+  fn default() -> Self {
+    Self {
+      url: "".to_string(),
+      mime_type: None,
+      dim: None,
+      alt: None,
+      blurhash: None,
+      hash: None,
+      fallback: None,
+      annotate_user: None,
+    }
+  }
+}
+impl ImetaTagT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<ImetaTag<'b>> {
+    let url = Some({
+      let x = &self.url;
+      _fbb.create_string(x)
+    });
+    let mime_type = self.mime_type.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let dim = self.dim.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let alt = self.alt.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let blurhash = self.blurhash.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let hash = self.hash.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let fallback = self.fallback.as_ref().map(|x|{
+      let w: Vec<_> = x.iter().map(|s| _fbb.create_string(s)).collect();_fbb.create_vector(&w)
+    });
+    let annotate_user = self.annotate_user.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    ImetaTag::create(_fbb, &ImetaTagArgs{
+      url,
+      mime_type,
+      dim,
+      alt,
+      blurhash,
+      hash,
+      fallback,
+      annotate_user,
+    })
+  }
+}
+pub enum Kind20ParsedOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct Kind20Parsed<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for Kind20Parsed<'a> {
+  type Inner = Kind20Parsed<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> Kind20Parsed<'a> {
+  pub const VT_TITLE: flatbuffers::VOffsetT = 4;
+  pub const VT_DESCRIPTION: flatbuffers::VOffsetT = 6;
+  pub const VT_IMAGES: flatbuffers::VOffsetT = 8;
+  pub const VT_CONTENT_WARNING: flatbuffers::VOffsetT = 10;
+  pub const VT_LOCATION: flatbuffers::VOffsetT = 12;
+  pub const VT_GEOHASH: flatbuffers::VOffsetT = 14;
+  pub const VT_HASHTAGS: flatbuffers::VOffsetT = 16;
+  pub const VT_MENTIONS: flatbuffers::VOffsetT = 18;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    Kind20Parsed { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args Kind20ParsedArgs<'args>
+  ) -> flatbuffers::WIPOffset<Kind20Parsed<'bldr>> {
+    let mut builder = Kind20ParsedBuilder::new(_fbb);
+    if let Some(x) = args.mentions { builder.add_mentions(x); }
+    if let Some(x) = args.hashtags { builder.add_hashtags(x); }
+    if let Some(x) = args.geohash { builder.add_geohash(x); }
+    if let Some(x) = args.location { builder.add_location(x); }
+    if let Some(x) = args.content_warning { builder.add_content_warning(x); }
+    if let Some(x) = args.images { builder.add_images(x); }
+    if let Some(x) = args.description { builder.add_description(x); }
+    if let Some(x) = args.title { builder.add_title(x); }
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> Kind20ParsedT {
+    let title = self.title().map(|x| {
+      x.to_string()
+    });
+    let description = self.description().map(|x| {
+      x.to_string()
+    });
+    let images = {
+      let x = self.images();
+      x.iter().map(|t| t.unpack()).collect()
+    };
+    let content_warning = self.content_warning().map(|x| {
+      x.to_string()
+    });
+    let location = self.location().map(|x| {
+      x.to_string()
+    });
+    let geohash = self.geohash().map(|x| {
+      x.to_string()
+    });
+    let hashtags = self.hashtags().map(|x| {
+      x.iter().map(|s| s.to_string()).collect()
+    });
+    let mentions = self.mentions().map(|x| {
+      x.iter().map(|t| t.unpack()).collect()
+    });
+    Kind20ParsedT {
+      title,
+      description,
+      images,
+      content_warning,
+      location,
+      geohash,
+      hashtags,
+      mentions,
+    }
+  }
+
+  #[inline]
+  pub fn title(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Kind20Parsed::VT_TITLE, None)}
+  }
+  #[inline]
+  pub fn description(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Kind20Parsed::VT_DESCRIPTION, None)}
+  }
+  #[inline]
+  pub fn images(&self) -> flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<ImetaTag<'a>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<ImetaTag>>>>(Kind20Parsed::VT_IMAGES, None).unwrap()}
+  }
+  #[inline]
+  pub fn content_warning(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Kind20Parsed::VT_CONTENT_WARNING, None)}
+  }
+  #[inline]
+  pub fn location(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Kind20Parsed::VT_LOCATION, None)}
+  }
+  #[inline]
+  pub fn geohash(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Kind20Parsed::VT_GEOHASH, None)}
+  }
+  #[inline]
+  pub fn hashtags(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>(Kind20Parsed::VT_HASHTAGS, None)}
+  }
+  #[inline]
+  pub fn mentions(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<ProfilePointer<'a>>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<ProfilePointer>>>>(Kind20Parsed::VT_MENTIONS, None)}
+  }
+}
+
+impl flatbuffers::Verifiable for Kind20Parsed<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("title", Self::VT_TITLE, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("description", Self::VT_DESCRIPTION, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<ImetaTag>>>>("images", Self::VT_IMAGES, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("content_warning", Self::VT_CONTENT_WARNING, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("location", Self::VT_LOCATION, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("geohash", Self::VT_GEOHASH, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("hashtags", Self::VT_HASHTAGS, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<ProfilePointer>>>>("mentions", Self::VT_MENTIONS, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct Kind20ParsedArgs<'a> {
+    pub title: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub description: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub images: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<ImetaTag<'a>>>>>,
+    pub content_warning: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub location: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub geohash: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub hashtags: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>,
+    pub mentions: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<ProfilePointer<'a>>>>>,
+}
+impl<'a> Default for Kind20ParsedArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    Kind20ParsedArgs {
+      title: None,
+      description: None,
+      images: None, // required field
+      content_warning: None,
+      location: None,
+      geohash: None,
+      hashtags: None,
+      mentions: None,
+    }
+  }
+}
+
+pub struct Kind20ParsedBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> Kind20ParsedBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_title(&mut self, title: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind20Parsed::VT_TITLE, title);
+  }
+  #[inline]
+  pub fn add_description(&mut self, description: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind20Parsed::VT_DESCRIPTION, description);
+  }
+  #[inline]
+  pub fn add_images(&mut self, images: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<ImetaTag<'b >>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind20Parsed::VT_IMAGES, images);
+  }
+  #[inline]
+  pub fn add_content_warning(&mut self, content_warning: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind20Parsed::VT_CONTENT_WARNING, content_warning);
+  }
+  #[inline]
+  pub fn add_location(&mut self, location: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind20Parsed::VT_LOCATION, location);
+  }
+  #[inline]
+  pub fn add_geohash(&mut self, geohash: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind20Parsed::VT_GEOHASH, geohash);
+  }
+  #[inline]
+  pub fn add_hashtags(&mut self, hashtags: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<&'b  str>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind20Parsed::VT_HASHTAGS, hashtags);
+  }
+  #[inline]
+  pub fn add_mentions(&mut self, mentions: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<ProfilePointer<'b >>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind20Parsed::VT_MENTIONS, mentions);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> Kind20ParsedBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    Kind20ParsedBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<Kind20Parsed<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, Kind20Parsed::VT_IMAGES,"images");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for Kind20Parsed<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("Kind20Parsed");
+      ds.field("title", &self.title());
+      ds.field("description", &self.description());
+      ds.field("images", &self.images());
+      ds.field("content_warning", &self.content_warning());
+      ds.field("location", &self.location());
+      ds.field("geohash", &self.geohash());
+      ds.field("hashtags", &self.hashtags());
+      ds.field("mentions", &self.mentions());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct Kind20ParsedT {
+  pub title: Option<String>,
+  pub description: Option<String>,
+  pub images: Vec<ImetaTagT>,
+  pub content_warning: Option<String>,
+  pub location: Option<String>,
+  pub geohash: Option<String>,
+  pub hashtags: Option<Vec<String>>,
+  pub mentions: Option<Vec<ProfilePointerT>>,
+}
+impl Default for Kind20ParsedT {
+  fn default() -> Self {
+    Self {
+      title: None,
+      description: None,
+      images: Default::default(),
+      content_warning: None,
+      location: None,
+      geohash: None,
+      hashtags: None,
+      mentions: None,
+    }
+  }
+}
+impl Kind20ParsedT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<Kind20Parsed<'b>> {
+    let title = self.title.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let description = self.description.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let images = Some({
+      let x = &self.images;
+      let w: Vec<_> = x.iter().map(|t| t.pack(_fbb)).collect();_fbb.create_vector(&w)
+    });
+    let content_warning = self.content_warning.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let location = self.location.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let geohash = self.geohash.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let hashtags = self.hashtags.as_ref().map(|x|{
+      let w: Vec<_> = x.iter().map(|s| _fbb.create_string(s)).collect();_fbb.create_vector(&w)
+    });
+    let mentions = self.mentions.as_ref().map(|x|{
+      let w: Vec<_> = x.iter().map(|t| t.pack(_fbb)).collect();_fbb.create_vector(&w)
+    });
+    Kind20Parsed::create(_fbb, &Kind20ParsedArgs{
+      title,
+      description,
+      images,
+      content_warning,
+      location,
+      geohash,
+      hashtags,
+      mentions,
+    })
+  }
+}
+pub enum VideoVariantOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct VideoVariant<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for VideoVariant<'a> {
+  type Inner = VideoVariant<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> VideoVariant<'a> {
+  pub const VT_URL: flatbuffers::VOffsetT = 4;
+  pub const VT_MIME_TYPE: flatbuffers::VOffsetT = 6;
+  pub const VT_DIM: flatbuffers::VOffsetT = 8;
+  pub const VT_BLURHASH: flatbuffers::VOffsetT = 10;
+  pub const VT_HASH: flatbuffers::VOffsetT = 12;
+  pub const VT_DURATION: flatbuffers::VOffsetT = 14;
+  pub const VT_BITRATE: flatbuffers::VOffsetT = 16;
+  pub const VT_IMAGE: flatbuffers::VOffsetT = 18;
+  pub const VT_FALLBACK: flatbuffers::VOffsetT = 20;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    VideoVariant { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args VideoVariantArgs<'args>
+  ) -> flatbuffers::WIPOffset<VideoVariant<'bldr>> {
+    let mut builder = VideoVariantBuilder::new(_fbb);
+    builder.add_bitrate(args.bitrate);
+    if let Some(x) = args.fallback { builder.add_fallback(x); }
+    if let Some(x) = args.image { builder.add_image(x); }
+    builder.add_duration(args.duration);
+    if let Some(x) = args.hash { builder.add_hash(x); }
+    if let Some(x) = args.blurhash { builder.add_blurhash(x); }
+    if let Some(x) = args.dim { builder.add_dim(x); }
+    if let Some(x) = args.mime_type { builder.add_mime_type(x); }
+    if let Some(x) = args.url { builder.add_url(x); }
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> VideoVariantT {
+    let url = {
+      let x = self.url();
+      x.to_string()
+    };
+    let mime_type = self.mime_type().map(|x| {
+      x.to_string()
+    });
+    let dim = self.dim().map(|x| {
+      x.to_string()
+    });
+    let blurhash = self.blurhash().map(|x| {
+      x.to_string()
+    });
+    let hash = self.hash().map(|x| {
+      x.to_string()
+    });
+    let duration = self.duration();
+    let bitrate = self.bitrate();
+    let image = self.image().map(|x| {
+      x.to_string()
+    });
+    let fallback = self.fallback().map(|x| {
+      x.iter().map(|s| s.to_string()).collect()
+    });
+    VideoVariantT {
+      url,
+      mime_type,
+      dim,
+      blurhash,
+      hash,
+      duration,
+      bitrate,
+      image,
+      fallback,
+    }
+  }
+
+  #[inline]
+  pub fn url(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(VideoVariant::VT_URL, None).unwrap()}
+  }
+  #[inline]
+  pub fn mime_type(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(VideoVariant::VT_MIME_TYPE, None)}
+  }
+  #[inline]
+  pub fn dim(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(VideoVariant::VT_DIM, None)}
+  }
+  #[inline]
+  pub fn blurhash(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(VideoVariant::VT_BLURHASH, None)}
+  }
+  #[inline]
+  pub fn hash(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(VideoVariant::VT_HASH, None)}
+  }
+  #[inline]
+  pub fn duration(&self) -> f32 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<f32>(VideoVariant::VT_DURATION, Some(0.0)).unwrap()}
+  }
+  #[inline]
+  pub fn bitrate(&self) -> u64 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u64>(VideoVariant::VT_BITRATE, Some(0)).unwrap()}
+  }
+  #[inline]
+  pub fn image(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(VideoVariant::VT_IMAGE, None)}
+  }
+  #[inline]
+  pub fn fallback(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>(VideoVariant::VT_FALLBACK, None)}
+  }
+}
+
+impl flatbuffers::Verifiable for VideoVariant<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("url", Self::VT_URL, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("mime_type", Self::VT_MIME_TYPE, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("dim", Self::VT_DIM, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("blurhash", Self::VT_BLURHASH, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("hash", Self::VT_HASH, false)?
+     .visit_field::<f32>("duration", Self::VT_DURATION, false)?
+     .visit_field::<u64>("bitrate", Self::VT_BITRATE, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("image", Self::VT_IMAGE, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("fallback", Self::VT_FALLBACK, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct VideoVariantArgs<'a> {
+    pub url: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub mime_type: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub dim: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub blurhash: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub hash: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub duration: f32,
+    pub bitrate: u64,
+    pub image: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub fallback: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>,
+}
+impl<'a> Default for VideoVariantArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    VideoVariantArgs {
+      url: None, // required field
+      mime_type: None,
+      dim: None,
+      blurhash: None,
+      hash: None,
+      duration: 0.0,
+      bitrate: 0,
+      image: None,
+      fallback: None,
+    }
+  }
+}
+
+pub struct VideoVariantBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> VideoVariantBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_url(&mut self, url: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(VideoVariant::VT_URL, url);
+  }
+  #[inline]
+  pub fn add_mime_type(&mut self, mime_type: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(VideoVariant::VT_MIME_TYPE, mime_type);
+  }
+  #[inline]
+  pub fn add_dim(&mut self, dim: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(VideoVariant::VT_DIM, dim);
+  }
+  #[inline]
+  pub fn add_blurhash(&mut self, blurhash: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(VideoVariant::VT_BLURHASH, blurhash);
+  }
+  #[inline]
+  pub fn add_hash(&mut self, hash: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(VideoVariant::VT_HASH, hash);
+  }
+  #[inline]
+  pub fn add_duration(&mut self, duration: f32) {
+    self.fbb_.push_slot::<f32>(VideoVariant::VT_DURATION, duration, 0.0);
+  }
+  #[inline]
+  pub fn add_bitrate(&mut self, bitrate: u64) {
+    self.fbb_.push_slot::<u64>(VideoVariant::VT_BITRATE, bitrate, 0);
+  }
+  #[inline]
+  pub fn add_image(&mut self, image: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(VideoVariant::VT_IMAGE, image);
+  }
+  #[inline]
+  pub fn add_fallback(&mut self, fallback: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<&'b  str>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(VideoVariant::VT_FALLBACK, fallback);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> VideoVariantBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    VideoVariantBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<VideoVariant<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, VideoVariant::VT_URL,"url");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for VideoVariant<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("VideoVariant");
+      ds.field("url", &self.url());
+      ds.field("mime_type", &self.mime_type());
+      ds.field("dim", &self.dim());
+      ds.field("blurhash", &self.blurhash());
+      ds.field("hash", &self.hash());
+      ds.field("duration", &self.duration());
+      ds.field("bitrate", &self.bitrate());
+      ds.field("image", &self.image());
+      ds.field("fallback", &self.fallback());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct VideoVariantT {
+  pub url: String,
+  pub mime_type: Option<String>,
+  pub dim: Option<String>,
+  pub blurhash: Option<String>,
+  pub hash: Option<String>,
+  pub duration: f32,
+  pub bitrate: u64,
+  pub image: Option<String>,
+  pub fallback: Option<Vec<String>>,
+}
+impl Default for VideoVariantT {
+  fn default() -> Self {
+    Self {
+      url: "".to_string(),
+      mime_type: None,
+      dim: None,
+      blurhash: None,
+      hash: None,
+      duration: 0.0,
+      bitrate: 0,
+      image: None,
+      fallback: None,
+    }
+  }
+}
+impl VideoVariantT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<VideoVariant<'b>> {
+    let url = Some({
+      let x = &self.url;
+      _fbb.create_string(x)
+    });
+    let mime_type = self.mime_type.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let dim = self.dim.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let blurhash = self.blurhash.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let hash = self.hash.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let duration = self.duration;
+    let bitrate = self.bitrate;
+    let image = self.image.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let fallback = self.fallback.as_ref().map(|x|{
+      let w: Vec<_> = x.iter().map(|s| _fbb.create_string(s)).collect();_fbb.create_vector(&w)
+    });
+    VideoVariant::create(_fbb, &VideoVariantArgs{
+      url,
+      mime_type,
+      dim,
+      blurhash,
+      hash,
+      duration,
+      bitrate,
+      image,
+      fallback,
+    })
+  }
+}
+pub enum Kind22ParsedOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct Kind22Parsed<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for Kind22Parsed<'a> {
+  type Inner = Kind22Parsed<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> Kind22Parsed<'a> {
+  pub const VT_TITLE: flatbuffers::VOffsetT = 4;
+  pub const VT_DESCRIPTION: flatbuffers::VOffsetT = 6;
+  pub const VT_VIDEOS: flatbuffers::VOffsetT = 8;
+  pub const VT_ALT: flatbuffers::VOffsetT = 10;
+  pub const VT_CONTENT_WARNING: flatbuffers::VOffsetT = 12;
+  pub const VT_DURATION: flatbuffers::VOffsetT = 14;
+  pub const VT_PUBLISHED_AT: flatbuffers::VOffsetT = 16;
+  pub const VT_HASHTAGS: flatbuffers::VOffsetT = 18;
+  pub const VT_PARTICIPANTS: flatbuffers::VOffsetT = 20;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    Kind22Parsed { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args Kind22ParsedArgs<'args>
+  ) -> flatbuffers::WIPOffset<Kind22Parsed<'bldr>> {
+    let mut builder = Kind22ParsedBuilder::new(_fbb);
+    builder.add_published_at(args.published_at);
+    if let Some(x) = args.participants { builder.add_participants(x); }
+    if let Some(x) = args.hashtags { builder.add_hashtags(x); }
+    builder.add_duration(args.duration);
+    if let Some(x) = args.content_warning { builder.add_content_warning(x); }
+    if let Some(x) = args.alt { builder.add_alt(x); }
+    if let Some(x) = args.videos { builder.add_videos(x); }
+    if let Some(x) = args.description { builder.add_description(x); }
+    if let Some(x) = args.title { builder.add_title(x); }
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> Kind22ParsedT {
+    let title = {
+      let x = self.title();
+      x.to_string()
+    };
+    let description = self.description().map(|x| {
+      x.to_string()
+    });
+    let videos = {
+      let x = self.videos();
+      x.iter().map(|t| t.unpack()).collect()
+    };
+    let alt = self.alt().map(|x| {
+      x.to_string()
+    });
+    let content_warning = self.content_warning().map(|x| {
+      x.to_string()
+    });
+    let duration = self.duration();
+    let published_at = self.published_at();
+    let hashtags = self.hashtags().map(|x| {
+      x.iter().map(|s| s.to_string()).collect()
+    });
+    let participants = self.participants().map(|x| {
+      x.iter().map(|t| t.unpack()).collect()
+    });
+    Kind22ParsedT {
+      title,
+      description,
+      videos,
+      alt,
+      content_warning,
+      duration,
+      published_at,
+      hashtags,
+      participants,
+    }
+  }
+
+  #[inline]
+  pub fn title(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Kind22Parsed::VT_TITLE, None).unwrap()}
+  }
+  #[inline]
+  pub fn description(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Kind22Parsed::VT_DESCRIPTION, None)}
+  }
+  #[inline]
+  pub fn videos(&self) -> flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<VideoVariant<'a>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<VideoVariant>>>>(Kind22Parsed::VT_VIDEOS, None).unwrap()}
+  }
+  #[inline]
+  pub fn alt(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Kind22Parsed::VT_ALT, None)}
+  }
+  #[inline]
+  pub fn content_warning(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Kind22Parsed::VT_CONTENT_WARNING, None)}
+  }
+  #[inline]
+  pub fn duration(&self) -> f32 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<f32>(Kind22Parsed::VT_DURATION, Some(0.0)).unwrap()}
+  }
+  #[inline]
+  pub fn published_at(&self) -> u64 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u64>(Kind22Parsed::VT_PUBLISHED_AT, Some(0)).unwrap()}
+  }
+  #[inline]
+  pub fn hashtags(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>(Kind22Parsed::VT_HASHTAGS, None)}
+  }
+  #[inline]
+  pub fn participants(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<ProfilePointer<'a>>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<ProfilePointer>>>>(Kind22Parsed::VT_PARTICIPANTS, None)}
+  }
+}
+
+impl flatbuffers::Verifiable for Kind22Parsed<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("title", Self::VT_TITLE, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("description", Self::VT_DESCRIPTION, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<VideoVariant>>>>("videos", Self::VT_VIDEOS, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("alt", Self::VT_ALT, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("content_warning", Self::VT_CONTENT_WARNING, false)?
+     .visit_field::<f32>("duration", Self::VT_DURATION, false)?
+     .visit_field::<u64>("published_at", Self::VT_PUBLISHED_AT, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("hashtags", Self::VT_HASHTAGS, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<ProfilePointer>>>>("participants", Self::VT_PARTICIPANTS, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct Kind22ParsedArgs<'a> {
+    pub title: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub description: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub videos: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<VideoVariant<'a>>>>>,
+    pub alt: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub content_warning: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub duration: f32,
+    pub published_at: u64,
+    pub hashtags: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>,
+    pub participants: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<ProfilePointer<'a>>>>>,
+}
+impl<'a> Default for Kind22ParsedArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    Kind22ParsedArgs {
+      title: None, // required field
+      description: None,
+      videos: None, // required field
+      alt: None,
+      content_warning: None,
+      duration: 0.0,
+      published_at: 0,
+      hashtags: None,
+      participants: None,
+    }
+  }
+}
+
+pub struct Kind22ParsedBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> Kind22ParsedBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_title(&mut self, title: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind22Parsed::VT_TITLE, title);
+  }
+  #[inline]
+  pub fn add_description(&mut self, description: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind22Parsed::VT_DESCRIPTION, description);
+  }
+  #[inline]
+  pub fn add_videos(&mut self, videos: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<VideoVariant<'b >>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind22Parsed::VT_VIDEOS, videos);
+  }
+  #[inline]
+  pub fn add_alt(&mut self, alt: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind22Parsed::VT_ALT, alt);
+  }
+  #[inline]
+  pub fn add_content_warning(&mut self, content_warning: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind22Parsed::VT_CONTENT_WARNING, content_warning);
+  }
+  #[inline]
+  pub fn add_duration(&mut self, duration: f32) {
+    self.fbb_.push_slot::<f32>(Kind22Parsed::VT_DURATION, duration, 0.0);
+  }
+  #[inline]
+  pub fn add_published_at(&mut self, published_at: u64) {
+    self.fbb_.push_slot::<u64>(Kind22Parsed::VT_PUBLISHED_AT, published_at, 0);
+  }
+  #[inline]
+  pub fn add_hashtags(&mut self, hashtags: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<&'b  str>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind22Parsed::VT_HASHTAGS, hashtags);
+  }
+  #[inline]
+  pub fn add_participants(&mut self, participants: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<ProfilePointer<'b >>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind22Parsed::VT_PARTICIPANTS, participants);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> Kind22ParsedBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    Kind22ParsedBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<Kind22Parsed<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, Kind22Parsed::VT_TITLE,"title");
+    self.fbb_.required(o, Kind22Parsed::VT_VIDEOS,"videos");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for Kind22Parsed<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("Kind22Parsed");
+      ds.field("title", &self.title());
+      ds.field("description", &self.description());
+      ds.field("videos", &self.videos());
+      ds.field("alt", &self.alt());
+      ds.field("content_warning", &self.content_warning());
+      ds.field("duration", &self.duration());
+      ds.field("published_at", &self.published_at());
+      ds.field("hashtags", &self.hashtags());
+      ds.field("participants", &self.participants());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct Kind22ParsedT {
+  pub title: String,
+  pub description: Option<String>,
+  pub videos: Vec<VideoVariantT>,
+  pub alt: Option<String>,
+  pub content_warning: Option<String>,
+  pub duration: f32,
+  pub published_at: u64,
+  pub hashtags: Option<Vec<String>>,
+  pub participants: Option<Vec<ProfilePointerT>>,
+}
+impl Default for Kind22ParsedT {
+  fn default() -> Self {
+    Self {
+      title: "".to_string(),
+      description: None,
+      videos: Default::default(),
+      alt: None,
+      content_warning: None,
+      duration: 0.0,
+      published_at: 0,
+      hashtags: None,
+      participants: None,
+    }
+  }
+}
+impl Kind22ParsedT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<Kind22Parsed<'b>> {
+    let title = Some({
+      let x = &self.title;
+      _fbb.create_string(x)
+    });
+    let description = self.description.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let videos = Some({
+      let x = &self.videos;
+      let w: Vec<_> = x.iter().map(|t| t.pack(_fbb)).collect();_fbb.create_vector(&w)
+    });
+    let alt = self.alt.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let content_warning = self.content_warning.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let duration = self.duration;
+    let published_at = self.published_at;
+    let hashtags = self.hashtags.as_ref().map(|x|{
+      let w: Vec<_> = x.iter().map(|s| _fbb.create_string(s)).collect();_fbb.create_vector(&w)
+    });
+    let participants = self.participants.as_ref().map(|x|{
+      let w: Vec<_> = x.iter().map(|t| t.pack(_fbb)).collect();_fbb.create_vector(&w)
+    });
+    Kind22Parsed::create(_fbb, &Kind22ParsedArgs{
+      title,
+      description,
+      videos,
+      alt,
+      content_warning,
+      duration,
+      published_at,
+      hashtags,
+      participants,
+    })
+  }
+}
+pub enum Kind1111ParsedOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct Kind1111Parsed<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for Kind1111Parsed<'a> {
+  type Inner = Kind1111Parsed<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> Kind1111Parsed<'a> {
+  pub const VT_CONTENT: flatbuffers::VOffsetT = 4;
+  pub const VT_PARSED_CONTENT: flatbuffers::VOffsetT = 6;
+  pub const VT_ROOT_ID: flatbuffers::VOffsetT = 8;
+  pub const VT_ROOT_COORDINATE: flatbuffers::VOffsetT = 10;
+  pub const VT_ROOT_EXTERNAL: flatbuffers::VOffsetT = 12;
+  pub const VT_ROOT_KIND: flatbuffers::VOffsetT = 14;
+  pub const VT_ROOT_AUTHOR: flatbuffers::VOffsetT = 16;
+  pub const VT_ROOT_RELAYS: flatbuffers::VOffsetT = 18;
+  pub const VT_PARENT_ID: flatbuffers::VOffsetT = 20;
+  pub const VT_PARENT_COORDINATE: flatbuffers::VOffsetT = 22;
+  pub const VT_PARENT_EXTERNAL: flatbuffers::VOffsetT = 24;
+  pub const VT_PARENT_KIND: flatbuffers::VOffsetT = 26;
+  pub const VT_PARENT_AUTHOR: flatbuffers::VOffsetT = 28;
+  pub const VT_PARENT_RELAYS: flatbuffers::VOffsetT = 30;
+  pub const VT_CITATIONS: flatbuffers::VOffsetT = 32;
+  pub const VT_MENTIONS: flatbuffers::VOffsetT = 34;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    Kind1111Parsed { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args Kind1111ParsedArgs<'args>
+  ) -> flatbuffers::WIPOffset<Kind1111Parsed<'bldr>> {
+    let mut builder = Kind1111ParsedBuilder::new(_fbb);
+    if let Some(x) = args.mentions { builder.add_mentions(x); }
+    if let Some(x) = args.citations { builder.add_citations(x); }
+    if let Some(x) = args.parent_relays { builder.add_parent_relays(x); }
+    if let Some(x) = args.parent_author { builder.add_parent_author(x); }
+    if let Some(x) = args.parent_external { builder.add_parent_external(x); }
+    if let Some(x) = args.parent_coordinate { builder.add_parent_coordinate(x); }
+    if let Some(x) = args.parent_id { builder.add_parent_id(x); }
+    if let Some(x) = args.root_relays { builder.add_root_relays(x); }
+    if let Some(x) = args.root_author { builder.add_root_author(x); }
+    if let Some(x) = args.root_external { builder.add_root_external(x); }
+    if let Some(x) = args.root_coordinate { builder.add_root_coordinate(x); }
+    if let Some(x) = args.root_id { builder.add_root_id(x); }
+    if let Some(x) = args.parsed_content { builder.add_parsed_content(x); }
+    if let Some(x) = args.content { builder.add_content(x); }
+    builder.add_parent_kind(args.parent_kind);
+    builder.add_root_kind(args.root_kind);
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> Kind1111ParsedT {
+    let content = {
+      let x = self.content();
+      x.to_string()
+    };
+    let parsed_content = self.parsed_content().map(|x| {
+      x.iter().map(|t| t.unpack()).collect()
+    });
+    let root_id = self.root_id().map(|x| {
+      x.to_string()
+    });
+    let root_coordinate = self.root_coordinate().map(|x| {
+      x.to_string()
+    });
+    let root_external = self.root_external().map(|x| {
+      x.to_string()
+    });
+    let root_kind = self.root_kind();
+    let root_author = self.root_author().map(|x| {
+      x.to_string()
+    });
+    let root_relays = self.root_relays().map(|x| {
+      x.iter().map(|s| s.to_string()).collect()
+    });
+    let parent_id = self.parent_id().map(|x| {
+      x.to_string()
+    });
+    let parent_coordinate = self.parent_coordinate().map(|x| {
+      x.to_string()
+    });
+    let parent_external = self.parent_external().map(|x| {
+      x.to_string()
+    });
+    let parent_kind = self.parent_kind();
+    let parent_author = self.parent_author().map(|x| {
+      x.to_string()
+    });
+    let parent_relays = self.parent_relays().map(|x| {
+      x.iter().map(|s| s.to_string()).collect()
+    });
+    let citations = self.citations().map(|x| {
+      x.iter().map(|t| t.unpack()).collect()
+    });
+    let mentions = self.mentions().map(|x| {
+      x.iter().map(|t| t.unpack()).collect()
+    });
+    Kind1111ParsedT {
+      content,
+      parsed_content,
+      root_id,
+      root_coordinate,
+      root_external,
+      root_kind,
+      root_author,
+      root_relays,
+      parent_id,
+      parent_coordinate,
+      parent_external,
+      parent_kind,
+      parent_author,
+      parent_relays,
+      citations,
+      mentions,
+    }
+  }
+
+  #[inline]
+  pub fn content(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Kind1111Parsed::VT_CONTENT, None).unwrap()}
+  }
+  #[inline]
+  pub fn parsed_content(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<ContentBlock<'a>>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<ContentBlock>>>>(Kind1111Parsed::VT_PARSED_CONTENT, None)}
+  }
+  #[inline]
+  pub fn root_id(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Kind1111Parsed::VT_ROOT_ID, None)}
+  }
+  #[inline]
+  pub fn root_coordinate(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Kind1111Parsed::VT_ROOT_COORDINATE, None)}
+  }
+  #[inline]
+  pub fn root_external(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Kind1111Parsed::VT_ROOT_EXTERNAL, None)}
+  }
+  #[inline]
+  pub fn root_kind(&self) -> u16 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u16>(Kind1111Parsed::VT_ROOT_KIND, Some(0)).unwrap()}
+  }
+  #[inline]
+  pub fn root_author(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Kind1111Parsed::VT_ROOT_AUTHOR, None)}
+  }
+  #[inline]
+  pub fn root_relays(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>(Kind1111Parsed::VT_ROOT_RELAYS, None)}
+  }
+  #[inline]
+  pub fn parent_id(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Kind1111Parsed::VT_PARENT_ID, None)}
+  }
+  #[inline]
+  pub fn parent_coordinate(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Kind1111Parsed::VT_PARENT_COORDINATE, None)}
+  }
+  #[inline]
+  pub fn parent_external(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Kind1111Parsed::VT_PARENT_EXTERNAL, None)}
+  }
+  #[inline]
+  pub fn parent_kind(&self) -> u16 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u16>(Kind1111Parsed::VT_PARENT_KIND, Some(0)).unwrap()}
+  }
+  #[inline]
+  pub fn parent_author(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Kind1111Parsed::VT_PARENT_AUTHOR, None)}
+  }
+  #[inline]
+  pub fn parent_relays(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>(Kind1111Parsed::VT_PARENT_RELAYS, None)}
+  }
+  #[inline]
+  pub fn citations(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<EventPointer<'a>>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<EventPointer>>>>(Kind1111Parsed::VT_CITATIONS, None)}
+  }
+  #[inline]
+  pub fn mentions(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<ProfilePointer<'a>>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<ProfilePointer>>>>(Kind1111Parsed::VT_MENTIONS, None)}
+  }
+}
+
+impl flatbuffers::Verifiable for Kind1111Parsed<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("content", Self::VT_CONTENT, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<ContentBlock>>>>("parsed_content", Self::VT_PARSED_CONTENT, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("root_id", Self::VT_ROOT_ID, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("root_coordinate", Self::VT_ROOT_COORDINATE, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("root_external", Self::VT_ROOT_EXTERNAL, false)?
+     .visit_field::<u16>("root_kind", Self::VT_ROOT_KIND, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("root_author", Self::VT_ROOT_AUTHOR, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("root_relays", Self::VT_ROOT_RELAYS, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("parent_id", Self::VT_PARENT_ID, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("parent_coordinate", Self::VT_PARENT_COORDINATE, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("parent_external", Self::VT_PARENT_EXTERNAL, false)?
+     .visit_field::<u16>("parent_kind", Self::VT_PARENT_KIND, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("parent_author", Self::VT_PARENT_AUTHOR, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("parent_relays", Self::VT_PARENT_RELAYS, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<EventPointer>>>>("citations", Self::VT_CITATIONS, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<ProfilePointer>>>>("mentions", Self::VT_MENTIONS, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct Kind1111ParsedArgs<'a> {
+    pub content: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub parsed_content: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<ContentBlock<'a>>>>>,
+    pub root_id: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub root_coordinate: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub root_external: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub root_kind: u16,
+    pub root_author: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub root_relays: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>,
+    pub parent_id: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub parent_coordinate: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub parent_external: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub parent_kind: u16,
+    pub parent_author: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub parent_relays: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>,
+    pub citations: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<EventPointer<'a>>>>>,
+    pub mentions: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<ProfilePointer<'a>>>>>,
+}
+impl<'a> Default for Kind1111ParsedArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    Kind1111ParsedArgs {
+      content: None, // required field
+      parsed_content: None,
+      root_id: None,
+      root_coordinate: None,
+      root_external: None,
+      root_kind: 0,
+      root_author: None,
+      root_relays: None,
+      parent_id: None,
+      parent_coordinate: None,
+      parent_external: None,
+      parent_kind: 0,
+      parent_author: None,
+      parent_relays: None,
+      citations: None,
+      mentions: None,
+    }
+  }
+}
+
+pub struct Kind1111ParsedBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> Kind1111ParsedBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_content(&mut self, content: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind1111Parsed::VT_CONTENT, content);
+  }
+  #[inline]
+  pub fn add_parsed_content(&mut self, parsed_content: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<ContentBlock<'b >>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind1111Parsed::VT_PARSED_CONTENT, parsed_content);
+  }
+  #[inline]
+  pub fn add_root_id(&mut self, root_id: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind1111Parsed::VT_ROOT_ID, root_id);
+  }
+  #[inline]
+  pub fn add_root_coordinate(&mut self, root_coordinate: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind1111Parsed::VT_ROOT_COORDINATE, root_coordinate);
+  }
+  #[inline]
+  pub fn add_root_external(&mut self, root_external: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind1111Parsed::VT_ROOT_EXTERNAL, root_external);
+  }
+  #[inline]
+  pub fn add_root_kind(&mut self, root_kind: u16) {
+    self.fbb_.push_slot::<u16>(Kind1111Parsed::VT_ROOT_KIND, root_kind, 0);
+  }
+  #[inline]
+  pub fn add_root_author(&mut self, root_author: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind1111Parsed::VT_ROOT_AUTHOR, root_author);
+  }
+  #[inline]
+  pub fn add_root_relays(&mut self, root_relays: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<&'b  str>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind1111Parsed::VT_ROOT_RELAYS, root_relays);
+  }
+  #[inline]
+  pub fn add_parent_id(&mut self, parent_id: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind1111Parsed::VT_PARENT_ID, parent_id);
+  }
+  #[inline]
+  pub fn add_parent_coordinate(&mut self, parent_coordinate: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind1111Parsed::VT_PARENT_COORDINATE, parent_coordinate);
+  }
+  #[inline]
+  pub fn add_parent_external(&mut self, parent_external: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind1111Parsed::VT_PARENT_EXTERNAL, parent_external);
+  }
+  #[inline]
+  pub fn add_parent_kind(&mut self, parent_kind: u16) {
+    self.fbb_.push_slot::<u16>(Kind1111Parsed::VT_PARENT_KIND, parent_kind, 0);
+  }
+  #[inline]
+  pub fn add_parent_author(&mut self, parent_author: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind1111Parsed::VT_PARENT_AUTHOR, parent_author);
+  }
+  #[inline]
+  pub fn add_parent_relays(&mut self, parent_relays: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<&'b  str>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind1111Parsed::VT_PARENT_RELAYS, parent_relays);
+  }
+  #[inline]
+  pub fn add_citations(&mut self, citations: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<EventPointer<'b >>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind1111Parsed::VT_CITATIONS, citations);
+  }
+  #[inline]
+  pub fn add_mentions(&mut self, mentions: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<ProfilePointer<'b >>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind1111Parsed::VT_MENTIONS, mentions);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> Kind1111ParsedBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    Kind1111ParsedBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<Kind1111Parsed<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, Kind1111Parsed::VT_CONTENT,"content");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for Kind1111Parsed<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("Kind1111Parsed");
+      ds.field("content", &self.content());
+      ds.field("parsed_content", &self.parsed_content());
+      ds.field("root_id", &self.root_id());
+      ds.field("root_coordinate", &self.root_coordinate());
+      ds.field("root_external", &self.root_external());
+      ds.field("root_kind", &self.root_kind());
+      ds.field("root_author", &self.root_author());
+      ds.field("root_relays", &self.root_relays());
+      ds.field("parent_id", &self.parent_id());
+      ds.field("parent_coordinate", &self.parent_coordinate());
+      ds.field("parent_external", &self.parent_external());
+      ds.field("parent_kind", &self.parent_kind());
+      ds.field("parent_author", &self.parent_author());
+      ds.field("parent_relays", &self.parent_relays());
+      ds.field("citations", &self.citations());
+      ds.field("mentions", &self.mentions());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct Kind1111ParsedT {
+  pub content: String,
+  pub parsed_content: Option<Vec<ContentBlockT>>,
+  pub root_id: Option<String>,
+  pub root_coordinate: Option<String>,
+  pub root_external: Option<String>,
+  pub root_kind: u16,
+  pub root_author: Option<String>,
+  pub root_relays: Option<Vec<String>>,
+  pub parent_id: Option<String>,
+  pub parent_coordinate: Option<String>,
+  pub parent_external: Option<String>,
+  pub parent_kind: u16,
+  pub parent_author: Option<String>,
+  pub parent_relays: Option<Vec<String>>,
+  pub citations: Option<Vec<EventPointerT>>,
+  pub mentions: Option<Vec<ProfilePointerT>>,
+}
+impl Default for Kind1111ParsedT {
+  fn default() -> Self {
+    Self {
+      content: "".to_string(),
+      parsed_content: None,
+      root_id: None,
+      root_coordinate: None,
+      root_external: None,
+      root_kind: 0,
+      root_author: None,
+      root_relays: None,
+      parent_id: None,
+      parent_coordinate: None,
+      parent_external: None,
+      parent_kind: 0,
+      parent_author: None,
+      parent_relays: None,
+      citations: None,
+      mentions: None,
+    }
+  }
+}
+impl Kind1111ParsedT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<Kind1111Parsed<'b>> {
+    let content = Some({
+      let x = &self.content;
+      _fbb.create_string(x)
+    });
+    let parsed_content = self.parsed_content.as_ref().map(|x|{
+      let w: Vec<_> = x.iter().map(|t| t.pack(_fbb)).collect();_fbb.create_vector(&w)
+    });
+    let root_id = self.root_id.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let root_coordinate = self.root_coordinate.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let root_external = self.root_external.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let root_kind = self.root_kind;
+    let root_author = self.root_author.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let root_relays = self.root_relays.as_ref().map(|x|{
+      let w: Vec<_> = x.iter().map(|s| _fbb.create_string(s)).collect();_fbb.create_vector(&w)
+    });
+    let parent_id = self.parent_id.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let parent_coordinate = self.parent_coordinate.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let parent_external = self.parent_external.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let parent_kind = self.parent_kind;
+    let parent_author = self.parent_author.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let parent_relays = self.parent_relays.as_ref().map(|x|{
+      let w: Vec<_> = x.iter().map(|s| _fbb.create_string(s)).collect();_fbb.create_vector(&w)
+    });
+    let citations = self.citations.as_ref().map(|x|{
+      let w: Vec<_> = x.iter().map(|t| t.pack(_fbb)).collect();_fbb.create_vector(&w)
+    });
+    let mentions = self.mentions.as_ref().map(|x|{
+      let w: Vec<_> = x.iter().map(|t| t.pack(_fbb)).collect();_fbb.create_vector(&w)
+    });
+    Kind1111Parsed::create(_fbb, &Kind1111ParsedArgs{
+      content,
+      parsed_content,
+      root_id,
+      root_coordinate,
+      root_external,
+      root_kind,
+      root_author,
+      root_relays,
+      parent_id,
+      parent_coordinate,
+      parent_external,
+      parent_kind,
+      parent_author,
+      parent_relays,
+      citations,
+      mentions,
+    })
+  }
+}
 pub enum CoordinateOffset {}
 #[derive(Copy, Clone, PartialEq)]
 
@@ -17536,6 +19784,21 @@ impl<'a> ParsedEvent<'a> {
             .expect("Invalid union table, expected `ParsedData::Kind17Parsed`.")
             .unpack()
       )),
+      ParsedData::Kind20Parsed => ParsedDataT::Kind20Parsed(Box::new(
+        self.parsed_as_kind_20_parsed()
+            .expect("Invalid union table, expected `ParsedData::Kind20Parsed`.")
+            .unpack()
+      )),
+      ParsedData::Kind22Parsed => ParsedDataT::Kind22Parsed(Box::new(
+        self.parsed_as_kind_22_parsed()
+            .expect("Invalid union table, expected `ParsedData::Kind22Parsed`.")
+            .unpack()
+      )),
+      ParsedData::Kind1111Parsed => ParsedDataT::Kind1111Parsed(Box::new(
+        self.parsed_as_kind_1111_parsed()
+            .expect("Invalid union table, expected `ParsedData::Kind1111Parsed`.")
+            .unpack()
+      )),
       ParsedData::Kind10002Parsed => ParsedDataT::Kind10002Parsed(Box::new(
         self.parsed_as_kind_10002_parsed()
             .expect("Invalid union table, expected `ParsedData::Kind10002Parsed`.")
@@ -17785,6 +20048,51 @@ impl<'a> ParsedEvent<'a> {
 
   #[inline]
   #[allow(non_snake_case)]
+  pub fn parsed_as_kind_20_parsed(&self) -> Option<Kind20Parsed<'a>> {
+    if self.parsed_type() == ParsedData::Kind20Parsed {
+      self.parsed().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { Kind20Parsed::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn parsed_as_kind_22_parsed(&self) -> Option<Kind22Parsed<'a>> {
+    if self.parsed_type() == ParsedData::Kind22Parsed {
+      self.parsed().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { Kind22Parsed::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn parsed_as_kind_1111_parsed(&self) -> Option<Kind1111Parsed<'a>> {
+    if self.parsed_type() == ParsedData::Kind1111Parsed {
+      self.parsed().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { Kind1111Parsed::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
   pub fn parsed_as_kind_10002_parsed(&self) -> Option<Kind10002Parsed<'a>> {
     if self.parsed_type() == ParsedData::Kind10002Parsed {
       self.parsed().map(|t| {
@@ -17970,6 +20278,9 @@ impl flatbuffers::Verifiable for ParsedEvent<'_> {
           ParsedData::Kind6Parsed => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Kind6Parsed>>("ParsedData::Kind6Parsed", pos),
           ParsedData::Kind7Parsed => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Kind7Parsed>>("ParsedData::Kind7Parsed", pos),
           ParsedData::Kind17Parsed => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Kind17Parsed>>("ParsedData::Kind17Parsed", pos),
+          ParsedData::Kind20Parsed => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Kind20Parsed>>("ParsedData::Kind20Parsed", pos),
+          ParsedData::Kind22Parsed => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Kind22Parsed>>("ParsedData::Kind22Parsed", pos),
+          ParsedData::Kind1111Parsed => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Kind1111Parsed>>("ParsedData::Kind1111Parsed", pos),
           ParsedData::Kind10002Parsed => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Kind10002Parsed>>("ParsedData::Kind10002Parsed", pos),
           ParsedData::Kind10019Parsed => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Kind10019Parsed>>("ParsedData::Kind10019Parsed", pos),
           ParsedData::Kind17375Parsed => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Kind17375Parsed>>("ParsedData::Kind17375Parsed", pos),
@@ -18131,6 +20442,27 @@ impl core::fmt::Debug for ParsedEvent<'_> {
         },
         ParsedData::Kind17Parsed => {
           if let Some(x) = self.parsed_as_kind_17_parsed() {
+            ds.field("parsed", &x)
+          } else {
+            ds.field("parsed", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        ParsedData::Kind20Parsed => {
+          if let Some(x) = self.parsed_as_kind_20_parsed() {
+            ds.field("parsed", &x)
+          } else {
+            ds.field("parsed", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        ParsedData::Kind22Parsed => {
+          if let Some(x) = self.parsed_as_kind_22_parsed() {
+            ds.field("parsed", &x)
+          } else {
+            ds.field("parsed", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        ParsedData::Kind1111Parsed => {
+          if let Some(x) = self.parsed_as_kind_1111_parsed() {
             ds.field("parsed", &x)
           } else {
             ds.field("parsed", &"InvalidFlatbuffer: Union discriminant does not match value.")

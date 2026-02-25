@@ -265,6 +265,26 @@ impl SubscriptionManager {
                             let max_total_npubs = config.max_total_npubs();
                             PipeType::NpubLimiter(NpubLimiterPipe::new(kind, limit_per_npub))
                         }
+                        fb::PipeConfig::MuteFilterPipeConfig => {
+                            let config = pipe_config.config_as_mute_filter_pipe_config().unwrap();
+                            
+                            let pubkeys: Vec<String> = config.pubkeys()
+                                .map(|v| v.iter().map(|s| s.to_string()).collect())
+                                .unwrap_or_default();
+                            let hashtags: Vec<String> = config.hashtags()
+                                .map(|v| v.iter().map(|s| s.to_string()).collect())
+                                .unwrap_or_default();
+                            let words: Vec<String> = config.words()
+                                .map(|v| v.iter().map(|s| s.to_string()).collect())
+                                .unwrap_or_default();
+                            let event_ids: Vec<String> = config.event_ids()
+                                .map(|v| v.iter().map(|s| s.to_string()).collect())
+                                .unwrap_or_default();
+                            
+                            PipeType::MuteFilter(MuteFilterPipe::new(MuteCriteria::new(
+                                pubkeys, hashtags, words, event_ids
+                            )))
+                        }
                         _ => {
                             return Err(NostrError::Other(format!(
                                 "Unknown pipe config type: {:?}",

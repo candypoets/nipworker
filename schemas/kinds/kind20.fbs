@@ -1,0 +1,28 @@
+include "../common.fbs";
+
+namespace nostr.fb;
+
+// Picture-first events (NIP-68)
+// Kind 20: Picture events for Instagram-like photo posts
+
+table ImetaTag {
+  url: string (required);
+  mime_type: string;           // "m" field (e.g., "image/jpeg")
+  dim: string;                 // Dimensions (e.g., "3024x4032")
+  alt: string;                 // Alt text for accessibility
+  blurhash: string;            // Blurhash for placeholder
+  hash: string;                // "x" field - image hash
+  fallback: [string];          // Fallback URLs
+  annotate_user: string;       // User annotation position
+}
+
+table Kind20Parsed {
+  title: string;               // "title" tag
+  description: string;         // .content (plaintext description)
+  images: [ImetaTag] (required); // One or more images (each in imeta tag)
+  content_warning: string;     // "content-warning" tag (if NSFW)
+  location: string;            // "location" tag (city, state, country)
+  geohash: string;             // "g" tag
+  hashtags: [string];          // "t" tags
+  mentions: [ProfilePointer];  // "p" tags (tagged users)
+}

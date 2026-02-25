@@ -24,6 +24,11 @@ const HEX_TABLE: string[] = (() => {
 	return t;
 })();
 
+// Convert Uint8Array to string using the browser's built-in decoder
+function byteArrayToString(bytes: Uint8Array): string {
+	return UTF8_DECODER.decode(bytes);
+}
+
 // lib/ByteString.ts
 export class ByteString {
 	private readonly view: Uint8Array;
@@ -69,22 +74,7 @@ export class ByteString {
 	 * No caching to allow proper GC of event data.
 	 */
 	utf8String(): string {
-		const v = this.view;
-
-		// ASCII fast path (quick OR-scan for any high bit)
-		let acc = 0;
-		for (let i = 0; i < v.length; i++) acc |= v[i];
-		if ((acc & 0x80) === 0) {
-			// All ASCII → decode via String.fromCharCode in chunks
-			let s = '';
-			const CHUNK = 0x8000; // 32k is safe for apply()
-			for (let i = 0; i < v.length; i += CHUNK) {
-				s += String.fromCharCode.apply(null, v.subarray(i, i + CHUNK) as unknown as number[]);
-			}
-			return s;
-		}
-
-		return UTF8_DECODER.decode(v);
+		return byteArrayToString(this.view);
 	}
 
 	/**

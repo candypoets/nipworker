@@ -380,7 +380,8 @@ export class NostrManager {
 			options.skipCache,
 			options.force,
 			options.bytesPerEvent,
-			options.isSlow
+			options.isSlow,
+			options.pagination ? this.textEncoder.encode(options.pagination) : null
 		);
 
 		const subscribeT = new SubscribeT(

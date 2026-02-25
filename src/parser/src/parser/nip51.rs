@@ -1,7 +1,7 @@
 use crate::parser::{Parser, ParserError, Result};
 use shared::{
     generated::nostr::*,
-    types::{network::Request, Event},
+    types::{network::Request, Event, nostr::Template},
 }; // brings `fb::...` into scope
 
 use tracing::warn;
@@ -184,6 +184,88 @@ impl Parser {
 
         // By default, do not schedule follow-up requests for list parsing.
         Ok((parsed, None))
+    }
+
+    /// Prepare (create) a NIP-51 list event, with optional encrypted private content.
+    ///
+    /// If the template contains an "encryption" tag (nip04 or nip44), the content
+    /// will be encrypted using the specified NIP and stored in the .content field.
+    /// The public tags remain unencrypted in the tags array.
+    ///
+    /// # Arguments
+    /// * `template` - The event template with:
+    ///   - `content`: Plaintext JSON array of private tags (e.g., '[["p","privkey"]]')
+    ///   - `tags`: Public tags + optional ["encryption", "nip44"] tag
+    ///
+    /// # Returns
+    /// A signed Event ready for publishing.
+    pub async fn prepare_nip51(&self, template: &Template) -> Result<Event> {
+        let kind = template.kind;
+        let kind_u32 = kind as u32;
+        let is_1000x = (10000..20000).contains(&kind_u32);
+        let is_3000x = (30000..40000).contains(&kind_u32);
+        let is_custom_followpack = kind_u32 == 39089;
+
+        if !is_1000x && !is_3000x && !is_custom_followpack {
+            return Err(ParserError::Other(
+                "event is not a NIP-51 list kind".to_string(),
+            ));
+        }
+
+        // Check for encryption tag
+        let encryption = tag_value(&template.tags, "encryption")
+            .map(|s| s.to_ascii_lowercase());
+
+        let (content, tags) = match encryption.as_deref() {
+            Some("nip04") | Some("nip-04") => {
+                // Get our own pubkey for self-encryption
+                let own_pubkey = self
+                    .crypto_client
+                    .get_public_key()
+                    .await
+                    .map_err(|e| ParserError::Crypto(format!("Failed to get pubkey: {}", e)))?;
+                // Encrypt content using NIP-04 (self-encrypt)
+                let encrypted = self
+                    .crypto_client
+                    .nip04_encrypt(&own_pubkey, &template.content)
+                    .await
+                    .map_err(|e| ParserError::Crypto(format!("NIP-04 encrypt error: {}", e)))?;
+                (encrypted, template.tags.clone())
+            }
+            Some("nip44") | Some("nip-44") => {
+                // Get our own pubkey for self-encryption
+                let own_pubkey = self
+                    .crypto_client
+                    .get_public_key()
+                    .await
+                    .map_err(|e| ParserError::Crypto(format!("Failed to get pubkey: {}", e)))?;
+                // Encrypt content using NIP-44 (self-encrypt)
+                let encrypted = self
+                    .crypto_client
+                    .nip44_encrypt(&own_pubkey, &template.content)
+                    .await
+                    .map_err(|e| ParserError::Crypto(format!("NIP-44 encrypt error: {}", e)))?;
+                (encrypted, template.tags.clone())
+            }
+            _ => {
+                // No encryption, pass through as-is
+                (template.content.clone(), template.tags.clone())
+            }
+        };
+
+        // Create new template with potentially encrypted content
+        let new_template = Template::new(kind, content, tags);
+        let template_json = new_template.to_json();
+
+        // Sign the event
+        let signed_event_json = self
+            .crypto_client
+            .sign_event(template_json)
+            .await
+            .map_err(|e| ParserError::Crypto(format!("Signer error: {}", e)))?;
+
+        let new_event = Event::from_json(&signed_event_json)?;
+        Ok(new_event)
     }
 }
 

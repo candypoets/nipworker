@@ -17,6 +17,9 @@ include "kinds/kind7376.fbs";
 include "kinds/kind9321.fbs";
 include "kinds/kind9735.fbs";
 include "kinds/kind30023.fbs";
+include "kinds/kind20.fbs";
+include "kinds/kind22.fbs";
+include "kinds/kind1111.fbs";
 include "kinds/list.fbs";
 include "kinds/pre_generic.fbs";
 
@@ -44,6 +47,9 @@ enum ParsedDataUnion : uint32 {
   Kind6Parsed = 6,
   Kind7Parsed = 7,
   Kind17Parsed = 17,
+  Kind20Parsed = 20,
+  Kind22Parsed = 22,
+  Kind1111Parsed = 1111,
   Kind10002Parsed = 10002,
   Kind10019Parsed = 10019,
   Kind17375Parsed = 17375,
@@ -67,6 +73,9 @@ union ParsedData {
   Kind6Parsed,
   Kind7Parsed,
   Kind17Parsed,
+  Kind20Parsed,
+  Kind22Parsed,
+  Kind1111Parsed,
   Kind10002Parsed,
   Kind10019Parsed,
   Kind17375Parsed,

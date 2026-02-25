@@ -42,6 +42,14 @@ table ProofVerificationPipeConfig {
   max_proofs: uint;           // Maximum number of proofs to track
 }
 
+// Configuration for MuteFilterPipe
+table MuteFilterPipeConfig {
+  pubkeys: [string];          // Hex pubkeys to mute
+  hashtags: [string];         // Lowercase hashtags to mute (matched against "t" tags)
+  words: [string];            // Lowercase words to mute (substring match in content)
+  event_ids: [string];        // Hex event IDs to mute
+}
+
 // Union of all pipe configurations
 union PipeConfig {
   ParsePipeConfig,
@@ -50,7 +58,8 @@ union PipeConfig {
   NpubLimiterPipeConfig,
   SaveToDbPipeConfig,
   SerializeEventsPipeConfig,
-  ProofVerificationPipeConfig
+  ProofVerificationPipeConfig,
+  MuteFilterPipeConfig
 }
 
 // Wrapper for a pipe in the pipeline
@@ -84,6 +93,9 @@ table SubscriptionConfig {
   force: bool = false;
   bytes_per_event: uint;
   is_slow: bool = false;
+  // If set, this subscription is a pagination of the given subscription ID.
+  // The pipeline state (including deduplication) will be cloned from the original subscription.
+  pagination: string;
 }
 
 table Subscribe {

@@ -467,7 +467,7 @@ impl NetworkManager {
 
         let parsed_requests: Vec<Request> = requests.iter().map(Request::from_flatbuffer).collect();
 
-        let pipeline = self
+        let mut pipeline = self
             .subscription_manager
             .process_subscription(
                 &subscription_id,
@@ -476,6 +476,27 @@ impl NetworkManager {
                 config,
             )
             .await?;
+
+        // If this is a pagination subscription, clone state from the parent
+        if let Some(parent_id) = config.pagination() {
+            if let Ok(guard) = self.subscriptions.read() {
+                if let Some(parent_sub) = guard.get(parent_id) {
+                    let parent_pipeline = parent_sub.pipeline.lock().await;
+                    pipeline.clone_state_from(&parent_pipeline);
+                    tracing::info!(
+                        "Cloned pipeline state from parent subscription '{}' to '{}'",
+                        parent_id,
+                        subscription_id
+                    );
+                } else {
+                    tracing::warn!(
+                        "Parent subscription '{}' not found for pagination subscription '{}'",
+                        parent_id,
+                        subscription_id
+                    );
+                }
+            }
+        }
 
         if let Ok(mut w) = self.subscriptions.write() {
             // Determine forced shard based on config.is_slow

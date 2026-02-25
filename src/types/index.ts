@@ -3,6 +3,8 @@ import {
 	CounterPipeConfigT,
 	KindFilterPipeConfig,
 	KindFilterPipeConfigT,
+	MuteFilterPipeConfig,
+	MuteFilterPipeConfigT,
 	NpubLimiterPipeConfig,
 	NpubLimiterPipeConfigT,
 	ParsePipeConfig,
@@ -60,4 +62,8 @@ export type SubscriptionConfig = {
 	force?: boolean;
 	bytesPerEvent?: number;
 	isSlow?: boolean;
+	/** If set, this subscription is a pagination of the given subscription ID.
+	 * The pipeline state (including deduplication) will be cloned from the original subscription.
+	 */
+	pagination?: string;
 };

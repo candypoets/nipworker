@@ -1,0 +1,33 @@
+include "../common.fbs";
+
+namespace nostr.fb;
+
+// Comments (NIP-22)
+// Kind 1111: Threaded comments on kind 20, 22, 30023, etc.
+// Uses uppercase tags (E, A, K, P) for root scope
+// Uses lowercase tags (e, a, k, p) for parent item
+
+table Kind1111Parsed {
+  content: string (required);  // .content (plaintext, no formatting)
+  parsed_content: [ContentBlock]; // Parsed content (mentions, URLs, hashtags, nostr: refs)
+  
+  // Root scope (uppercase tags)
+  root_id: string;             // "E" tag - root event id
+  root_coordinate: string;     // "A" tag - root event address (kind:pubkey:d)
+  root_external: string;       // "I" tag - external identifier (URL, etc.)
+  root_kind: ushort;           // "K" tag - root event kind
+  root_author: string;         // "P" tag - root event author
+  root_relays: [string];       // Relay hints for root
+  
+  // Parent scope (lowercase tags)
+  parent_id: string;           // "e" tag - parent event id
+  parent_coordinate: string;   // "a" tag - parent event address
+  parent_external: string;     // "i" tag - external identifier
+  parent_kind: ushort;         // "k" tag - parent event kind
+  parent_author: string;       // "p" tag - parent event author
+  parent_relays: [string];     // Relay hints for parent
+  
+  // Citations and mentions
+  citations: [EventPointer];   // "q" tags - cited events
+  mentions: [ProfilePointer];  // Additional "p" tags for mentions in content
+}

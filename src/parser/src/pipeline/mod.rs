@@ -435,4 +435,13 @@ impl Pipeline {
     pub fn subscription_id(&self) -> &str {
         &self.subscription_id
     }
+
+    /// Clone deduplication state from another pipeline.
+    /// This is used when creating a pagination subscription to inherit
+    /// the seen event IDs from the parent subscription.
+    pub fn clone_state_from(&self, other: &Pipeline) {
+        let other_seen = other.seen_ids.borrow();
+        let mut seen = self.seen_ids.borrow_mut();
+        seen.extend(other_seen.iter().cloned());
+    }
 }
