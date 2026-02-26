@@ -6,7 +6,7 @@ use shared::Port;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
-use tracing::{debug, info};
+use tracing::{debug, error, info};
 use wasm_bindgen::prelude::*;
 
 use futures_channel::mpsc;
@@ -34,7 +34,7 @@ pub struct Nip46Signer {
     discovered_remote_pubkey: Rc<RefCell<Option<String>>>,
 
     // Sub-modules
-    crypto: Crypto,
+    crypto: RefCell<Crypto>,
     transport: Transport,
     from_connections_rx: Rc<RefCell<Option<mpsc::Receiver<Vec<u8>>>>>,
     on_discovery: Rc<RefCell<Option<Rc<dyn Fn(String)>>>>,
@@ -49,8 +49,6 @@ impl Nip46Signer {
     ) -> Self {
         let client_keys = client_keys.unwrap_or_else(Keys::generate);
         let client_pubkey_hex = client_keys.public_key().to_hex();
-        // NIP-01 subscription IDs are often limited to 64 chars by relays.
-        // "n46:" (4) + 60 chars of pubkey = 64 chars.
         let sub_id = format!("n46:{}", &client_pubkey_hex[..60]);
 
         let crypto = Crypto::new(
@@ -65,7 +63,6 @@ impl Nip46Signer {
             cfg.app_name.clone(),
             client_keys.clone(),
         );
-
         Self {
             cfg,
             client_keys,
@@ -76,22 +73,34 @@ impl Nip46Signer {
             pending: Rc::new(RefCell::new(HashMap::new())),
             user_pubkey: Rc::new(RefCell::new(None)),
             discovered_remote_pubkey: Rc::new(RefCell::new(None)),
-            crypto,
+            crypto: RefCell::new(crypto),
             transport,
             from_connections_rx: Rc::new(RefCell::new(Some(from_connections_rx))),
             on_discovery: Rc::new(RefCell::new(None)),
         }
     }
+    
+    /// Get the client pubkey hex (for debug logging)
+    pub fn get_client_pubkey(&self) -> &str {
+        &self.client_pubkey_hex
+    }
+    
+    /// Get the subscription ID (for debug logging)
+    pub fn get_sub_id(&self) -> &str {
+        &self.sub_id
+    }
+    
+    /// Get the client secret key as hex string (for session storage)
+    pub fn get_client_secret(&self) -> Result<String, JsValue> {
+        let secret = self.client_keys.secret_key()
+            .map_err(|e| JsValue::from_str(&format!("Failed to get secret key: {}", e)))?;
+        Ok(hex::encode(secret.0))
+    }
 
     pub fn start(&self, on_discovery: Option<Rc<dyn Fn(String)>>) {
         *self.on_discovery.borrow_mut() = on_discovery;
-        self.transport
-            .open_req_subscription(&self.sub_id, Self::unix_time());
+        self.transport.open_req_subscription(&self.sub_id, Self::unix_time());
         self.spawn_pump_once();
-        info!(
-            "[nip46] started (sub_id={}, client={})",
-            self.sub_id, self.client_pubkey_hex
-        );
     }
 
     pub fn close(&self) {
@@ -99,7 +108,19 @@ impl Nip46Signer {
     }
 
     pub fn get_discovered_remote_pubkey(&self) -> Option<String> {
-        self.discovered_remote_pubkey.borrow().clone()
+        let pk = self.discovered_remote_pubkey.borrow().clone();
+        match &pk {
+            Some(p) => debug!("[nip46] Discovered remote pubkey: {}", p),
+            None => debug!("[nip46] No remote pubkey discovered yet"),
+        }
+        pk
+    }
+
+    /// Update the crypto module with the discovered remote signer pubkey
+    pub fn update_crypto_remote_pubkey(&self, pubkey: &str) {
+        info!("[nip46] Updating crypto remote pubkey: {}...", &pubkey[..16.min(pubkey.len())]);
+        self.crypto.borrow_mut().set_remote_signer_pubkey(pubkey.to_string());
+        info!("[nip46] Crypto remote pubkey updated successfully");
     }
 
     pub fn get_bunker_url(&self) -> Option<String> {
@@ -115,6 +136,7 @@ impl Nip46Signer {
         if let Some(secret) = &self.cfg.expected_secret {
             url.push_str(&format!("&secret={}", secret));
         }
+        debug!("[nip46] Generated bunker URL: {}", url);
         Some(url)
     }
 
@@ -234,19 +256,28 @@ impl Nip46Signer {
         params: Vec<String>,
         id: &str,
     ) -> Result<String, JsValue> {
+        info!("[nip46] rpc_call: method={}, id={}", method, id);
+        
         let payload = json!({
             "id": id,
             "method": method,
             "params": params,
         })
         .to_string();
+        debug!("[nip46] rpc_call: payload={}", payload);
 
-        let encrypted = self.crypto.encrypt_for_remote(&payload)?;
+        info!("[nip46] rpc_call: encrypting payload");
+        let encrypted = self.crypto.borrow().encrypt_for_remote(&payload)?;
+        debug!("[nip46] rpc_call: encrypted length={}", encrypted.len());
 
         let remote_pubkey =
             if let Some(discovered) = self.discovered_remote_pubkey.borrow().as_ref() {
+                info!("[nip46] rpc_call: using discovered remote pubkey: {}", discovered);
                 discovered.clone()
             } else {
+                info!("[nip46] rpc_call: using configured remote pubkey: {}", 
+                      if self.cfg.remote_signer_pubkey.is_empty() { "(empty, QR mode)".to_string() } 
+                      else { self.cfg.remote_signer_pubkey.clone() });
                 self.cfg.remote_signer_pubkey.clone()
             };
 
@@ -269,8 +300,8 @@ impl Nip46Signer {
                 }
             }
 
-            let now = Self::unix_time_ms();
-            if (now - start) > timeout_ms as f64 {
+            let elapsed = Self::unix_time_ms() - start;
+            if elapsed > timeout_ms as f64 {
                 return Err(JsValue::from_str("nip46 timeout waiting for response"));
             }
 
@@ -285,9 +316,7 @@ impl Nip46Signer {
         }
         self.pump_started.set(true);
 
-        // Take the receiver from the Option
-        let rx = self.from_connections_rx.borrow_mut().take();
-        if let Some(from_connections_rx) = rx {
+        if let Some(from_connections_rx) = self.from_connections_rx.borrow_mut().take() {
             Pump::spawn(
                 from_connections_rx,
                 self.sub_id.clone(),
@@ -301,7 +330,7 @@ impl Nip46Signer {
                 self.on_discovery.clone(),
             );
         } else {
-            debug!("[nip46] pump already spawned (receiver already taken)");
+            error!("[nip46] Pump receiver already taken");
         }
     }
 

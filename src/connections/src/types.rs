@@ -20,6 +20,21 @@ pub enum ConnectionStatus {
     Closed,
 }
 
+/// Authentication state for NIP-42 relay authentication
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AuthState {
+    /// Just connected, waiting to know if auth is required
+    Unknown,
+    /// AUTH challenge received, waiting for signed response from crypto
+    Required { challenge: String },
+    /// AUTH sent to relay, waiting for OK
+    Pending,
+    /// Authenticated (or relay doesn't require auth)
+    Authenticated,
+    /// Connection failed, auth not possible
+    Failed,
+}
+
 impl ConnectionStatus {
     pub fn is_connected(&self) -> bool {
         matches!(self, ConnectionStatus::Connected)

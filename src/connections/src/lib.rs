@@ -5,6 +5,7 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 use web_sys::MessagePort;
 
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use futures::channel::mpsc;
@@ -53,7 +54,10 @@ impl WSRust {
 
         // Wrap the to_parser and to_crypto ports for sending
         let to_parser_port = Port::new(to_parser);
-        let _to_crypto_port = Port::new(to_crypto); // Used for sending NIP-46 responses to crypto
+        let to_crypto_port = Rc::new(RefCell::new(Port::new(to_crypto))); // Used for auth signing requests and NIP-46
+
+        // Clone for the writer closure
+        let to_crypto_for_writer = to_crypto_port.clone();
 
         // Wire status writer - sends status updates via MessagePort to main thread
         let to_main_for_status = to_main.clone();
@@ -63,22 +67,21 @@ impl WSRust {
                 "status": status,
                 "url": url
             });
-            let _ = to_main_for_status.post_message(&wasm_bindgen::JsValue::from_str(&msg.to_string()));
+            let _ =
+                to_main_for_status.post_message(&wasm_bindgen::JsValue::from_str(&msg.to_string()));
         });
 
-        // Create the writer closure that sends through the to_parser port
+        // Create the writer closure that routes messages based on sub_id
+        // NIP-46 messages (sub_id starting with "n46:") go to crypto worker
+        // All other messages go to parser worker
         let writer = Rc::new(move |url: &str, sub_id: &str, raw: &str| {
-            // Build a WorkerMessage FlatBuffer and send its bytes through the port
+            // Build a WorkerMessage FlatBuffer and send its bytes through the appropriate port
             let mut fbb = flatbuffers::FlatBufferBuilder::new();
             let wm = build_worker_message(&mut fbb, sub_id, url, raw);
             fbb.finish(wm, None);
             let bytes = fbb.finished_data();
 
-            if !bytes.is_empty() {
-                if let Err(e) = to_parser_port.send(bytes) {
-                    warn!("Failed to send message through to_parser port: {:?}", e);
-                }
-            } else {
+            if bytes.is_empty() {
                 // Failure log (error handling)
                 let raw_sub_id = if let Ok(parsed) = serde_json::from_str::<Value>(raw) {
                     if let Value::Array(arr) = parsed {
@@ -93,11 +96,32 @@ impl WSRust {
                     "Failed to serialize envelope for caller_sub_id='{}': raw_sub_id={:?}, raw='{}' (len={})",
                     sub_id, raw_sub_id, raw, raw.len()
                 );
+                return;
+            }
+
+            // Route NIP-46 messages to crypto worker, others to parser
+            let is_nip46 = sub_id.starts_with("n46:");
+            let result = if is_nip46 {
+                info!(
+                    "[connections] Routing NIP-46 message (sub_id={}) to crypto worker",
+                    sub_id
+                );
+                to_crypto_for_writer.borrow().send(bytes)
+            } else {
+                to_parser_port.send(bytes)
+            };
+
+            if let Err(e) = result {
+                warn!(
+                    "[connections] Failed to send message to {} port: {:?}",
+                    if is_nip46 { "crypto" } else { "parser" },
+                    e
+                );
             }
         });
 
         // Build registry and wire writer
-        let registry = ConnectionRegistry::new(writer, status_writer);
+        let registry = ConnectionRegistry::new(writer, status_writer, to_crypto_port);
 
         let connections = WSRust { registry };
 
@@ -134,7 +158,7 @@ impl WSRust {
                     }
                     bytes_opt = from_crypto_rx.next().fuse() => {
                         if bytes_opt.is_some() {
-                            info!("[connections] Received message from crypto port (NIP-46)");
+                            info!("[connections] Received message from crypto port (NIP-46 or Auth)");
                         } else {
                             info!("[connections] Crypto channel closed");
                         }
@@ -148,6 +172,7 @@ impl WSRust {
                     None => break,
                 };
 
+                // Try to parse as Envelope (from cache)
                 if let Ok(env) = serde_json::from_slice::<Envelope>(&bytes) {
                     if !env.relays.is_empty() && !env.frames.is_empty() {
                         info!(
@@ -163,9 +188,45 @@ impl WSRust {
                     } else {
                         warn!("[connections] Envelope has no relays or frames");
                     }
-                } else {
-                    warn!("[connections] Failed to parse Envelope from ring bytes");
+                    continue;
                 }
+
+                // Try to parse as SignerResponse (from crypto for AuthEvent)
+                if let Ok(signer_resp) =
+                    flatbuffers::root::<shared::generated::nostr::fb::SignerResponse>(&bytes)
+                {
+                    let rid = signer_resp.request_id();
+                    info!(
+                        "[connections] Parsed SignerResponse from crypto: request_id={}",
+                        rid
+                    );
+                    // Check if this is an AuthEvent response (high bit set)
+                    if rid >= 0x8000_0000_0000_0000 {
+                        info!("[connections][AUTH] Response detected (request_id={})", rid);
+                        if let Some(result) = signer_resp.result() {
+                            info!("[connections][AUTH] Has result (len={}), calling handle_auth_response", result.len());
+                            info!(
+                                "[connections][AUTH] Result preview: {}",
+                                &result[..result.len().min(200)]
+                            );
+                            reg.handle_auth_response(result);
+                            info!("[connections][AUTH] handle_auth_response returned");
+                        } else if let Some(err) = signer_resp.error() {
+                            error!("[connections][AUTH] Signing failed: {}", err);
+                        } else {
+                            error!("[connections][AUTH] Response has neither result nor error");
+                        }
+                    } else {
+                        // Other signer responses - log but don't process here
+                        info!(
+                            "[connections] Received non-auth SignerResponse (request_id={})",
+                            rid
+                        );
+                    }
+                    continue;
+                }
+
+                warn!("[connections] Failed to parse message from bytes");
             }
 
             info!("[connections] Message processing loop ended");

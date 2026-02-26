@@ -107,7 +107,7 @@ impl NostrClient {
         from_crypto: MessagePort,
         to_main: MessagePort,
     ) -> Self {
-        telemetry::init(tracing::Level::ERROR);
+        telemetry::init(tracing::Level::WARN);
 
         info!("Initializing NostrClient with MessageChannel...");
 

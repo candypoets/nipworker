@@ -5,14 +5,16 @@ pub mod subscription;
 use crate::crypto_client::CryptoClient;
 use crate::parser::Parser;
 use crate::pipeline::Pipeline;
-use crate::utils::batch_buffer::{add_message_to_batch, create_batch_buffer, flush_all_batches, flush_batch, init_global_batch_manager, remove_batch_buffer};
+use crate::utils::batch_buffer::{
+    add_message_to_batch, create_batch_buffer, flush_all_batches, flush_batch,
+    init_global_batch_manager, remove_batch_buffer,
+};
 use crate::utils::buffer::{serialize_connection_status, serialize_eoce};
 use crate::utils::js_interop::post_worker_message;
 use crate::NostrError;
 use flatbuffers::FlatBufferBuilder;
 use futures::channel::mpsc;
 use futures::lock::Mutex;
-use web_sys::MessagePort;
 use rustc_hash::FxHashMap;
 use shared::generated::nostr::fb::{self};
 use shared::types::network::Request;
@@ -24,6 +26,7 @@ use std::sync::{Arc, RwLock};
 use tracing::{info, info_span, warn, Span};
 use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::spawn_local;
+use web_sys::MessagePort;
 
 type Result<T> = std::result::Result<T, NostrError>;
 
@@ -159,11 +162,7 @@ impl NetworkManager {
                 warn!("Sub not found for {}", sid);
                 return;
             };
-            (
-                Arc::clone(&sub.pipeline),
-                sub.publish_id.clone(),
-                sub.eosed,
-            )
+            (Arc::clone(&sub.pipeline), sub.publish_id.clone(), sub.eosed)
         };
 
         match wm.type_() {
@@ -183,7 +182,7 @@ impl NetworkManager {
                         );
                     }
                     "AUTH" => {
-                        info!("Auth needed on relay {:?}", url);
+                        warn!("Auth needed on relay {:?}", url);
                     }
                     "CLOSED" => {
                         info!("Sub closed {}, on relay {:?}", sid, url);
@@ -204,8 +203,11 @@ impl NetworkManager {
                     "OK" => {
                         // OK: forward to UI, and notify any publish waiter
                         let msg = cs.message().unwrap_or("");
-                        info!("[network] OK status received: sid={}, url={}, msg={}", sid, url, msg);
-                        
+                        info!(
+                            "[network] OK status received: sid={}, url={}, msg={}",
+                            sid, url, msg
+                        );
+
                         // For publishes, translate event.id to publish_id so main thread can find it
                         let batch_sub_id = if let Some(ref pid) = publish_id {
                             info!("[network] translating event.id {} to publish_id {} for main thread", sid, pid);
@@ -213,13 +215,16 @@ impl NetworkManager {
                         } else {
                             sid
                         };
-                        
+
                         // Send via batch buffer for MessageChannel delivery
                         let status_bytes = serialize_connection_status(url, msg, "");
                         add_message_to_batch(batch_sub_id, &status_bytes);
                         // OK needs low latency - flush immediately
                         flush_batch(batch_sub_id);
-                        info!("[network] OK status flushed to batch for batch_sub_id={}", batch_sub_id);
+                        info!(
+                            "[network] OK status flushed to batch for batch_sub_id={}",
+                            batch_sub_id
+                        );
                     }
                     other => {
                         warn!("Unexpected ConnectionStatus '{}' for sub {}", other, sid);
@@ -328,7 +333,8 @@ impl NetworkManager {
         // Create shard channels + workers
         let mut shard_senders = Vec::with_capacity(NUM_SHARDS);
         for shard_idx in 0..NUM_SHARDS {
-            let (tx, mut rx) = mpsc::channel::<(std::sync::Arc<Vec<u8>>, ShardSource, tracing::Span)>(SHARD_CAP);
+            let (tx, mut rx) =
+                mpsc::channel::<(std::sync::Arc<Vec<u8>>, ShardSource, tracing::Span)>(SHARD_CAP);
             let subs_clone = subs.clone();
 
             spawn_local(async move {
@@ -618,7 +624,7 @@ impl NetworkManager {
                 Sub {
                     pipeline: Arc::new(Mutex::new(Pipeline::new(vec![], "".to_string()).unwrap())),
                     eosed: false,
-                    publish_id: Some(publish_id.clone()),  // Store publish_id for translation
+                    publish_id: Some(publish_id.clone()), // Store publish_id for translation
                     forced_shard: None,
                 },
             );
@@ -632,7 +638,10 @@ impl NetworkManager {
         // Create batch buffer using publish_id (main thread looks up by publish_id)
         // OK responses come with event.id, but we translate to publish_id before sending to main
         create_batch_buffer(&publish_id);
-        info!("[network] created batch buffer for publish_id: {}, event_id: {}", publish_id, event_id);
+        info!(
+            "[network] created batch buffer for publish_id: {}, event_id: {}",
+            publish_id, event_id
+        );
 
         {
             let mut builder = FlatBufferBuilder::new();

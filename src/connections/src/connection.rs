@@ -12,11 +12,14 @@
 //! - Synchronous, non-blocking enqueue via bounded channel (cap: 50). `send_raw` never awaits network.
 //! - Incoming messages are written to ring buffer via `out_writer`. Status changes via `status_writer`.
 
-use crate::types::{ConnectionStats, ConnectionStatus, RelayConfig, RelayError};
+use crate::types::{AuthState, ConnectionStats, ConnectionStatus, RelayConfig, RelayError};
 use crate::utils::{extract_first_three, validate_relay_url};
 
 use futures::channel::mpsc::{self, Receiver, Sender};
 use futures::future::{AbortHandle, Abortable};
+use serde_json::json;
+use shared::Port;
+use std::cell::RefCell;
 use futures::lock::Mutex;
 use futures::stream::{SplitSink, SplitStream};
 use futures::{SinkExt, StreamExt};
@@ -51,6 +54,15 @@ pub struct RelayConnection {
 
     out_writer: OutWriter,
     status_writer: StatusWriter,
+
+    // NIP-42 authentication state
+    auth_state: Arc<RwLock<AuthState>>,
+    // Frames queued before auth state is known (Unknown) or during auth handshake (Required)
+    pre_auth_queue: Arc<RwLock<Vec<String>>>,
+    // Port to send signing requests to crypto worker
+    to_crypto: Rc<RefCell<Port>>,
+    // Counter for generating unique auth request IDs
+    next_auth_id: Arc<RwLock<u64>>,
 }
 
 impl RelayConnection {
@@ -59,6 +71,7 @@ impl RelayConnection {
         config: RelayConfig,
         out_writer: OutWriter,
         status_writer: StatusWriter,
+        to_crypto: Rc<RefCell<Port>>,
     ) -> Arc<Self> {
         // Create the queue immediately so send_raw can enqueue even before connection.
         let (tx, rx) = mpsc::channel::<String>(50);
@@ -78,6 +91,10 @@ impl RelayConnection {
             read_abort: Arc::new(RwLock::new(None)),
             out_writer,
             status_writer,
+            auth_state: Arc::new(RwLock::new(AuthState::Unknown)),
+            pre_auth_queue: Arc::new(RwLock::new(Vec::new())),
+            to_crypto,
+            next_auth_id: Arc::new(RwLock::new(1)),
         });
 
         // Connect immediately
@@ -105,6 +122,7 @@ impl RelayConnection {
 
     // Spawn the reader task for this connection. Non-async: it only spawns and returns.
     fn spawn_reader(self: &Arc<Self>, mut ws_stream: SplitStream<WebSocket>) {
+        let conn = Arc::clone(self);
         let status = self.status.clone();
         let ws_sink = self.ws_sink.clone();
         let url = self.url.clone();
@@ -123,6 +141,10 @@ impl RelayConnection {
                                     .map(|s| s.trim_matches('"').to_string())
                                     .unwrap_or_default();
                                 let content = parts[2].unwrap_or("");
+
+                                // Handle NIP-42 authentication state machine on first response
+                                conn.handle_first_response(kind, content).await;
+
                                 let raw = match kind {
                                     "EVENT" => format!(r#"["EVENT","{}",{}]"#, sub_id, content),
                                     "EOSE" => format!(r#"["EOSE","{}"]"#, sub_id),
@@ -166,6 +188,17 @@ impl RelayConnection {
                             let mut sink_guard = ws_sink.lock().await;
                             *sink_guard = None;
                         }
+                        // Clear pre-auth queue on connection failure to prevent memory leak
+                        {
+                            let queue = std::mem::take(&mut *conn.pre_auth_queue.write().unwrap());
+                            tracing::info!(relay = %conn.url, cleared_frames = queue.len(), "[AUTH] Connection failed, cleared pre-auth queue");
+                        }
+                        // Set auth state to Failed so new frames won't be queued
+                        *conn.auth_state.write().unwrap() = AuthState::Failed;
+                        // Set retry delay for 60 seconds to prevent reconnection storm
+                        let retry_at = js_sys::Date::now() as u64 + 60_000;
+                        *conn.next_retry_at_ms.write().unwrap() = retry_at;
+                        tracing::info!(relay = %conn.url, retry_at, "[connections] Connection failed, delaying retry by 60s");
                         (status_writer)("failed", &url);
                         break;
                     }
@@ -330,8 +363,50 @@ impl RelayConnection {
 
     // Public API: enqueue a frame (sync, non-blocking).
     // No readiness logic here; the drainer enforces connection state and reconnection.
+    // For NIP-42 auth: frames sent before auth is resolved are queued optimistically.
     pub fn send_raw(self: &Arc<Self>, text: &str) -> Result<(), RelayError> {
+        // Check auth state
+        let (should_queue, state_debug) = {
+            let state = self.auth_state.read().unwrap();
+            // Only queue if we're in Unknown or Required state
+            // Don't queue if Failed (connection dead) or Authenticated/Pending (will send normally)
+            let should = matches!(*state, AuthState::Unknown | AuthState::Required { .. });
+            let debug = format!("{:?}", *state);
+            (should, debug)
+        };
+
+        // If connection failed, check if we should retry
+        if matches!(*self.auth_state.read().unwrap(), AuthState::Failed) {
+            let now = js_sys::Date::now() as u64;
+            let retry_at = *self.next_retry_at_ms.read().unwrap();
+            if now < retry_at {
+                let remaining = (retry_at - now) / 1000;
+                tracing::debug!(relay = %self.url, remaining_secs = remaining, "[connections][AUTH] Connection failed, retry delayed");
+                return Err(RelayError::ConnectionClosed);
+            } else {
+                // Retry delay expired, allow retry
+                tracing::info!(relay = %self.url, "[connections][AUTH] Retry delay expired, allowing new attempt");
+                // Reset state to allow reconnection
+                *self.auth_state.write().unwrap() = AuthState::Unknown;
+                *self.next_retry_at_ms.write().unwrap() = 0;
+            }
+        }
+
+        if should_queue {
+            // Queue frame for later (after auth is resolved)
+            let queue_len = {
+                let mut queue = self.pre_auth_queue.write().unwrap();
+                queue.push(text.to_owned());
+                queue.len()
+            };
+            tracing::info!(relay = %self.url, state = state_debug, queue_len, frame_len = text.len(), "[connections][AUTH] Frame queued for auth");
+        } else {
+            tracing::debug!(relay = %self.url, state = state_debug, frame_len = text.len(), "[connections][AUTH] Frame not queued (auth resolved)");
+        }
+
+        // Always try to send optimistically
         if let Some(tx) = self.queue_tx.read().unwrap().as_ref() {
+            tracing::debug!(relay = %self.url, frame_len = text.len(), "Sending frame to queue");
             tx.clone().try_send(text.to_owned()).map_err(|e| {
                 if e.is_full() {
                     RelayError::QueueFull
@@ -340,6 +415,7 @@ impl RelayConnection {
                 }
             })
         } else {
+            tracing::error!(relay = %self.url, "No queue sender available");
             Err(RelayError::ConnectionClosed)
         }
     }
@@ -473,9 +549,200 @@ impl RelayConnection {
             let mut st = self.status.write().unwrap();
             *st = ConnectionStatus::Closed;
         }
+        
+        // Clear pre-auth queue on close to prevent memory leak
+        {
+            let queue = std::mem::take(&mut *self.pre_auth_queue.write().unwrap());
+            if !queue.is_empty() {
+                tracing::info!(relay = %self.url, cleared_frames = queue.len(), "[connections][AUTH] Connection closed, cleared pre-auth queue");
+            }
+        }
+        // Set auth state to Failed
+        *self.auth_state.write().unwrap() = AuthState::Failed;
+        
         (self.status_writer)("close", &self.url);
 
         Ok(())
+    }
+
+    // ------------------------------------------------------------------
+    // NIP-42 Authentication handling
+    // ------------------------------------------------------------------
+
+    /// Handle the first response from relay to determine auth requirements
+    async fn handle_first_response(self: &Arc<Self>, kind: &str, content: &str) {
+        tracing::debug!(relay = %self.url, kind, "handle_first_response called");
+        
+        // Only process if we're in Unknown state
+        let is_unknown = {
+            let state = self.auth_state.read().unwrap();
+            let unknown = matches!(*state, AuthState::Unknown);
+            tracing::debug!(relay = %self.url, state = ?*state, is_unknown = unknown, "checking auth state");
+            unknown
+        };
+
+        if !is_unknown {
+            // Already know auth state, check for OK after Pending
+            let is_pending = {
+                let state = self.auth_state.read().unwrap();
+                matches!(*state, AuthState::Pending)
+            };
+            tracing::debug!(relay = %self.url, is_pending, "checking if pending");
+            if is_pending && kind == "OK" {
+                // Check if this is an OK for our AUTH
+                let accepted = content.contains("true") || !content.contains("auth-required");
+                tracing::info!(relay = %self.url, accepted, content, "[connections][AUTH] OK response received");
+                if accepted {
+                    tracing::info!(relay = %self.url, "[connections][AUTH] Accepted by relay");
+                    self.set_authenticated().await;
+                } else {
+                    tracing::warn!(relay = %self.url, "[connections][AUTH] Rejected by relay: {}", content);
+                }
+            }
+            return;
+        }
+
+        // First response - determine auth state
+        tracing::info!(relay = %self.url, kind, "[connections][AUTH] First relay response - determining auth requirements");
+        match kind {
+            "AUTH" => {
+                // Extract challenge from AUTH response
+                let challenge = content.trim_matches('"').to_string();
+                tracing::info!(relay = %self.url, challenge, "[connections][AUTH] REQUIRED - challenge received");
+
+                // Set state to Required
+                *self.auth_state.write().unwrap() = AuthState::Required {
+                    challenge: challenge.clone(),
+                };
+                tracing::debug!(relay = %self.url, "[connections][AUTH] State set to Required");
+
+                // Request signature from crypto
+                self.request_auth_signature(challenge).await;
+            }
+            _ => {
+                // Any other response means auth is not required
+                tracing::info!(relay = %self.url, kind, "[connections][AUTH] NOT REQUIRED - relay responds with {}", kind);
+                self.set_authenticated().await;
+            }
+        }
+    }
+
+    /// Send signing request to crypto worker for kind 22242 event
+    async fn request_auth_signature(self: &Arc<Self>, challenge: String) {
+        let request_id = {
+            let mut id = self.next_auth_id.write().unwrap();
+            let current = *id;
+            *id += 1;
+            current | 0x8000_0000_0000_0000 // Mark as auth request
+        };
+
+        let created_at = js_sys::Date::now() as u64;
+
+        let payload = json!({
+            "challenge": challenge,
+            "relay": self.url,
+            "created_at": created_at
+        })
+        .to_string();
+
+        tracing::info!(relay = %self.url, request_id, payload, "[connections][AUTH] Building SignerRequest for crypto");
+
+        // Build FlatBuffers SignerRequest
+        let mut fbb = flatbuffers::FlatBufferBuilder::new();
+        let payload_off = Some(fbb.create_string(&payload));
+
+        let req = shared::generated::nostr::fb::SignerRequest::create(
+            &mut fbb,
+            &shared::generated::nostr::fb::SignerRequestArgs {
+                request_id,
+                op: shared::generated::nostr::fb::SignerOp::AuthEvent,
+                payload: payload_off,
+                pubkey: None,
+                sender_pubkey: None,
+                recipient_pubkey: None,
+            },
+        );
+        fbb.finish(req, None);
+
+        tracing::info!(relay = %self.url, request_id, bytes = fbb.finished_data().len(), "[connections][AUTH] Sending request to crypto port");
+
+        if let Err(e) = self.to_crypto.borrow().send(fbb.finished_data()) {
+            tracing::error!(relay = %self.url, "Failed to send auth request to crypto: {:?}", e);
+        } else {
+            tracing::info!(relay = %self.url, request_id, "[connections][AUTH] Request sent to crypto successfully");
+        }
+    }
+
+    /// Handle signed auth event response from crypto
+    pub async fn handle_signed_auth(self: &Arc<Self>, signed_event_json: &str) {
+        tracing::info!(relay = %self.url, event_len = signed_event_json.len(), "[connections][AUTH] Received signed event from crypto");
+        tracing::debug!(relay = %self.url, event = signed_event_json, "[connections][AUTH] Signed event content");
+
+        // Send AUTH to relay
+        let auth_frame = format!(r#"["AUTH",{}]"#, signed_event_json);
+        tracing::info!(relay = %self.url, frame = auth_frame, "[connections][AUTH] Sending frame to relay");
+
+        // Send directly (bypass queue since this is internal)
+        if let Some(tx) = self.queue_tx.read().unwrap().as_ref() {
+            match tx.clone().try_send(auth_frame) {
+                Ok(_) => tracing::info!(relay = %self.url, "[connections][AUTH] Frame queued for relay"),
+                Err(e) => tracing::error!(relay = %self.url, "Failed to queue AUTH frame: {:?}", e),
+            }
+        } else {
+            tracing::error!(relay = %self.url, "No queue sender available for AUTH frame");
+        }
+
+        // Set state to Pending (waiting for OK)
+        let old_state = std::mem::replace(&mut *self.auth_state.write().unwrap(), AuthState::Pending);
+        tracing::info!(relay = %self.url, ?old_state, "[connections][AUTH] State changed to Pending (waiting for relay OK)");
+    }
+
+    /// Set authenticated state and drain pre-auth queue
+    async fn set_authenticated(self: &Arc<Self>) {
+        let old_state = {
+            let mut state = self.auth_state.write().unwrap();
+            let old = std::mem::replace(&mut *state, AuthState::Authenticated);
+            old
+        };
+
+        tracing::info!(relay = %self.url, ?old_state, "[connections][AUTH] set_authenticated called");
+
+        if matches!(old_state, AuthState::Unknown) {
+            // Relay doesn't require auth, just clear the queue (frames already sent optimistically)
+            let queue = std::mem::take(&mut *self.pre_auth_queue.write().unwrap());
+            tracing::info!(relay = %self.url, queued_frames = queue.len(), "[connections][AUTH] NOT REQUIRED - cleared pre-auth queue (frames were sent optimistically)");
+        } else if matches!(old_state, AuthState::Pending) {
+            // Auth completed successfully, drain queue
+            let queue = std::mem::take(&mut *self.pre_auth_queue.write().unwrap());
+            tracing::info!(relay = %self.url, queued_frames = queue.len(), "[connections][AUTH] COMPLETED - re-sending queued frames");
+
+            // Re-send queued frames (they may have been dropped by relay before auth)
+            let mut resent = 0;
+            for frame in queue {
+                tracing::debug!(relay = %self.url, frame_len = frame.len(), "[connections][AUTH] Re-sending queued frame");
+                if let Some(tx) = self.queue_tx.read().unwrap().as_ref() {
+                    match tx.clone().try_send(frame) {
+                        Ok(_) => resent += 1,
+                        Err(e) => tracing::error!(relay = %self.url, "Failed to re-send queued frame: {:?}", e),
+                    }
+                }
+            }
+            tracing::info!(relay = %self.url, resent, "[connections][AUTH] Finished re-sending queued frames");
+        } else {
+            tracing::info!(relay = %self.url, ?old_state, "[connections][AUTH] State transition to Authenticated from {:?}", old_state);
+        }
+        
+        tracing::info!(relay = %self.url, "[connections][AUTH] Relay is now AUTHENTICATED");
+    }
+
+    /// Public API to receive signed auth from connections main loop
+    pub fn process_signed_auth(self: &Arc<Self>, signed_event_json: &str) {
+        tracing::info!(relay = %self.url, "[connections][AUTH] process_signed_auth called from main loop");
+        let conn = Arc::clone(self);
+        let event = signed_event_json.to_string();
+        spawn_local(async move {
+            conn.handle_signed_auth(&event).await;
+        });
     }
 }
 

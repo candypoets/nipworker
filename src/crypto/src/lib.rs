@@ -2,9 +2,7 @@
 #![allow(clippy::should_implement_trait)]
 #![allow(dead_code)]
 
-use shared::{
-    init_with_component, types::Keys, utils::crypto::verify_proof_dleq_string, Port,
-};
+use shared::{init_with_component, types::Keys, utils::crypto::verify_proof_dleq_string, Port};
 use tracing::{error, info, warn};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
@@ -65,6 +63,7 @@ pub struct Crypto {
 
     // Crypto <-> Connections ports for NIP-46
     to_connections: Rc<RefCell<Port>>,
+    from_connections: MessagePort, // Stored for NIP-46 signer initialization
 
     // Simple runtime state
     active: Rc<RefCell<ActiveSigner>>,
@@ -96,10 +95,12 @@ impl Crypto {
         from_connections: MessagePort,
         to_parser: MessagePort,
     ) -> Result<Crypto, JsValue> {
-        init_with_component(tracing::Level::ERROR, "crypto");
+        init_with_component(tracing::Level::INFO, "crypto");
 
         // Create receivers from MessagePorts
         let from_parser_rx = Port::from_receiver(from_parser);
+        // Clone from_connections before moving it into Port::from_receiver
+        let from_connections_clone = from_connections.clone();
         let from_connections_rx = Port::from_receiver(from_connections);
 
         // Wrap sender ports
@@ -112,6 +113,7 @@ impl Crypto {
         let crypto = Crypto {
             to_parser: to_parser_port.clone(),
             to_connections: to_connections_port.clone(),
+            from_connections: from_connections_clone,
             active: Rc::new(RefCell::new(ActiveSigner::Unset)),
         };
 
@@ -124,14 +126,30 @@ impl Crypto {
     // Direct methods (bypass SAB)
     // --------------------------
 
+    /// Helper to send signer_ready event to main thread (static for use in closures)
+    /// Includes all info needed to reconstruct the session for future reloads
+    fn send_signer_ready(signer_type: &str, pubkey: &str, bunker_url: Option<&str>) {
+        info!("[crypto] Signer ready: {} - {}", signer_type, &pubkey[..16.min(pubkey.len())]);
+        let msg = js_sys::Object::new();
+        let _ = js_sys::Reflect::set(&msg, &"type".into(), &"signer_ready".into());
+        let _ = js_sys::Reflect::set(&msg, &"signer_type".into(), &signer_type.into());
+        let _ = js_sys::Reflect::set(&msg, &"pubkey".into(), &pubkey.into());
+        if let Some(url) = bunker_url {
+            let _ = js_sys::Reflect::set(&msg, &"bunker_url".into(), &url.into());
+        }
+        post_message(&msg.into());
+    }
+
     /// Set a private key signer (hex or nsec). For now we don't perform validation here.
     #[wasm_bindgen(js_name = "setPrivateKey")]
     pub fn set_private_key(&self, secret: String) -> Result<(), JsValue> {
         info!("[crypto] setting private key");
         let pk = PrivateKeySigner::new(&secret)
             .map_err(|e| js_err(&format!("failed to create private key signer: {e}")))?;
+        let pk_hex = pk.get_public_key().map_err(|e| js_err(&e.to_string()))?;
         *self.active.borrow_mut() = ActiveSigner::Pk(Rc::new(pk));
-        info!("[crypto] active signer = PrivateKey");
+        info!("[crypto] active signer = PrivateKey, auto-sending pubkey");
+        Self::send_signer_ready("privkey", &pk_hex, None);
         Ok(())
     }
 
@@ -139,7 +157,17 @@ impl Crypto {
     #[wasm_bindgen(js_name = "setNip07")]
     pub fn set_nip07(&self) {
         *self.active.borrow_mut() = ActiveSigner::Nip07(Rc::new(Nip07Signer::new()));
-        info!("[crypto] active signer = NIP-07");
+        info!("[crypto] active signer = NIP-07, fetching pubkey...");
+        // NIP-07 needs async fetch - get a copy of the active signer first
+        let signer = match &*self.active.borrow() {
+            ActiveSigner::Nip07(s) => s.clone(),
+            _ => return,
+        };
+        spawn_local(async move {
+            if let Ok(pk) = signer.get_public_key().await {
+                Self::send_signer_ready("nip07", &pk, None);
+            }
+        });
     }
 
     /// Clear the active signer (logout).
@@ -157,15 +185,13 @@ impl Crypto {
         &self,
         bunker_url: String,
         client_secret: Option<String>,
-        from_connections: MessagePort,
     ) -> Result<(), JsValue> {
+        // Clone the stored from_connections port for the NIP-46 signer
+        let from_connections = self.from_connections.clone();
+        info!("[nip46] Bunker mode: connecting to {}", &bunker_url[..50.min(bunker_url.len())]);
+
         // Parse the bunker URL to extract remote pubkey and relays
         let parsed = Self::parse_bunker_url(&bunker_url)?;
-
-        info!(
-            "[crypto] setting NIP-46 signer with remote_pubkey: {}, relays: {:?}",
-            parsed.remote_pubkey, parsed.relays
-        );
 
         let cfg = Nip46Config {
             remote_signer_pubkey: parsed.remote_pubkey,
@@ -175,30 +201,24 @@ impl Crypto {
             expected_secret: parsed.secret, // Optional secret for single-use connection
         };
 
-        let client_keys = if let Some(s) = client_secret {
-            Some(Keys::parse(&s).map_err(|e| js_err(&e.to_string()))?)
-        } else {
-            None
-        };
+        let client_keys = client_secret.map(|s| {
+            Keys::parse(&s).map_err(|e| js_err(&e.to_string()))
+        }).transpose()?;
 
-        // Create receiver from the MessagePort
         let from_connections_rx = Port::from_receiver(from_connections);
-
-        // Create NIP-46 signer with MessageChannel ports
         let nip46 = Rc::new(Nip46Signer::new(
             cfg,
             self.to_connections.clone(),
             from_connections_rx,
             client_keys,
         ));
+        
         let signer_weak = Rc::downgrade(&self.active);
         nip46.start(Some(Rc::new(move |_| {
             if let Some(active_rc) = signer_weak.upgrade() {
                 if let ActiveSigner::Nip46(ref n46) = *active_rc.borrow() {
                     if let Some(url) = n46.get_bunker_url() {
-                        // We need a way to call notify_discovery from here.
-                        // Since we don't have &self, we can't call it directly.
-                        // But we can use the global post_message.
+                        info!("[nip46] QR -> Bunker: {}", &url[..60.min(url.len())]);
                         let msg = js_sys::Object::new();
                         let _ =
                             js_sys::Reflect::set(&msg, &"type".into(), &"bunker_discovered".into());
@@ -210,17 +230,23 @@ impl Crypto {
         })));
         *self.active.borrow_mut() = ActiveSigner::Nip46(nip46.clone());
 
-        // Auto-connect for bunker flow
+        // Store bunker URL for signer_ready event
+        let bunker_url_for_ready = bunker_url.clone();
+        
+        // Auto-connect for bunker flow and fetch pubkey
         spawn_local(async move {
-            info!("[nip46] Auto-connecting to bunker...");
-            if let Err(e) = nip46.connect().await {
-                error!("[nip46] Auto-connect failed: {:?}", e);
-            } else {
-                info!("[nip46] Auto-connect successful");
+            match nip46.connect().await {
+                Ok(_) => {
+                    match nip46.get_public_key().await {
+                        Ok(pk) => {
+                            Self::send_signer_ready("nip46", &pk, Some(&bunker_url_for_ready));
+                        }
+                        Err(e) => error!("[nip46] Failed to fetch pubkey: {:?}", e),
+                    }
+                }
+                Err(e) => error!("[nip46] Bunker connect failed: {:?}", e),
             }
         });
-
-        info!("[crypto] active signer = NIP-46 (Bunker mode)");
         Ok(())
     }
 
@@ -231,15 +257,19 @@ impl Crypto {
         &self,
         nostrconnect_url: String,
         client_secret: Option<String>,
-        from_connections: MessagePort,
     ) -> Result<(), JsValue> {
+        // Auto-detect if a bunker URL was passed instead of nostrconnect
+        if nostrconnect_url.starts_with("bunker://") {
+            info!("[nip46] Auto-detected bunker URL, switching to bunker mode");
+            return self.set_nip46_bunker(nostrconnect_url, client_secret);
+        }
+
+        // Clone the stored from_connections port for the NIP-46 signer
+        let from_connections = self.from_connections.clone();
+        info!("[nip46] QR mode: waiting for signer...");
+
         // Parse the nostrconnect URL
         let parsed = Self::parse_nostrconnect_url(&nostrconnect_url)?;
-
-        info!(
-            "[crypto] setting NIP-46 signer via QR code (client_pubkey: {})",
-            parsed.client_pubkey
-        );
 
         let cfg = Nip46Config {
             remote_signer_pubkey: String::new(), // Will be discovered
@@ -249,49 +279,41 @@ impl Crypto {
             expected_secret: Some(parsed.secret), // Required for validation
         };
 
-        let client_keys = if let Some(s) = client_secret {
-            Some(Keys::parse(&s).map_err(|e| js_err(&e.to_string()))?)
-        } else {
-            None
-        };
+        let client_keys = client_secret.map(|s| {
+            Keys::parse(&s).map_err(|e| js_err(&e.to_string()))
+        }).transpose()?;
 
-        // Create receiver from the MessagePort
         let from_connections_rx = Port::from_receiver(from_connections);
-
-        // Create NIP-46 signer with MessageChannel ports
         let nip46 = Rc::new(Nip46Signer::new(
             cfg,
             self.to_connections.clone(),
             from_connections_rx,
             client_keys,
         ));
+
         let signer_weak = Rc::downgrade(&self.active);
-        nip46.start(Some(Rc::new(move |_| {
+        let nip46_for_callback = nip46.clone();
+        nip46.start(Some(Rc::new(move |discovered_pk: String| {
+            info!("[nip46] Signer discovered: {}...", &discovered_pk[..16.min(discovered_pk.len())]);
             if let Some(active_rc) = signer_weak.upgrade() {
                 if let ActiveSigner::Nip46(ref n46) = *active_rc.borrow() {
-                    if let Some(url) = n46.get_bunker_url() {
-                        let msg = js_sys::Object::new();
-                        let _ =
-                            js_sys::Reflect::set(&msg, &"type".into(), &"bunker_discovered".into());
-                        let _ = js_sys::Reflect::set(&msg, &"bunker_url".into(), &url.into());
-                        post_message(&msg.into());
+                    if let Some(bunker_url) = n46.get_bunker_url() {
+                        // Update crypto with discovered remote pubkey and fetch user pubkey
+                        nip46_for_callback.update_crypto_remote_pubkey(&discovered_pk);
+                        let n46_clone = nip46_for_callback.clone();
+                        spawn_local(async move {
+                            match n46_clone.get_public_key().await {
+                                Ok(pk) => {
+                                    Self::send_signer_ready("nip46", &pk, Some(&bunker_url));
+                                }
+                                Err(e) => error!("[nip46] Failed to fetch pubkey: {:?}", e),
+                            }
+                        });
                     }
                 }
             }
         })));
         *self.active.borrow_mut() = ActiveSigner::Nip46(nip46.clone());
-
-        // Auto-connect for bunker flow
-        spawn_local(async move {
-            info!("[nip46] Auto-connecting to bunker...");
-            if let Err(e) = nip46.connect().await {
-                error!("[nip46] Auto-connect failed: {:?}", e);
-            } else {
-                info!("[nip46] Auto-connect successful");
-            }
-        });
-
-        info!("[crypto] active signer = NIP-46 (QR code discovery mode)");
         Ok(())
     }
 
@@ -467,6 +489,17 @@ impl Crypto {
         }
     }
 
+    /// Auto-fetch and send pubkey to main thread after successful connection
+    fn send_pubkey_response(&self, pk: String) {
+        info!("[crypto] Auto-sending pubkey to main thread: {}", &pk[..16.min(pk.len())]);
+        let msg = js_sys::Object::new();
+        let _ = js_sys::Reflect::set(&msg, &"type".into(), &"response".into());
+        let _ = js_sys::Reflect::set(&msg, &"op".into(), &"get_pubkey".into());
+        let _ = js_sys::Reflect::set(&msg, &"ok".into(), &true.into());
+        let _ = js_sys::Reflect::set(&msg, &"result".into(), &pk.into());
+        post_message(&msg.into());
+    }
+
     /// Direct path: sign event template (JSON object string). Returns signed event (JSON string).
     #[wasm_bindgen(js_name = "signEvent")]
     pub async fn sign_event_direct(&self, tmpl: String) -> Result<JsValue, JsValue> {
@@ -518,6 +551,7 @@ impl Crypto {
         _to_main: Port, // UNUSED - see TODO above
     ) {
         let to_parser = self.to_parser.clone();
+        let to_connections = self.to_connections.clone();
         let active = self.active.clone();
 
         spawn_local(async move {
@@ -580,6 +614,9 @@ impl Crypto {
                     == shared::generated::nostr::fb::SignerOp::VerifyProof
                 {
                     verify_proof_and_return_y_point(payload)
+                } else if op == shared::generated::nostr::fb::SignerOp::AuthEvent {
+                    // AuthEvent: sign a kind 22242 authentication event for NIP-42
+                    handle_auth_event(&active.borrow(), payload).await
                 } else {
                     // Clone the active signer before async operations to avoid borrow conflicts
                     let active_signer = active.borrow().clone();
@@ -684,55 +721,126 @@ impl Crypto {
                             }
                             _ => Err("Unsupported operation".to_string()),
                         },
-                        ActiveSigner::Nip46(s) => match op {
-                            shared::generated::nostr::fb::SignerOp::GetPubkey => {
-                                s.get_public_key().await.map_err(|e| format!("{:?}", e))
-                            }
-                            shared::generated::nostr::fb::SignerOp::SignEvent => {
-                                match s.sign_event(payload).await {
-                                    Ok(signed) => Ok(serde_json::to_string(&signed)
-                                        .unwrap_or_else(|_| "{}".to_string())),
-                                    Err(e) => Err(format!("{:?}", e)),
+                        ActiveSigner::Nip46(s) => {
+                            info!("[nip46] Service loop handling NIP-46 operation: {:?}", op);
+                            match op {
+                                shared::generated::nostr::fb::SignerOp::GetPubkey => {
+                                    info!("[nip46] Getting public key from remote signer");
+                                    let result = s.get_public_key().await;
+                                    match &result {
+                                        Ok(pk) => info!("[nip46] Got public key: {}", pk),
+                                        Err(e) => {
+                                            error!("[nip46] Failed to get public key: {:?}", e)
+                                        }
+                                    }
+                                    result.map_err(|e| format!("{:?}", e))
+                                }
+                                shared::generated::nostr::fb::SignerOp::SignEvent => {
+                                    info!("[nip46] Signing event via remote signer");
+                                    match s.sign_event(payload).await {
+                                        Ok(signed) => {
+                                            info!("[nip46] Event signed successfully");
+                                            Ok(serde_json::to_string(&signed)
+                                                .unwrap_or_else(|_| "{}".to_string()))
+                                        }
+                                        Err(e) => {
+                                            error!("[nip46] Failed to sign event: {:?}", e);
+                                            Err(format!("{:?}", e))
+                                        }
+                                    }
+                                }
+                                shared::generated::nostr::fb::SignerOp::Nip04Encrypt => {
+                                    info!("[nip46] NIP-04 encrypt via remote signer");
+                                    match s.nip04_encrypt(peer, payload).await {
+                                        Ok(out) => {
+                                            info!("[nip46] NIP-04 encrypt successful");
+                                            Ok(out)
+                                        }
+                                        Err(e) => {
+                                            error!("[nip46] NIP-04 encrypt failed: {:?}", e);
+                                            Err(format!("{:?}", e))
+                                        }
+                                    }
+                                }
+                                shared::generated::nostr::fb::SignerOp::Nip04Decrypt => {
+                                    info!("[nip46] NIP-04 decrypt via remote signer");
+                                    match s.nip04_decrypt(peer, payload).await {
+                                        Ok(out) => {
+                                            info!("[nip46] NIP-04 decrypt successful");
+                                            Ok(out)
+                                        }
+                                        Err(e) => {
+                                            error!("[nip46] NIP-04 decrypt failed: {:?}", e);
+                                            Err(format!("{:?}", e))
+                                        }
+                                    }
+                                }
+                                shared::generated::nostr::fb::SignerOp::Nip44Encrypt => {
+                                    info!("[nip46] NIP-44 encrypt via remote signer");
+                                    match s.nip44_encrypt(peer, payload).await {
+                                        Ok(out) => {
+                                            info!("[nip46] NIP-44 encrypt successful");
+                                            Ok(out)
+                                        }
+                                        Err(e) => {
+                                            error!("[nip46] NIP-44 encrypt failed: {:?}", e);
+                                            Err(format!("{:?}", e))
+                                        }
+                                    }
+                                }
+                                shared::generated::nostr::fb::SignerOp::Nip44Decrypt => {
+                                    info!("[nip46] NIP-44 decrypt via remote signer");
+                                    match s.nip44_decrypt(peer, payload).await {
+                                        Ok(out) => {
+                                            info!("[nip46] NIP-44 decrypt successful");
+                                            Ok(out)
+                                        }
+                                        Err(e) => {
+                                            error!("[nip46] NIP-44 decrypt failed: {:?}", e);
+                                            Err(format!("{:?}", e))
+                                        }
+                                    }
+                                }
+                                shared::generated::nostr::fb::SignerOp::Nip04DecryptBetween => {
+                                    info!("[nip46] NIP-04 decrypt between via remote signer");
+                                    match s.nip04_decrypt_between(sender, recipient, payload).await
+                                    {
+                                        Ok(out) => {
+                                            info!("[nip46] NIP-04 decrypt between successful");
+                                            Ok(out)
+                                        }
+                                        Err(e) => {
+                                            error!(
+                                                "[nip46] NIP-04 decrypt between failed: {:?}",
+                                                e
+                                            );
+                                            Err(format!("{:?}", e))
+                                        }
+                                    }
+                                }
+                                shared::generated::nostr::fb::SignerOp::Nip44DecryptBetween => {
+                                    info!("[nip46] NIP-44 decrypt between via remote signer");
+                                    match s.nip44_decrypt_between(sender, recipient, payload).await
+                                    {
+                                        Ok(out) => {
+                                            info!("[nip46] NIP-44 decrypt between successful");
+                                            Ok(out)
+                                        }
+                                        Err(e) => {
+                                            error!(
+                                                "[nip46] NIP-44 decrypt between failed: {:?}",
+                                                e
+                                            );
+                                            Err(format!("{:?}", e))
+                                        }
+                                    }
+                                }
+                                _ => {
+                                    warn!("[nip46] Unsupported operation requested");
+                                    Err("Unsupported operation".to_string())
                                 }
                             }
-                            shared::generated::nostr::fb::SignerOp::Nip04Encrypt => {
-                                match s.nip04_encrypt(peer, payload).await {
-                                    Ok(out) => Ok(out),
-                                    Err(e) => Err(format!("{:?}", e)),
-                                }
-                            }
-                            shared::generated::nostr::fb::SignerOp::Nip04Decrypt => {
-                                match s.nip04_decrypt(peer, payload).await {
-                                    Ok(out) => Ok(out),
-                                    Err(e) => Err(format!("{:?}", e)),
-                                }
-                            }
-                            shared::generated::nostr::fb::SignerOp::Nip44Encrypt => {
-                                match s.nip44_encrypt(peer, payload).await {
-                                    Ok(out) => Ok(out),
-                                    Err(e) => Err(format!("{:?}", e)),
-                                }
-                            }
-                            shared::generated::nostr::fb::SignerOp::Nip44Decrypt => {
-                                match s.nip44_decrypt(peer, payload).await {
-                                    Ok(out) => Ok(out),
-                                    Err(e) => Err(format!("{:?}", e)),
-                                }
-                            }
-                            shared::generated::nostr::fb::SignerOp::Nip04DecryptBetween => {
-                                match s.nip04_decrypt_between(sender, recipient, payload).await {
-                                    Ok(out) => Ok(out),
-                                    Err(e) => Err(format!("{:?}", e)),
-                                }
-                            }
-                            shared::generated::nostr::fb::SignerOp::Nip44DecryptBetween => {
-                                match s.nip44_decrypt_between(sender, recipient, payload).await {
-                                    Ok(out) => Ok(out),
-                                    Err(e) => Err(format!("{:?}", e)),
-                                }
-                            }
-                            _ => Err("Unsupported operation".to_string()),
-                        },
+                        }
                     }
                 };
 
@@ -753,12 +861,14 @@ impl Crypto {
                 fbb.finish(resp, None);
                 let out = fbb.finished_data();
 
-                // Send response through to_parser port
-                if let Err(e) = to_parser.borrow().send(out) {
-                    warn!(
-                        "[crypto] failed to send SignerResponse through to_parser port: {:?}",
-                        e
-                    );
+                // Send response: AuthEvent responses go to connections, others to parser
+                let send_result = if op == shared::generated::nostr::fb::SignerOp::AuthEvent {
+                    to_connections.borrow().send(out)
+                } else {
+                    to_parser.borrow().send(out)
+                };
+                if let Err(e) = send_result {
+                    warn!("[crypto] failed to send SignerResponse: {:?}", e);
                 }
             }
 
@@ -786,6 +896,94 @@ fn verify_proof_and_return_y_point(payload: &str) -> Result<String, String> {
         // DLEQ invalid - return empty string
         Ok(String::new())
     }
+}
+
+/// Handle AuthEvent operation: sign a kind 22242 authentication event for NIP-42
+/// Payload JSON: {"challenge": "...", "relay": "wss://...", "created_at": 1234567890}
+/// Returns JSON: {"event": "<signed_event_json>", "relay": "wss://..."}
+async fn handle_auth_event(signer: &ActiveSigner, payload: &str) -> Result<String, String> {
+    use serde_json::json;
+
+    tracing::info!(payload, "handle_auth_event called");
+
+    // Parse payload
+    let auth_req: serde_json::Value =
+        serde_json::from_str(payload).map_err(|e| format!("invalid auth request: {}", e))?;
+
+    let challenge = auth_req["challenge"].as_str().ok_or("missing challenge")?;
+    let relay_url = auth_req["relay"].as_str().ok_or("missing relay")?;
+    let created_at = auth_req["created_at"]
+        .as_u64()
+        .unwrap_or_else(|| js_sys::Date::now() as u64);
+
+    tracing::info!(
+        relay = relay_url,
+        challenge,
+        created_at,
+        "Building kind 22242 AUTH event"
+    );
+
+    // Build kind 22242 event template for NIP-42
+    let template = json!({
+        "kind": 22242,
+        "created_at": created_at,
+        "tags": [
+            ["relay", relay_url],
+            ["challenge", challenge]
+        ],
+        "content": ""
+    });
+
+    tracing::debug!(template = template.to_string(), "Event template");
+
+    // Sign the event
+    tracing::info!(signer_type = ?std::mem::discriminant(signer), "Signing with active signer");
+    let signed_event = match signer {
+        ActiveSigner::Unset => {
+            tracing::error!("No signer configured for AuthEvent");
+            return Err("no signer configured".into());
+        }
+        ActiveSigner::Pk(pk) => {
+            tracing::info!("Signing AuthEvent with PrivateKey signer");
+            pk.sign_event(&template.to_string())
+                .await
+                .map_err(|e| e.to_string())?
+        }
+        ActiveSigner::Nip07(nip07) => {
+            tracing::info!("Signing AuthEvent with NIP-07 signer");
+            let signed = nip07
+                .sign_event(&template.to_string())
+                .await
+                .map_err(|e| format!("{:?}", e))?;
+            serde_json::to_string(&signed).map_err(|e| e.to_string())?
+        }
+        ActiveSigner::Nip46(nip46) => {
+            tracing::info!("Signing AuthEvent with NIP-46 signer");
+            let signed = nip46
+                .sign_event(&template.to_string())
+                .await
+                .map_err(|e| format!("{:?}", e))?;
+            serde_json::to_string(&signed).map_err(|e| e.to_string())?
+        }
+    };
+
+    tracing::info!(event_len = signed_event.len(), "Event signed successfully");
+    tracing::debug!(event = signed_event, "Signed event content");
+
+    // Return signed event with relay URL for routing
+    let result = json!({
+        "event": signed_event,
+        "relay": relay_url
+    });
+
+    let result_str = result.to_string();
+    tracing::info!(
+        relay = relay_url,
+        result_len = result_str.len(),
+        "AuthEvent result ready"
+    );
+
+    Ok(result_str)
 }
 
 // ----------------------

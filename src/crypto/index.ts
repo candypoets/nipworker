@@ -107,7 +107,7 @@ self.addEventListener('message', async (evt: MessageEvent<any>) => {
 						const clientSecret = m?.payload?.clientSecret;
 						c.setNip46Bunker(bunkerUrl, clientSecret);
 					} catch (e: any) {
-						console.error('Error setting NIP-46 with bunker URL:', e);
+						console.error('[nip46] Error setting NIP-46 with bunker URL:', e);
 						(self as any).postMessage({
 							id: m.id,
 							type: 'response',
@@ -124,7 +124,7 @@ self.addEventListener('message', async (evt: MessageEvent<any>) => {
 						const clientSecret = m?.payload?.clientSecret;
 						c.setNip46QR(nostrconnectUrl, clientSecret);
 					} catch (e: any) {
-						console.error('Error setting NIP-46 with QR code:', e);
+						console.error('[nip46] Error setting NIP-46 with QR code:', e);
 						(self as any).postMessage({
 							id: m.id,
 							type: 'response',

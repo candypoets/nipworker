@@ -12,5 +12,6 @@ export enum SignerOp {
   Nip44Decrypt = 5,
   Nip04DecryptBetween = 6,
   Nip44DecryptBetween = 7,
-  VerifyProof = 8
+  VerifyProof = 8,
+  AuthEvent = 9
 }

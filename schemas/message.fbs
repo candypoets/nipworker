@@ -189,7 +189,8 @@ enum SignerOp : uint32 {
   // The signer will fetch its own pubkey and choose the correct peer.
   Nip04DecryptBetween = 6,
   Nip44DecryptBetween = 7,
-  VerifyProof = 8
+  VerifyProof = 8,
+  AuthEvent = 9
 }
 
 table SignerRequest {

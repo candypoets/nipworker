@@ -200,18 +200,6 @@ export class NostrManager {
 		// Listen on crypto_main.port2 for control responses
 		crypto_main.port2.onmessage = (event) => {
 			const msg = event.data;
-			if (msg?.type === 'bunker_discovered') {
-				const { bunker_url } = msg;
-				if (this.activePubkey && this._pendingSession && this._pendingSession.type === 'nip46_qr') {
-					const clientSecret = this._pendingSession.payload.clientSecret;
-					this.saveSession(this.activePubkey!, 'nip46_bunker', {
-						url: bunker_url,
-						clientSecret
-					});
-				}
-				return;
-			}
-
 			if (msg.type === 'response') {
 				this.handleCryptoResponse(msg);
 			}
@@ -231,17 +219,26 @@ export class NostrManager {
 
 	private handleCryptoResponse(msg: any) {
 		if (msg.op === 'get_pubkey') {
+			console.log('[main] get_pubkey:', msg.ok ? 'success' : 'failed', msg.result);
 			if (msg.ok) {
 				this.activePubkey = msg.result;
-				if (this._pendingSession) {
+				// Check if bunker was discovered (QR flow) - convert to bunker format
+				if (this._discoveredBunkerUrl && this._pendingSession?.type === 'nip46_qr') {
+					console.log('[main] Converting QR to bunker for pubkey:', this.activePubkey);
+					this.saveSession(this.activePubkey!, 'nip46_bunker', {
+						url: this._discoveredBunkerUrl,
+						clientSecret: this._pendingSession.payload.clientSecret
+					});
+					this._pendingSession = null;
+					this._discoveredBunkerUrl = null;
+				} else if (this._pendingSession) {
+					// Normal session save
 					this.saveSession(
 						this.activePubkey!,
 						this._pendingSession.type,
 						this._pendingSession.payload
 					);
 					this._pendingSession = null;
-				} else {
-					console.log('[main] no pending session to save');
 				}
 			}
 			this.dispatch('auth', this.activePubkey);
@@ -269,6 +266,29 @@ export class NostrManager {
 		// (these require main thread access to window.nostr)
 		this.crypto.onmessage = async (event) => {
 			const msg = event.data;
+
+			// Handle signer ready event (ALL signers send this when connected and ready)
+			// Contains all info needed to reconstruct session: pubkey, signer_type, bunker_url (for nip46)
+			if (msg?.type === 'signer_ready') {
+				console.log('[main] signer_ready:', msg.signer_type, msg.pubkey);
+				this.activePubkey = msg.pubkey;
+				
+				// For NIP-46, use the bunker_url from the message (covers both QR and bunker flows)
+				if (msg.signer_type === 'nip46' && msg.bunker_url && this._pendingSession) {
+					console.log('[main] NIP-46 session saved for:', msg.pubkey);
+					this.saveSession(msg.pubkey, 'nip46', {
+						url: msg.bunker_url,
+						clientSecret: this._pendingSession.payload.clientSecret
+					});
+					this._pendingSession = null;
+				} else if (this._pendingSession) {
+					// Normal session save (privkey, nip07)
+					this.saveSession(msg.pubkey, msg.signer_type, this._pendingSession.payload);
+					this._pendingSession = null;
+				}
+				this.dispatch('auth', msg.pubkey);
+				return;
+			}
 
 			// Handle control responses (get_pubkey, sign_event, etc.)
 			if (msg?.type === 'response') {
@@ -465,6 +485,10 @@ export class NostrManager {
 	}
 
 	setSigner(name: string, payload?: string | { url: string; clientSecret: string }): void {
+		// Store pending session - crypto crate will send pubkey after successful connection
+		this._pendingSession = { type: name, payload };
+		console.log('[main] set pending session:', name);
+
 		switch (name) {
 			case 'privkey':
 				this.crypto.postMessage({ type: 'set_private_key', payload });
@@ -472,20 +496,18 @@ export class NostrManager {
 			case 'nip07':
 				this.crypto.postMessage({ type: 'set_nip07' });
 				break;
-			case 'nip46_bunker':
-				this.crypto.postMessage({ type: 'set_nip46_bunker', payload });
-				break;
-			case 'nip46_qr':
-				this.crypto.postMessage({ type: 'set_nip46_qr', payload });
+			case 'nip46':
+				// Auto-detect bunker vs QR based on URL format
+				if (payload?.url?.startsWith('bunker://')) {
+					this.crypto.postMessage({ type: 'set_nip46_bunker', payload });
+				} else if (payload?.url?.startsWith('nostrconnect://')) {
+					this.crypto.postMessage({ type: 'set_nip46_qr', payload });
+				} else {
+					console.error('[main] Unknown NIP-46 URL format:', payload?.url);
+				}
 				break;
 		}
-
-		// Trigger pubkey discovery to validate and save session
-		if (name === 'privkey' || name === 'nip07' || name === 'nip46_bunker' || name === 'nip46_qr') {
-			this._pendingSession = { type: name, payload };
-			console.log('[main] set pending session:', name);
-			this.crypto.postMessage({ type: 'get_pubkey' });
-		}
+		// Note: crypto crate will automatically send pubkey after successful connection
 	}
 
 	signEvent(event: EventTemplate, cb: (event: NostrEvent) => void) {
@@ -502,15 +524,26 @@ export class NostrManager {
 		this.parser.postMessage({ serializedMessage: uint8Array }, [uint8Array.buffer]);
 	}
 
-	setNip46Bunker(bunkerUrl: string): void {
-		this.setSigner('nip46_bunker', bunkerUrl);
+	/**
+	 * Generate a cryptographically secure random client secret for NIP-46
+	 * Returns a hex-encoded 32-byte private key
+	 */
+	private generateClientSecret(): string {
+		const array = new Uint8Array(32);
+		crypto.getRandomValues(array);
+		return Array.from(array, (b) => b.toString(16).padStart(2, '0')).join('');
+	}
+
+	setNip46Bunker(bunkerUrl: string, clientSecret?: string): void {
+		const secret = clientSecret || this.generateClientSecret();
+		console.log('[main] NIP-46 bunker:', bunkerUrl.slice(0, 50) + '...');
+		this.setSigner('nip46', { url: bunkerUrl, clientSecret: secret });
 	}
 
 	setNip46QR(nostrconnectUrl: string, clientSecret?: string): void {
-		this.setSigner(
-			'nip46_qr',
-			clientSecret ? { url: nostrconnectUrl, clientSecret } : nostrconnectUrl
-		);
+		const secret = clientSecret || this.generateClientSecret();
+		console.log('[main] NIP-46 QR:', nostrconnectUrl.slice(0, 50) + '...');
+		this.setSigner('nip46', { url: nostrconnectUrl, clientSecret: secret });
 	}
 
 	setNip07(): void {
@@ -543,10 +576,12 @@ export class NostrManager {
 	}
 
 	private saveSession(pubkey: string, type: string, payload: any) {
+		console.log('[main] saveSession:', { pubkey: pubkey.slice(0, 16) + '...', type, hasClientSecret: !!payload.clientSecret });
 		const accounts = this.getAccounts();
 		accounts[pubkey] = { type, payload };
 		localStorage.setItem('nostr_signer_accounts', JSON.stringify(accounts));
 		localStorage.setItem('nostr_active_pubkey', pubkey);
+		console.log('[main] Session saved to localStorage');
 	}
 
 	private restoreSession() {
