@@ -6,6 +6,7 @@ import { ByteString } from "src/lib/ByteString";
 import * as flatbuffers from 'flatbuffers';
 
 import { NostrEvent, NostrEventT } from '../../nostr/fb/nostr-event.js';
+import { ParsedEvent, ParsedEventT } from '../../nostr/fb/parsed-event.js';
 import { Request, RequestT } from '../../nostr/fb/request.js';
 
 
@@ -49,20 +50,25 @@ event(obj?:NostrEvent):NostrEvent|null {
   return offset ? (obj || new NostrEvent()).__init(this.bb!.__indirect(this.bb_pos + offset), this.bb!) : null;
 }
 
+parsedEvent(obj?:ParsedEvent):ParsedEvent|null {
+  const offset = this.bb!.__offset(this.bb_pos, 10);
+  return offset ? (obj || new ParsedEvent()).__init(this.bb!.__indirect(this.bb_pos + offset), this.bb!) : null;
+}
+
 relays(index: number): ByteString
 relays(index: number,optionalEncoding:flatbuffers.Encoding): ByteString|Uint8Array
 relays(index: number,optionalEncoding?:any): ByteString|Uint8Array|null {
-  const offset = this.bb!.__offset(this.bb_pos, 10);
+  const offset = this.bb!.__offset(this.bb_pos, 12);
   return offset ? this.bb!.__stringByteString(this.bb!.__vector(this.bb_pos + offset) + index * 4, optionalEncoding) : null;
 }
 
 relaysLength():number {
-  const offset = this.bb!.__offset(this.bb_pos, 10);
+  const offset = this.bb!.__offset(this.bb_pos, 12);
   return offset ? this.bb!.__vector_len(this.bb_pos + offset) : 0;
 }
 
 static startCacheRequest(builder:flatbuffers.Builder) {
-  builder.startObject(4);
+  builder.startObject(5);
 }
 
 static addSubId(builder:flatbuffers.Builder, subIdOffset:flatbuffers.Offset) {
@@ -89,8 +95,12 @@ static addEvent(builder:flatbuffers.Builder, eventOffset:flatbuffers.Offset) {
   builder.addFieldOffset(2, eventOffset, 0);
 }
 
+static addParsedEvent(builder:flatbuffers.Builder, parsedEventOffset:flatbuffers.Offset) {
+  builder.addFieldOffset(3, parsedEventOffset, 0);
+}
+
 static addRelays(builder:flatbuffers.Builder, relaysOffset:flatbuffers.Offset) {
-  builder.addFieldOffset(3, relaysOffset, 0);
+  builder.addFieldOffset(4, relaysOffset, 0);
 }
 
 static createRelaysVector(builder:flatbuffers.Builder, data:flatbuffers.Offset[]):flatbuffers.Offset {
@@ -117,6 +127,7 @@ unpack(): CacheRequestT {
     this.subId(),
     this.bb!.createObjList<Request, RequestT>(this.requests.bind(this), this.requestsLength()),
     (this.event() !== null ? this.event()!.unpack() : null),
+    (this.parsedEvent() !== null ? this.parsedEvent()!.unpack() : null),
     this.bb!.createScalarList<string>(this.relays.bind(this), this.relaysLength())
   );
 }
@@ -126,6 +137,7 @@ unpackTo(_o: CacheRequestT): void {
   _o.subId = this.subId();
   _o.requests = this.bb!.createObjList<Request, RequestT>(this.requests.bind(this), this.requestsLength());
   _o.event = (this.event() !== null ? this.event()!.unpack() : null);
+  _o.parsedEvent = (this.parsedEvent() !== null ? this.parsedEvent()!.unpack() : null);
   _o.relays = this.bb!.createScalarList<string>(this.relays.bind(this), this.relaysLength());
 }
 }
@@ -135,6 +147,7 @@ constructor(
   public subId: ByteString|Uint8Array|null = null,
   public requests: (RequestT)[] = [],
   public event: NostrEventT|null = null,
+  public parsedEvent: ParsedEventT|null = null,
   public relays: (string)[] = []
 ){}
 
@@ -143,12 +156,14 @@ pack(builder:flatbuffers.Builder): flatbuffers.Offset {
   const subId = (this.subId !== null ? builder.createString(this.subId!) : 0);
   const requests = CacheRequest.createRequestsVector(builder, builder.createObjectOffsetList(this.requests));
   const event = (this.event !== null ? this.event!.pack(builder) : 0);
+  const parsedEvent = (this.parsedEvent !== null ? this.parsedEvent!.pack(builder) : 0);
   const relays = CacheRequest.createRelaysVector(builder, builder.createObjectOffsetList(this.relays));
 
   CacheRequest.startCacheRequest(builder);
   CacheRequest.addSubId(builder, subId);
   CacheRequest.addRequests(builder, requests);
   CacheRequest.addEvent(builder, event);
+  CacheRequest.addParsedEvent(builder, parsedEvent);
   CacheRequest.addRelays(builder, relays);
 
   return CacheRequest.endCacheRequest(builder);

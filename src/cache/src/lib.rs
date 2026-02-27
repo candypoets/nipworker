@@ -53,7 +53,7 @@ impl Caching {
         from_parser: MessagePort,
         to_connections: MessagePort,
     ) -> Self {
-        init_with_component(tracing::Level::ERROR, "CACHE");
+        init_with_component(tracing::Level::INFO, "CACHE");
 
         info!("instanciating cache");
 
@@ -156,26 +156,114 @@ impl Caching {
         to_parser: &Rc<RefCell<Port>>,
         bytes: &[u8],
     ) {
+        info!("Cache received {} bytes", bytes.len());
+
+        // Try WorkerMessage first (new format for saves)
+        // Note: FlatBuffers is permissive, so we must validate content_type strictly
+        if let Ok(worker_msg) = flatbuffers::root::<fb::WorkerMessage>(bytes) {
+            match worker_msg.content_type() {
+                fb::Message::ParsedEvent | fb::Message::NostrEvent => {
+                    // Valid WorkerMessage with event content - store bytes directly!
+                    info!("Detected WorkerMessage (event), persisting...");
+                    Self::handle_worker_message_persist(database, bytes).await;
+                    return;
+                }
+                fb::Message::NONE => {
+                    // WorkerMessage parsed but has no content type - this is likely
+                    // CacheRequest bytes misinterpreted as WorkerMessage
+                    info!("Detected WorkerMessage with NONE type, falling through to CacheRequest");
+                    // Fall through to CacheRequest parsing below
+                }
+                _ => {
+                    // Valid WorkerMessage but unexpected type (ConnectionStatus, etc.)
+                    // These shouldn't come to the cache
+                    warn!(
+                        "Unexpected WorkerMessage type in cache: {:?}",
+                        worker_msg.content_type()
+                    );
+                    return;
+                }
+            }
+        }
+
+        // Fall back to CacheRequest (legacy format for queries/publishes)
         let cache_req = match flatbuffers::root::<fb::CacheRequest>(bytes) {
             Ok(r) => r,
             Err(e) => {
-                warn!("Failed to decode CacheRequest: {:?}", e);
+                warn!("Failed to decode as WorkerMessage or CacheRequest: {:?}", e);
                 return;
             }
         };
 
         let sub_id = cache_req.sub_id().to_string();
+        info!("Detected CacheRequest for sub_id={}", sub_id);
 
         // Check if this is an event persist request (event field is set)
-        if let Some(fb_event) = cache_req.event() {
-            // Persist event and optionally publish
-            Self::handle_event_persist(database, to_connections, &sub_id, fb_event, cache_req.relays()).await;
+        if cache_req.event().is_some() {
+            // Legacy: CacheRequest with event
+            info!("CacheRequest has event field - handling persist");
+            Self::handle_cache_request_persist(database, &sub_id, cache_req).await;
             return;
         }
 
         // Otherwise, this is a lookup request (requests field should be set)
-        if let Some(vec) = cache_req.requests() {
-            Self::handle_lookup_request(database, to_connections, to_parser, &sub_id, cache_req.requests()).await;
+        if cache_req.requests().is_some() {
+            info!("CacheRequest has requests field - handling lookup");
+            Self::handle_lookup_request(
+                database,
+                to_connections,
+                to_parser,
+                &sub_id,
+                cache_req.requests(),
+            )
+            .await;
+        }
+    }
+
+    /// Handle event persist from WorkerMessage (new format)
+    /// Stores WorkerMessage bytes directly - no reconstruction needed!
+    async fn handle_worker_message_persist(database: &Arc<NostrDB>, worker_msg_bytes: &[u8]) {
+        // Parse to extract event for indexing
+        if let Ok(worker_msg) = flatbuffers::root::<fb::WorkerMessage>(worker_msg_bytes) {
+            match worker_msg.content_type() {
+                fb::Message::ParsedEvent => {
+                    if let Some(parsed) = worker_msg.content_as_parsed_event() {
+                        // Index the ParsedEvent and store WorkerMessage bytes
+                        if let Err(e) = database
+                            .add_parsed_event_with_bytes(parsed, worker_msg_bytes)
+                            .await
+                        {
+                            warn!("Failed to persist ParsedEvent: {}", e);
+                        }
+                    }
+                }
+                fb::Message::NostrEvent => {
+                    if let Some(event) = worker_msg.content_as_nostr_event() {
+                        // Index the NostrEvent and store WorkerMessage bytes
+                        if let Err(e) = database
+                            .add_nostr_event_with_bytes(event, worker_msg_bytes)
+                            .await
+                        {
+                            warn!("Failed to persist NostrEvent: {}", e);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// Handle legacy CacheRequest persist (event field set)
+    async fn handle_cache_request_persist(
+        database: &Arc<NostrDB>,
+        sub_id: &str,
+        cache_req: fb::CacheRequest<'_>,
+    ) {
+        // Legacy path - extract and rebuild
+        if let Some(fb_event) = cache_req.event() {
+            if let Err(e) = database.add_event_from_fb(fb_event).await {
+                warn!("Failed to persist event from CacheRequest: {}", e);
+            }
         }
     }
 
@@ -184,10 +272,16 @@ impl Caching {
         to_connections: &Rc<RefCell<Port>>,
         sub_id: &str,
         fb_event: fb::NostrEvent<'_>,
+        fb_parsed_event: Option<fb::ParsedEvent<'_>>,
         relay_hints: Option<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>,
     ) {
         // First, persist the event to database
-        if let Err(e) = database.add_event_from_fb(fb_event).await {
+        // TODO: If we have parsed_event with decrypted content (kind4),
+        // we should store the ParsedEvent bytes to avoid re-decrypting.
+        // For now, just store the raw event.
+        let store_result = database.add_event_from_fb(fb_event).await;
+
+        if let Err(e) = store_result {
             warn!("Failed to persist event to database: {}", e);
         }
 
@@ -272,16 +366,14 @@ impl Caching {
         requests: Option<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<fb::Request<'_>>>>,
     ) {
         // Use DB helper to get cached events + indices to forward
-        let (remaining_idxs, cached_events) = match database
-            .query_events_and_requests(requests)
-            .await
-        {
-            Ok(pair) => pair,
-            Err(e) => {
-                warn!("query_events_and_requests failed: {}", e);
-                (Vec::new(), Vec::new())
-            }
-        };
+        let (remaining_idxs, cached_events) =
+            match database.query_events_and_requests(requests).await {
+                Ok(pair) => pair,
+                Err(e) => {
+                    warn!("query_events_and_requests failed: {}", e);
+                    (Vec::new(), Vec::new())
+                }
+            };
 
         if !cached_events.is_empty() {
             info!(
@@ -291,14 +383,41 @@ impl Caching {
             );
         }
 
-        // 1) Send cached WorkerMessage bytes directly to parser
-        for ev_bytes in cached_events {
-            if let Some(wm) = wrap_event_with_worker_message(sub_id, &ev_bytes) {
-                if let Err(e) = to_parser.borrow().send(&wm) {
-                    warn!("Failed to send cached event to parser: {:?}", e);
-                }
-            } else {
-                warn!("Failed to wrap cached event into WorkerMessage");
+        // 1) Send all cached events in a SINGLE CacheResponse (batched)
+        // Format: [4-byte len][WorkerMessage][4-byte len][WorkerMessage]...
+        if !cached_events.is_empty() {
+            let total_bytes: usize = cached_events.iter().map(|e| 4 + e.len()).sum();
+            let mut batched_payload = Vec::with_capacity(total_bytes);
+            
+            for ev_bytes in &cached_events {
+                // Write 4-byte length prefix (little endian)
+                batched_payload.extend_from_slice(&(ev_bytes.len() as u32).to_le_bytes());
+                // Write the WorkerMessage bytes
+                batched_payload.extend_from_slice(ev_bytes);
+            }
+            
+            info!(
+                "Sending batched CacheResponse with {} events ({} bytes) to parser for sub_id={}",
+                cached_events.len(),
+                batched_payload.len(),
+                sub_id
+            );
+            
+            let mut builder = FlatBufferBuilder::new();
+            let sid = builder.create_string(sub_id);
+            let payload = builder.create_vector(&batched_payload);
+
+            let cache_resp = fb::CacheResponse::create(
+                &mut builder,
+                &fb::CacheResponseArgs {
+                    sub_id: Some(sid),
+                    payload: Some(payload),
+                },
+            );
+            builder.finish(cache_resp, None);
+
+            if let Err(e) = to_parser.borrow().send(builder.finished_data()) {
+                warn!("Failed to send batched CacheResponse to parser: {:?}", e);
             }
         }
 
@@ -355,30 +474,27 @@ impl Caching {
                 }
             }
 
-            // 3) Emit EOCE through to_connections port
+            // 3) Emit EOCE as a separate CacheResponse to parser
+            // This signals the end of cached events for this subscription
+            info!("Sending EOCE CacheResponse for sub {} to parser", sub_id);
             let mut builder = FlatBufferBuilder::new();
             let sid = builder.create_string(sub_id);
-            let eoce = fb::Eoce::create(
-                &mut builder,
-                &fb::EoceArgs {
-                    subscription_id: Some(sid),
-                },
-            );
-            let msg = fb::WorkerMessage::create(
-                &mut builder,
-                &fb::WorkerMessageArgs {
-                    sub_id: Some(sid),
-                    url: None,
-                    type_: fb::MessageType::Eoce,
-                    content_type: fb::Message::Eoce,
-                    content: Some(eoce.as_union_value()),
-                },
-            );
-            builder.finish(msg, None);
-            let eoce_bytes = builder.finished_data().to_vec();
+            // Empty payload signifies EOCE (end of cache events)
+            let payload = builder.create_vector(&[] as &[u8]);
 
-            if let Err(e) = to_connections.borrow().send(&eoce_bytes) {
-                warn!("Failed to send EOCE: {:?}", e);
+            let cache_resp = fb::CacheResponse::create(
+                &mut builder,
+                &fb::CacheResponseArgs {
+                    sub_id: Some(sid),
+                    payload: Some(payload),
+                },
+            );
+            builder.finish(cache_resp, None);
+
+            if let Err(e) = to_parser.borrow().send(builder.finished_data()) {
+                warn!("Failed to send EOCE CacheResponse: {:?}", e);
+            } else {
+                info!("EOCE CacheResponse sent successfully for sub {}", sub_id);
             }
         }
     }

@@ -22,6 +22,7 @@ import {
 	Kind7376Parsed,
 	Kind9321Parsed,
 	Kind9735Parsed,
+	Kind1311Parsed,
 	ContentBlock,
 	LinkPreviewData,
 	ContentData,
@@ -147,6 +148,13 @@ export function isKind17(msg: WorkerMessage): Kind17Parsed | null {
 export function asKind17(ev: ParsedEvent): Kind17Parsed | null {
 	if (ev?.parsedType?.() !== ParsedData.Kind17Parsed) return null;
 	return unionToParsedData(ParsedData.Kind17Parsed, ev.parsed.bind(ev)) as Kind17Parsed;
+}
+export function isKind1311(msg: WorkerMessage): Kind1311Parsed | null {
+	return parsedKind<Kind1311Parsed>(msg, ParsedData.Kind1311Parsed);
+}
+export function asKind1311(ev: ParsedEvent): Kind1311Parsed | null {
+	if (ev?.parsedType?.() !== ParsedData.Kind1311Parsed) return null;
+	return unionToParsedData(ParsedData.Kind1311Parsed, ev.parsed.bind(ev)) as Kind1311Parsed;
 }
 export function isKind10002(msg: WorkerMessage): Kind10002Parsed | null {
 	return parsedKind<Kind10002Parsed>(msg, ParsedData.Kind10002Parsed);

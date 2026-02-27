@@ -391,14 +391,36 @@ impl Pipeline {
         for message in messages {
             self.mark_as_seen(message);
         }
-        let mut outputs = Vec::new();
-        for pipe in self.pipes.iter_mut() {
-            if pipe.run_for_cached_events() {
-                let mut out = pipe.process_cached_batch(messages).await?;
-                outputs.append(&mut out);
+        
+        // Chain pipes that run for cached events: output of one is input to next
+        // Only the last pipe that runs for cached events produces the final output
+        let pipes_that_run: Vec<usize> = self.pipes.iter().enumerate()
+            .filter(|(_, p)| p.run_for_cached_events())
+            .map(|(i, _)| i)
+            .collect();
+        
+        if pipes_that_run.is_empty() {
+            return Ok(Vec::new());
+        }
+        
+        let last_pipe_idx = *pipes_that_run.last().unwrap();
+        let mut current_messages = messages.to_vec();
+        let mut final_output = Vec::new();
+        
+        for i in pipes_that_run {
+            let is_last = i == last_pipe_idx;
+            let out = self.pipes[i].process_cached_batch(&current_messages).await?;
+            
+            if is_last {
+                // Last pipe produces final output
+                final_output = out;
+            } else {
+                // Intermediate pipes filter/transform for next pipe
+                current_messages = out;
             }
         }
-        Ok(outputs)
+        
+        Ok(final_output)
     }
 
     fn extract_parsed_event(worker_message: &Vec<u8>) -> Option<fb::ParsedEvent<'_>> {

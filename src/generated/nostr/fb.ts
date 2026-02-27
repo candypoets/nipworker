@@ -4,7 +4,10 @@ import { ByteString } from "src/lib/ByteString";
 /* eslint-disable @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any, @typescript-eslint/no-non-null-assertion */
 
 export { BufferFull, BufferFullT } from './fb/buffer-full.js';
+export { CacheInput } from './fb/cache-input.js';
+export { CacheInputMessage, CacheInputMessageT } from './fb/cache-input-message.js';
 export { CacheRequest, CacheRequestT } from './fb/cache-request.js';
+export { CacheResponse, CacheResponseT } from './fb/cache-response.js';
 export { CashuData, CashuDataT } from './fb/cashu-data.js';
 export { CodeData, CodeDataT } from './fb/code-data.js';
 export { ConnectionStatus, ConnectionStatusT } from './fb/connection-status.js';
@@ -28,6 +31,7 @@ export { Kind0Parsed, Kind0ParsedT } from './fb/kind0-parsed.js';
 export { Kind10002Parsed, Kind10002ParsedT } from './fb/kind10002-parsed.js';
 export { Kind10019Parsed, Kind10019ParsedT } from './fb/kind10019-parsed.js';
 export { Kind1111Parsed, Kind1111ParsedT } from './fb/kind1111-parsed.js';
+export { Kind1311Parsed, Kind1311ParsedT } from './fb/kind1311-parsed.js';
 export { Kind17375Parsed, Kind17375ParsedT } from './fb/kind17375-parsed.js';
 export { Kind17Parsed, Kind17ParsedT } from './fb/kind17-parsed.js';
 export { Kind1Parsed, Kind1ParsedT } from './fb/kind1-parsed.js';
@@ -46,6 +50,9 @@ export { Kind9735Parsed, Kind9735ParsedT } from './fb/kind9735-parsed.js';
 export { KindFilterPipeConfig, KindFilterPipeConfigT } from './fb/kind-filter-pipe-config.js';
 export { LinkPreviewData, LinkPreviewDataT } from './fb/link-preview-data.js';
 export { ListParsed, ListParsedT } from './fb/list-parsed.js';
+export { LiveActivityRef, LiveActivityRefT } from './fb/live-activity-ref.js';
+export { LiveChatParticipant, LiveChatParticipantT } from './fb/live-chat-participant.js';
+export { LiveChatThreadRef, LiveChatThreadRefT } from './fb/live-chat-thread-ref.js';
 export { MainContent } from './fb/main-content.js';
 export { MainMessage, MainMessageT } from './fb/main-message.js';
 export { MediaGroupData, MediaGroupDataT } from './fb/media-group-data.js';

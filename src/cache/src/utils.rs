@@ -1087,7 +1087,7 @@ pub fn wrap_event_with_worker_message(sub_id: &str, bytes: &[u8]) -> Option<Vec<
         return Some(fbb.finished_data().to_vec());
     }
 
-    // Fallback: NostrEvent
+    // Legacy: NostrEvent (raw bytes, not wrapped)
     if let Ok(ne) = flatbuffers::root::<fb::NostrEvent>(bytes) {
         let mut fbb = FlatBufferBuilder::new();
         let sid = fbb.create_string(sub_id);

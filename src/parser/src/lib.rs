@@ -2,7 +2,7 @@
 
 use flatbuffers::FlatBufferBuilder;
 use shared::{
-    telemetry,
+    init_with_component, telemetry,
     types::{nostr::Template, Event, ParserError, TypesError},
     Port,
 };
@@ -107,7 +107,7 @@ impl NostrClient {
         from_crypto: MessagePort,
         to_main: MessagePort,
     ) -> Self {
-        telemetry::init(tracing::Level::WARN);
+        init_with_component(tracing::Level::INFO, "PARSER");
 
         info!("Initializing NostrClient with MessageChannel...");
 

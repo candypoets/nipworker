@@ -1,0 +1,41 @@
+// Live Chat Messages (NIP-53)
+// Kind 1311: Chat messages during a live activity
+// References a live activity (30311) via "a" tag
+
+include "../common.fbs";
+
+namespace nostr.fb;
+
+// Participant in a live chat (from "p" tags)
+table LiveChatParticipant {
+  pubkey: string (required);
+  relay: string;
+}
+
+// Thread reference (from "e" tags for reply threading)
+table LiveChatThreadRef {
+  event_id: string (required);
+  relay: string;
+}
+
+// Live activity reference (the "a" tag)
+table LiveActivityRef {
+  kind: ushort;           // Should be 30311
+  pubkey: string (required);
+  identifier: string (required);  // The "d" value
+  relay: string;
+}
+
+table Kind1311Parsed {
+  content: string (required);       // Raw message content
+  parsed_content: [ContentBlock];   // Parsed mentions, URLs, etc.
+  
+  // Live activity being chatted about (required "a" tag)
+  activity: LiveActivityRef (required);
+  
+  // Threading - reply to another chat message (optional "e" tags)
+  thread_refs: [LiveChatThreadRef];
+  
+  // Mentions ("p" tags)
+  mentions: [LiveChatParticipant];
+}

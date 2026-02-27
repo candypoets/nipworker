@@ -95,7 +95,7 @@ impl Crypto {
         from_connections: MessagePort,
         to_parser: MessagePort,
     ) -> Result<Crypto, JsValue> {
-        init_with_component(tracing::Level::INFO, "crypto");
+        init_with_component(tracing::Level::ERROR, "crypto");
 
         // Create receivers from MessagePorts
         let from_parser_rx = Port::from_receiver(from_parser);
@@ -129,7 +129,11 @@ impl Crypto {
     /// Helper to send signer_ready event to main thread (static for use in closures)
     /// Includes all info needed to reconstruct the session for future reloads
     fn send_signer_ready(signer_type: &str, pubkey: &str, bunker_url: Option<&str>) {
-        info!("[crypto] Signer ready: {} - {}", signer_type, &pubkey[..16.min(pubkey.len())]);
+        info!(
+            "[crypto] Signer ready: {} - {}",
+            signer_type,
+            &pubkey[..16.min(pubkey.len())]
+        );
         let msg = js_sys::Object::new();
         let _ = js_sys::Reflect::set(&msg, &"type".into(), &"signer_ready".into());
         let _ = js_sys::Reflect::set(&msg, &"signer_type".into(), &signer_type.into());
@@ -188,7 +192,10 @@ impl Crypto {
     ) -> Result<(), JsValue> {
         // Clone the stored from_connections port for the NIP-46 signer
         let from_connections = self.from_connections.clone();
-        info!("[nip46] Bunker mode: connecting to {}", &bunker_url[..50.min(bunker_url.len())]);
+        info!(
+            "[nip46] Bunker mode: connecting to {}",
+            &bunker_url[..50.min(bunker_url.len())]
+        );
 
         // Parse the bunker URL to extract remote pubkey and relays
         let parsed = Self::parse_bunker_url(&bunker_url)?;
@@ -201,9 +208,9 @@ impl Crypto {
             expected_secret: parsed.secret, // Optional secret for single-use connection
         };
 
-        let client_keys = client_secret.map(|s| {
-            Keys::parse(&s).map_err(|e| js_err(&e.to_string()))
-        }).transpose()?;
+        let client_keys = client_secret
+            .map(|s| Keys::parse(&s).map_err(|e| js_err(&e.to_string())))
+            .transpose()?;
 
         let from_connections_rx = Port::from_receiver(from_connections);
         let nip46 = Rc::new(Nip46Signer::new(
@@ -212,7 +219,7 @@ impl Crypto {
             from_connections_rx,
             client_keys,
         ));
-        
+
         let signer_weak = Rc::downgrade(&self.active);
         nip46.start(Some(Rc::new(move |_| {
             if let Some(active_rc) = signer_weak.upgrade() {
@@ -232,18 +239,16 @@ impl Crypto {
 
         // Store bunker URL for signer_ready event
         let bunker_url_for_ready = bunker_url.clone();
-        
+
         // Auto-connect for bunker flow and fetch pubkey
         spawn_local(async move {
             match nip46.connect().await {
-                Ok(_) => {
-                    match nip46.get_public_key().await {
-                        Ok(pk) => {
-                            Self::send_signer_ready("nip46", &pk, Some(&bunker_url_for_ready));
-                        }
-                        Err(e) => error!("[nip46] Failed to fetch pubkey: {:?}", e),
+                Ok(_) => match nip46.get_public_key().await {
+                    Ok(pk) => {
+                        Self::send_signer_ready("nip46", &pk, Some(&bunker_url_for_ready));
                     }
-                }
+                    Err(e) => error!("[nip46] Failed to fetch pubkey: {:?}", e),
+                },
                 Err(e) => error!("[nip46] Bunker connect failed: {:?}", e),
             }
         });
@@ -279,9 +284,9 @@ impl Crypto {
             expected_secret: Some(parsed.secret), // Required for validation
         };
 
-        let client_keys = client_secret.map(|s| {
-            Keys::parse(&s).map_err(|e| js_err(&e.to_string()))
-        }).transpose()?;
+        let client_keys = client_secret
+            .map(|s| Keys::parse(&s).map_err(|e| js_err(&e.to_string())))
+            .transpose()?;
 
         let from_connections_rx = Port::from_receiver(from_connections);
         let nip46 = Rc::new(Nip46Signer::new(
@@ -294,7 +299,10 @@ impl Crypto {
         let signer_weak = Rc::downgrade(&self.active);
         let nip46_for_callback = nip46.clone();
         nip46.start(Some(Rc::new(move |discovered_pk: String| {
-            info!("[nip46] Signer discovered: {}...", &discovered_pk[..16.min(discovered_pk.len())]);
+            info!(
+                "[nip46] Signer discovered: {}...",
+                &discovered_pk[..16.min(discovered_pk.len())]
+            );
             if let Some(active_rc) = signer_weak.upgrade() {
                 if let ActiveSigner::Nip46(ref n46) = *active_rc.borrow() {
                     if let Some(bunker_url) = n46.get_bunker_url() {
@@ -491,7 +499,10 @@ impl Crypto {
 
     /// Auto-fetch and send pubkey to main thread after successful connection
     fn send_pubkey_response(&self, pk: String) {
-        info!("[crypto] Auto-sending pubkey to main thread: {}", &pk[..16.min(pk.len())]);
+        info!(
+            "[crypto] Auto-sending pubkey to main thread: {}",
+            &pk[..16.min(pk.len())]
+        );
         let msg = js_sys::Object::new();
         let _ = js_sys::Reflect::set(&msg, &"type".into(), &"response".into());
         let _ = js_sys::Reflect::set(&msg, &"op".into(), &"get_pubkey".into());

@@ -1601,7 +1601,7 @@ pub const ENUM_MIN_PARSED_DATA_UNION: u32 = 0;
 pub const ENUM_MAX_PARSED_DATA_UNION: u32 = 52000;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_PARSED_DATA_UNION: [ParsedDataUnion; 22] = [
+pub const ENUM_VALUES_PARSED_DATA_UNION: [ParsedDataUnion; 23] = [
   ParsedDataUnion::Kind0Parsed,
   ParsedDataUnion::Kind1Parsed,
   ParsedDataUnion::Kind3Parsed,
@@ -1612,6 +1612,7 @@ pub const ENUM_VALUES_PARSED_DATA_UNION: [ParsedDataUnion; 22] = [
   ParsedDataUnion::Kind20Parsed,
   ParsedDataUnion::Kind22Parsed,
   ParsedDataUnion::Kind1111Parsed,
+  ParsedDataUnion::Kind1311Parsed,
   ParsedDataUnion::Kind7374Parsed,
   ParsedDataUnion::Kind7375Parsed,
   ParsedDataUnion::Kind7376Parsed,
@@ -1641,6 +1642,7 @@ impl ParsedDataUnion {
   pub const Kind20Parsed: Self = Self(20);
   pub const Kind22Parsed: Self = Self(22);
   pub const Kind1111Parsed: Self = Self(1111);
+  pub const Kind1311Parsed: Self = Self(1311);
   pub const Kind7374Parsed: Self = Self(7374);
   pub const Kind7375Parsed: Self = Self(7375);
   pub const Kind7376Parsed: Self = Self(7376);
@@ -1667,6 +1669,7 @@ impl ParsedDataUnion {
     Self::Kind20Parsed,
     Self::Kind22Parsed,
     Self::Kind1111Parsed,
+    Self::Kind1311Parsed,
     Self::Kind7374Parsed,
     Self::Kind7375Parsed,
     Self::Kind7376Parsed,
@@ -1693,6 +1696,7 @@ impl ParsedDataUnion {
       Self::Kind20Parsed => Some("Kind20Parsed"),
       Self::Kind22Parsed => Some("Kind22Parsed"),
       Self::Kind1111Parsed => Some("Kind1111Parsed"),
+      Self::Kind1311Parsed => Some("Kind1311Parsed"),
       Self::Kind7374Parsed => Some("Kind7374Parsed"),
       Self::Kind7375Parsed => Some("Kind7375Parsed"),
       Self::Kind7376Parsed => Some("Kind7376Parsed"),
@@ -1763,10 +1767,10 @@ impl flatbuffers::SimpleToVerifyInSlice for ParsedDataUnion {}
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_PARSED_DATA: u8 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MAX_PARSED_DATA: u8 = 21;
+pub const ENUM_MAX_PARSED_DATA: u8 = 22;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_PARSED_DATA: [ParsedData; 22] = [
+pub const ENUM_VALUES_PARSED_DATA: [ParsedData; 23] = [
   ParsedData::NONE,
   ParsedData::Kind0Parsed,
   ParsedData::Kind1Parsed,
@@ -1778,6 +1782,7 @@ pub const ENUM_VALUES_PARSED_DATA: [ParsedData; 22] = [
   ParsedData::Kind20Parsed,
   ParsedData::Kind22Parsed,
   ParsedData::Kind1111Parsed,
+  ParsedData::Kind1311Parsed,
   ParsedData::Kind10002Parsed,
   ParsedData::Kind10019Parsed,
   ParsedData::Kind17375Parsed,
@@ -1807,20 +1812,21 @@ impl ParsedData {
   pub const Kind20Parsed: Self = Self(8);
   pub const Kind22Parsed: Self = Self(9);
   pub const Kind1111Parsed: Self = Self(10);
-  pub const Kind10002Parsed: Self = Self(11);
-  pub const Kind10019Parsed: Self = Self(12);
-  pub const Kind17375Parsed: Self = Self(13);
-  pub const Kind7374Parsed: Self = Self(14);
-  pub const Kind7375Parsed: Self = Self(15);
-  pub const Kind7376Parsed: Self = Self(16);
-  pub const Kind9321Parsed: Self = Self(17);
-  pub const Kind9735Parsed: Self = Self(18);
-  pub const Kind30023Parsed: Self = Self(19);
-  pub const ListParsed: Self = Self(20);
-  pub const PreGenericParsed: Self = Self(21);
+  pub const Kind1311Parsed: Self = Self(11);
+  pub const Kind10002Parsed: Self = Self(12);
+  pub const Kind10019Parsed: Self = Self(13);
+  pub const Kind17375Parsed: Self = Self(14);
+  pub const Kind7374Parsed: Self = Self(15);
+  pub const Kind7375Parsed: Self = Self(16);
+  pub const Kind7376Parsed: Self = Self(17);
+  pub const Kind9321Parsed: Self = Self(18);
+  pub const Kind9735Parsed: Self = Self(19);
+  pub const Kind30023Parsed: Self = Self(20);
+  pub const ListParsed: Self = Self(21);
+  pub const PreGenericParsed: Self = Self(22);
 
   pub const ENUM_MIN: u8 = 0;
-  pub const ENUM_MAX: u8 = 21;
+  pub const ENUM_MAX: u8 = 22;
   pub const ENUM_VALUES: &'static [Self] = &[
     Self::NONE,
     Self::Kind0Parsed,
@@ -1833,6 +1839,7 @@ impl ParsedData {
     Self::Kind20Parsed,
     Self::Kind22Parsed,
     Self::Kind1111Parsed,
+    Self::Kind1311Parsed,
     Self::Kind10002Parsed,
     Self::Kind10019Parsed,
     Self::Kind17375Parsed,
@@ -1859,6 +1866,7 @@ impl ParsedData {
       Self::Kind20Parsed => Some("Kind20Parsed"),
       Self::Kind22Parsed => Some("Kind22Parsed"),
       Self::Kind1111Parsed => Some("Kind1111Parsed"),
+      Self::Kind1311Parsed => Some("Kind1311Parsed"),
       Self::Kind10002Parsed => Some("Kind10002Parsed"),
       Self::Kind10019Parsed => Some("Kind10019Parsed"),
       Self::Kind17375Parsed => Some("Kind17375Parsed"),
@@ -1942,6 +1950,7 @@ pub enum ParsedDataT {
   Kind20Parsed(Box<Kind20ParsedT>),
   Kind22Parsed(Box<Kind22ParsedT>),
   Kind1111Parsed(Box<Kind1111ParsedT>),
+  Kind1311Parsed(Box<Kind1311ParsedT>),
   Kind10002Parsed(Box<Kind10002ParsedT>),
   Kind10019Parsed(Box<Kind10019ParsedT>),
   Kind17375Parsed(Box<Kind17375ParsedT>),
@@ -1973,6 +1982,7 @@ impl ParsedDataT {
       Self::Kind20Parsed(_) => ParsedData::Kind20Parsed,
       Self::Kind22Parsed(_) => ParsedData::Kind22Parsed,
       Self::Kind1111Parsed(_) => ParsedData::Kind1111Parsed,
+      Self::Kind1311Parsed(_) => ParsedData::Kind1311Parsed,
       Self::Kind10002Parsed(_) => ParsedData::Kind10002Parsed,
       Self::Kind10019Parsed(_) => ParsedData::Kind10019Parsed,
       Self::Kind17375Parsed(_) => ParsedData::Kind17375Parsed,
@@ -1999,6 +2009,7 @@ impl ParsedDataT {
       Self::Kind20Parsed(v) => Some(v.pack(fbb).as_union_value()),
       Self::Kind22Parsed(v) => Some(v.pack(fbb).as_union_value()),
       Self::Kind1111Parsed(v) => Some(v.pack(fbb).as_union_value()),
+      Self::Kind1311Parsed(v) => Some(v.pack(fbb).as_union_value()),
       Self::Kind10002Parsed(v) => Some(v.pack(fbb).as_union_value()),
       Self::Kind10019Parsed(v) => Some(v.pack(fbb).as_union_value()),
       Self::Kind17375Parsed(v) => Some(v.pack(fbb).as_union_value()),
@@ -2221,6 +2232,27 @@ impl ParsedDataT {
   /// If the union variant matches, return a mutable reference to the Kind1111ParsedT.
   pub fn as_kind_1111_parsed_mut(&mut self) -> Option<&mut Kind1111ParsedT> {
     if let Self::Kind1111Parsed(v) = self { Some(v.as_mut()) } else { None }
+  }
+  /// If the union variant matches, return the owned Kind1311ParsedT, setting the union to NONE.
+  pub fn take_kind_1311_parsed(&mut self) -> Option<Box<Kind1311ParsedT>> {
+    if let Self::Kind1311Parsed(_) = self {
+      let v = core::mem::replace(self, Self::NONE);
+      if let Self::Kind1311Parsed(w) = v {
+        Some(w)
+      } else {
+        unreachable!()
+      }
+    } else {
+      None
+    }
+  }
+  /// If the union variant matches, return a reference to the Kind1311ParsedT.
+  pub fn as_kind_1311_parsed(&self) -> Option<&Kind1311ParsedT> {
+    if let Self::Kind1311Parsed(v) = self { Some(v.as_ref()) } else { None }
+  }
+  /// If the union variant matches, return a mutable reference to the Kind1311ParsedT.
+  pub fn as_kind_1311_parsed_mut(&mut self) -> Option<&mut Kind1311ParsedT> {
+    if let Self::Kind1311Parsed(v) = self { Some(v.as_mut()) } else { None }
   }
   /// If the union variant matches, return the owned Kind10002ParsedT, setting the union to NONE.
   pub fn take_kind_10002_parsed(&mut self) -> Option<Box<Kind10002ParsedT>> {
@@ -2957,6 +2989,168 @@ impl<'a> flatbuffers::Verifiable for SignerOp {
 }
 
 impl flatbuffers::SimpleToVerifyInSlice for SignerOp {}
+#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
+pub const ENUM_MIN_CACHE_INPUT: u8 = 0;
+#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
+pub const ENUM_MAX_CACHE_INPUT: u8 = 2;
+#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
+#[allow(non_camel_case_types)]
+pub const ENUM_VALUES_CACHE_INPUT: [CacheInput; 3] = [
+  CacheInput::NONE,
+  CacheInput::WorkerMessage,
+  CacheInput::CacheRequest,
+];
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[repr(transparent)]
+pub struct CacheInput(pub u8);
+#[allow(non_upper_case_globals)]
+impl CacheInput {
+  pub const NONE: Self = Self(0);
+  pub const WorkerMessage: Self = Self(1);
+  pub const CacheRequest: Self = Self(2);
+
+  pub const ENUM_MIN: u8 = 0;
+  pub const ENUM_MAX: u8 = 2;
+  pub const ENUM_VALUES: &'static [Self] = &[
+    Self::NONE,
+    Self::WorkerMessage,
+    Self::CacheRequest,
+  ];
+  /// Returns the variant's name or "" if unknown.
+  pub fn variant_name(self) -> Option<&'static str> {
+    match self {
+      Self::NONE => Some("NONE"),
+      Self::WorkerMessage => Some("WorkerMessage"),
+      Self::CacheRequest => Some("CacheRequest"),
+      _ => None,
+    }
+  }
+}
+impl core::fmt::Debug for CacheInput {
+  fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+    if let Some(name) = self.variant_name() {
+      f.write_str(name)
+    } else {
+      f.write_fmt(format_args!("<UNKNOWN {:?}>", self.0))
+    }
+  }
+}
+impl<'a> flatbuffers::Follow<'a> for CacheInput {
+  type Inner = Self;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    let b = flatbuffers::read_scalar_at::<u8>(buf, loc);
+    Self(b)
+  }
+}
+
+impl flatbuffers::Push for CacheInput {
+    type Output = CacheInput;
+    #[inline]
+    unsafe fn push(&self, dst: &mut [u8], _written_len: usize) {
+        flatbuffers::emplace_scalar::<u8>(dst, self.0);
+    }
+}
+
+impl flatbuffers::EndianScalar for CacheInput {
+  type Scalar = u8;
+  #[inline]
+  fn to_little_endian(self) -> u8 {
+    self.0.to_le()
+  }
+  #[inline]
+  #[allow(clippy::wrong_self_convention)]
+  fn from_little_endian(v: u8) -> Self {
+    let b = u8::from_le(v);
+    Self(b)
+  }
+}
+
+impl<'a> flatbuffers::Verifiable for CacheInput {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    u8::run_verifier(v, pos)
+  }
+}
+
+impl flatbuffers::SimpleToVerifyInSlice for CacheInput {}
+pub struct CacheInputUnionTableOffset {}
+
+#[allow(clippy::upper_case_acronyms)]
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub enum CacheInputT {
+  NONE,
+  WorkerMessage(Box<WorkerMessageT>),
+  CacheRequest(Box<CacheRequestT>),
+}
+impl Default for CacheInputT {
+  fn default() -> Self {
+    Self::NONE
+  }
+}
+impl CacheInputT {
+  pub fn cache_input_type(&self) -> CacheInput {
+    match self {
+      Self::NONE => CacheInput::NONE,
+      Self::WorkerMessage(_) => CacheInput::WorkerMessage,
+      Self::CacheRequest(_) => CacheInput::CacheRequest,
+    }
+  }
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(&self, fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>) -> Option<flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>> {
+    match self {
+      Self::NONE => None,
+      Self::WorkerMessage(v) => Some(v.pack(fbb).as_union_value()),
+      Self::CacheRequest(v) => Some(v.pack(fbb).as_union_value()),
+    }
+  }
+  /// If the union variant matches, return the owned WorkerMessageT, setting the union to NONE.
+  pub fn take_worker_message(&mut self) -> Option<Box<WorkerMessageT>> {
+    if let Self::WorkerMessage(_) = self {
+      let v = core::mem::replace(self, Self::NONE);
+      if let Self::WorkerMessage(w) = v {
+        Some(w)
+      } else {
+        unreachable!()
+      }
+    } else {
+      None
+    }
+  }
+  /// If the union variant matches, return a reference to the WorkerMessageT.
+  pub fn as_worker_message(&self) -> Option<&WorkerMessageT> {
+    if let Self::WorkerMessage(v) = self { Some(v.as_ref()) } else { None }
+  }
+  /// If the union variant matches, return a mutable reference to the WorkerMessageT.
+  pub fn as_worker_message_mut(&mut self) -> Option<&mut WorkerMessageT> {
+    if let Self::WorkerMessage(v) = self { Some(v.as_mut()) } else { None }
+  }
+  /// If the union variant matches, return the owned CacheRequestT, setting the union to NONE.
+  pub fn take_cache_request(&mut self) -> Option<Box<CacheRequestT>> {
+    if let Self::CacheRequest(_) = self {
+      let v = core::mem::replace(self, Self::NONE);
+      if let Self::CacheRequest(w) = v {
+        Some(w)
+      } else {
+        unreachable!()
+      }
+    } else {
+      None
+    }
+  }
+  /// If the union variant matches, return a reference to the CacheRequestT.
+  pub fn as_cache_request(&self) -> Option<&CacheRequestT> {
+    if let Self::CacheRequest(v) = self { Some(v.as_ref()) } else { None }
+  }
+  /// If the union variant matches, return a mutable reference to the CacheRequestT.
+  pub fn as_cache_request_mut(&mut self) -> Option<&mut CacheRequestT> {
+    if let Self::CacheRequest(v) = self { Some(v.as_mut()) } else { None }
+  }
+}
 pub enum CodeDataOffset {}
 #[derive(Copy, Clone, PartialEq)]
 
@@ -18059,6 +18253,783 @@ impl Kind1111ParsedT {
     })
   }
 }
+pub enum LiveChatParticipantOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct LiveChatParticipant<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for LiveChatParticipant<'a> {
+  type Inner = LiveChatParticipant<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> LiveChatParticipant<'a> {
+  pub const VT_PUBKEY: flatbuffers::VOffsetT = 4;
+  pub const VT_RELAY: flatbuffers::VOffsetT = 6;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    LiveChatParticipant { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args LiveChatParticipantArgs<'args>
+  ) -> flatbuffers::WIPOffset<LiveChatParticipant<'bldr>> {
+    let mut builder = LiveChatParticipantBuilder::new(_fbb);
+    if let Some(x) = args.relay { builder.add_relay(x); }
+    if let Some(x) = args.pubkey { builder.add_pubkey(x); }
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> LiveChatParticipantT {
+    let pubkey = {
+      let x = self.pubkey();
+      x.to_string()
+    };
+    let relay = self.relay().map(|x| {
+      x.to_string()
+    });
+    LiveChatParticipantT {
+      pubkey,
+      relay,
+    }
+  }
+
+  #[inline]
+  pub fn pubkey(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(LiveChatParticipant::VT_PUBKEY, None).unwrap()}
+  }
+  #[inline]
+  pub fn relay(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(LiveChatParticipant::VT_RELAY, None)}
+  }
+}
+
+impl flatbuffers::Verifiable for LiveChatParticipant<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("pubkey", Self::VT_PUBKEY, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("relay", Self::VT_RELAY, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct LiveChatParticipantArgs<'a> {
+    pub pubkey: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub relay: Option<flatbuffers::WIPOffset<&'a str>>,
+}
+impl<'a> Default for LiveChatParticipantArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    LiveChatParticipantArgs {
+      pubkey: None, // required field
+      relay: None,
+    }
+  }
+}
+
+pub struct LiveChatParticipantBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> LiveChatParticipantBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_pubkey(&mut self, pubkey: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(LiveChatParticipant::VT_PUBKEY, pubkey);
+  }
+  #[inline]
+  pub fn add_relay(&mut self, relay: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(LiveChatParticipant::VT_RELAY, relay);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> LiveChatParticipantBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    LiveChatParticipantBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<LiveChatParticipant<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, LiveChatParticipant::VT_PUBKEY,"pubkey");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for LiveChatParticipant<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("LiveChatParticipant");
+      ds.field("pubkey", &self.pubkey());
+      ds.field("relay", &self.relay());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct LiveChatParticipantT {
+  pub pubkey: String,
+  pub relay: Option<String>,
+}
+impl Default for LiveChatParticipantT {
+  fn default() -> Self {
+    Self {
+      pubkey: "".to_string(),
+      relay: None,
+    }
+  }
+}
+impl LiveChatParticipantT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<LiveChatParticipant<'b>> {
+    let pubkey = Some({
+      let x = &self.pubkey;
+      _fbb.create_string(x)
+    });
+    let relay = self.relay.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    LiveChatParticipant::create(_fbb, &LiveChatParticipantArgs{
+      pubkey,
+      relay,
+    })
+  }
+}
+pub enum LiveChatThreadRefOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct LiveChatThreadRef<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for LiveChatThreadRef<'a> {
+  type Inner = LiveChatThreadRef<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> LiveChatThreadRef<'a> {
+  pub const VT_EVENT_ID: flatbuffers::VOffsetT = 4;
+  pub const VT_RELAY: flatbuffers::VOffsetT = 6;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    LiveChatThreadRef { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args LiveChatThreadRefArgs<'args>
+  ) -> flatbuffers::WIPOffset<LiveChatThreadRef<'bldr>> {
+    let mut builder = LiveChatThreadRefBuilder::new(_fbb);
+    if let Some(x) = args.relay { builder.add_relay(x); }
+    if let Some(x) = args.event_id { builder.add_event_id(x); }
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> LiveChatThreadRefT {
+    let event_id = {
+      let x = self.event_id();
+      x.to_string()
+    };
+    let relay = self.relay().map(|x| {
+      x.to_string()
+    });
+    LiveChatThreadRefT {
+      event_id,
+      relay,
+    }
+  }
+
+  #[inline]
+  pub fn event_id(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(LiveChatThreadRef::VT_EVENT_ID, None).unwrap()}
+  }
+  #[inline]
+  pub fn relay(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(LiveChatThreadRef::VT_RELAY, None)}
+  }
+}
+
+impl flatbuffers::Verifiable for LiveChatThreadRef<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("event_id", Self::VT_EVENT_ID, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("relay", Self::VT_RELAY, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct LiveChatThreadRefArgs<'a> {
+    pub event_id: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub relay: Option<flatbuffers::WIPOffset<&'a str>>,
+}
+impl<'a> Default for LiveChatThreadRefArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    LiveChatThreadRefArgs {
+      event_id: None, // required field
+      relay: None,
+    }
+  }
+}
+
+pub struct LiveChatThreadRefBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> LiveChatThreadRefBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_event_id(&mut self, event_id: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(LiveChatThreadRef::VT_EVENT_ID, event_id);
+  }
+  #[inline]
+  pub fn add_relay(&mut self, relay: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(LiveChatThreadRef::VT_RELAY, relay);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> LiveChatThreadRefBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    LiveChatThreadRefBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<LiveChatThreadRef<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, LiveChatThreadRef::VT_EVENT_ID,"event_id");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for LiveChatThreadRef<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("LiveChatThreadRef");
+      ds.field("event_id", &self.event_id());
+      ds.field("relay", &self.relay());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct LiveChatThreadRefT {
+  pub event_id: String,
+  pub relay: Option<String>,
+}
+impl Default for LiveChatThreadRefT {
+  fn default() -> Self {
+    Self {
+      event_id: "".to_string(),
+      relay: None,
+    }
+  }
+}
+impl LiveChatThreadRefT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<LiveChatThreadRef<'b>> {
+    let event_id = Some({
+      let x = &self.event_id;
+      _fbb.create_string(x)
+    });
+    let relay = self.relay.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    LiveChatThreadRef::create(_fbb, &LiveChatThreadRefArgs{
+      event_id,
+      relay,
+    })
+  }
+}
+pub enum LiveActivityRefOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct LiveActivityRef<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for LiveActivityRef<'a> {
+  type Inner = LiveActivityRef<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> LiveActivityRef<'a> {
+  pub const VT_KIND: flatbuffers::VOffsetT = 4;
+  pub const VT_PUBKEY: flatbuffers::VOffsetT = 6;
+  pub const VT_IDENTIFIER: flatbuffers::VOffsetT = 8;
+  pub const VT_RELAY: flatbuffers::VOffsetT = 10;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    LiveActivityRef { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args LiveActivityRefArgs<'args>
+  ) -> flatbuffers::WIPOffset<LiveActivityRef<'bldr>> {
+    let mut builder = LiveActivityRefBuilder::new(_fbb);
+    if let Some(x) = args.relay { builder.add_relay(x); }
+    if let Some(x) = args.identifier { builder.add_identifier(x); }
+    if let Some(x) = args.pubkey { builder.add_pubkey(x); }
+    builder.add_kind(args.kind);
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> LiveActivityRefT {
+    let kind = self.kind();
+    let pubkey = {
+      let x = self.pubkey();
+      x.to_string()
+    };
+    let identifier = {
+      let x = self.identifier();
+      x.to_string()
+    };
+    let relay = self.relay().map(|x| {
+      x.to_string()
+    });
+    LiveActivityRefT {
+      kind,
+      pubkey,
+      identifier,
+      relay,
+    }
+  }
+
+  #[inline]
+  pub fn kind(&self) -> u16 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u16>(LiveActivityRef::VT_KIND, Some(0)).unwrap()}
+  }
+  #[inline]
+  pub fn pubkey(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(LiveActivityRef::VT_PUBKEY, None).unwrap()}
+  }
+  #[inline]
+  pub fn identifier(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(LiveActivityRef::VT_IDENTIFIER, None).unwrap()}
+  }
+  #[inline]
+  pub fn relay(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(LiveActivityRef::VT_RELAY, None)}
+  }
+}
+
+impl flatbuffers::Verifiable for LiveActivityRef<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<u16>("kind", Self::VT_KIND, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("pubkey", Self::VT_PUBKEY, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("identifier", Self::VT_IDENTIFIER, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("relay", Self::VT_RELAY, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct LiveActivityRefArgs<'a> {
+    pub kind: u16,
+    pub pubkey: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub identifier: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub relay: Option<flatbuffers::WIPOffset<&'a str>>,
+}
+impl<'a> Default for LiveActivityRefArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    LiveActivityRefArgs {
+      kind: 0,
+      pubkey: None, // required field
+      identifier: None, // required field
+      relay: None,
+    }
+  }
+}
+
+pub struct LiveActivityRefBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> LiveActivityRefBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_kind(&mut self, kind: u16) {
+    self.fbb_.push_slot::<u16>(LiveActivityRef::VT_KIND, kind, 0);
+  }
+  #[inline]
+  pub fn add_pubkey(&mut self, pubkey: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(LiveActivityRef::VT_PUBKEY, pubkey);
+  }
+  #[inline]
+  pub fn add_identifier(&mut self, identifier: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(LiveActivityRef::VT_IDENTIFIER, identifier);
+  }
+  #[inline]
+  pub fn add_relay(&mut self, relay: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(LiveActivityRef::VT_RELAY, relay);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> LiveActivityRefBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    LiveActivityRefBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<LiveActivityRef<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, LiveActivityRef::VT_PUBKEY,"pubkey");
+    self.fbb_.required(o, LiveActivityRef::VT_IDENTIFIER,"identifier");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for LiveActivityRef<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("LiveActivityRef");
+      ds.field("kind", &self.kind());
+      ds.field("pubkey", &self.pubkey());
+      ds.field("identifier", &self.identifier());
+      ds.field("relay", &self.relay());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct LiveActivityRefT {
+  pub kind: u16,
+  pub pubkey: String,
+  pub identifier: String,
+  pub relay: Option<String>,
+}
+impl Default for LiveActivityRefT {
+  fn default() -> Self {
+    Self {
+      kind: 0,
+      pubkey: "".to_string(),
+      identifier: "".to_string(),
+      relay: None,
+    }
+  }
+}
+impl LiveActivityRefT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<LiveActivityRef<'b>> {
+    let kind = self.kind;
+    let pubkey = Some({
+      let x = &self.pubkey;
+      _fbb.create_string(x)
+    });
+    let identifier = Some({
+      let x = &self.identifier;
+      _fbb.create_string(x)
+    });
+    let relay = self.relay.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    LiveActivityRef::create(_fbb, &LiveActivityRefArgs{
+      kind,
+      pubkey,
+      identifier,
+      relay,
+    })
+  }
+}
+pub enum Kind1311ParsedOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct Kind1311Parsed<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for Kind1311Parsed<'a> {
+  type Inner = Kind1311Parsed<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> Kind1311Parsed<'a> {
+  pub const VT_CONTENT: flatbuffers::VOffsetT = 4;
+  pub const VT_PARSED_CONTENT: flatbuffers::VOffsetT = 6;
+  pub const VT_ACTIVITY: flatbuffers::VOffsetT = 8;
+  pub const VT_THREAD_REFS: flatbuffers::VOffsetT = 10;
+  pub const VT_MENTIONS: flatbuffers::VOffsetT = 12;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    Kind1311Parsed { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args Kind1311ParsedArgs<'args>
+  ) -> flatbuffers::WIPOffset<Kind1311Parsed<'bldr>> {
+    let mut builder = Kind1311ParsedBuilder::new(_fbb);
+    if let Some(x) = args.mentions { builder.add_mentions(x); }
+    if let Some(x) = args.thread_refs { builder.add_thread_refs(x); }
+    if let Some(x) = args.activity { builder.add_activity(x); }
+    if let Some(x) = args.parsed_content { builder.add_parsed_content(x); }
+    if let Some(x) = args.content { builder.add_content(x); }
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> Kind1311ParsedT {
+    let content = {
+      let x = self.content();
+      x.to_string()
+    };
+    let parsed_content = self.parsed_content().map(|x| {
+      x.iter().map(|t| t.unpack()).collect()
+    });
+    let activity = {
+      let x = self.activity();
+      Box::new(x.unpack())
+    };
+    let thread_refs = self.thread_refs().map(|x| {
+      x.iter().map(|t| t.unpack()).collect()
+    });
+    let mentions = self.mentions().map(|x| {
+      x.iter().map(|t| t.unpack()).collect()
+    });
+    Kind1311ParsedT {
+      content,
+      parsed_content,
+      activity,
+      thread_refs,
+      mentions,
+    }
+  }
+
+  #[inline]
+  pub fn content(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Kind1311Parsed::VT_CONTENT, None).unwrap()}
+  }
+  #[inline]
+  pub fn parsed_content(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<ContentBlock<'a>>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<ContentBlock>>>>(Kind1311Parsed::VT_PARSED_CONTENT, None)}
+  }
+  #[inline]
+  pub fn activity(&self) -> LiveActivityRef<'a> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<LiveActivityRef>>(Kind1311Parsed::VT_ACTIVITY, None).unwrap()}
+  }
+  #[inline]
+  pub fn thread_refs(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<LiveChatThreadRef<'a>>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<LiveChatThreadRef>>>>(Kind1311Parsed::VT_THREAD_REFS, None)}
+  }
+  #[inline]
+  pub fn mentions(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<LiveChatParticipant<'a>>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<LiveChatParticipant>>>>(Kind1311Parsed::VT_MENTIONS, None)}
+  }
+}
+
+impl flatbuffers::Verifiable for Kind1311Parsed<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("content", Self::VT_CONTENT, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<ContentBlock>>>>("parsed_content", Self::VT_PARSED_CONTENT, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<LiveActivityRef>>("activity", Self::VT_ACTIVITY, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<LiveChatThreadRef>>>>("thread_refs", Self::VT_THREAD_REFS, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<LiveChatParticipant>>>>("mentions", Self::VT_MENTIONS, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct Kind1311ParsedArgs<'a> {
+    pub content: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub parsed_content: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<ContentBlock<'a>>>>>,
+    pub activity: Option<flatbuffers::WIPOffset<LiveActivityRef<'a>>>,
+    pub thread_refs: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<LiveChatThreadRef<'a>>>>>,
+    pub mentions: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<LiveChatParticipant<'a>>>>>,
+}
+impl<'a> Default for Kind1311ParsedArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    Kind1311ParsedArgs {
+      content: None, // required field
+      parsed_content: None,
+      activity: None, // required field
+      thread_refs: None,
+      mentions: None,
+    }
+  }
+}
+
+pub struct Kind1311ParsedBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> Kind1311ParsedBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_content(&mut self, content: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind1311Parsed::VT_CONTENT, content);
+  }
+  #[inline]
+  pub fn add_parsed_content(&mut self, parsed_content: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<ContentBlock<'b >>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind1311Parsed::VT_PARSED_CONTENT, parsed_content);
+  }
+  #[inline]
+  pub fn add_activity(&mut self, activity: flatbuffers::WIPOffset<LiveActivityRef<'b >>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<LiveActivityRef>>(Kind1311Parsed::VT_ACTIVITY, activity);
+  }
+  #[inline]
+  pub fn add_thread_refs(&mut self, thread_refs: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<LiveChatThreadRef<'b >>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind1311Parsed::VT_THREAD_REFS, thread_refs);
+  }
+  #[inline]
+  pub fn add_mentions(&mut self, mentions: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<LiveChatParticipant<'b >>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind1311Parsed::VT_MENTIONS, mentions);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> Kind1311ParsedBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    Kind1311ParsedBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<Kind1311Parsed<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, Kind1311Parsed::VT_CONTENT,"content");
+    self.fbb_.required(o, Kind1311Parsed::VT_ACTIVITY,"activity");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for Kind1311Parsed<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("Kind1311Parsed");
+      ds.field("content", &self.content());
+      ds.field("parsed_content", &self.parsed_content());
+      ds.field("activity", &self.activity());
+      ds.field("thread_refs", &self.thread_refs());
+      ds.field("mentions", &self.mentions());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct Kind1311ParsedT {
+  pub content: String,
+  pub parsed_content: Option<Vec<ContentBlockT>>,
+  pub activity: Box<LiveActivityRefT>,
+  pub thread_refs: Option<Vec<LiveChatThreadRefT>>,
+  pub mentions: Option<Vec<LiveChatParticipantT>>,
+}
+impl Default for Kind1311ParsedT {
+  fn default() -> Self {
+    Self {
+      content: "".to_string(),
+      parsed_content: None,
+      activity: Default::default(),
+      thread_refs: None,
+      mentions: None,
+    }
+  }
+}
+impl Kind1311ParsedT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<Kind1311Parsed<'b>> {
+    let content = Some({
+      let x = &self.content;
+      _fbb.create_string(x)
+    });
+    let parsed_content = self.parsed_content.as_ref().map(|x|{
+      let w: Vec<_> = x.iter().map(|t| t.pack(_fbb)).collect();_fbb.create_vector(&w)
+    });
+    let activity = Some({
+      let x = &self.activity;
+      x.pack(_fbb)
+    });
+    let thread_refs = self.thread_refs.as_ref().map(|x|{
+      let w: Vec<_> = x.iter().map(|t| t.pack(_fbb)).collect();_fbb.create_vector(&w)
+    });
+    let mentions = self.mentions.as_ref().map(|x|{
+      let w: Vec<_> = x.iter().map(|t| t.pack(_fbb)).collect();_fbb.create_vector(&w)
+    });
+    Kind1311Parsed::create(_fbb, &Kind1311ParsedArgs{
+      content,
+      parsed_content,
+      activity,
+      thread_refs,
+      mentions,
+    })
+  }
+}
 pub enum CoordinateOffset {}
 #[derive(Copy, Clone, PartialEq)]
 
@@ -19803,6 +20774,11 @@ impl<'a> ParsedEvent<'a> {
             .expect("Invalid union table, expected `ParsedData::Kind1111Parsed`.")
             .unpack()
       )),
+      ParsedData::Kind1311Parsed => ParsedDataT::Kind1311Parsed(Box::new(
+        self.parsed_as_kind_1311_parsed()
+            .expect("Invalid union table, expected `ParsedData::Kind1311Parsed`.")
+            .unpack()
+      )),
       ParsedData::Kind10002Parsed => ParsedDataT::Kind10002Parsed(Box::new(
         self.parsed_as_kind_10002_parsed()
             .expect("Invalid union table, expected `ParsedData::Kind10002Parsed`.")
@@ -20097,6 +21073,21 @@ impl<'a> ParsedEvent<'a> {
 
   #[inline]
   #[allow(non_snake_case)]
+  pub fn parsed_as_kind_1311_parsed(&self) -> Option<Kind1311Parsed<'a>> {
+    if self.parsed_type() == ParsedData::Kind1311Parsed {
+      self.parsed().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { Kind1311Parsed::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
   pub fn parsed_as_kind_10002_parsed(&self) -> Option<Kind10002Parsed<'a>> {
     if self.parsed_type() == ParsedData::Kind10002Parsed {
       self.parsed().map(|t| {
@@ -20285,6 +21276,7 @@ impl flatbuffers::Verifiable for ParsedEvent<'_> {
           ParsedData::Kind20Parsed => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Kind20Parsed>>("ParsedData::Kind20Parsed", pos),
           ParsedData::Kind22Parsed => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Kind22Parsed>>("ParsedData::Kind22Parsed", pos),
           ParsedData::Kind1111Parsed => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Kind1111Parsed>>("ParsedData::Kind1111Parsed", pos),
+          ParsedData::Kind1311Parsed => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Kind1311Parsed>>("ParsedData::Kind1311Parsed", pos),
           ParsedData::Kind10002Parsed => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Kind10002Parsed>>("ParsedData::Kind10002Parsed", pos),
           ParsedData::Kind10019Parsed => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Kind10019Parsed>>("ParsedData::Kind10019Parsed", pos),
           ParsedData::Kind17375Parsed => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Kind17375Parsed>>("ParsedData::Kind17375Parsed", pos),
@@ -20467,6 +21459,13 @@ impl core::fmt::Debug for ParsedEvent<'_> {
         },
         ParsedData::Kind1111Parsed => {
           if let Some(x) = self.parsed_as_kind_1111_parsed() {
+            ds.field("parsed", &x)
+          } else {
+            ds.field("parsed", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        ParsedData::Kind1311Parsed => {
+          if let Some(x) = self.parsed_as_kind_1311_parsed() {
             ds.field("parsed", &x)
           } else {
             ds.field("parsed", &"InvalidFlatbuffer: Union discriminant does not match value.")
@@ -22474,7 +23473,8 @@ impl<'a> CacheRequest<'a> {
   pub const VT_SUB_ID: flatbuffers::VOffsetT = 4;
   pub const VT_REQUESTS: flatbuffers::VOffsetT = 6;
   pub const VT_EVENT: flatbuffers::VOffsetT = 8;
-  pub const VT_RELAYS: flatbuffers::VOffsetT = 10;
+  pub const VT_PARSED_EVENT: flatbuffers::VOffsetT = 10;
+  pub const VT_RELAYS: flatbuffers::VOffsetT = 12;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -22487,6 +23487,7 @@ impl<'a> CacheRequest<'a> {
   ) -> flatbuffers::WIPOffset<CacheRequest<'bldr>> {
     let mut builder = CacheRequestBuilder::new(_fbb);
     if let Some(x) = args.relays { builder.add_relays(x); }
+    if let Some(x) = args.parsed_event { builder.add_parsed_event(x); }
     if let Some(x) = args.event { builder.add_event(x); }
     if let Some(x) = args.requests { builder.add_requests(x); }
     if let Some(x) = args.sub_id { builder.add_sub_id(x); }
@@ -22504,6 +23505,9 @@ impl<'a> CacheRequest<'a> {
     let event = self.event().map(|x| {
       Box::new(x.unpack())
     });
+    let parsed_event = self.parsed_event().map(|x| {
+      Box::new(x.unpack())
+    });
     let relays = self.relays().map(|x| {
       x.iter().map(|s| s.to_string()).collect()
     });
@@ -22511,6 +23515,7 @@ impl<'a> CacheRequest<'a> {
       sub_id,
       requests,
       event,
+      parsed_event,
       relays,
     }
   }
@@ -22537,6 +23542,13 @@ impl<'a> CacheRequest<'a> {
     unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<NostrEvent>>(CacheRequest::VT_EVENT, None)}
   }
   #[inline]
+  pub fn parsed_event(&self) -> Option<ParsedEvent<'a>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<ParsedEvent>>(CacheRequest::VT_PARSED_EVENT, None)}
+  }
+  #[inline]
   pub fn relays(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>> {
     // Safety:
     // Created from valid Table for this object
@@ -22555,6 +23567,7 @@ impl flatbuffers::Verifiable for CacheRequest<'_> {
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("sub_id", Self::VT_SUB_ID, true)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<Request>>>>("requests", Self::VT_REQUESTS, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<NostrEvent>>("event", Self::VT_EVENT, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<ParsedEvent>>("parsed_event", Self::VT_PARSED_EVENT, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("relays", Self::VT_RELAYS, false)?
      .finish();
     Ok(())
@@ -22564,6 +23577,7 @@ pub struct CacheRequestArgs<'a> {
     pub sub_id: Option<flatbuffers::WIPOffset<&'a str>>,
     pub requests: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Request<'a>>>>>,
     pub event: Option<flatbuffers::WIPOffset<NostrEvent<'a>>>,
+    pub parsed_event: Option<flatbuffers::WIPOffset<ParsedEvent<'a>>>,
     pub relays: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>,
 }
 impl<'a> Default for CacheRequestArgs<'a> {
@@ -22573,6 +23587,7 @@ impl<'a> Default for CacheRequestArgs<'a> {
       sub_id: None, // required field
       requests: None,
       event: None,
+      parsed_event: None,
       relays: None,
     }
   }
@@ -22594,6 +23609,10 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> CacheRequestBuilder<'a, 'b, A> 
   #[inline]
   pub fn add_event(&mut self, event: flatbuffers::WIPOffset<NostrEvent<'b >>) {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<NostrEvent>>(CacheRequest::VT_EVENT, event);
+  }
+  #[inline]
+  pub fn add_parsed_event(&mut self, parsed_event: flatbuffers::WIPOffset<ParsedEvent<'b >>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<ParsedEvent>>(CacheRequest::VT_PARSED_EVENT, parsed_event);
   }
   #[inline]
   pub fn add_relays(&mut self, relays: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<&'b  str>>>) {
@@ -22621,6 +23640,7 @@ impl core::fmt::Debug for CacheRequest<'_> {
       ds.field("sub_id", &self.sub_id());
       ds.field("requests", &self.requests());
       ds.field("event", &self.event());
+      ds.field("parsed_event", &self.parsed_event());
       ds.field("relays", &self.relays());
       ds.finish()
   }
@@ -22631,6 +23651,7 @@ pub struct CacheRequestT {
   pub sub_id: String,
   pub requests: Option<Vec<RequestT>>,
   pub event: Option<Box<NostrEventT>>,
+  pub parsed_event: Option<Box<ParsedEventT>>,
   pub relays: Option<Vec<String>>,
 }
 impl Default for CacheRequestT {
@@ -22639,6 +23660,7 @@ impl Default for CacheRequestT {
       sub_id: "".to_string(),
       requests: None,
       event: None,
+      parsed_event: None,
       relays: None,
     }
   }
@@ -22658,6 +23680,9 @@ impl CacheRequestT {
     let event = self.event.as_ref().map(|x|{
       x.pack(_fbb)
     });
+    let parsed_event = self.parsed_event.as_ref().map(|x|{
+      x.pack(_fbb)
+    });
     let relays = self.relays.as_ref().map(|x|{
       let w: Vec<_> = x.iter().map(|s| _fbb.create_string(s)).collect();_fbb.create_vector(&w)
     });
@@ -22665,6 +23690,7 @@ impl CacheRequestT {
       sub_id,
       requests,
       event,
+      parsed_event,
       relays,
     })
   }
@@ -23103,6 +24129,377 @@ impl SignerResponseT {
       request_id,
       result,
       error,
+    })
+  }
+}
+pub enum CacheResponseOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct CacheResponse<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for CacheResponse<'a> {
+  type Inner = CacheResponse<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> CacheResponse<'a> {
+  pub const VT_SUB_ID: flatbuffers::VOffsetT = 4;
+  pub const VT_PAYLOAD: flatbuffers::VOffsetT = 6;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    CacheResponse { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args CacheResponseArgs<'args>
+  ) -> flatbuffers::WIPOffset<CacheResponse<'bldr>> {
+    let mut builder = CacheResponseBuilder::new(_fbb);
+    if let Some(x) = args.payload { builder.add_payload(x); }
+    if let Some(x) = args.sub_id { builder.add_sub_id(x); }
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> CacheResponseT {
+    let sub_id = {
+      let x = self.sub_id();
+      x.to_string()
+    };
+    let payload = self.payload().map(|x| {
+      x.into_iter().collect()
+    });
+    CacheResponseT {
+      sub_id,
+      payload,
+    }
+  }
+
+  #[inline]
+  pub fn sub_id(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(CacheResponse::VT_SUB_ID, None).unwrap()}
+  }
+  #[inline]
+  pub fn payload(&self) -> Option<flatbuffers::Vector<'a, u8>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, u8>>>(CacheResponse::VT_PAYLOAD, None)}
+  }
+}
+
+impl flatbuffers::Verifiable for CacheResponse<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("sub_id", Self::VT_SUB_ID, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>("payload", Self::VT_PAYLOAD, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct CacheResponseArgs<'a> {
+    pub sub_id: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub payload: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
+}
+impl<'a> Default for CacheResponseArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    CacheResponseArgs {
+      sub_id: None, // required field
+      payload: None,
+    }
+  }
+}
+
+pub struct CacheResponseBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> CacheResponseBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_sub_id(&mut self, sub_id: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(CacheResponse::VT_SUB_ID, sub_id);
+  }
+  #[inline]
+  pub fn add_payload(&mut self, payload: flatbuffers::WIPOffset<flatbuffers::Vector<'b , u8>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(CacheResponse::VT_PAYLOAD, payload);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> CacheResponseBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    CacheResponseBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<CacheResponse<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, CacheResponse::VT_SUB_ID,"sub_id");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for CacheResponse<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("CacheResponse");
+      ds.field("sub_id", &self.sub_id());
+      ds.field("payload", &self.payload());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct CacheResponseT {
+  pub sub_id: String,
+  pub payload: Option<Vec<u8>>,
+}
+impl Default for CacheResponseT {
+  fn default() -> Self {
+    Self {
+      sub_id: "".to_string(),
+      payload: None,
+    }
+  }
+}
+impl CacheResponseT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<CacheResponse<'b>> {
+    let sub_id = Some({
+      let x = &self.sub_id;
+      _fbb.create_string(x)
+    });
+    let payload = self.payload.as_ref().map(|x|{
+      _fbb.create_vector(x)
+    });
+    CacheResponse::create(_fbb, &CacheResponseArgs{
+      sub_id,
+      payload,
+    })
+  }
+}
+pub enum CacheInputMessageOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct CacheInputMessage<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for CacheInputMessage<'a> {
+  type Inner = CacheInputMessage<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> CacheInputMessage<'a> {
+  pub const VT_CONTENT_TYPE: flatbuffers::VOffsetT = 4;
+  pub const VT_CONTENT: flatbuffers::VOffsetT = 6;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    CacheInputMessage { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args CacheInputMessageArgs
+  ) -> flatbuffers::WIPOffset<CacheInputMessage<'bldr>> {
+    let mut builder = CacheInputMessageBuilder::new(_fbb);
+    if let Some(x) = args.content { builder.add_content(x); }
+    builder.add_content_type(args.content_type);
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> CacheInputMessageT {
+    let content = match self.content_type() {
+      CacheInput::NONE => CacheInputT::NONE,
+      CacheInput::WorkerMessage => CacheInputT::WorkerMessage(Box::new(
+        self.content_as_worker_message()
+            .expect("Invalid union table, expected `CacheInput::WorkerMessage`.")
+            .unpack()
+      )),
+      CacheInput::CacheRequest => CacheInputT::CacheRequest(Box::new(
+        self.content_as_cache_request()
+            .expect("Invalid union table, expected `CacheInput::CacheRequest`.")
+            .unpack()
+      )),
+      _ => CacheInputT::NONE,
+    };
+    CacheInputMessageT {
+      content,
+    }
+  }
+
+  #[inline]
+  pub fn content_type(&self) -> CacheInput {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<CacheInput>(CacheInputMessage::VT_CONTENT_TYPE, Some(CacheInput::NONE)).unwrap()}
+  }
+  #[inline]
+  pub fn content(&self) -> flatbuffers::Table<'a> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Table<'a>>>(CacheInputMessage::VT_CONTENT, None).unwrap()}
+  }
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn content_as_worker_message(&self) -> Option<WorkerMessage<'a>> {
+    if self.content_type() == CacheInput::WorkerMessage {
+      let u = self.content();
+      // Safety:
+      // Created from a valid Table for this object
+      // Which contains a valid union in this slot
+      Some(unsafe { WorkerMessage::init_from_table(u) })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn content_as_cache_request(&self) -> Option<CacheRequest<'a>> {
+    if self.content_type() == CacheInput::CacheRequest {
+      let u = self.content();
+      // Safety:
+      // Created from a valid Table for this object
+      // Which contains a valid union in this slot
+      Some(unsafe { CacheRequest::init_from_table(u) })
+    } else {
+      None
+    }
+  }
+
+}
+
+impl flatbuffers::Verifiable for CacheInputMessage<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_union::<CacheInput, _>("content_type", Self::VT_CONTENT_TYPE, "content", Self::VT_CONTENT, true, |key, v, pos| {
+        match key {
+          CacheInput::WorkerMessage => v.verify_union_variant::<flatbuffers::ForwardsUOffset<WorkerMessage>>("CacheInput::WorkerMessage", pos),
+          CacheInput::CacheRequest => v.verify_union_variant::<flatbuffers::ForwardsUOffset<CacheRequest>>("CacheInput::CacheRequest", pos),
+          _ => Ok(()),
+        }
+     })?
+     .finish();
+    Ok(())
+  }
+}
+pub struct CacheInputMessageArgs {
+    pub content_type: CacheInput,
+    pub content: Option<flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>>,
+}
+impl<'a> Default for CacheInputMessageArgs {
+  #[inline]
+  fn default() -> Self {
+    CacheInputMessageArgs {
+      content_type: CacheInput::NONE,
+      content: None, // required field
+    }
+  }
+}
+
+pub struct CacheInputMessageBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> CacheInputMessageBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_content_type(&mut self, content_type: CacheInput) {
+    self.fbb_.push_slot::<CacheInput>(CacheInputMessage::VT_CONTENT_TYPE, content_type, CacheInput::NONE);
+  }
+  #[inline]
+  pub fn add_content(&mut self, content: flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(CacheInputMessage::VT_CONTENT, content);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> CacheInputMessageBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    CacheInputMessageBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<CacheInputMessage<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, CacheInputMessage::VT_CONTENT,"content");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for CacheInputMessage<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("CacheInputMessage");
+      ds.field("content_type", &self.content_type());
+      match self.content_type() {
+        CacheInput::WorkerMessage => {
+          if let Some(x) = self.content_as_worker_message() {
+            ds.field("content", &x)
+          } else {
+            ds.field("content", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        CacheInput::CacheRequest => {
+          if let Some(x) = self.content_as_cache_request() {
+            ds.field("content", &x)
+          } else {
+            ds.field("content", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        _ => {
+          let x: Option<()> = None;
+          ds.field("content", &x)
+        },
+      };
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct CacheInputMessageT {
+  pub content: CacheInputT,
+}
+impl Default for CacheInputMessageT {
+  fn default() -> Self {
+    Self {
+      content: CacheInputT::NONE,
+    }
+  }
+}
+impl CacheInputMessageT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<CacheInputMessage<'b>> {
+    let content_type = self.content.cache_input_type();
+    let content = self.content.pack(_fbb);
+    CacheInputMessage::create(_fbb, &CacheInputMessageArgs{
+      content_type,
+      content,
     })
   }
 }

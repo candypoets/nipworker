@@ -4,7 +4,7 @@ use crate::db::types::{
     QueryFilter, QueryResult,
 };
 use rustc_hash::{FxHashMap, FxHashSet};
-use shared::generated::nostr::fb::{self, NostrEvent, ParsedEvent, Request};
+use shared::generated::nostr::fb::{self, NostrEvent, ParsedEvent, Request, WorkerMessage};
 
 type Result<T> = std::result::Result<T, DatabaseError>;
 
@@ -206,6 +206,55 @@ impl<S: EventStorage> NostrDB<S> {
         Ok(())
     }
 
+    /// Add a ParsedEvent from WorkerMessage bytes - stores bytes as-is!
+    /// This preserves decrypted content (e.g., kind4 DMs) without re-decryption.
+    pub async fn add_parsed_event_with_bytes(
+        &self,
+        parsed: ParsedEvent<'_>,
+        worker_msg_bytes: &[u8],
+    ) -> Result<()> {
+        // Store WorkerMessage bytes directly (no rebuilding!)
+        let offset = if let Some(sharded) = self
+            .storage
+            .as_any()
+            .downcast_ref::<ShardedRingBufferStorage>()
+        {
+            sharded
+                .add_event_for_kind(parsed.kind() as u32, worker_msg_bytes)
+                .await?
+        } else {
+            self.storage.add_event_data(worker_msg_bytes).await?
+        };
+
+        // Index using parsed event fields
+        self.index_parsed_event(parsed, offset);
+        Ok(())
+    }
+
+    /// Add a NostrEvent from WorkerMessage bytes - stores bytes as-is!
+    pub async fn add_nostr_event_with_bytes(
+        &self,
+        event: NostrEvent<'_>,
+        worker_msg_bytes: &[u8],
+    ) -> Result<()> {
+        // Store WorkerMessage bytes directly
+        let offset = if let Some(sharded) = self
+            .storage
+            .as_any()
+            .downcast_ref::<ShardedRingBufferStorage>()
+        {
+            sharded
+                .add_event_for_kind(event.kind() as u32, worker_msg_bytes)
+                .await?
+        } else {
+            self.storage.add_event_data(worker_msg_bytes).await?
+        };
+
+        // Index using nostr event fields
+        self.index_nostr_event(event, offset);
+        Ok(())
+    }
+
     #[allow(non_snake_case)]
     fn query_filter_from_fb_request(fb_req: &Request<'_>) -> Result<QueryFilter> {
         let mut f = QueryFilter::new();
@@ -321,18 +370,50 @@ impl<S: EventStorage> NostrDB<S> {
             }
         }
 
+        info!("build_indexes_from_events: loaded {} events from storage", raw_events.len());
+
         // Optional: pre-allocate based on frequencies
+        // Note: Events are now stored as WorkerMessage, so we need to unwrap them
         let mut pubkey_frequency = FxHashMap::default();
         let mut kind_frequency = FxHashMap::default();
+        let mut worker_message_count = 0;
+        let mut legacy_count = 0;
+        
         for bytes in &raw_events {
-            if let Ok(p) = flatbuffers::root::<ParsedEvent>(bytes) {
-                *pubkey_frequency.entry(p.pubkey().to_string()).or_insert(0) += 1;
-                *kind_frequency.entry(p.kind()).or_insert(0) += 1;
-            } else if let Ok(n) = flatbuffers::root::<NostrEvent>(bytes) {
-                *pubkey_frequency.entry(n.pubkey().to_string()).or_insert(0) += 1;
-                *kind_frequency.entry(n.kind()).or_insert(0) += 1;
+            // Try WorkerMessage first (new format)
+            if let Ok(wm) = flatbuffers::root::<WorkerMessage>(bytes) {
+                worker_message_count += 1;
+                match wm.content_type() {
+                    fb::Message::ParsedEvent => {
+                        if let Some(p) = wm.content_as_parsed_event() {
+                            *pubkey_frequency.entry(p.pubkey().to_string()).or_insert(0) += 1;
+                            *kind_frequency.entry(p.kind()).or_insert(0) += 1;
+                        }
+                    }
+                    fb::Message::NostrEvent => {
+                        if let Some(n) = wm.content_as_nostr_event() {
+                            *pubkey_frequency.entry(n.pubkey().to_string()).or_insert(0) += 1;
+                            *kind_frequency.entry(n.kind()).or_insert(0) += 1;
+                        }
+                    }
+                    _ => {}
+                }
+            } else {
+                // Legacy format: direct ParsedEvent or NostrEvent
+                legacy_count += 1;
+                if let Ok(p) = flatbuffers::root::<ParsedEvent>(bytes) {
+                    *pubkey_frequency.entry(p.pubkey().to_string()).or_insert(0) += 1;
+                    *kind_frequency.entry(p.kind()).or_insert(0) += 1;
+                } else if let Ok(n) = flatbuffers::root::<NostrEvent>(bytes) {
+                    *pubkey_frequency.entry(n.pubkey().to_string()).or_insert(0) += 1;
+                    *kind_frequency.entry(n.kind()).or_insert(0) += 1;
+                }
             }
         }
+        
+        info!("build_indexes_from_events: {} WorkerMessage format, {} legacy format", 
+              worker_message_count, legacy_count);
+        
         for (pubkey, count) in pubkey_frequency {
             if count > 5 {
                 self.indexes.events_by_pubkey.borrow_mut().insert(
@@ -349,29 +430,94 @@ impl<S: EventStorage> NostrDB<S> {
         }
 
         // Index everything
+        let mut indexed_count = 0;
         for (i, bytes) in raw_events.iter().enumerate() {
-            if let Ok(p) = flatbuffers::root::<ParsedEvent>(bytes) {
-                self.index_parsed_event(p, events_offset[i]);
-            } else if let Ok(n) = flatbuffers::root::<NostrEvent>(bytes) {
-                self.index_nostr_event(n, events_offset[i]);
+            // Try WorkerMessage first (new format)
+            if let Ok(wm) = flatbuffers::root::<WorkerMessage>(bytes) {
+                match wm.content_type() {
+                    fb::Message::ParsedEvent => {
+                        if let Some(p) = wm.content_as_parsed_event() {
+                            self.index_parsed_event(p, events_offset[i]);
+                            indexed_count += 1;
+                        }
+                    }
+                    fb::Message::NostrEvent => {
+                        if let Some(n) = wm.content_as_nostr_event() {
+                            self.index_nostr_event(n, events_offset[i]);
+                            indexed_count += 1;
+                        }
+                    }
+                    _ => {}
+                }
+            } else {
+                // Legacy format
+                if let Ok(p) = flatbuffers::root::<ParsedEvent>(bytes) {
+                    self.index_parsed_event(p, events_offset[i]);
+                    indexed_count += 1;
+                } else if let Ok(n) = flatbuffers::root::<NostrEvent>(bytes) {
+                    self.index_nostr_event(n, events_offset[i]);
+                    indexed_count += 1;
+                }
             }
         }
 
+        info!("build_indexes_from_events: indexed {} events", indexed_count);
         Ok(())
     }
 
     /// Try to extract a ParsedEvent from raw bytes
+    /// Handles both WorkerMessage wrapper (new format) and direct event (legacy)
     fn extract_parsed_event(bytes: &Vec<u8>) -> Option<ParsedEvent<'_>> {
+        // Try WorkerMessage first (new format)
+        if let Ok(wm) = flatbuffers::root::<WorkerMessage>(bytes) {
+            if wm.content_type() == fb::Message::ParsedEvent {
+                return wm.content_as_parsed_event();
+            }
+            return None;
+        }
+        // Legacy format: direct ParsedEvent
         flatbuffers::root::<ParsedEvent>(bytes).ok()
     }
 
+    /// Try to extract a NostrEvent from raw bytes
+    /// Handles both WorkerMessage wrapper (new format) and direct event (legacy)
+    fn extract_nostr_event(bytes: &Vec<u8>) -> Option<NostrEvent<'_>> {
+        // Try WorkerMessage first (new format)
+        if let Ok(wm) = flatbuffers::root::<WorkerMessage>(bytes) {
+            if wm.content_type() == fb::Message::NostrEvent {
+                return wm.content_as_nostr_event();
+            }
+            return None;
+        }
+        // Legacy format: direct NostrEvent
+        flatbuffers::root::<NostrEvent>(bytes).ok()
+    }
+
     /// Extract created_at regardless of format (ParsedEvent or NostrEvent)
+    /// Handles both WorkerMessage wrapper (new format) and direct event (legacy)
     fn extract_created_at(bytes: &Vec<u8>) -> Option<u32> {
+        // Try WorkerMessage first (new format)
+        if let Ok(wm) = flatbuffers::root::<WorkerMessage>(bytes) {
+            match wm.content_type() {
+                fb::Message::ParsedEvent => {
+                    if let Some(p) = wm.content_as_parsed_event() {
+                        return Some(p.created_at());
+                    }
+                }
+                fb::Message::NostrEvent => {
+                    if let Some(n) = wm.content_as_nostr_event() {
+                        return Some(n.created_at().max(0) as u32);
+                    }
+                }
+                _ => {}
+            }
+            return None;
+        }
+        // Legacy format: direct events
         if let Ok(p) = flatbuffers::root::<ParsedEvent>(bytes) {
             return Some(p.created_at());
         }
         if let Ok(n) = flatbuffers::root::<NostrEvent>(bytes) {
-            // NostrEvent.created_at is int; normalize to u32 for comparisons
             return Some(n.created_at().max(0) as u32);
         }
         None
@@ -718,7 +864,7 @@ impl<S: EventStorage> NostrDB<S> {
 
                         // Store the underlying bytes (event borrowing b prevents moving b)
                         results.push(b);
-                    } else if let Ok(n) = flatbuffers::root::<NostrEvent>(&b) {
+                    } else if let Some(n) = Self::extract_nostr_event(&b) {
                         // Time range filters for NostrEvent
                         if let Some(since) = filter.since {
                             if (n.created_at().max(0) as u32) < since as u32 {
@@ -779,6 +925,8 @@ impl<S: EventStorage> NostrDB<S> {
     /// Query events using the internal filter format
     pub fn query_events(&self, fb_req: &Request<'_>) -> Result<QueryResult> {
         let filter = Self::query_filter_from_fb_request(fb_req)?;
+        info!("query_events: filter kinds={:?}, authors={:?}, limit={:?}", 
+              filter.kinds, filter.authors, filter.limit);
         self.query_events_with_filter(filter)
     }
 
@@ -790,17 +938,23 @@ impl<S: EventStorage> NostrDB<S> {
         let mut all_events: Vec<Vec<u8>> = Vec::new();
 
         if let Some(vec) = fb_reqs {
+            info!("query_events_and_requests: processing {} requests", vec.len());
             for i in 0..vec.len() {
                 let req = vec.get(i);
 
                 // Respect no_cache in request
                 if req.no_cache() {
+                    info!("Request {} has no_cache=true, forwarding to network", i);
                     remaining_indices.push(i);
                     continue;
                 }
 
+                info!("Request {}: querying cache...", i);
                 let result = match self.query_events(&req) {
-                    Ok(r) => r,
+                    Ok(r) => {
+                        info!("Request {}: found {} events in cache", i, r.total_found);
+                        r
+                    }
                     Err(e) => {
                         warn!("query_events failed for request {}: {}", i, e);
                         // Treat as remaining (forward to network)
@@ -815,9 +969,13 @@ impl<S: EventStorage> NostrDB<S> {
                 // If cache_first is false -> always forward
                 // If cache_first is true -> forward only when result is empty
                 if !req.cache_first() || result.total_found == 0 {
+                    info!("Request {}: forwarding to network (cache_first={}, total_found={})", 
+                          i, req.cache_first(), result.total_found);
                     remaining_indices.push(i);
                 }
             }
+        } else {
+            info!("query_events_and_requests: no requests provided");
         }
 
         // Sort newest-first (same as other paths)
@@ -826,6 +984,9 @@ impl<S: EventStorage> NostrDB<S> {
             let cb = Self::extract_created_at(b).unwrap_or_default();
             cb.cmp(&ca)
         });
+
+        info!("query_events_and_requests: returning {} events, {} remaining indices", 
+              all_events.len(), remaining_indices.len());
 
         Ok((remaining_indices, all_events))
     }

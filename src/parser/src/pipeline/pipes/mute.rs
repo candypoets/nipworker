@@ -1,6 +1,8 @@
 use super::super::*;
+use flatbuffers;
 use rustc_hash::FxHashSet;
 use shared::types::Event;
+use shared::generated::nostr::fb;
 
 /// Pre-parsed mute criteria. Build this upstream from your parsed mute event (kind 10000).
 /// - pubkeys: hex pubkeys to mute
@@ -126,5 +128,57 @@ impl Pipe for MuteFilterPipe {
 
     fn name(&self) -> &str {
         &self.name
+    }
+
+    async fn process_cached_batch(&mut self, messages: &[Vec<u8>]) -> Result<Vec<Vec<u8>>> {
+        // Filter WorkerMessage bytes based on mute criteria
+        let mut filtered = Vec::new();
+        
+        for msg_bytes in messages {
+            // Parse WorkerMessage to check if it should be dropped
+            let should_drop = if let Ok(wm) = flatbuffers::root::<fb::WorkerMessage>(msg_bytes) {
+                match wm.content_type() {
+                    fb::Message::ParsedEvent => {
+                        wm.content_as_parsed_event().map(|p| {
+                            // Check pubkey
+                            let pubkey = p.pubkey().to_string();
+                            if self.muted_pubkeys.contains(&pubkey) {
+                                return true;
+                            }
+                            // Check event id
+                            let id = p.id().to_string();
+                            if self.muted_events.contains(&id) {
+                                return true;
+                            }
+                            false
+                        }).unwrap_or(false)
+                    }
+                    fb::Message::NostrEvent => {
+                        wm.content_as_nostr_event().map(|n| {
+                            // Check pubkey
+                            let pubkey = n.pubkey().to_string();
+                            if self.muted_pubkeys.contains(&pubkey) {
+                                return true;
+                            }
+                            // Check event id
+                            let id = n.id().to_string();
+                            if self.muted_events.contains(&id) {
+                                return true;
+                            }
+                            false
+                        }).unwrap_or(false)
+                    }
+                    _ => false, // Other message types pass through
+                }
+            } else {
+                false // Invalid messages pass through (will fail later)
+            };
+            
+            if !should_drop {
+                filtered.push(msg_bytes.clone());
+            }
+        }
+        
+        Ok(filtered)
     }
 }

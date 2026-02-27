@@ -14,6 +14,7 @@ export enum ParsedDataUnion {
   Kind20Parsed = 20,
   Kind22Parsed = 22,
   Kind1111Parsed = 1111,
+  Kind1311Parsed = 1311,
   Kind7374Parsed = 7374,
   Kind7375Parsed = 7375,
   Kind7376Parsed = 7376,

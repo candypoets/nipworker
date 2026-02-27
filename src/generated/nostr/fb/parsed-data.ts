@@ -7,6 +7,7 @@ import { Kind0Parsed, Kind0ParsedT } from '../../nostr/fb/kind0-parsed.js';
 import { Kind10002Parsed, Kind10002ParsedT } from '../../nostr/fb/kind10002-parsed.js';
 import { Kind10019Parsed, Kind10019ParsedT } from '../../nostr/fb/kind10019-parsed.js';
 import { Kind1111Parsed, Kind1111ParsedT } from '../../nostr/fb/kind1111-parsed.js';
+import { Kind1311Parsed, Kind1311ParsedT } from '../../nostr/fb/kind1311-parsed.js';
 import { Kind17375Parsed, Kind17375ParsedT } from '../../nostr/fb/kind17375-parsed.js';
 import { Kind17Parsed, Kind17ParsedT } from '../../nostr/fb/kind17-parsed.js';
 import { Kind1Parsed, Kind1ParsedT } from '../../nostr/fb/kind1-parsed.js';
@@ -38,23 +39,24 @@ export enum ParsedData {
   Kind20Parsed = 8,
   Kind22Parsed = 9,
   Kind1111Parsed = 10,
-  Kind10002Parsed = 11,
-  Kind10019Parsed = 12,
-  Kind17375Parsed = 13,
-  Kind7374Parsed = 14,
-  Kind7375Parsed = 15,
-  Kind7376Parsed = 16,
-  Kind9321Parsed = 17,
-  Kind9735Parsed = 18,
-  Kind30023Parsed = 19,
-  ListParsed = 20,
-  PreGenericParsed = 21
+  Kind1311Parsed = 11,
+  Kind10002Parsed = 12,
+  Kind10019Parsed = 13,
+  Kind17375Parsed = 14,
+  Kind7374Parsed = 15,
+  Kind7375Parsed = 16,
+  Kind7376Parsed = 17,
+  Kind9321Parsed = 18,
+  Kind9735Parsed = 19,
+  Kind30023Parsed = 20,
+  ListParsed = 21,
+  PreGenericParsed = 22
 }
 
 export function unionToParsedData(
   type: ParsedData,
-  accessor: (obj:Kind0Parsed|Kind10002Parsed|Kind10019Parsed|Kind1111Parsed|Kind17375Parsed|Kind17Parsed|Kind1Parsed|Kind20Parsed|Kind22Parsed|Kind30023Parsed|Kind3Parsed|Kind4Parsed|Kind6Parsed|Kind7374Parsed|Kind7375Parsed|Kind7376Parsed|Kind7Parsed|Kind9321Parsed|Kind9735Parsed|ListParsed|PreGenericParsed) => Kind0Parsed|Kind10002Parsed|Kind10019Parsed|Kind1111Parsed|Kind17375Parsed|Kind17Parsed|Kind1Parsed|Kind20Parsed|Kind22Parsed|Kind30023Parsed|Kind3Parsed|Kind4Parsed|Kind6Parsed|Kind7374Parsed|Kind7375Parsed|Kind7376Parsed|Kind7Parsed|Kind9321Parsed|Kind9735Parsed|ListParsed|PreGenericParsed|null
-): Kind0Parsed|Kind10002Parsed|Kind10019Parsed|Kind1111Parsed|Kind17375Parsed|Kind17Parsed|Kind1Parsed|Kind20Parsed|Kind22Parsed|Kind30023Parsed|Kind3Parsed|Kind4Parsed|Kind6Parsed|Kind7374Parsed|Kind7375Parsed|Kind7376Parsed|Kind7Parsed|Kind9321Parsed|Kind9735Parsed|ListParsed|PreGenericParsed|null {
+  accessor: (obj:Kind0Parsed|Kind10002Parsed|Kind10019Parsed|Kind1111Parsed|Kind1311Parsed|Kind17375Parsed|Kind17Parsed|Kind1Parsed|Kind20Parsed|Kind22Parsed|Kind30023Parsed|Kind3Parsed|Kind4Parsed|Kind6Parsed|Kind7374Parsed|Kind7375Parsed|Kind7376Parsed|Kind7Parsed|Kind9321Parsed|Kind9735Parsed|ListParsed|PreGenericParsed) => Kind0Parsed|Kind10002Parsed|Kind10019Parsed|Kind1111Parsed|Kind1311Parsed|Kind17375Parsed|Kind17Parsed|Kind1Parsed|Kind20Parsed|Kind22Parsed|Kind30023Parsed|Kind3Parsed|Kind4Parsed|Kind6Parsed|Kind7374Parsed|Kind7375Parsed|Kind7376Parsed|Kind7Parsed|Kind9321Parsed|Kind9735Parsed|ListParsed|PreGenericParsed|null
+): Kind0Parsed|Kind10002Parsed|Kind10019Parsed|Kind1111Parsed|Kind1311Parsed|Kind17375Parsed|Kind17Parsed|Kind1Parsed|Kind20Parsed|Kind22Parsed|Kind30023Parsed|Kind3Parsed|Kind4Parsed|Kind6Parsed|Kind7374Parsed|Kind7375Parsed|Kind7376Parsed|Kind7Parsed|Kind9321Parsed|Kind9735Parsed|ListParsed|PreGenericParsed|null {
   switch(ParsedData[type]) {
     case 'NONE': return null; 
     case 'Kind0Parsed': return accessor(new Kind0Parsed())! as Kind0Parsed;
@@ -67,6 +69,7 @@ export function unionToParsedData(
     case 'Kind20Parsed': return accessor(new Kind20Parsed())! as Kind20Parsed;
     case 'Kind22Parsed': return accessor(new Kind22Parsed())! as Kind22Parsed;
     case 'Kind1111Parsed': return accessor(new Kind1111Parsed())! as Kind1111Parsed;
+    case 'Kind1311Parsed': return accessor(new Kind1311Parsed())! as Kind1311Parsed;
     case 'Kind10002Parsed': return accessor(new Kind10002Parsed())! as Kind10002Parsed;
     case 'Kind10019Parsed': return accessor(new Kind10019Parsed())! as Kind10019Parsed;
     case 'Kind17375Parsed': return accessor(new Kind17375Parsed())! as Kind17375Parsed;
@@ -84,9 +87,9 @@ export function unionToParsedData(
 
 export function unionListToParsedData(
   type: ParsedData, 
-  accessor: (index: number, obj:Kind0Parsed|Kind10002Parsed|Kind10019Parsed|Kind1111Parsed|Kind17375Parsed|Kind17Parsed|Kind1Parsed|Kind20Parsed|Kind22Parsed|Kind30023Parsed|Kind3Parsed|Kind4Parsed|Kind6Parsed|Kind7374Parsed|Kind7375Parsed|Kind7376Parsed|Kind7Parsed|Kind9321Parsed|Kind9735Parsed|ListParsed|PreGenericParsed) => Kind0Parsed|Kind10002Parsed|Kind10019Parsed|Kind1111Parsed|Kind17375Parsed|Kind17Parsed|Kind1Parsed|Kind20Parsed|Kind22Parsed|Kind30023Parsed|Kind3Parsed|Kind4Parsed|Kind6Parsed|Kind7374Parsed|Kind7375Parsed|Kind7376Parsed|Kind7Parsed|Kind9321Parsed|Kind9735Parsed|ListParsed|PreGenericParsed|null, 
+  accessor: (index: number, obj:Kind0Parsed|Kind10002Parsed|Kind10019Parsed|Kind1111Parsed|Kind1311Parsed|Kind17375Parsed|Kind17Parsed|Kind1Parsed|Kind20Parsed|Kind22Parsed|Kind30023Parsed|Kind3Parsed|Kind4Parsed|Kind6Parsed|Kind7374Parsed|Kind7375Parsed|Kind7376Parsed|Kind7Parsed|Kind9321Parsed|Kind9735Parsed|ListParsed|PreGenericParsed) => Kind0Parsed|Kind10002Parsed|Kind10019Parsed|Kind1111Parsed|Kind1311Parsed|Kind17375Parsed|Kind17Parsed|Kind1Parsed|Kind20Parsed|Kind22Parsed|Kind30023Parsed|Kind3Parsed|Kind4Parsed|Kind6Parsed|Kind7374Parsed|Kind7375Parsed|Kind7376Parsed|Kind7Parsed|Kind9321Parsed|Kind9735Parsed|ListParsed|PreGenericParsed|null, 
   index: number
-): Kind0Parsed|Kind10002Parsed|Kind10019Parsed|Kind1111Parsed|Kind17375Parsed|Kind17Parsed|Kind1Parsed|Kind20Parsed|Kind22Parsed|Kind30023Parsed|Kind3Parsed|Kind4Parsed|Kind6Parsed|Kind7374Parsed|Kind7375Parsed|Kind7376Parsed|Kind7Parsed|Kind9321Parsed|Kind9735Parsed|ListParsed|PreGenericParsed|null {
+): Kind0Parsed|Kind10002Parsed|Kind10019Parsed|Kind1111Parsed|Kind1311Parsed|Kind17375Parsed|Kind17Parsed|Kind1Parsed|Kind20Parsed|Kind22Parsed|Kind30023Parsed|Kind3Parsed|Kind4Parsed|Kind6Parsed|Kind7374Parsed|Kind7375Parsed|Kind7376Parsed|Kind7Parsed|Kind9321Parsed|Kind9735Parsed|ListParsed|PreGenericParsed|null {
   switch(ParsedData[type]) {
     case 'NONE': return null; 
     case 'Kind0Parsed': return accessor(index, new Kind0Parsed())! as Kind0Parsed;
@@ -99,6 +102,7 @@ export function unionListToParsedData(
     case 'Kind20Parsed': return accessor(index, new Kind20Parsed())! as Kind20Parsed;
     case 'Kind22Parsed': return accessor(index, new Kind22Parsed())! as Kind22Parsed;
     case 'Kind1111Parsed': return accessor(index, new Kind1111Parsed())! as Kind1111Parsed;
+    case 'Kind1311Parsed': return accessor(index, new Kind1311Parsed())! as Kind1311Parsed;
     case 'Kind10002Parsed': return accessor(index, new Kind10002Parsed())! as Kind10002Parsed;
     case 'Kind10019Parsed': return accessor(index, new Kind10019Parsed())! as Kind10019Parsed;
     case 'Kind17375Parsed': return accessor(index, new Kind17375Parsed())! as Kind17375Parsed;

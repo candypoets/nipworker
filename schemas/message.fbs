@@ -20,6 +20,7 @@ include "kinds/kind30023.fbs";
 include "kinds/kind20.fbs";
 include "kinds/kind22.fbs";
 include "kinds/kind1111.fbs";
+include "kinds/kind1311.fbs";
 include "kinds/list.fbs";
 include "kinds/pre_generic.fbs";
 
@@ -50,6 +51,7 @@ enum ParsedDataUnion : uint32 {
   Kind20Parsed = 20,
   Kind22Parsed = 22,
   Kind1111Parsed = 1111,
+  Kind1311Parsed = 1311,
   Kind10002Parsed = 10002,
   Kind10019Parsed = 10019,
   Kind17375Parsed = 17375,
@@ -76,6 +78,7 @@ union ParsedData {
   Kind20Parsed,
   Kind22Parsed,
   Kind1111Parsed,
+  Kind1311Parsed,
   Kind10002Parsed,
   Kind10019Parsed,
   Kind17375Parsed,
@@ -165,9 +168,12 @@ table WorkerMessage {
 }
 
 table CacheRequest {
+    // When saving: event is always set, parsed_event is set if already parsed
+    // When querying: both may be returned if cached as parsed
     sub_id: string (required);
     requests: [Request];
     event: NostrEvent;
+    parsed_event: ParsedEvent;
     relays: [string];
 }
 
@@ -224,3 +230,20 @@ table SignerResponse {
 }
 
 root_type WorkerMessage;
+
+// Wrapper for cache responses - contains sub_id + raw payload
+table CacheResponse {
+    sub_id: string (required);
+    payload: [ubyte];  // Raw bytes - typically a WorkerMessage
+}
+
+// Union for cache input messages - discriminates between WorkerMessage (saves) and CacheRequest (queries/publishes)
+union CacheInput {
+  WorkerMessage,
+  CacheRequest
+}
+
+// Wrapper for cache input with explicit type discrimination
+table CacheInputMessage {
+  content: CacheInput (required);
+}

@@ -13,6 +13,7 @@ pub mod kind1;
 pub mod kind10002;
 pub mod kind10019;
 pub mod kind1111;
+pub mod kind1311;
 pub mod kind17;
 pub mod kind17375;
 pub mod kind20;
@@ -38,6 +39,7 @@ pub use kind1::{EventPointer, Kind1Parsed, ProfilePointer as Kind1ProfilePointer
 pub use kind10002::{Kind10002Parsed, RelayInfo};
 pub use kind10019::{Kind10019Parsed, MintInfo};
 pub use kind1111::Kind1111Parsed;
+pub use kind1311::Kind1311Parsed;
 pub use kind17::Kind17Parsed;
 pub use kind17375::Kind17375Parsed;
 pub use kind20::Kind20Parsed;
@@ -112,6 +114,10 @@ impl Parser {
             1111 => {
                 let (parsed, requests) = self.parse_kind_1111(&event)?;
                 (Some(ParsedData::Kind1111(parsed)), requests)
+            }
+            1311 => {
+                let (parsed, requests) = self.parse_kind_1311(&event)?;
+                (Some(ParsedData::Kind1311(parsed)), requests)
             }
             7374 => {
                 let (parsed, requests) = self.parse_kind_7374(&event).await?;

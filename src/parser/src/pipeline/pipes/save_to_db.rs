@@ -18,46 +18,60 @@ impl SaveToDbPipe {
         }
     }
 
-    /// Send a NostrEvent flatbuffer to the cache worker as a CacheRequest
-    fn send_nostr_event_to_cache(&self, event_offset: flatbuffers::WIPOffset<fb::NostrEvent<'_>>) {
+    /// Send event as WorkerMessage to cache.
+    /// If parsed, send as ParsedNostrEvent. Otherwise as NostrEvent.
+    fn send_to_cache(&self, event: &PipelineEvent) {
         let mut builder = FlatBufferBuilder::new();
-
-        // Create the subscription id string
         let sub_id_offset = builder.create_string("save_to_db");
 
-        // Create the CacheRequest with only the event field set
-        let cache_req = fb::CacheRequest::create(
+        // Determine what to send based on what we have
+        let (msg_type, content_type, content_offset) = if let Some(ref parsed) = event.parsed {
+            // Send as ParsedEvent (includes decrypted content for kind4!)
+            info!("SaveToDb: Sending parsed event kind={} to cache", parsed.event.kind);
+            match parsed.build_flatbuffer(&mut builder) {
+                Ok(offset) => (
+                    fb::MessageType::ParsedNostrEvent,
+                    fb::Message::ParsedEvent,
+                    offset.as_union_value(),
+                ),
+                Err(e) => {
+                    warn!("Failed to build ParsedEvent flatbuffer: {}", e);
+                    return;
+                }
+            }
+        } else if let Some(ref raw) = event.raw {
+            // Send as NostrEvent
+            let offset = raw.build_flatbuffer(&mut builder);
+            (
+                fb::MessageType::NostrEvent,
+                fb::Message::NostrEvent,
+                offset.as_union_value(),
+            )
+        } else {
+            // Nothing to send
+            return;
+        };
+
+        let worker_msg = fb::WorkerMessage::create(
             &mut builder,
-            &fb::CacheRequestArgs {
+            &fb::WorkerMessageArgs {
                 sub_id: Some(sub_id_offset),
-                requests: None,
-                event: Some(event_offset),
-                relays: None,
+                url: None,
+                type_: msg_type,
+                content_type,
+                content: Some(content_offset),
             },
         );
 
-        builder.finish(cache_req, None);
-        let bytes = builder.finished_data().to_vec();
-
-        // Send through the MessageChannel port
-        let _ = self.to_cache.borrow().send(&bytes);
+        builder.finish(worker_msg, None);
+        let _ = self.to_cache.borrow().send(builder.finished_data());
     }
 }
 
 impl Pipe for SaveToDbPipe {
     async fn process(&mut self, event: PipelineEvent) -> Result<PipeOutput> {
-        // Send the event to cache - prefer raw event, fall back to parsed_event.event
-        if let Some(ref nostr_event) = event.raw {
-            info!("Saving NostrEvent from raw");
-            let mut fbb = FlatBufferBuilder::new();
-            let fb_raw_event = nostr_event.build_flatbuffer(&mut fbb);
-            self.send_nostr_event_to_cache(fb_raw_event);
-        } else if let Some(ref parsed_event) = event.parsed {
-            info!("Saving NostrEvent from parsed");
-            let mut fbb = FlatBufferBuilder::new();
-            let fb_event = parsed_event.event.build_flatbuffer(&mut fbb);
-            self.send_nostr_event_to_cache(fb_event);
-        }
+        // Send event as WorkerMessage (ParsedEvent if available, else NostrEvent)
+        self.send_to_cache(&event);
 
         // Always pass the event through unchanged
         Ok(PipeOutput::Event(event))

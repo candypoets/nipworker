@@ -90,6 +90,13 @@ impl Pipe for SerializeEventsPipe {
         }
     }
 
+    async fn process_cached_batch(&mut self, messages: &[Vec<u8>]) -> Result<Vec<Vec<u8>>> {
+        // Cached events are already WorkerMessage bytes from the cache.
+        // Just pass them through - no need to re-serialize.
+        // The frontend expects WorkerMessage format via the batch buffer.
+        Ok(messages.to_vec())
+    }
+
     fn can_direct_output(&self) -> bool {
         true // This is designed to be terminal
     }
