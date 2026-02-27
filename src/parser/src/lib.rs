@@ -107,7 +107,7 @@ impl NostrClient {
         from_crypto: MessagePort,
         to_main: MessagePort,
     ) -> Self {
-        init_with_component(tracing::Level::INFO, "PARSER");
+        init_with_component(tracing::Level::ERROR, "PARSER");
 
         info!("Initializing NostrClient with MessageChannel...");
 

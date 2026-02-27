@@ -272,7 +272,7 @@ export class NostrManager {
 			if (msg?.type === 'signer_ready') {
 				console.log('[main] signer_ready:', msg.signer_type, msg.pubkey);
 				this.activePubkey = msg.pubkey;
-				
+
 				// For NIP-46, use the bunker_url from the message (covers both QR and bunker flows)
 				if (msg.signer_type === 'nip46' && msg.bunker_url && this._pendingSession) {
 					console.log('[main] NIP-46 session saved for:', msg.pubkey);
@@ -576,7 +576,11 @@ export class NostrManager {
 	}
 
 	private saveSession(pubkey: string, type: string, payload: any) {
-		console.log('[main] saveSession:', { pubkey: pubkey.slice(0, 16) + '...', type, hasClientSecret: !!payload.clientSecret });
+		console.log('[main] saveSession:', {
+			pubkey: pubkey.slice(0, 16) + '...',
+			type,
+			hasClientSecret: !!payload.clientSecret
+		});
 		const accounts = this.getAccounts();
 		accounts[pubkey] = { type, payload };
 		localStorage.setItem('nostr_signer_accounts', JSON.stringify(accounts));

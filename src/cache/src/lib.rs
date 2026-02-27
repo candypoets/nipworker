@@ -53,7 +53,7 @@ impl Caching {
         from_parser: MessagePort,
         to_connections: MessagePort,
     ) -> Self {
-        init_with_component(tracing::Level::INFO, "CACHE");
+        init_with_component(tracing::Level::ERROR, "CACHE");
 
         info!("instanciating cache");
 
@@ -156,7 +156,6 @@ impl Caching {
         to_parser: &Rc<RefCell<Port>>,
         bytes: &[u8],
     ) {
-
         // Try WorkerMessage first (new format for saves)
         // Note: FlatBuffers is permissive, so we must validate content_type strictly
         if let Ok(worker_msg) = flatbuffers::root::<fb::WorkerMessage>(bytes) {
@@ -382,21 +381,21 @@ impl Caching {
         if !cached_events.is_empty() {
             let total_bytes: usize = cached_events.iter().map(|e| 4 + e.len()).sum();
             let mut batched_payload = Vec::with_capacity(total_bytes);
-            
+
             for ev_bytes in &cached_events {
                 // Write 4-byte length prefix (little endian)
                 batched_payload.extend_from_slice(&(ev_bytes.len() as u32).to_le_bytes());
                 // Write the WorkerMessage bytes
                 batched_payload.extend_from_slice(ev_bytes);
             }
-            
+
             info!(
                 "Sending batched CacheResponse with {} events ({} bytes) to parser for sub_id={}",
                 cached_events.len(),
                 batched_payload.len(),
                 sub_id
             );
-            
+
             let mut builder = FlatBufferBuilder::new();
             let sid = builder.create_string(sub_id);
             let payload = builder.create_vector(&batched_payload);
