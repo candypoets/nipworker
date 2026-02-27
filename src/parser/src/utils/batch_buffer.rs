@@ -13,7 +13,7 @@
 use js_sys::{Array, Object, Reflect, Uint8Array};
 use std::cell::RefCell;
 use std::rc::Rc;
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 use wasm_bindgen::JsValue;
 use web_sys::MessagePort;
 
@@ -118,7 +118,6 @@ impl BatchBuffer {
     /// Format: [4-byte len (little endian)][WorkerMessage bytes]
     /// Returns true if the batch was flushed, false otherwise.
     pub fn add_message(&mut self, data: &[u8]) -> bool {
-        info!("BatchBuffer.add_message for sub {}: {} bytes", self.sub_id, data.len());
         
         // Check if this is the first event in the batch
         if self.buffer.is_empty() {
@@ -179,8 +178,6 @@ impl BatchBuffer {
         if self.buffer.is_empty() {
             return;
         }
-        
-        info!("BatchBuffer.flush for sub {}: {} bytes", self.sub_id, self.buffer.len());
 
         // Create a Uint8Array from our buffer data
         let uint8_array = Uint8Array::new_with_length(self.buffer.len() as u32);
@@ -282,11 +279,8 @@ impl BatchBufferManager {
     /// The message should already be serialized as a WorkerMessage FlatBuffer.
     /// Format: [4-byte len (little endian)][WorkerMessage bytes]
     pub fn add_message(&mut self, sub_id: &str, data: &[u8]) {
-        info!("BatchBufferManager.add_message for sub {}: {} bytes", sub_id, data.len());
-        
         // Auto-create buffer if it doesn't exist
         if !self.buffers.borrow().contains_key(sub_id) {
-            info!("Auto-creating batch buffer for sub {}", sub_id);
             self.create_buffer_for_sub(sub_id);
         }
         if let Some(buffer) = self.buffers.borrow().get(sub_id) {

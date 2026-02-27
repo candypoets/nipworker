@@ -938,23 +938,17 @@ impl<S: EventStorage> NostrDB<S> {
         let mut all_events: Vec<Vec<u8>> = Vec::new();
 
         if let Some(vec) = fb_reqs {
-            info!("query_events_and_requests: processing {} requests", vec.len());
             for i in 0..vec.len() {
                 let req = vec.get(i);
 
                 // Respect no_cache in request
                 if req.no_cache() {
-                    info!("Request {} has no_cache=true, forwarding to network", i);
                     remaining_indices.push(i);
                     continue;
                 }
 
-                info!("Request {}: querying cache...", i);
                 let result = match self.query_events(&req) {
-                    Ok(r) => {
-                        info!("Request {}: found {} events in cache", i, r.total_found);
-                        r
-                    }
+                    Ok(r) => r,
                     Err(e) => {
                         warn!("query_events failed for request {}: {}", i, e);
                         // Treat as remaining (forward to network)
@@ -969,13 +963,9 @@ impl<S: EventStorage> NostrDB<S> {
                 // If cache_first is false -> always forward
                 // If cache_first is true -> forward only when result is empty
                 if !req.cache_first() || result.total_found == 0 {
-                    info!("Request {}: forwarding to network (cache_first={}, total_found={})", 
-                          i, req.cache_first(), result.total_found);
                     remaining_indices.push(i);
                 }
             }
-        } else {
-            info!("query_events_and_requests: no requests provided");
         }
 
         // Sort newest-first (same as other paths)
@@ -984,9 +974,6 @@ impl<S: EventStorage> NostrDB<S> {
             let cb = Self::extract_created_at(b).unwrap_or_default();
             cb.cmp(&ca)
         });
-
-        info!("query_events_and_requests: returning {} events, {} remaining indices", 
-              all_events.len(), remaining_indices.len());
 
         Ok((remaining_indices, all_events))
     }

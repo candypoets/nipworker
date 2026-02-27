@@ -156,7 +156,6 @@ impl Caching {
         to_parser: &Rc<RefCell<Port>>,
         bytes: &[u8],
     ) {
-        info!("Cache received {} bytes", bytes.len());
 
         // Try WorkerMessage first (new format for saves)
         // Note: FlatBuffers is permissive, so we must validate content_type strictly
@@ -164,14 +163,12 @@ impl Caching {
             match worker_msg.content_type() {
                 fb::Message::ParsedEvent | fb::Message::NostrEvent => {
                     // Valid WorkerMessage with event content - store bytes directly!
-                    info!("Detected WorkerMessage (event), persisting...");
                     Self::handle_worker_message_persist(database, bytes).await;
                     return;
                 }
                 fb::Message::NONE => {
                     // WorkerMessage parsed but has no content type - this is likely
                     // CacheRequest bytes misinterpreted as WorkerMessage
-                    info!("Detected WorkerMessage with NONE type, falling through to CacheRequest");
                     // Fall through to CacheRequest parsing below
                 }
                 _ => {
@@ -196,19 +193,16 @@ impl Caching {
         };
 
         let sub_id = cache_req.sub_id().to_string();
-        info!("Detected CacheRequest for sub_id={}", sub_id);
 
         // Check if this is an event persist request (event field is set)
         if cache_req.event().is_some() {
             // Legacy: CacheRequest with event
-            info!("CacheRequest has event field - handling persist");
             Self::handle_cache_request_persist(database, &sub_id, cache_req).await;
             return;
         }
 
         // Otherwise, this is a lookup request (requests field should be set)
         if cache_req.requests().is_some() {
-            info!("CacheRequest has requests field - handling lookup");
             Self::handle_lookup_request(
                 database,
                 to_connections,
@@ -423,12 +417,6 @@ impl Caching {
 
         // 2) Send remaining requests as REQ frames to connections
         if let Some(vec) = requests {
-            info!(
-                "sending {}/{} requests for {}",
-                remaining_idxs.len(),
-                vec.len(),
-                sub_id
-            );
             for idx in remaining_idxs {
                 let fb_req = vec.get(idx);
 
@@ -476,7 +464,6 @@ impl Caching {
 
             // 3) Emit EOCE as a separate CacheResponse to parser
             // This signals the end of cached events for this subscription
-            info!("Sending EOCE CacheResponse for sub {} to parser", sub_id);
             let mut builder = FlatBufferBuilder::new();
             let sid = builder.create_string(sub_id);
             // Empty payload signifies EOCE (end of cache events)
@@ -493,8 +480,6 @@ impl Caching {
 
             if let Err(e) = to_parser.borrow().send(builder.finished_data()) {
                 warn!("Failed to send EOCE CacheResponse: {:?}", e);
-            } else {
-                info!("EOCE CacheResponse sent successfully for sub {}", sub_id);
             }
         }
     }

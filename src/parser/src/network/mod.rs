@@ -23,7 +23,7 @@ use shared::Port;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Arc, RwLock};
-use tracing::{info, info_span, warn, Span};
+use tracing::{info_span, warn, Span};
 use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::spawn_local;
 use web_sys::MessagePort;
@@ -137,13 +137,8 @@ impl NetworkManager {
         sid: String,
         fb_bytes_arc: Arc<Vec<u8>>,
     ) {
-        info!("handle_message_single for sub {}: {} bytes", sid, fb_bytes_arc.len());
-        
         let wm = match flatbuffers::root::<fb::WorkerMessage>(&fb_bytes_arc) {
-            Ok(w) => {
-                info!("Parsed WorkerMessage for sub {}: type={:?}", sid, w.type_());
-                w
-            }
+            Ok(w) => w,
             Err(_) => {
                 warn!("Re-root failed for WorkerMessage (malformed FB)");
                 return;
@@ -181,20 +176,15 @@ impl NetworkManager {
                 let status = cs.status();
                 match status {
                     "NOTICE" => {
-                        info!(
-                            "Received notice from {:?}: {}",
-                            url,
-                            cs.message().unwrap_or("")
-                        );
+                        // Notices logged at debug level only
                     }
                     "AUTH" => {
                         warn!("Auth needed on relay {:?}", url);
                     }
                     "CLOSED" => {
-                        info!("Sub closed {}, on relay {:?}", sid, url);
+                        // Subscription closed - normal operation
                     }
                     "EOSE" => {
-                        info!("EOSE received for sub {} on relay {:?}", sid, url);
                         // Send via batch buffer for MessageChannel delivery
                         let status_bytes = serialize_connection_status(url, "EOSE", "");
                         add_message_to_batch(&sid, &status_bytes);
@@ -209,14 +199,9 @@ impl NetworkManager {
                     "OK" => {
                         // OK: forward to UI, and notify any publish waiter
                         let msg = cs.message().unwrap_or("");
-                        info!(
-                            "[network] OK status received: sid={}, url={}, msg={}",
-                            sid, url, msg
-                        );
 
                         // For publishes, translate event.id to publish_id so main thread can find it
                         let batch_sub_id = if let Some(ref pid) = publish_id {
-                            info!("[network] translating event.id {} to publish_id {} for main thread", sid, pid);
                             pid.clone()
                         } else {
                             sid.clone()
@@ -227,10 +212,6 @@ impl NetworkManager {
                         add_message_to_batch(&batch_sub_id, &status_bytes);
                         // OK needs low latency - flush immediately
                         flush_batch(&batch_sub_id);
-                        info!(
-                            "[network] OK status flushed to batch for batch_sub_id={}",
-                            batch_sub_id
-                        );
                     }
                     other => {
                         warn!("Unexpected ConnectionStatus '{}' for sub {}", other, sid);
@@ -238,7 +219,6 @@ impl NetworkManager {
                 }
             }
             fb::MessageType::Eoce => {
-                info!("EOCE received for sub {}", sid);
                 // Send via batch buffer for MessageChannel delivery
                 let eoce_bytes = serialize_eoce();
                 add_message_to_batch(&sid, &eoce_bytes);
@@ -282,17 +262,13 @@ impl NetworkManager {
             fb::MessageType::ParsedNostrEvent => {
                 let mut pipeline_guard = pipeline_arc.lock().await;
 
-                info!("Processing ParsedNostrEvent for sub {}, bytes={}", sid, fb_bytes_arc.len());
                 match pipeline_guard
                     .process_cached_batch(&[fb_bytes_arc.as_ref().clone()])
                     .await
                 {
                     Ok(outputs) => {
-                        info!("Pipeline produced {} outputs for sub {}", outputs.len(), sid);
                         // Process each output in the vector
-                        for (i, output) in outputs.iter().enumerate() {
-                            info!("Sending output {}/{} to batch for sub {}, len={}", 
-                                  i + 1, outputs.len(), sid, output.len());
+                        for output in outputs.iter() {
                             // Send via batch buffer for MessageChannel delivery
                             add_message_to_batch(&sid, output);
                         }
@@ -391,8 +367,6 @@ impl NetworkManager {
                     // Drive progress by awaiting at least one message
                     match rx.next().await {
                         Some((sid, bytes, source, span)) => {
-                            info!("Shard {} received message for sub {}: {} bytes from {:?}", 
-                                  shard_idx, sid, bytes.len(), source);
                             local_batch.push((sid, bytes, source, span));
                         }
                         None => {
@@ -410,8 +384,6 @@ impl NetworkManager {
                         }
                     }
 
-                    info!("Shard {} processing batch of {} messages", shard_idx, local_batch.len());
-                    
                     // Process in-order within the shard to preserve per-sub ordering
                     let batch = std::mem::take(&mut local_batch);
                     // Extract sub_id, bytes, and span for processing
@@ -472,7 +444,6 @@ impl NetworkManager {
                                         
                                         if payload.is_empty() {
                                             // EOCE - end of cache events, signal to flush
-                                            info!("CacheResponse EOCE received for sub {}", sid);
                                             // Send EOCE signal through pipeline (special marker)
                                             let eoce_bytes = serialize_eoce();
                                             add_message_to_batch(&sid, &eoce_bytes);
@@ -502,18 +473,14 @@ impl NetworkManager {
                                         
                                         // Unpack batched WorkerMessages and send individually
                                         let messages = Self::unpack_batched_messages(payload);
-                                        info!("CacheResponse received for sub {}, unpacked {} WorkerMessages from {} bytes", 
-                                              sid, messages.len(), payload.len());
                                         
                                         // Create span for all messages
                                         let cache_sub_span = info_span!("sub_request", sub_id = %sid);
                                         
                                         // Send each WorkerMessage individually to the shard
-                                        for (idx, msg_bytes) in messages.iter().enumerate() {
+                                        for msg_bytes in messages.iter() {
                                             let msg_arc = std::sync::Arc::new(msg_bytes.clone());
                                             let mut tx = shard_senders[cache_shard_idx].clone();
-                                            info!("Sending unpacked message {}/{} to shard {} for sub {}", 
-                                                  idx + 1, messages.len(), cache_shard_idx, sid);
                                             if let Err(_e) = tx.try_send((sid.clone(), msg_arc.clone(), ShardSource::Cache, cache_sub_span.clone())) {
                                                 if let Err(e) = tx.send((sid.clone(), msg_arc, ShardSource::Cache, cache_sub_span.clone())).await {
                                                     warn!("Shard {} send failed: {:?}", cache_shard_idx, e);
@@ -584,7 +551,6 @@ impl NetworkManager {
         requests: &Vec<fb::Request<'_>>,
         config: &fb::SubscriptionConfig<'_>,
     ) -> Result<()> {
-        info!("open_subscription: {}", subscription_id);
         // early bailout if the sub already exist
         if self
             .subscriptions
@@ -732,14 +698,10 @@ impl NetworkManager {
         template: &Template,
         default_relays: &Vec<String>,
     ) -> Result<()> {
-        info!("[network] publish_event called: publish_id={}", publish_id);
-
         let event = self
             .publish_manager
             .publish_event(publish_id.clone(), template)
             .await?;
-
-        info!("[network] event prepared: id={:?}", event.id);
 
         // Store by event.id so OK responses from connections worker can be routed
         let event_id = event.id.to_string();
@@ -763,10 +725,6 @@ impl NetworkManager {
         // Create batch buffer using publish_id (main thread looks up by publish_id)
         // OK responses come with event.id, but we translate to publish_id before sending to main
         create_batch_buffer(&publish_id);
-        info!(
-            "[network] created batch buffer for publish_id: {}, event_id: {}",
-            publish_id, event_id
-        );
 
         {
             let mut builder = FlatBufferBuilder::new();

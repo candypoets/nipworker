@@ -3,7 +3,7 @@ use flatbuffers::FlatBufferBuilder;
 use shared::{generated::nostr::fb, Port};
 use std::cell::RefCell;
 use std::rc::Rc;
-use tracing::{info, warn};
+use tracing::warn;
 
 pub struct SaveToDbPipe {
     to_cache: Rc<RefCell<Port>>,
@@ -27,7 +27,6 @@ impl SaveToDbPipe {
         // Determine what to send based on what we have
         let (msg_type, content_type, content_offset) = if let Some(ref parsed) = event.parsed {
             // Send as ParsedEvent (includes decrypted content for kind4!)
-            info!("SaveToDb: Sending parsed event kind={} to cache", parsed.event.kind);
             match parsed.build_flatbuffer(&mut builder) {
                 Ok(offset) => (
                     fb::MessageType::ParsedNostrEvent,
