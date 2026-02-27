@@ -23,7 +23,7 @@ use shared::Port;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Arc, RwLock};
-use tracing::{info_span, warn, Span};
+use tracing::{info, info_span, warn, Span};
 use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::spawn_local;
 use web_sys::MessagePort;
@@ -698,6 +698,8 @@ impl NetworkManager {
         template: &Template,
         default_relays: &Vec<String>,
     ) -> Result<()> {
+        info!("publish_event: publish_id={}, default_relays={:?}", publish_id, default_relays);
+        
         let event = self
             .publish_manager
             .publish_event(publish_id.clone(), template)
@@ -705,6 +707,7 @@ impl NetworkManager {
 
         // Store by event.id so OK responses from connections worker can be routed
         let event_id = event.id.to_string();
+        info!("publish_event: event signed successfully, id={}", event_id);
         if let Ok(mut w) = self.subscriptions.write() {
             w.insert(
                 event_id.clone(),
@@ -758,8 +761,14 @@ impl NetworkManager {
             builder.finish(cache_req, None);
             let bytes = builder.finished_data().to_vec();
 
+            info!("publish_event: sending CacheRequest to cache, event_id={}, bytes={}", event_id, bytes.len());
+            
             // Send CacheRequest bytes through the MessageChannel port
-            let _ = self.to_cache.borrow().send(&bytes);
+            if let Err(e) = self.to_cache.borrow().send(&bytes) {
+                warn!("publish_event: failed to send to cache: {:?}", e);
+            } else {
+                info!("publish_event: CacheRequest sent to cache successfully");
+            }
         }
 
         // for relay_url in &all_relays {

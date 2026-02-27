@@ -69,6 +69,12 @@ export class ArrayBufferReader {
 
 		// Check if there's enough space
 		if (currentWritePosition + data.length > buffer.byteLength) {
+			console.warn(
+				`[ArrayBufferReader] Dropping ${_debugId ? `event for subscription '${_debugId}'` : 'event'}: ` +
+				`buffer full (${currentWritePosition}/${buffer.byteLength} bytes used, ` +
+				`need ${data.length} more bytes). ` +
+				`Consider increasing 'bytesPerEvent' or reducing subscription limits.`
+			);
 			return false;
 		}
 

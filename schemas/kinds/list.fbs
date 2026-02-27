@@ -9,9 +9,18 @@ namespace nostr.fb;
 // - Optional metadata (title/summary/image/topics)
 // - Entries via tags: p (pubkeys), e (event ids), a (coordinates)
 // - The original kind (list_kind) and optional PRE identifier (d)
+// - Other tags: catch-all for non-standard tags (e.g., u, r, expiration, etc.)
 //
 // Note: This schema intentionally excludes any body/content field, since NIP-51
 // lists are driven by tags rather than markdown content.
+
+// Generic tag for arbitrary key-value pairs
+// key: tag name (e.g., "u", "r", "expiration")
+// values: all values after the key (e.g., ["https://server.com"] for ["u", "https://server.com"])
+table Tag {
+  key: string (required);
+  values: [string];
+}
 
 // Coordinate for "a" tags: kind:pubkey:d plus optional relay(s)
 table Coordinate {
@@ -32,4 +41,5 @@ table ListParsed {
   people: [string];         // from "p" tags (pubkeys)
   events: [string];         // from "e" tags (event ids)
   addresses: [Coordinate];  // from "a" tags (coordinates)
+  other_tags: [Tag];        // catch-all for non-standard tags (u, r, expiration, etc.)
 }

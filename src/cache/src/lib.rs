@@ -192,11 +192,20 @@ impl Caching {
         };
 
         let sub_id = cache_req.sub_id().to_string();
+        info!("CacheRequest decoded for sub_id={}", sub_id);
 
         // Check if this is an event persist request (event field is set)
-        if cache_req.event().is_some() {
-            // Legacy: CacheRequest with event
-            Self::handle_cache_request_persist(database, &sub_id, cache_req).await;
+        if let Some(fb_event) = cache_req.event() {
+            info!("CacheRequest is a PUBLISH request for sub_id={}", sub_id);
+            // Handle full publish flow: persist + publish to relays
+            Self::handle_event_persist(
+                database,
+                to_connections,
+                &sub_id,
+                fb_event,
+                cache_req.parsed_event(),
+                cache_req.relays(),
+            ).await;
             return;
         }
 
@@ -268,27 +277,31 @@ impl Caching {
         fb_parsed_event: Option<fb::ParsedEvent<'_>>,
         relay_hints: Option<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>,
     ) {
-        // First, persist the event to database
-        // TODO: If we have parsed_event with decrypted content (kind4),
-        // we should store the ParsedEvent bytes to avoid re-decrypting.
-        // For now, just store the raw event.
-        let store_result = database.add_event_from_fb(fb_event).await;
-
-        if let Err(e) = store_result {
-            warn!("Failed to persist event to database: {}", e);
-        }
+        info!("[PUBLISH] Handling event persist for sub_id={}, event_id={}", sub_id, fb_event.id());
+        
+        // NOTE: Persist is disabled for publish path - event will be stored when it comes back from relays
+        // This avoids duplicate storage and lets the normal ingestion path handle it
+        // let store_result = database.add_event_from_fb(fb_event).await;
+        // if let Err(e) = store_result {
+        //     warn!("[PUBLISH] Failed to persist event to database: {}", e);
+        // }
 
         // Determine relays to publish to
         let mut relays: Vec<String> = database
             .determine_target_relays(fb_event)
             .await
             .unwrap_or_default();
+        
+        info!("[PUBLISH] Determined {} relays from database", relays.len());
 
         if let Some(rs) = relay_hints {
+            info!("[PUBLISH] Adding {} relay hints from CacheRequest", rs.len());
             for i in 0..rs.len() as usize {
                 relays.push(rs.get(i).to_string());
             }
         }
+
+        info!("[PUBLISH] Total relays after hints: {}", relays.len());
 
         // Fallback to DEFAULT_RELAYS if none were determined
         if relays.is_empty() {
@@ -297,6 +310,7 @@ impl Caching {
                 fb_event.id()
             );
             relays = DEFAULT_RELAYS.iter().map(|s| s.to_string()).collect();
+            info!("[PUBLISH] Using {} default relays", relays.len());
         }
 
         // Deduplicate relays
