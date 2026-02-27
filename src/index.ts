@@ -223,7 +223,7 @@ export class NostrManager {
 			if (msg.ok) {
 				this.activePubkey = msg.result;
 				// Check if bunker was discovered (QR flow) - convert to bunker format
-				if (this._discoveredBunkerUrl && this._pendingSession?.type === 'nip46_qr') {
+				if (this._discoveredBunkerUrl && this._pendingSession?.type === 'nip46_qr' && this._pendingSession?.payload?.clientSecret) {
 					console.log('[main] Converting QR to bunker for pubkey:', this.activePubkey);
 					this.saveSession(this.activePubkey!, 'nip46_bunker', {
 						url: this._discoveredBunkerUrl,
@@ -274,7 +274,7 @@ export class NostrManager {
 				this.activePubkey = msg.pubkey;
 
 				// For NIP-46, use the bunker_url from the message (covers both QR and bunker flows)
-				if (msg.signer_type === 'nip46' && msg.bunker_url && this._pendingSession) {
+				if (msg.signer_type === 'nip46' && msg.bunker_url && this._pendingSession?.payload?.clientSecret) {
 					console.log('[main] NIP-46 session saved for:', msg.pubkey);
 					this.saveSession(msg.pubkey, 'nip46', {
 						url: msg.bunker_url,
