@@ -87,6 +87,13 @@ pub trait Pipe {
     fn run_for_cached_events(&self) -> bool {
         true
     }
+
+    /// Flush accumulated output from this pipe.
+    /// Called at EOSE or when subscription ends to emit any buffered data.
+    /// Returns a vector of serialized WorkerMessage bytes.
+    fn flush(&mut self) -> Vec<Vec<u8>> {
+        Vec::new()
+    }
 }
 
 /// Enum representing all possible pipe types to avoid dynamic dispatch
@@ -180,6 +187,19 @@ impl PipeType {
             PipeType::KindFilter(pipe) => pipe.run_for_cached_events(),
             PipeType::NpubLimiter(pipe) => pipe.run_for_cached_events(),
             PipeType::MuteFilter(pipe) => pipe.run_for_cached_events(),
+        }
+    }
+
+    pub fn flush(&mut self) -> Vec<Vec<u8>> {
+        match self {
+            PipeType::Parse(pipe) => pipe.flush(),
+            PipeType::SaveToDb(pipe) => pipe.flush(),
+            PipeType::SerializeEvents(pipe) => pipe.flush(),
+            PipeType::ProofVerification(pipe) => pipe.flush(),
+            PipeType::Counter(pipe) => pipe.flush(),
+            PipeType::KindFilter(pipe) => pipe.flush(),
+            PipeType::NpubLimiter(pipe) => pipe.flush(),
+            PipeType::MuteFilter(pipe) => pipe.flush(),
         }
     }
 }
@@ -465,5 +485,15 @@ impl Pipeline {
         let other_seen = other.seen_ids.borrow();
         let mut seen = self.seen_ids.borrow_mut();
         seen.extend(other_seen.iter().cloned());
+    }
+
+    /// Flush the terminal pipe to emit any accumulated output.
+    /// Returns a vector of serialized WorkerMessage bytes.
+    pub fn flush(&mut self) -> Vec<Vec<u8>> {
+        if let Some(last_pipe) = self.pipes.last_mut() {
+            last_pipe.flush()
+        } else {
+            Vec::new()
+        }
     }
 }

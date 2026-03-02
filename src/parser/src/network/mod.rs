@@ -185,6 +185,17 @@ impl NetworkManager {
                         // Subscription closed - normal operation
                     }
                     "EOSE" => {
+                        // Flush the pipeline to emit accumulated output (e.g., count responses)
+                        let flushed_outputs = {
+                            let mut pipeline_guard = pipeline_arc.lock().await;
+                            pipeline_guard.flush()
+                        };
+                        
+                        // Send flushed outputs to batch buffer
+                        for output in flushed_outputs {
+                            add_message_to_batch(&sid, &output);
+                        }
+                        
                         // Send via batch buffer for MessageChannel delivery
                         let status_bytes = serialize_connection_status(url, "EOSE", "");
                         add_message_to_batch(&sid, &status_bytes);
@@ -219,6 +230,17 @@ impl NetworkManager {
                 }
             }
             fb::MessageType::Eoce => {
+                // Flush the pipeline to emit accumulated output from cache processing
+                let flushed_outputs = {
+                    let mut pipeline_guard = pipeline_arc.lock().await;
+                    pipeline_guard.flush()
+                };
+                
+                // Send flushed outputs to batch buffer
+                for output in flushed_outputs {
+                    add_message_to_batch(&sid, &output);
+                }
+                
                 // Send via batch buffer for MessageChannel delivery
                 let eoce_bytes = serialize_eoce();
                 add_message_to_batch(&sid, &eoce_bytes);
@@ -442,16 +464,7 @@ impl NetworkManager {
                                         let sid: String = resp.sub_id().to_string();
                                         let payload = resp.payload().map(|p| p.bytes()).unwrap_or(&[]);
                                         
-                                        if payload.is_empty() {
-                                            // EOCE - end of cache events, signal to flush
-                                            // Send EOCE signal through pipeline (special marker)
-                                            let eoce_bytes = serialize_eoce();
-                                            add_message_to_batch(&sid, &eoce_bytes);
-                                            flush_batch(&sid);
-                                            continue; // Don't send to shard, already handled
-                                        }
-                                        
-                                        // Compute shard index for this sub_id
+                                        // Compute shard index for this sub_id (needed for both EOCE and events)
                                         let cache_shard_idx = {
                                             let forced = subs
                                                 .read()
@@ -470,6 +483,23 @@ impl NetworkManager {
                                                 }
                                             }
                                         };
+                                        
+                                        if payload.is_empty() {
+                                            // EOCE - end of cache events
+                                            // Send to shard as WorkerMessage::Eoce so it goes through 
+                                            // handle_message_single which will flush the pipeline
+                                            let eoce_worker_msg = serialize_eoce();
+                                            let eoce_arc = std::sync::Arc::new(eoce_worker_msg);
+                                            let cache_sub_span = info_span!("sub_request", sub_id = %sid);
+                                            
+                                            let mut tx = shard_senders[cache_shard_idx].clone();
+                                            if let Err(_e) = tx.try_send((sid.clone(), eoce_arc.clone(), ShardSource::Cache, cache_sub_span.clone())) {
+                                                if let Err(e) = tx.send((sid, eoce_arc, ShardSource::Cache, cache_sub_span)).await {
+                                                    warn!("Shard {} send failed for EOCE: {:?}", cache_shard_idx, e);
+                                                }
+                                            }
+                                            continue;
+                                        }
                                         
                                         // Unpack batched WorkerMessages and send individually
                                         let messages = Self::unpack_batched_messages(payload);
