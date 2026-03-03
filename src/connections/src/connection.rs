@@ -17,16 +17,17 @@ use crate::utils::{extract_first_three, validate_relay_url};
 
 use futures::channel::mpsc::{self, Receiver, Sender};
 use futures::future::{AbortHandle, Abortable};
-use serde_json::json;
-use shared::Port;
-use std::cell::RefCell;
 use futures::lock::Mutex;
 use futures::stream::{SplitSink, SplitStream};
 use futures::{SinkExt, StreamExt};
 use gloo_net::websocket::{futures::WebSocket, Message};
+use serde_json::json;
+use shared::Port;
+use std::cell::RefCell;
 use std::collections::HashSet;
 use std::rc::Rc;
 use std::sync::{Arc, RwLock};
+use tracing::warn;
 use wasm_bindgen_futures::spawn_local;
 
 type OutWriter = Rc<dyn Fn(&str, &str, &str)>; // (url, sub_id, raw_text)
@@ -74,7 +75,7 @@ impl RelayConnection {
         to_crypto: Rc<RefCell<Port>>,
     ) -> Arc<Self> {
         // Create the queue immediately so send_raw can enqueue even before connection.
-        let (tx, rx) = mpsc::channel::<String>(50);
+        let (tx, rx) = mpsc::channel::<String>(64);
 
         let conn = Arc::new(Self {
             url,
@@ -409,6 +410,7 @@ impl RelayConnection {
             tracing::debug!(relay = %self.url, frame_len = text.len(), "Sending frame to queue");
             tx.clone().try_send(text.to_owned()).map_err(|e| {
                 if e.is_full() {
+                    warn!(relay = %self.url, "Frame dropped: send queue full (64)");
                     RelayError::QueueFull
                 } else {
                     RelayError::ConnectionClosed
@@ -549,7 +551,7 @@ impl RelayConnection {
             let mut st = self.status.write().unwrap();
             *st = ConnectionStatus::Closed;
         }
-        
+
         // Clear pre-auth queue on close to prevent memory leak
         {
             let queue = std::mem::take(&mut *self.pre_auth_queue.write().unwrap());
@@ -559,7 +561,7 @@ impl RelayConnection {
         }
         // Set auth state to Failed
         *self.auth_state.write().unwrap() = AuthState::Failed;
-        
+
         (self.status_writer)("close", &self.url);
 
         Ok(())
@@ -572,7 +574,7 @@ impl RelayConnection {
     /// Handle the first response from relay to determine auth requirements
     async fn handle_first_response(self: &Arc<Self>, kind: &str, content: &str) {
         tracing::debug!(relay = %self.url, kind, "handle_first_response called");
-        
+
         // Only process if we're in Unknown state
         let is_unknown = {
             let state = self.auth_state.read().unwrap();
@@ -685,7 +687,9 @@ impl RelayConnection {
         // Send directly (bypass queue since this is internal)
         if let Some(tx) = self.queue_tx.read().unwrap().as_ref() {
             match tx.clone().try_send(auth_frame) {
-                Ok(_) => tracing::info!(relay = %self.url, "[connections][AUTH] Frame queued for relay"),
+                Ok(_) => {
+                    tracing::info!(relay = %self.url, "[connections][AUTH] Frame queued for relay")
+                }
                 Err(e) => tracing::error!(relay = %self.url, "Failed to queue AUTH frame: {:?}", e),
             }
         } else {
@@ -693,7 +697,8 @@ impl RelayConnection {
         }
 
         // Set state to Pending (waiting for OK)
-        let old_state = std::mem::replace(&mut *self.auth_state.write().unwrap(), AuthState::Pending);
+        let old_state =
+            std::mem::replace(&mut *self.auth_state.write().unwrap(), AuthState::Pending);
         tracing::info!(relay = %self.url, ?old_state, "[connections][AUTH] State changed to Pending (waiting for relay OK)");
     }
 
@@ -723,7 +728,9 @@ impl RelayConnection {
                 if let Some(tx) = self.queue_tx.read().unwrap().as_ref() {
                     match tx.clone().try_send(frame) {
                         Ok(_) => resent += 1,
-                        Err(e) => tracing::error!(relay = %self.url, "Failed to re-send queued frame: {:?}", e),
+                        Err(e) => {
+                            tracing::error!(relay = %self.url, "Failed to re-send queued frame: {:?}", e)
+                        }
                     }
                 }
             }
@@ -731,7 +738,7 @@ impl RelayConnection {
         } else {
             tracing::info!(relay = %self.url, ?old_state, "[connections][AUTH] State transition to Authenticated from {:?}", old_state);
         }
-        
+
         tracing::info!(relay = %self.url, "[connections][AUTH] Relay is now AUTHENTICATED");
     }
 

@@ -21,7 +21,7 @@ impl Port {
     /// The returned receiver can be used with `.await` or `.next().await` in
     /// async contexts (typically with futures::select!).
     pub fn from_receiver(port: MessagePort) -> mpsc::Receiver<Vec<u8>> {
-        let (mut tx, rx) = mpsc::channel::<Vec<u8>>(64);
+        let (mut tx, rx) = mpsc::channel::<Vec<u8>>(256);
 
         // Set up the onmessage handler using Closure::wrap
         let closure = Closure::wrap(Box::new(move |event: MessageEvent| {
