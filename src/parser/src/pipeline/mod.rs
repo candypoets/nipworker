@@ -94,6 +94,10 @@ pub trait Pipe {
     fn flush(&mut self) -> Vec<Vec<u8>> {
         Vec::new()
     }
+
+    /// Called when EOSE is received for this subscription.
+    /// Pipes can use this to change behavior (e.g., start emitting immediately).
+    fn on_eose(&mut self) {}
 }
 
 /// Enum representing all possible pipe types to avoid dynamic dispatch
@@ -200,6 +204,19 @@ impl PipeType {
             PipeType::KindFilter(pipe) => pipe.flush(),
             PipeType::NpubLimiter(pipe) => pipe.flush(),
             PipeType::MuteFilter(pipe) => pipe.flush(),
+        }
+    }
+
+    pub fn on_eose(&mut self) {
+        match self {
+            PipeType::Parse(pipe) => pipe.on_eose(),
+            PipeType::SaveToDb(pipe) => pipe.on_eose(),
+            PipeType::SerializeEvents(pipe) => pipe.on_eose(),
+            PipeType::ProofVerification(pipe) => pipe.on_eose(),
+            PipeType::Counter(pipe) => pipe.on_eose(),
+            PipeType::KindFilter(pipe) => pipe.on_eose(),
+            PipeType::NpubLimiter(pipe) => pipe.on_eose(),
+            PipeType::MuteFilter(pipe) => pipe.on_eose(),
         }
     }
 }
@@ -494,6 +511,13 @@ impl Pipeline {
             last_pipe.flush()
         } else {
             Vec::new()
+        }
+    }
+
+    /// Called when EOSE is received for this subscription.
+    pub fn on_eose(&mut self) {
+        if let Some(last_pipe) = self.pipes.last_mut() {
+            last_pipe.on_eose();
         }
     }
 }

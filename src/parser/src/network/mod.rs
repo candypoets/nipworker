@@ -185,10 +185,12 @@ impl NetworkManager {
                         // Subscription closed - normal operation
                     }
                     "EOSE" => {
-                        // Flush the pipeline to emit accumulated output (e.g., count responses)
+                        // Flush the pipeline and notify it of EOSE
                         let flushed_outputs = {
                             let mut pipeline_guard = pipeline_arc.lock().await;
-                            pipeline_guard.flush()
+                            let outputs = pipeline_guard.flush();
+                            pipeline_guard.on_eose();
+                            outputs
                         };
                         
                         // Send flushed outputs to batch buffer

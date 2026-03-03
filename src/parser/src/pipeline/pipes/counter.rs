@@ -3,14 +3,14 @@ use shared::generated::nostr::fb;
 use super::super::*;
 use flatbuffers::FlatBufferBuilder;
 use rustc_hash::{FxHashMap, FxHashSet};
-use tracing::error;
 
 pub struct CounterPipe {
     kinds: FxHashSet<u16>,
     counts: FxHashMap<u16, u64>,
     you_by_kind: FxHashMap<u16, bool>,
-    pubkey: String, // Pubkey in hex string
+    pubkey: String,
     name: String,
+    eosed: bool,
 }
 
 impl CounterPipe {
@@ -22,46 +22,44 @@ impl CounterPipe {
             counts,
             you_by_kind: FxHashMap::default(),
             pubkey,
+            eosed: false,
         }
     }
 
-    /// Build CountResponse WorkerMessages for all tracked kinds
-    fn build_count_responses(&self) -> Vec<Vec<u8>> {
-        let mut outputs = Vec::with_capacity(self.kinds.len());
+    /// Build a CountResponse for a specific kind
+    fn build_count_response(&self, kind: u16) -> Vec<u8> {
+        let mut fbb = FlatBufferBuilder::new();
+        
+        let counter_args = fb::CountResponseArgs {
+            count: *self.counts.get(&kind).unwrap_or(&0) as u32,
+            kind: kind as u16,
+            you: *self.you_by_kind.get(&kind).unwrap_or(&false),
+        };
+        
+        let counter_offset = fb::CountResponse::create(&mut fbb, &counter_args);
+        
+        let worker_msg = fb::WorkerMessage::create(&mut fbb, &fb::WorkerMessageArgs {
+            sub_id: None,
+            url: None,
+            type_: fb::MessageType::CountResponse,
+            content_type: fb::Message::CountResponse,
+            content: Some(counter_offset.as_union_value()),
+        });
+        
+        fbb.finish(worker_msg, None);
+        fbb.finished_data().to_vec()
+    }
 
-        for &kind in &self.kinds {
-            let mut fbb = FlatBufferBuilder::new();
-
-            let counter_args = fb::CountResponseArgs {
-                count: *self.counts.get(&kind).unwrap_or(&0) as u32,
-                kind: kind as u16,
-                you: *self.you_by_kind.get(&kind).unwrap_or(&false),
-            };
-
-            let counter_offset = fb::CountResponse::create(&mut fbb, &counter_args);
-
-            let worker_msg = {
-                let args = fb::WorkerMessageArgs {
-                    sub_id: None,
-                    url: None,
-                    type_: fb::MessageType::CountResponse,
-                    content_type: fb::Message::CountResponse,
-                    content: Some(counter_offset.as_union_value()),
-                };
-                fb::WorkerMessage::create(&mut fbb, &args)
-            };
-
-            fbb.finish(worker_msg, None);
-            outputs.push(fbb.finished_data().to_vec());
-        }
-
-        outputs
+    /// Build CountResponses for all tracked kinds
+    fn build_all_count_responses(&self) -> Vec<Vec<u8>> {
+        self.kinds.iter()
+            .map(|&k| self.build_count_response(k))
+            .collect()
     }
 }
 
 impl Pipe for CounterPipe {
     async fn process(&mut self, event: PipelineEvent) -> Result<PipeOutput> {
-        // Get kind from either raw or parsed event
         let (kind, pubkey) = if let Some(ref raw) = event.raw {
             (raw.kind, raw.pubkey.to_string())
         } else if let Some(ref parsed) = event.parsed {
@@ -70,25 +68,29 @@ impl Pipe for CounterPipe {
             return Ok(PipeOutput::Drop);
         };
 
-        if self.kinds.contains(&kind) {
-            // Accumulate count locally, don't emit yet
-            *self.counts.entry(kind).or_insert(0) += 1;
-
-            // Track if any event for this kind is from "you"
-            if self.pubkey == pubkey {
-                self.you_by_kind.insert(kind, true);
-            }
-
-            // Drop the event - counting only, no immediate output
-            Ok(PipeOutput::Drop)
-        } else {
-            // Drop all events - we're only counting
-            Ok(PipeOutput::Drop)
+        if !self.kinds.contains(&kind) {
+            return Ok(PipeOutput::Drop);
         }
+
+        // Accumulate count
+        *self.counts.entry(kind).or_insert(0) += 1;
+
+        // Track "you" status
+        if self.pubkey == pubkey {
+            self.you_by_kind.insert(kind, true);
+        }
+
+        // After EOSE: emit immediately (only the changed kind)
+        if self.eosed {
+            return Ok(PipeOutput::DirectOutput(self.build_count_response(kind)));
+        }
+
+        // Before EOSE: accumulate without emitting
+        Ok(PipeOutput::Drop)
     }
 
     async fn process_cached_batch(&mut self, messages: &[Vec<u8>]) -> Result<Vec<Vec<u8>>> {
-        // Process cached events, accumulating counts without emitting
+        // Accumulate without emitting
         for bytes in messages {
             if let Ok(msg) = flatbuffers::root::<fb::WorkerMessage>(&bytes) {
                 if let fb::Message::ParsedEvent = msg.content_type() {
@@ -98,8 +100,6 @@ impl Pipe for CounterPipe {
 
                         if self.kinds.contains(&kind) {
                             *self.counts.entry(kind).or_insert(0) += 1;
-
-                            // Track if any event for this kind is from "you"
                             if self.pubkey == pubkey {
                                 self.you_by_kind.insert(kind, true);
                             }
@@ -108,18 +108,21 @@ impl Pipe for CounterPipe {
                 }
             }
         }
-
-        // Don't emit during batch processing - wait for EOCE flush
         Ok(Vec::new())
     }
 
     fn flush(&mut self) -> Vec<Vec<u8>> {
-        // Emit final counts for all tracked kinds
-        self.build_count_responses()
+        // Emit all kinds at EOSE/EOCE
+        self.build_all_count_responses()
+    }
+
+    fn on_eose(&mut self) {
+        // After this, process() will emit immediately
+        self.eosed = true;
     }
 
     fn can_direct_output(&self) -> bool {
-        true // Counter can be terminal and send counts directly
+        true
     }
 
     fn name(&self) -> &str {
