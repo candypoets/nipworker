@@ -63,9 +63,15 @@ impl ConnectionRegistry {
     /// Handle signed auth event response from crypto worker
     pub fn handle_auth_response(&self, response_json: &str) {
         tracing::info!("[connections][AUTH] handle_auth_response ENTRY");
-        tracing::info!(response_len = response_json.len(), "[connections][AUTH] handle_auth_response called");
-        tracing::debug!(response = response_json, "[connections][AUTH] Response content");
-        
+        tracing::info!(
+            response_len = response_json.len(),
+            "[connections][AUTH] handle_auth_response called"
+        );
+        tracing::debug!(
+            response = response_json,
+            "[connections][AUTH] Response content"
+        );
+
         // Parse response to get relay URL and signed event
         tracing::info!("[connections][AUTH] Parsing JSON response");
         let parsed: Value = match serde_json::from_str(response_json) {
@@ -94,7 +100,10 @@ impl ConnectionRegistry {
         tracing::info!("[connections][AUTH] Extracting signed event");
         let signed_event = match parsed["event"].as_str() {
             Some(event) => {
-                tracing::info!(event_len = event.len(), "[connections][AUTH] Found signed event");
+                tracing::info!(
+                    event_len = event.len(),
+                    "[connections][AUTH] Found signed event"
+                );
                 event
             }
             None => {
@@ -103,16 +112,26 @@ impl ConnectionRegistry {
             }
         };
 
-        tracing::info!(relay = relay_url, event_len = signed_event.len(), "[connections][AUTH] Dispatching to connection");
+        tracing::info!(
+            relay = relay_url,
+            event_len = signed_event.len(),
+            "[connections][AUTH] Dispatching to connection"
+        );
 
         // Dispatch to the correct connection
         tracing::info!("[connections][AUTH] Looking up connection in registry");
         if let Some(conn) = self.get_connection(relay_url) {
-            tracing::info!(relay = relay_url, "[connections][AUTH] Found connection, dispatching signed auth");
+            tracing::info!(
+                relay = relay_url,
+                "[connections][AUTH] Found connection, dispatching signed auth"
+            );
             conn.process_signed_auth(signed_event);
             tracing::info!("[connections][AUTH] process_signed_auth completed");
         } else {
-            tracing::warn!(relay = relay_url, "[connections][AUTH] No connection found for relay");
+            tracing::warn!(
+                relay = relay_url,
+                "[connections][AUTH] No connection found for relay"
+            );
         }
         tracing::info!("[connections][AUTH] handle_auth_response EXIT");
     }

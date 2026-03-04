@@ -14,6 +14,35 @@ fn unquote_simple(s: &str) -> &str {
     }
 }
 
+fn value_to_text(v: &Value) -> String {
+    v.as_str()
+        .map(ToString::to_string)
+        .unwrap_or_else(|| v.to_string())
+}
+
+fn parse_ok_status_reason(raw_msg: &str) -> (String, Option<String>) {
+    // Strict JSON path: ["OK", <id>, <accepted>, <reason?>]
+    if let Ok(Value::Array(arr)) = serde_json::from_str::<Value>(raw_msg) {
+        let accepted = arr
+            .get(2)
+            .map(value_to_text)
+            .unwrap_or_else(|| "false".to_string());
+        let reason = arr.get(3).map(value_to_text);
+        return (accepted, reason);
+    }
+
+    // Tolerant path for synthetic/loose frames: only first 3 tokens are available.
+    // We can still extract accepted (3rd token), but not a reliable 4th token reason.
+    if let Some([_k, _second, third]) = extract_first_three(raw_msg) {
+        let accepted = third
+            .map(|s| unquote_simple(s).to_string())
+            .unwrap_or_else(|| "false".to_string());
+        return (accepted, None);
+    }
+
+    ("false".to_string(), None)
+}
+
 // Minimal struct for relay response (extracted from raw JSON string)
 #[derive(Debug)]
 pub struct RelayResponse {
@@ -27,66 +56,94 @@ pub struct RelayResponse {
 // Parse raw relay message (JSON array string) to RelayResponse
 pub fn parse_relay_response(raw_msg: &str) -> Option<RelayResponse> {
     // First try strict JSON (best case)
-    if let Ok(parsed) = serde_json::from_str::<Value>(raw_msg) {
-        if let Value::Array(arr) = parsed {
-            if arr.len() < 2 {
-                return None;
-            }
-            let kind = arr[0].as_str()?.to_string();
-            let sub_id = arr.get(1)?.as_str().map(ToString::to_string);
-
-            let raw_payload = match kind.as_str() {
-                "EVENT" | "OK" | "NOTICE" | "AUTH" | "CLOSED" => arr.get(2).map(|v| v.to_string()),
-                "EOSE" => None,
-                _ => None,
-            };
-
-            let is_eose = kind == "EOSE";
-            // Standard OK: ["OK", sub_id, event_id, bool]
-            let success = if kind == "OK" {
-                if arr.len() > 3 {
-                    arr[2].as_str() == Some("OK") && arr[3].as_bool().unwrap_or(false)
-                } else if arr.len() == 3 && arr[2].as_str() == Some("SUBSCRIBED") {
-                    true
-                } else {
-                    false
-                }
-            } else {
-                false
-            };
-
-            return Some(RelayResponse {
-                kind,
-                sub_id,
-                raw_payload,
-                is_eose,
-                success,
-            });
+    if let Ok(Value::Array(arr)) = serde_json::from_str::<Value>(raw_msg) {
+        if arr.len() < 2 {
+            return None;
         }
-        // Not an array -> fall through to tolerant path
+
+        let kind = arr.get(0)?.as_str()?.to_string();
+
+        let sub_id = match kind.as_str() {
+            "EVENT" | "EOSE" | "OK" | "CLOSED" => {
+                arr.get(1).and_then(|v| v.as_str()).map(ToString::to_string)
+            }
+            _ => None,
+        };
+
+        let raw_payload = match kind.as_str() {
+            // ["EVENT", <subid>, <event>]
+            "EVENT" => arr.get(2).map(|v| v.to_string()),
+            // ["EOSE", <subid>]
+            "EOSE" => None,
+            // ["OK", <event_id>, <accepted>, <reason>] or synthetic ["OK", <id>, "SENT"]
+            // Keep accepted token in payload; reason is handled separately when building ConnectionStatus.
+            "OK" => arr.get(2).map(value_to_text),
+            // ["NOTICE", <message>]
+            "NOTICE" => arr.get(1).map(|v| {
+                v.as_str()
+                    .map(ToString::to_string)
+                    .unwrap_or_else(|| v.to_string())
+            }),
+            // ["AUTH", <challenge>]
+            "AUTH" => arr.get(1).map(|v| {
+                v.as_str()
+                    .map(ToString::to_string)
+                    .unwrap_or_else(|| v.to_string())
+            }),
+            // ["CLOSED", <subid>, <msg>]
+            "CLOSED" => arr.get(2).map(|v| v.to_string()),
+            _ => None,
+        };
+
+        let is_eose = kind == "EOSE";
+        let success = if kind == "OK" {
+            match (arr.get(2), arr.get(3)) {
+                // Real relay OK
+                (Some(Value::Bool(accepted)), _) => *accepted,
+                // Synthetic statuses
+                (Some(Value::String(s)), _) => {
+                    s == "SUBSCRIBED" || s == "SENT" || s == "CLOSED" || s == "OK"
+                }
+                (_, Some(Value::Bool(accepted))) => *accepted,
+                _ => false,
+            }
+        } else {
+            false
+        };
+
+        return Some(RelayResponse {
+            kind,
+            sub_id,
+            raw_payload,
+            is_eose,
+            success,
+        });
     }
 
     // Fallback: tolerant first-3-elements extractor
-    // Handles tokens like SUBSCRIBED without quotes, strings, or objects.
-    let Some([k_opt, sid_opt, payload_opt]) = extract_first_three(raw_msg) else {
+    let Some([k_opt, second_opt, third_opt]) = extract_first_three(raw_msg) else {
         return None;
     };
 
-    // Kind must be a string token; unquote
     let kind_s = k_opt.map(unquote_simple)?.to_string();
 
-    // Sub id might be empty string ("") — keep as Some("") to route globally later if you wish
-    let sub_id = sid_opt.map(|s| unquote_simple(s).to_string());
-
-    // Third token: may be object, string, or primitive (like SUBSCRIBED)
-    let raw_payload = payload_opt.map(|s| s.to_string());
+    let (sub_id, raw_payload) = match kind_s.as_str() {
+        "AUTH" | "NOTICE" => (None, second_opt.map(|s| unquote_simple(s).to_string())),
+        "EVENT" | "EOSE" | "OK" | "CLOSED" => (
+            second_opt.map(|s| unquote_simple(s).to_string()),
+            third_opt.map(|s| s.to_string()),
+        ),
+        _ => (
+            second_opt.map(|s| unquote_simple(s).to_string()),
+            third_opt.map(|s| s.to_string()),
+        ),
+    };
 
     let is_eose = kind_s == "EOSE";
     let success = if kind_s == "OK" {
-        // Tolerant: treat third token SUBSCRIBED (quoted or bare) as success=true
         if let Some(ref p) = raw_payload {
             let t = unquote_simple(p);
-            t == "SUBSCRIBED"
+            t == "SUBSCRIBED" || t == "SENT" || t == "CLOSED" || t == "OK" || t == "true"
         } else {
             false
         }
@@ -116,27 +173,32 @@ pub fn build_worker_message<'a>(
 
     let parsed = parse_relay_response(raw_line);
 
-    // Determine kind and payload
-    let (kind, message_opt) = if let Some(ref r) = parsed {
-        (
-            r.kind.as_str(),
-            r.raw_payload.as_ref().map(|s| fbb.create_string(s)),
-        )
-    } else {
-        // If parsing fails, treat as Raw with the full line
-        ("RAW", Some(fbb.create_string(raw_line)))
-    };
+    // Determine kind from parsed response (or fall back to RAW)
+    let kind = parsed.as_ref().map(|r| r.kind.as_str()).unwrap_or("RAW");
 
     match kind {
         // NOTICE, AUTH, CLOSED, EOSE, OK -> ConnectionStatus
         "NOTICE" | "AUTH" | "CLOSED" | "EOSE" | "OK" => {
-            let status_off = fbb.create_string(&kind);
+            let (status_text, message_text) = if kind == "OK" {
+                // For OK, rewrite semantics:
+                // status = accepted (3rd item), message = reason (4th item)
+                parse_ok_status_reason(raw_line)
+            } else {
+                (
+                    kind.to_string(),
+                    parsed.as_ref().and_then(|r| r.raw_payload.clone()),
+                )
+            };
+
+            let status_off = fbb.create_string(&status_text);
+            let message_off = message_text.as_ref().map(|m| fbb.create_string(m));
+
             let cs = ConnectionStatus::create(
                 fbb,
                 &ConnectionStatusArgs {
                     relay_url: Some(url_off),
                     status: Some(status_off),
-                    message: message_opt,
+                    message: message_off,
                 },
             );
             WorkerMessage::create(
@@ -153,7 +215,11 @@ pub fn build_worker_message<'a>(
         // Default: Raw (json-encoded event or any raw message)
         _ => {
             // Prefer the parsed payload (EVENT array[2]); else fall back to the full raw line
-            let raw_field_off = if let Some(off) = message_opt {
+            let raw_field_off = if let Some(off) = parsed
+                .as_ref()
+                .and_then(|r| r.raw_payload.as_ref())
+                .map(|s| fbb.create_string(s))
+            {
                 off
             } else {
                 fbb.create_string(raw_line)

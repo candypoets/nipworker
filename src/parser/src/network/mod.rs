@@ -54,6 +54,9 @@ enum ShardSource {
     Cache,
 }
 
+type ShardTask = (String, Arc<Vec<u8>>, ShardSource, Span);
+type DispatchTask = (usize, ShardTask);
+
 pub struct NetworkManager {
     to_cache: Rc<RefCell<Port>>,
     to_main: Option<MessagePort>,
@@ -174,15 +177,13 @@ impl NetworkManager {
                 };
                 let url = wm.url().unwrap_or("");
                 let status = cs.status();
+                let reason = cs.message().unwrap_or("");
                 match status {
                     "NOTICE" => {
                         // Notices logged at debug level only
                     }
                     "AUTH" => {
                         warn!("Auth needed on relay {:?}", url);
-                    }
-                    "CLOSED" => {
-                        // Subscription closed - normal operation
                     }
                     "EOSE" => {
                         // Flush the pipeline and notify it of EOSE
@@ -192,12 +193,12 @@ impl NetworkManager {
                             pipeline_guard.on_eose();
                             outputs
                         };
-                        
+
                         // Send flushed outputs to batch buffer
                         for output in flushed_outputs {
                             add_message_to_batch(&sid, &output);
                         }
-                        
+
                         // Send via batch buffer for MessageChannel delivery
                         let status_bytes = serialize_connection_status(url, "EOSE", "");
                         add_message_to_batch(&sid, &status_bytes);
@@ -209,9 +210,13 @@ impl NetworkManager {
                             }
                         }
                     }
-                    "OK" => {
-                        // OK: forward to UI, and notify any publish waiter
-                        let msg = cs.message().unwrap_or("");
+                    "CLOSED" => {
+                        // Relay-initiated CLOSED frame for a subscription
+                    }
+                    accepted => {
+                        // OK-like status:
+                        // - status carries accepted token (3rd item): true/false/SENT/SUBSCRIBED/...
+                        // - message carries reason (4th item) when present
 
                         // For publishes, translate event.id to publish_id so main thread can find it
                         let batch_sub_id = if let Some(ref pid) = publish_id {
@@ -221,13 +226,10 @@ impl NetworkManager {
                         };
 
                         // Send via batch buffer for MessageChannel delivery
-                        let status_bytes = serialize_connection_status(url, msg, "");
+                        let status_bytes = serialize_connection_status(url, accepted, reason);
                         add_message_to_batch(&batch_sub_id, &status_bytes);
-                        // OK needs low latency - flush immediately
+                        // Status updates need low latency - flush immediately
                         flush_batch(&batch_sub_id);
-                    }
-                    other => {
-                        warn!("Unexpected ConnectionStatus '{}' for sub {}", other, sid);
                     }
                 }
             }
@@ -377,13 +379,11 @@ impl NetworkManager {
         // Channel carries: (sub_id, payload_bytes, source, span)
         let mut shard_senders = Vec::with_capacity(NUM_SHARDS);
         for shard_idx in 0..NUM_SHARDS {
-            let (tx, mut rx) =
-                mpsc::channel::<(String, std::sync::Arc<Vec<u8>>, ShardSource, tracing::Span)>(SHARD_CAP);
+            let (tx, mut rx) = mpsc::channel::<ShardTask>(SHARD_CAP);
             let subs_clone = subs.clone();
 
             spawn_local(async move {
-                let mut local_batch: Vec<(String, std::sync::Arc<Vec<u8>>, ShardSource, tracing::Span)> =
-                    Vec::with_capacity(BATCH_SIZE);
+                let mut local_batch: Vec<ShardTask> = Vec::with_capacity(BATCH_SIZE);
 
                 loop {
                     local_batch.clear();
@@ -422,15 +422,74 @@ impl NetworkManager {
             shard_senders.push(tx);
         }
 
-        // Distributor task: use select! to race between from_connections and from_cache
+        // Dedicated dispatch queues: fast and slow lanes.
+        // This avoids head-of-line blocking where slow-lane backpressure stalls fast-lane dispatch.
+        let dispatch_cap = NUM_SHARDS * SHARD_CAP;
+        let (fast_tx, mut fast_rx) = mpsc::channel::<DispatchTask>(dispatch_cap);
+        let (slow_tx, mut slow_rx) = mpsc::channel::<DispatchTask>(dispatch_cap);
+
+        // Fast lane dispatcher: only forwards to shard channels, can block without affecting slow lane.
+        let fast_shard_senders = shard_senders.clone();
+        spawn_local(async move {
+            while let Some((shard_idx, task)) = fast_rx.next().await {
+                let mut tx = fast_shard_senders[shard_idx].clone();
+                if let Err(_e) = tx.try_send(task.clone()) {
+                    if let Err(e) = tx.send(task).await {
+                        warn!("Fast lane shard {} send failed: {:?}", shard_idx, e);
+                    }
+                }
+            }
+            warn!("Fast lane dispatcher exiting (channel closed)");
+        });
+
+        // Slow lane dispatcher: isolated from fast lane.
+        let slow_shard_senders = shard_senders.clone();
+        spawn_local(async move {
+            while let Some((shard_idx, task)) = slow_rx.next().await {
+                let mut tx = slow_shard_senders[shard_idx].clone();
+                if let Err(_e) = tx.try_send(task.clone()) {
+                    if let Err(e) = tx.send(task).await {
+                        warn!("Slow lane shard {} send failed: {:?}", shard_idx, e);
+                    }
+                }
+            }
+            warn!("Slow lane dispatcher exiting (channel closed)");
+        });
+
+        // Ingress task: decode + route into fast/slow dispatch queues, never awaits on shard queues.
         spawn_local(async move {
             use futures::select;
 
             let mut from_connections = from_connections.fuse();
             let mut from_cache = from_cache.fuse();
 
+            // Helper: compute shard index + lane membership.
+            let compute_shard = |sid: &str, subs: &Arc<RwLock<FxHashMap<String, Sub>>>| {
+                let forced = subs
+                    .read()
+                    .ok()
+                    .and_then(|g| g.get(sid).and_then(|s| s.forced_shard));
+
+                let (shard_idx, is_slow_lane) = if let Some(idx) = forced {
+                    let clamped = idx.min(NUM_SHARDS - 1);
+                    let slow_start = NUM_SHARDS.saturating_sub(SLOW_SHARDS.max(1));
+                    (clamped, clamped >= slow_start)
+                } else {
+                    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                    sid.hash(&mut hasher);
+                    let fast_count = NUM_SHARDS.saturating_sub(SLOW_SHARDS);
+                    let shard = if fast_count > 0 {
+                        (hasher.finish() as usize) % fast_count
+                    } else {
+                        (hasher.finish() as usize) % NUM_SHARDS
+                    };
+                    (shard, false)
+                };
+
+                (shard_idx, is_slow_lane)
+            };
+
             loop {
-                // Use select! to race between the two receivers
                 let bytes_result = select! {
                     bytes = from_connections.next() => {
                         bytes.map(|b| (b, ShardSource::Network))
@@ -442,134 +501,115 @@ impl NetworkManager {
 
                 match bytes_result {
                     Some((bytes, source)) => {
-                        // Try to decode and extract sub_id based on source
-                        let (sid, payload_arc) = match source {
+                        match source {
                             ShardSource::Network => {
-                                // Network sends WorkerMessage directly
-                                match flatbuffers::root::<fb::WorkerMessage>(&bytes) {
-                                    Ok(w) => {
-                                        let sid = w.sub_id().unwrap_or("").to_string();
-                                        (sid, std::sync::Arc::new(bytes))
-                                    }
+                                let wm = match flatbuffers::root::<fb::WorkerMessage>(&bytes) {
+                                    Ok(w) => w,
                                     Err(_) => {
                                         warn!("WorkerMessage decode failed from network; dropping frame");
                                         continue;
                                     }
+                                };
+
+                                let sid = wm.sub_id().unwrap_or("").to_string();
+                                if sid.is_empty() {
+                                    warn!("Invalid message: Missing sub_id");
+                                    continue;
+                                }
+
+                                let (shard_idx, is_slow_lane) = compute_shard(&sid, &subs);
+                                let sub_span = info_span!("sub_request", sub_id = %sid);
+                                let task: ShardTask = (sid, Arc::new(bytes), ShardSource::Network, sub_span);
+
+                                let mut lane_tx = if is_slow_lane {
+                                    slow_tx.clone()
+                                } else {
+                                    fast_tx.clone()
+                                };
+
+                                if let Err(_e) = lane_tx.try_send((shard_idx, task.clone())) {
+                                    if let Err(e) = lane_tx.send((shard_idx, task)).await {
+                                        warn!(
+                                            "{} lane enqueue failed for shard {}: {:?}",
+                                            if is_slow_lane { "Slow" } else { "Fast" },
+                                            shard_idx,
+                                            e
+                                        );
+                                    }
                                 }
                             }
                             ShardSource::Cache => {
-                                // Cache sends CacheResponse { sub_id, payload }
-                                // Payload format: [4-byte len][WorkerMessage][4-byte len][WorkerMessage]...
-                                // Empty payload = EOCE (end of cache events)
-                                match flatbuffers::root::<fb::CacheResponse>(&bytes) {
-                                    Ok(resp) => {
-                                        let sid: String = resp.sub_id().to_string();
-                                        let payload = resp.payload().map(|p| p.bytes()).unwrap_or(&[]);
-                                        
-                                        // Compute shard index for this sub_id (needed for both EOCE and events)
-                                        let cache_shard_idx = {
-                                            let forced = subs
-                                                .read()
-                                                .ok()
-                                                .and_then(|g| g.get(&sid).and_then(|s| s.forced_shard));
-                                            if let Some(idx) = forced {
-                                                idx.min(NUM_SHARDS - 1)
-                                            } else {
-                                                let mut hasher = std::collections::hash_map::DefaultHasher::new();
-                                                sid.hash(&mut hasher);
-                                                let fast_count = NUM_SHARDS.saturating_sub(SLOW_SHARDS);
-                                                if fast_count > 0 {
-                                                    (hasher.finish() as usize) % fast_count
-                                                } else {
-                                                    (hasher.finish() as usize) % NUM_SHARDS
-                                                }
-                                            }
-                                        };
-                                        
-                                        if payload.is_empty() {
-                                            // EOCE - end of cache events
-                                            // Send to shard as WorkerMessage::Eoce so it goes through 
-                                            // handle_message_single which will flush the pipeline
-                                            let eoce_worker_msg = serialize_eoce();
-                                            let eoce_arc = std::sync::Arc::new(eoce_worker_msg);
-                                            let cache_sub_span = info_span!("sub_request", sub_id = %sid);
-                                            
-                                            let mut tx = shard_senders[cache_shard_idx].clone();
-                                            if let Err(_e) = tx.try_send((sid.clone(), eoce_arc.clone(), ShardSource::Cache, cache_sub_span.clone())) {
-                                                if let Err(e) = tx.send((sid, eoce_arc, ShardSource::Cache, cache_sub_span)).await {
-                                                    warn!("Shard {} send failed for EOCE: {:?}", cache_shard_idx, e);
-                                                }
-                                            }
-                                            continue;
-                                        }
-                                        
-                                        // Unpack batched WorkerMessages and send individually
-                                        let messages = Self::unpack_batched_messages(payload);
-                                        
-                                        // Create span for all messages
-                                        let cache_sub_span = info_span!("sub_request", sub_id = %sid);
-                                        
-                                        // Send each WorkerMessage individually to the shard
-                                        for msg_bytes in messages.iter() {
-                                            let msg_arc = std::sync::Arc::new(msg_bytes.clone());
-                                            let mut tx = shard_senders[cache_shard_idx].clone();
-                                            if let Err(_e) = tx.try_send((sid.clone(), msg_arc.clone(), ShardSource::Cache, cache_sub_span.clone())) {
-                                                if let Err(e) = tx.send((sid.clone(), msg_arc, ShardSource::Cache, cache_sub_span.clone())).await {
-                                                    warn!("Shard {} send failed: {:?}", cache_shard_idx, e);
-                                                }
-                                            }
-                                        }
-                                        continue; // Already sent all messages, skip default send below
-                                    }
+                                let resp = match flatbuffers::root::<fb::CacheResponse>(&bytes) {
+                                    Ok(r) => r,
                                     Err(_) => {
                                         warn!("CacheResponse decode failed from cache; dropping frame");
                                         continue;
                                     }
+                                };
+
+                                let sid: String = resp.sub_id().to_string();
+                                if sid.is_empty() {
+                                    warn!("Invalid cache response: Missing sub_id");
+                                    continue;
                                 }
-                            }
-                        };
-                        
-                        if sid.is_empty() {
-                            warn!("Invalid message: Missing sub_id");
-                            continue;
-                        }
 
-                        // Sub span for downstream processing
-                        let sub_span = info_span!("sub_request", sub_id = %sid);
+                                let (shard_idx, is_slow_lane) = compute_shard(&sid, &subs);
+                                let payload = resp.payload().map(|p| p.bytes()).unwrap_or(&[]);
+                                let cache_sub_span = info_span!("sub_request", sub_id = %sid);
 
-                        // Compute shard index (respect forced shard if set)
-                        let shard_idx = {
-                            let forced = subs
-                                .read()
-                                .ok()
-                                .and_then(|g| g.get(&sid).and_then(|s| s.forced_shard));
-                            if let Some(idx) = forced {
-                                idx.min(NUM_SHARDS - 1)
-                            } else {
-                                let mut hasher = std::collections::hash_map::DefaultHasher::new();
-                                sid.hash(&mut hasher);
-                                // Route non-forced subs only to fast shards (exclude reserved slow shards at the end)
-                                let fast_count = NUM_SHARDS.saturating_sub(SLOW_SHARDS);
-                                if fast_count > 0 {
-                                    (hasher.finish() as usize) % fast_count
+                                let mut lane_tx = if is_slow_lane {
+                                    slow_tx.clone()
                                 } else {
-                                    // Fallback: if all shards are reserved as slow, spread across all
-                                    (hasher.finish() as usize) % NUM_SHARDS
-                                }
-                            }
-                        };
+                                    fast_tx.clone()
+                                };
 
-                        // Send to shard with try_send first to avoid stalling distributor; fall back to await to preserve ordering
-                        let mut tx = shard_senders[shard_idx].clone();
-                        if let Err(_e) = tx.try_send((sid.clone(), payload_arc.clone(), source, sub_span.clone())) {
-                            if let Err(e) = tx.send((sid, payload_arc, source, sub_span)).await {
-                                warn!("Shard {} send failed: {:?}", shard_idx, e);
+                                if payload.is_empty() {
+                                    // EOCE - send synthetic WorkerMessage::Eoce to preserve existing handling path.
+                                    let eoce_arc = Arc::new(serialize_eoce());
+                                    let task: ShardTask = (
+                                        sid,
+                                        eoce_arc,
+                                        ShardSource::Cache,
+                                        cache_sub_span,
+                                    );
+                                    if let Err(_e) = lane_tx.try_send((shard_idx, task.clone())) {
+                                        if let Err(e) = lane_tx.send((shard_idx, task)).await {
+                                            warn!(
+                                                "{} lane enqueue failed for EOCE shard {}: {:?}",
+                                                if is_slow_lane { "Slow" } else { "Fast" },
+                                                shard_idx,
+                                                e
+                                            );
+                                        }
+                                    }
+                                    continue;
+                                }
+
+                                // Unpack batched WorkerMessages and enqueue each.
+                                let messages = Self::unpack_batched_messages(payload);
+                                for msg_bytes in messages.iter() {
+                                    let task: ShardTask = (
+                                        sid.clone(),
+                                        Arc::new(msg_bytes.clone()),
+                                        ShardSource::Cache,
+                                        cache_sub_span.clone(),
+                                    );
+                                    if let Err(_e) = lane_tx.try_send((shard_idx, task.clone())) {
+                                        if let Err(e) = lane_tx.send((shard_idx, task)).await {
+                                            warn!(
+                                                "{} lane enqueue failed for cache msg shard {}: {:?}",
+                                                if is_slow_lane { "Slow" } else { "Fast" },
+                                                shard_idx,
+                                                e
+                                            );
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
                     None => {
-                        // Both channels closed
-                        warn!("Distributor exiting (both channels closed)");
+                        warn!("Ingress distributor exiting (both channels closed)");
                         break;
                     }
                 }
