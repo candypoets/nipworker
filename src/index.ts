@@ -206,7 +206,8 @@ export class NostrManager {
 		};
 
 		this.setupWorkerListener();
-		this.restoreSession();
+		// Defer session restore so callers have time to add auth listeners
+		queueMicrotask(() => this.restoreSession());
 	}
 
 	private postToWorker(message: any, transfer?: Transferable[]) {
@@ -241,7 +242,8 @@ export class NostrManager {
 					this._pendingSession = null;
 				}
 			}
-			this.dispatch('auth', this.activePubkey);
+			const hasSigner = msg.ok && !!this._pendingSession;
+			this.dispatch('auth', { pubkey: this.activePubkey, hasSigner });
 		} else if (msg.op === 'sign_event' && msg.ok) {
 			const parsed = JSON.parse(msg.result);
 			this.signCB(parsed);
@@ -286,7 +288,7 @@ export class NostrManager {
 					this.saveSession(msg.pubkey, msg.signer_type, this._pendingSession.payload);
 					this._pendingSession = null;
 				}
-				this.dispatch('auth', msg.pubkey);
+				this.dispatch('auth', { pubkey: msg.pubkey, hasSigner: true });
 				return;
 			}
 
@@ -592,6 +594,8 @@ export class NostrManager {
 		const activePubkey = localStorage.getItem('nostr_active_pubkey');
 		if (activePubkey) {
 			this.switchAccount(activePubkey);
+		} else {
+			this.dispatch('auth', { pubkey: null, hasSigner: false });
 		}
 	}
 

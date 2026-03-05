@@ -243,6 +243,17 @@ impl RelayConnection {
                         tracing::warn!(relay = %url, "Unexpected binary message");
                     }
                     Err(e) => {
+                        // During intentional close/reconnect replacement, old reader errors are expected.
+                        let intentional_transition = {
+                            let st = status.read().unwrap();
+                            matches!(*st, ConnectionStatus::Closed | ConnectionStatus::Connecting)
+                        };
+
+                        if intentional_transition {
+                            tracing::info!(relay = %url, error = %e, "WebSocket error during intentional close/reconnect transition; ignoring failure transition");
+                            break;
+                        }
+
                         tracing::error!(relay = %url, error = %e, "WebSocket error");
                         {
                             let mut st = status.write().unwrap();
