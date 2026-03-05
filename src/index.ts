@@ -492,6 +492,13 @@ export class NostrManager {
 		console.log('[main] set pending session:', name);
 
 		switch (name) {
+			case 'pubkey':
+				// Read-only mode: just set the pubkey without a signer
+				this.activePubkey = payload as string;
+				this.saveSession(this.activePubkey, 'pubkey', payload);
+				this._pendingSession = null;
+				this.dispatch('auth', { pubkey: this.activePubkey, hasSigner: false });
+				break;
 			case 'privkey':
 				this.crypto.postMessage({ type: 'set_private_key', payload });
 				break;
@@ -550,6 +557,10 @@ export class NostrManager {
 
 	setNip07(): void {
 		this.setSigner('nip07', '');
+	}
+
+	setPubkey(pubkey: string): void {
+		this.setSigner('pubkey', pubkey);
 	}
 
 	public getActivePubkey(): string | null {

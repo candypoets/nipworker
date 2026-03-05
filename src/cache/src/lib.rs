@@ -157,29 +157,36 @@ impl Caching {
         bytes: &[u8],
     ) {
         // Try WorkerMessage first (new format for saves)
-        // Note: FlatBuffers is permissive, so we must validate content_type strictly
+        // Note: FlatBuffers is permissive, so validate BOTH content_type and type_.
         if let Ok(worker_msg) = flatbuffers::root::<fb::WorkerMessage>(bytes) {
-            match worker_msg.content_type() {
-                fb::Message::ParsedEvent | fb::Message::NostrEvent => {
-                    // Valid WorkerMessage with event content - store bytes directly!
-                    Self::handle_worker_message_persist(database, bytes).await;
-                    return;
-                }
-                fb::Message::NONE => {
-                    // WorkerMessage parsed but has no content type - this is likely
-                    // CacheRequest bytes misinterpreted as WorkerMessage
-                    // Fall through to CacheRequest parsing below
-                }
-                _ => {
-                    // Valid WorkerMessage but unexpected type (ConnectionStatus, etc.)
-                    // These shouldn't come to the cache
+            let is_save_to_db = worker_msg.sub_id() == Some("save_to_db");
+            let is_parsed_event = worker_msg.content_type() == fb::Message::ParsedEvent
+                && worker_msg.type_() == fb::MessageType::ParsedNostrEvent;
+            let is_nostr_event = worker_msg.content_type() == fb::Message::NostrEvent
+                && worker_msg.type_() == fb::MessageType::NostrEvent;
+
+            if is_save_to_db && (is_parsed_event || is_nostr_event) {
+                // Valid SaveToDb WorkerMessage with event content - store bytes directly!
+                Self::handle_worker_message_persist(database, bytes).await;
+                return;
+            }
+
+            if worker_msg.content_type() != fb::Message::NONE {
+                // Valid WorkerMessage but not a SaveToDb persist payload.
+                // Ignore silently so query/publish CacheRequest frames can still be parsed.
+                if is_save_to_db {
                     warn!(
-                        "Unexpected WorkerMessage type in cache: {:?}",
+                        "Unexpected save_to_db WorkerMessage in cache: type={:?} content_type={:?}",
+                        worker_msg.type_(),
                         worker_msg.content_type()
                     );
                     return;
                 }
             }
+
+            // WorkerMessage parsed but has no content type - this is likely
+            // CacheRequest bytes misinterpreted as WorkerMessage.
+            // Fall through to CacheRequest parsing below.
         }
 
         // Fall back to CacheRequest (legacy format for queries/publishes)
@@ -237,6 +244,8 @@ impl Caching {
                         {
                             warn!("Failed to persist ParsedEvent: {}", e);
                         }
+                    } else {
+                        warn!("WorkerMessage declared ParsedEvent but union payload was missing/invalid");
                     }
                 }
                 fb::Message::NostrEvent => {
@@ -248,6 +257,8 @@ impl Caching {
                         {
                             warn!("Failed to persist NostrEvent: {}", e);
                         }
+                    } else {
+                        warn!("WorkerMessage declared NostrEvent but union payload was missing/invalid");
                     }
                 }
                 _ => {}
@@ -497,8 +508,24 @@ impl Caching {
         }
     }
 
-    /// Check if request is an event persist (has event field set)
+    /// Check if bytes represent an event persist request.
+    /// Supports both:
+    /// - WorkerMessage (new SaveToDb path)
+    /// - CacheRequest with event set (legacy publish path)
     fn is_persist_request(bytes: &[u8]) -> bool {
+        // New path: WorkerMessage carrying an event
+        if let Ok(worker_msg) = flatbuffers::root::<fb::WorkerMessage>(bytes) {
+            let is_save_to_db = worker_msg.sub_id() == Some("save_to_db");
+            let is_parsed_event = worker_msg.content_type() == fb::Message::ParsedEvent
+                && worker_msg.type_() == fb::MessageType::ParsedNostrEvent;
+            let is_nostr_event = worker_msg.content_type() == fb::Message::NostrEvent
+                && worker_msg.type_() == fb::MessageType::NostrEvent;
+            if is_save_to_db && (is_parsed_event || is_nostr_event) {
+                return true;
+            }
+        }
+
+        // Legacy path: CacheRequest with event field set
         match flatbuffers::root::<fb::CacheRequest>(bytes) {
             Ok(req) => req.event().is_some(),
             Err(_) => false,

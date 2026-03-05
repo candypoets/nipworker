@@ -34,8 +34,17 @@ impl SaveToDbPipe {
                     offset.as_union_value(),
                 ),
                 Err(e) => {
-                    warn!("Failed to build ParsedEvent flatbuffer: {}", e);
-                    return;
+                    // Fallback to raw event so we don't drop cache persistence entirely
+                    warn!(
+                        "Failed to build ParsedEvent flatbuffer (falling back to NostrEvent): {}",
+                        e
+                    );
+                    let offset = parsed.event.build_flatbuffer(&mut builder);
+                    (
+                        fb::MessageType::NostrEvent,
+                        fb::Message::NostrEvent,
+                        offset.as_union_value(),
+                    )
                 }
             }
         } else if let Some(ref raw) = event.raw {
@@ -63,7 +72,9 @@ impl SaveToDbPipe {
         );
 
         builder.finish(worker_msg, None);
-        let _ = self.to_cache.borrow().send(builder.finished_data());
+        if let Err(e) = self.to_cache.borrow().send(builder.finished_data()) {
+            warn!("Failed to send SaveToDb WorkerMessage to cache: {:?}", e);
+        }
     }
 }
 
