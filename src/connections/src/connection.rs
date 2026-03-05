@@ -3,8 +3,9 @@
 //! Revised design goals:
 //! - Connect immediately on construction.
 //! - Enqueue frames immediately; only start draining once the connection is established.
-//! - If not connected while draining, pause reading, attempt reconnection, then retry the frame.
-//!   If the frame cannot be sent (send error or reconnection failure), push it back to the queue.
+//! - If not connected while draining, attempt reconnection, then retry the same frame once.
+//! - If reconnect/retry fails, drop that frame, mark relay as unreliable for a cooldown window,
+//!   and avoid further reconnect attempts during that window.
 //! - Synthetic notifications are emitted on successful send: REQ => SUBSCRIBED, CLOSE => CLOSED.
 //!
 //! Notes:
@@ -251,23 +252,50 @@ impl RelayConnection {
                             let mut sink_guard = ws_sink.lock().await;
                             *sink_guard = None;
                         }
+                        // Mark as unreliable for cooldown period (no timers, timestamp gate only)
+                        conn.set_next_retry_delay_ms(RECONNECT_RETRY_DELAY_MS);
+                        let retry_at = *conn.next_retry_at_ms.read().unwrap();
+                        tracing::info!(relay = %conn.url, retry_at, "[connections] Connection failed, relay marked unreliable during cooldown");
+
                         // Clear pre-auth queue on connection failure to prevent memory leak
                         {
                             let queue = std::mem::take(&mut *conn.pre_auth_queue.write().unwrap());
                             tracing::info!(relay = %conn.url, cleared_frames = queue.len(), "[AUTH] Connection failed, cleared pre-auth queue");
                         }
-                        // Set auth state to Failed so new frames won't be queued
+                        // Set auth state to Failed until next successful reconnect path resets via first response
                         *conn.auth_state.write().unwrap() = AuthState::Failed;
-                        // Set retry delay for 60 seconds to prevent reconnection storm
-                        let retry_at = js_sys::Date::now() as u64 + 60_000;
-                        *conn.next_retry_at_ms.write().unwrap() = retry_at;
-                        tracing::info!(relay = %conn.url, retry_at, "[connections] Connection failed, delaying retry by 60s");
                         (status_writer)("failed", &url);
                         break;
                     }
                 }
             }
-            tracing::debug!(relay = %url, "reader: stream ended/aborted");
+
+            // Stream ended (peer/browser close, abort, lifecycle suspend).
+            // If this was an intentional transport close, do not mark failure/cooldown.
+            let was_intentional_close = {
+                let st = status.read().unwrap();
+                // Closed: explicit close(). Connecting: previous reader was intentionally replaced.
+                matches!(*st, ConnectionStatus::Closed | ConnectionStatus::Connecting)
+            };
+
+            {
+                let mut sink_guard = ws_sink.lock().await;
+                *sink_guard = None;
+            }
+
+            if was_intentional_close {
+                tracing::info!(relay = %url, "reader: stream ended after intentional close");
+                return;
+            }
+
+            {
+                let mut st = status.write().unwrap();
+                *st = ConnectionStatus::Failed;
+            }
+            conn.set_next_retry_delay_ms(RECONNECT_RETRY_DELAY_MS);
+            let retry_at = *conn.next_retry_at_ms.read().unwrap();
+            tracing::warn!(relay = %url, retry_at, "reader: stream ended unexpectedly; marked failed and unreliable during cooldown");
+            (status_writer)("failed", &url);
         };
 
         // Make abortable and remember handle
@@ -294,50 +322,80 @@ impl RelayConnection {
         }
     }
 
-    // Drainer owns Arc<Self> to keep the connection alive while draining
+    // Drainer owns Arc<Self> to keep the connection alive while draining.
+    // Policy:
+    // - Try immediate send first.
+    // - If send fails, attempt one immediate reconnect + one retry for the same frame.
+    // - If reconnect/retry fails, drop that frame, mark relay unreliable (cooldown window), continue.
+    // - While unreliable window is active, skip reconnect attempts and drop incoming queued frames quickly.
     async fn queue_drainer(self: Arc<Self>, mut rx: Receiver<String>) {
         while let Some(frame) = rx.next().await {
-            // Fast path: if connected, try send
-            if matches!(*self.status.read().unwrap(), ConnectionStatus::Connected) {
-                match Self::send_raw_internal(&self, &frame).await {
-                    Ok(()) => {
-                        // (self.status_writer)("connected", &self.url);
-                        continue;
-                    }
-                    Err(e) => {
-                        tracing::error!(relay = %self.url, error = ?e, "Send failed while connected; will requeue and attempt reconnect");
-                        // (self.status_writer)("failed", &self.url);
-                        // fallthrough to reconnect
-                    }
-                }
-            }
+            let now = js_sys::Date::now() as u64;
+            let retry_at = *self.next_retry_at_ms.read().unwrap();
 
-            // Not connected OR send failed: attempt reconnection unless retry window says no.
-            if self.should_delay_reconnect() {
-                tracing::debug!(relay = %self.url, "Reconnect attempt skipped due to retry timestamp");
+            if now < retry_at {
+                let remaining = (retry_at - now) / 1000;
+                tracing::warn!(
+                    relay = %self.url,
+                    remaining_secs = remaining,
+                    frame_len = frame.len(),
+                    "[connections][drainer] relay unreliable during cooldown; dropping queued frame without reconnect"
+                );
                 continue;
             }
 
-            let reconnect_result = self.connect().await;
-            if reconnect_result.is_ok()
-                && matches!(*self.status.read().unwrap(), ConnectionStatus::Connected)
-            {
-                // Reconnected: try sending the same frame again
-                match Self::send_raw_internal(&self, &frame).await {
-                    Ok(()) => {
-                        // (self.status_writer)("connected", &self.url);
-                        continue;
-                    }
-                    Err(e) => {
-                        tracing::error!(relay = %self.url, error = ?e, "Send failed after reconnection; dropping frame and setting retry timestamp");
-                        self.set_next_retry_delay_ms(RECONNECT_RETRY_DELAY_MS);
-                        continue;
+            tracing::info!(
+                relay = %self.url,
+                status = ?*self.status.read().unwrap(),
+                frame_len = frame.len(),
+                "[connections][drainer] processing queued frame"
+            );
+
+            // Attempt direct send first (covers the common connected case).
+            match Self::send_raw_internal(&self, &frame).await {
+                Ok(()) => {
+                    tracing::info!(relay = %self.url, "[connections][drainer] frame sent successfully (direct)");
+                    continue;
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        relay = %self.url,
+                        error = ?e,
+                        "[connections][drainer] direct send failed; attempting immediate reconnect + single retry"
+                    );
+                }
+            }
+
+            // One reconnect attempt for this frame.
+            match self.connect().await {
+                Ok(()) => {
+                    tracing::info!(relay = %self.url, "[connections][drainer] reconnect succeeded; retrying same frame");
+                    match Self::send_raw_internal(&self, &frame).await {
+                        Ok(()) => {
+                            tracing::info!(relay = %self.url, "[connections][drainer] frame sent successfully after reconnect retry");
+                        }
+                        Err(e) => {
+                            tracing::error!(
+                                relay = %self.url,
+                                error = ?e,
+                                "[connections][drainer] retry send failed after successful reconnect; dropping frame and marking unreliable"
+                            );
+                            self.set_next_retry_delay_ms(RECONNECT_RETRY_DELAY_MS);
+                            let retry_at = *self.next_retry_at_ms.read().unwrap();
+                            tracing::warn!(relay = %self.url, retry_at, "[connections][drainer] relay marked unreliable after retry send failure");
+                        }
                     }
                 }
-            } else {
-                // Could not reconnect: drop frame and set retry timestamp to avoid hot retry loops
-                self.set_next_retry_delay_ms(RECONNECT_RETRY_DELAY_MS);
-                continue;
+                Err(e) => {
+                    tracing::error!(
+                        relay = %self.url,
+                        error = ?e,
+                        "[connections][drainer] reconnect failed; dropping frame and marking relay unreliable"
+                    );
+                    self.set_next_retry_delay_ms(RECONNECT_RETRY_DELAY_MS);
+                    let retry_at = *self.next_retry_at_ms.read().unwrap();
+                    tracing::warn!(relay = %self.url, retry_at, "[connections][drainer] relay marked unreliable after reconnect failure");
+                }
             }
         }
         tracing::debug!(relay = %self.url, "Queue drainer exiting");
@@ -427,32 +485,23 @@ impl RelayConnection {
 
     // Public API: enqueue a frame (sync, non-blocking).
     // No readiness logic here; the drainer enforces connection state and reconnection.
-    // NIP-42 handling is fully optimistic now (no pre-auth shadow queue to avoid duplicates).
+    // Important: we always enqueue (unless queue full), even if auth is currently Failed,
+    // so stale transport state does not cause immediate caller-side frame loss.
     pub fn send_raw(self: &Arc<Self>, text: &str) -> Result<(), RelayError> {
-        // If connection failed, check if we should retry
-        if matches!(*self.auth_state.read().unwrap(), AuthState::Failed) {
-            let now = js_sys::Date::now() as u64;
-            let retry_at = *self.next_retry_at_ms.read().unwrap();
-            if now < retry_at {
-                let remaining = (retry_at - now) / 1000;
-                tracing::debug!(relay = %self.url, remaining_secs = remaining, "[connections][AUTH] Connection failed, retry delayed");
-                return Err(RelayError::ConnectionClosed);
-            } else {
-                // Retry delay expired, allow retry
-                tracing::info!(relay = %self.url, "[connections][AUTH] Retry delay expired, allowing new attempt");
-                // Reset state to allow reconnection
-                *self.auth_state.write().unwrap() = AuthState::Unknown;
-                *self.next_retry_at_ms.write().unwrap() = 0;
-            }
-        }
-
         if let Some(tx) = self.queue_tx.read().unwrap().as_ref() {
-            tracing::debug!(relay = %self.url, frame_len = text.len(), "Sending frame to queue");
+            tracing::info!(
+                relay = %self.url,
+                frame_len = text.len(),
+                auth_state = ?*self.auth_state.read().unwrap(),
+                status = ?*self.status.read().unwrap(),
+                "[connections][enqueue] enqueueing frame"
+            );
             tx.clone().try_send(text.to_owned()).map_err(|e| {
                 if e.is_full() {
                     warn!(relay = %self.url, "Frame dropped: send queue full (64)");
                     RelayError::QueueFull
                 } else {
+                    tracing::error!(relay = %self.url, "[connections][enqueue] queue closed while enqueueing");
                     RelayError::ConnectionClosed
                 }
             })
@@ -465,13 +514,21 @@ impl RelayConnection {
     async fn connect(self: &Arc<Self>) -> Result<(), RelayError> {
         // Respect retry timestamp gate for any (re)connect attempt.
         if self.should_delay_reconnect() {
+            let now = js_sys::Date::now() as u64;
+            let retry_at = *self.next_retry_at_ms.read().unwrap();
+            let remaining = retry_at.saturating_sub(now) / 1000;
+            tracing::warn!(relay = %self.url, remaining_secs = remaining, "[connections][connect] reconnect blocked by unreliable cooldown");
             return Err(RelayError::ConnectionClosed);
         }
 
-        // If Closed explicitly, do not reconnect
-        if matches!(*self.status.read().unwrap(), ConnectionStatus::Closed) {
-            return Err(RelayError::ConnectionClosed);
+        tracing::info!(relay = %self.url, status = ?*self.status.read().unwrap(), "[connections][connect] opening websocket");
+
+        // Mark connecting now so old reader termination is treated as intentional replacement.
+        {
+            let mut st = self.status.write().unwrap();
+            *st = ConnectionStatus::Connecting;
         }
+        (self.status_writer)("connecting", &self.url);
 
         // Abort previous reader and close sink before opening new socket
         {
@@ -533,8 +590,17 @@ impl RelayConnection {
             let mut s = self.stats.write().unwrap();
             s.connected_at = Some(js_sys::Date::now() as u64);
         }
+
+        // Reset auth flow on each fresh transport connect.
+        // First incoming relay frame determines if auth is needed.
+        {
+            let old = std::mem::replace(&mut *self.auth_state.write().unwrap(), AuthState::Unknown);
+            tracing::info!(relay = %self.url, old_auth_state = ?old, "[connections][connect] auth state reset to Unknown after connect");
+        }
+
         (self.status_writer)("connected", &self.url);
         self.clear_backoff();
+        tracing::info!(relay = %self.url, "[connections][connect] websocket connected");
 
         // Start the queue drainer on first successful connection
         self.init_queue_drainer();
@@ -571,6 +637,14 @@ impl RelayConnection {
     }
 
     pub async fn close(self: &Arc<Self>) -> Result<(), RelayError> {
+        tracing::info!(relay = %self.url, "[connections][close] closing transport intentionally (RelayConnection remains reusable)");
+
+        // Mark as Closed first so the reader end path can distinguish intentional close.
+        {
+            let mut st = self.status.write().unwrap();
+            *st = ConnectionStatus::Closed;
+        }
+
         // Abort reader
         {
             if let Some(handle) = self.read_abort.write().unwrap().take() {
@@ -595,10 +669,8 @@ impl RelayConnection {
             }
         }
 
-        {
-            let mut st = self.status.write().unwrap();
-            *st = ConnectionStatus::Closed;
-        }
+        // Intentional close should NOT mark relay unreliable or start cooldown.
+        *self.next_retry_at_ms.write().unwrap() = 0;
 
         // Clear pre-auth queue on close to prevent memory leak
         {
@@ -607,8 +679,8 @@ impl RelayConnection {
                 tracing::info!(relay = %self.url, cleared_frames = queue.len(), "[connections][AUTH] Connection closed, cleared pre-auth queue");
             }
         }
-        // Set auth state to Failed
-        *self.auth_state.write().unwrap() = AuthState::Failed;
+        // Reset auth state for next transport connect.
+        *self.auth_state.write().unwrap() = AuthState::Unknown;
 
         (self.status_writer)("close", &self.url);
 
