@@ -17,6 +17,14 @@
     "./utils": {
       "import": "./dist/utils.js",
       "types": "./dist/utils.d.ts"
+    },
+    "./proxy": {
+      "import": "./dist/proxy/index.js",
+      "types": "./dist/proxy/index.d.ts"
+    },
+    "./proxy/server": {
+      "import": "./dist/proxy/server.js",
+      "types": "./dist/proxy/server.d.ts"
     }
   },
   "files": [
@@ -34,6 +42,7 @@
     "flatc:rust": "flatc --rust --gen-object-api --gen-all --filename-suffix '' -o ./src/shared/src/generated ./schemas/message.fbs",
     "flatc:ts": "flatc --ts --gen-object-api --gen-all --filename-suffix '' -o ./src/generated ./schemas/message.fbs && node ./scripts/patch-strings.js",
     "build:types": "tsc --emitDeclarationOnly --outDir dist",
+    "proxy:start": "node ./dist/proxy/server.js",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
@@ -69,7 +78,8 @@
     "vite-plugin-wasm": "^3.0.0"
   },
   "dependencies": {
-    "nostr-tools": "^2.0.0"
+    "nostr-tools": "^2.0.0",
+    "ws": "^8.18.0"
   },
   "engines": {
     "node": ">=18.0.0"

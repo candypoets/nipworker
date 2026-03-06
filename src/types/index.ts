@@ -67,3 +67,11 @@ export type SubscriptionConfig = {
 	 */
 	pagination?: string;
 };
+
+export type ProxyConfig = {
+	url: string;
+};
+
+export type NostrManagerConfig = {
+	proxy?: ProxyConfig;
+};

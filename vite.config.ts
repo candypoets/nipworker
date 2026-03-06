@@ -33,13 +33,15 @@ export default defineConfig({
 		},
 		rollupOptions: {
 			external: (id) => {
-				return ['flatbuffers', 'nostr-tools'].includes(id);
+				return ['flatbuffers', 'nostr-tools', 'ws'].includes(id) || id.startsWith('node:');
 			},
 			input: {
 				index: resolve(__dirname, 'src/index.ts'),
 				// types: resolve(__dirname, "src/types/index.ts"),
 				utils: resolve(__dirname, 'src/utils.ts'),
 				hooks: resolve(__dirname, 'src/hooks.ts'),
+				proxy: resolve(__dirname, 'src/proxy/index.ts'),
+				proxyServer: resolve(__dirname, 'src/proxy/server.ts'),
 				connections: resolve(__dirname, 'src/connections/index.ts'),
 				cache: resolve(__dirname, 'src/cache/index.ts'),
 				parser: resolve(__dirname, 'src/parser/index.ts'),
@@ -52,6 +54,8 @@ export default defineConfig({
 						index: 'index.js',
 						utils: 'utils.js',
 						hooks: 'hooks.js',
+						proxy: 'proxy/index.js',
+						proxyServer: 'proxy/server.js',
 						connections: 'connections/index.js',
 						cache: 'cache/index.js',
 						parser: 'parser/index.js',

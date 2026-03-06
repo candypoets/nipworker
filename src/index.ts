@@ -3,7 +3,7 @@ import type { EventTemplate, NostrEvent } from 'nostr-tools';
 
 import { ArrayBufferReader } from 'src/lib/ArrayBufferReader';
 
-import { RequestObject, SubscriptionConfig } from 'src/types';
+import { NostrManagerConfig, RequestObject, SubscriptionConfig } from 'src/types';
 import { InitCacheMsg } from './cache/index';
 import { InitConnectionsMsg } from './connections/index';
 import { InitCryptoMsg } from './crypto/index';
@@ -63,7 +63,7 @@ export class NostrManager {
 
 	public PERPETUAL_SUBSCRIPTIONS = ['notifications', 'starterpack'];
 
-	constructor() {
+	constructor(config: NostrManagerConfig = {}) {
 		// Create 7 MessageChannels for worker-to-worker communication
 		// Each channel connects two workers - each worker gets one port (which is bidirectional)
 		// Channel naming: workerA_workerB (no direction, just identifies the pair)
@@ -95,7 +95,8 @@ export class NostrManager {
 					mainPort: connections_main.port2,
 					cachePort: cache_connections.port1,
 					parserPort: parser_connections.port1,
-					cryptoPort: crypto_connections.port1
+					cryptoPort: crypto_connections.port1,
+					...(config.proxy ? { proxy: config.proxy } : {})
 				}
 			} as InitConnectionsMsg,
 			[
@@ -668,6 +669,10 @@ export class NostrManager {
 			this.subscriptions.delete(subId);
 		}
 	}
+}
+
+export function createNostrManager(config?: NostrManagerConfig): NostrManager {
+	return new NostrManager(config);
 }
 
 export const manager = new NostrManager();
