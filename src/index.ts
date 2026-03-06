@@ -225,7 +225,11 @@ export class NostrManager {
 			if (msg.ok) {
 				this.activePubkey = msg.result;
 				// Check if bunker was discovered (QR flow) - convert to bunker format
-				if (this._discoveredBunkerUrl && this._pendingSession?.type === 'nip46_qr' && this._pendingSession?.payload?.clientSecret) {
+				if (
+					this._discoveredBunkerUrl &&
+					this._pendingSession?.type === 'nip46_qr' &&
+					this._pendingSession?.payload?.clientSecret
+				) {
 					console.log('[main] Converting QR to bunker for pubkey:', this.activePubkey);
 					this.saveSession(this.activePubkey!, 'nip46_bunker', {
 						url: this._discoveredBunkerUrl,
@@ -277,7 +281,11 @@ export class NostrManager {
 				this.activePubkey = msg.pubkey;
 
 				// For NIP-46, use the bunker_url from the message (covers both QR and bunker flows)
-				if (msg.signer_type === 'nip46' && msg.bunker_url && this._pendingSession?.payload?.clientSecret) {
+				if (
+					msg.signer_type === 'nip46' &&
+					msg.bunker_url &&
+					this._pendingSession?.payload?.clientSecret
+				) {
 					console.log('[main] NIP-46 session saved for:', msg.pubkey);
 					this.saveSession(msg.pubkey, 'nip46', {
 						url: msg.bunker_url,
@@ -675,4 +683,39 @@ export function createNostrManager(config?: NostrManagerConfig): NostrManager {
 	return new NostrManager(config);
 }
 
-export const manager = new NostrManager();
+// Global manager instance for hooks - can be overridden for custom configuration
+let globalManager: NostrManager | null = null;
+
+/**
+ * Get the global manager instance used by hooks.
+ * Creates a default singleton on first access.
+ * Use `setGlobalManager()` to provide a custom-configured instance.
+ */
+export function getManager(): NostrManager {
+	if (!globalManager) {
+		globalManager = new NostrManager();
+	}
+	return globalManager;
+}
+
+/**
+ * Set a custom manager instance to be used by all hooks.
+ * Call this early in your app before using any hooks.
+ *
+ * @example
+ * import { createNostrManager, setGlobalManager } from '@candypoets/nipworker';
+ *
+ * const myManager = createNostrManager({
+ *   proxy: { url: import.meta.env.VITE_NIPWORKER_PROXY_URL }
+ * });
+ * setGlobalManager(myManager);
+ */
+export function setGlobalManager(manager: NostrManager): void {
+	globalManager = manager;
+}
+
+/**
+ * Legacy singleton export. Same as `getManager()`.
+ * @deprecated Use `getManager()` or `setGlobalManager()` for custom config.
+ */
+export const manager = getManager();

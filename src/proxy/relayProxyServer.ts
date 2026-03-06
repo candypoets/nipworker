@@ -1,5 +1,7 @@
 /// <reference types="node" />
 
+import type { Server as HttpServer } from 'http';
+import type { Server as HttpsServer } from 'https';
 import * as flatbuffers from 'flatbuffers';
 import { WebSocket, WebSocketServer } from 'ws';
 import {
@@ -23,6 +25,19 @@ export type RelayProxyServerOptions = {
 
 export type RelayProxyServer = {
 	port: number;
+	close: () => Promise<void>;
+};
+
+export type AttachRelayProxyOptions = {
+	/** The HTTP/HTTPS server to attach to */
+	server: HttpServer | HttpsServer;
+	/** The path to mount the WebSocket endpoint on (e.g., '/ws-proxy') */
+	path?: string;
+	logger?: RelayProxyServerLogger;
+};
+
+export type AttachedRelayProxy = {
+	/** Stop accepting new connections and close all existing sessions */
 	close: () => Promise<void>;
 };
 
@@ -59,6 +74,10 @@ type Session = {
 	lastSubIdByRelay: Map<string, string>;
 };
 
+/**
+ * Create a standalone relay proxy server on its own port.
+ * Use this for simple deployments or when you don't have an existing HTTP server.
+ */
 export function createRelayProxyServer(options: RelayProxyServerOptions = {}): RelayProxyServer {
 	const host = options.host ?? '127.0.0.1';
 	const port = options.port ?? 7777;
@@ -107,6 +126,179 @@ export function createRelayProxyServer(options: RelayProxyServerOptions = {}): R
 		port,
 		close: () =>
 			new Promise<void>((resolve, reject) => {
+				wss.close((err) => {
+					if (err) {
+						reject(err);
+						return;
+					}
+					resolve();
+				});
+			})
+	};
+}
+
+/**
+ * Attach the relay proxy to an existing HTTP/HTTPS server.
+ * Use this for embedding in SvelteKit (adapter-node), Express, or any Node.js server.
+ *
+ * @example
+ * // SvelteKit with adapter-node
+ * import { createServer } from 'http';
+ * import { handler } from './build/handler.js';
+ * import { attachRelayProxyToServer } from '@candypoets/nipworker/proxy';
+ *
+ * const server = createServer(handler);
+ * attachRelayProxyToServer({ server, path: '/ws-proxy' });
+ * server.listen(3000);
+ */
+export function attachRelayProxyToServer(options: AttachRelayProxyOptions): AttachedRelayProxy {
+	const { server, path = '/', logger = console } = options;
+
+	const wss = new WebSocketServer({
+		server,
+		path
+	});
+
+	wss.on('connection', (clientSocket) => {
+		const session: Session = {
+			relaySockets: new Map(),
+			pendingFrames: new Map(),
+			dedupBySubId: new Map(),
+			lastSubIdByRelay: new Map()
+		};
+
+		clientSocket.on('message', (data, isBinary) => {
+			if (isBinary) {
+				const envelope = parseEnvelope(data);
+				if (!envelope) return;
+				handleEnvelope(session, clientSocket, envelope, logger);
+				return;
+			}
+
+			const text = toUtf8(data);
+			if (!text) return;
+			handleClientCommand(session, text, logger);
+		});
+
+		clientSocket.on('close', () => {
+			closeSession(session);
+		});
+
+		clientSocket.on('error', () => {
+			closeSession(session);
+		});
+	});
+
+	logger.info(`[relay-proxy] attached to server at path: ${path}`);
+
+	return {
+		close: () =>
+			new Promise<void>((resolve, reject) => {
+				wss.close((err) => {
+					if (err) {
+						reject(err);
+						return;
+					}
+					resolve();
+				});
+			})
+	};
+}
+
+/**
+ * Create an Express middleware that attaches the relay proxy to the Express server's underlying HTTP server.
+ * Call this after setting up your Express app but before calling app.listen().
+ *
+ * @example
+ * import express from 'express';
+ * import { createExpressRelayProxyMiddleware } from '@candypoets/nipworker/proxy';
+ *
+ * const app = express();
+ *
+ * // Your Express routes...
+ * app.get('/api/health', (req, res) => res.json({ ok: true }));
+ *
+ * // Attach relay proxy
+ * const relayProxy = createExpressRelayProxyMiddleware(app, { path: '/ws-proxy' });
+ *
+ * const server = app.listen(3000, () => {
+ *   console.log('Server with relay proxy running on port 3000');
+ * });
+ *
+ * // Cleanup on shutdown
+ * process.on('SIGTERM', async () => {
+ *   await relayProxy.close();
+ *   server.close();
+ * });
+ */
+export function createExpressRelayProxyMiddleware<
+	T extends { listen: (...args: any[]) => HttpServer | HttpsServer }
+>(app: T, options: Omit<AttachRelayProxyOptions, 'server'>): AttachedRelayProxy {
+	const path = options.path ?? '/ws-proxy';
+	const logger = options.logger ?? console;
+
+	// Store reference to the server once it's created
+	let wss: WebSocketServer | null = null;
+	const sessions = new Map<WebSocket, Session>();
+
+	// Monkey-patch app.listen to capture the server instance
+	const originalListen = app.listen.bind(app);
+	(app as any).listen = (...args: any[]) => {
+		const server = originalListen(...args);
+
+		wss = new WebSocketServer({
+			server,
+			path
+		});
+
+		wss.on('connection', (clientSocket) => {
+			const session: Session = {
+				relaySockets: new Map(),
+				pendingFrames: new Map(),
+				dedupBySubId: new Map(),
+				lastSubIdByRelay: new Map()
+			};
+			sessions.set(clientSocket, session);
+
+			clientSocket.on('message', (data, isBinary) => {
+				if (isBinary) {
+					const envelope = parseEnvelope(data);
+					if (!envelope) return;
+					handleEnvelope(session, clientSocket, envelope, logger);
+					return;
+				}
+
+				const text = toUtf8(data);
+				if (!text) return;
+				handleClientCommand(session, text, logger);
+			});
+
+			clientSocket.on('close', () => {
+				closeSession(session);
+				sessions.delete(clientSocket);
+			});
+
+			clientSocket.on('error', () => {
+				closeSession(session);
+				sessions.delete(clientSocket);
+			});
+		});
+
+		logger.info(`[relay-proxy] attached to Express server at path: ${path}`);
+
+		return server;
+	};
+
+	return {
+		close: () =>
+			new Promise<void>((resolve, reject) => {
+				if (!wss) {
+					resolve();
+					return;
+				}
+				// Close all sessions first
+				sessions.forEach((session) => closeSession(session));
+				sessions.clear();
 				wss.close((err) => {
 					if (err) {
 						reject(err);
