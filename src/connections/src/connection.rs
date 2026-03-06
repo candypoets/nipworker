@@ -22,6 +22,7 @@ use futures::lock::Mutex;
 use futures::stream::{SplitSink, SplitStream};
 use futures::{SinkExt, StreamExt};
 use gloo_net::websocket::{futures::WebSocket, Message};
+use gloo_timers::future::TimeoutFuture;
 use serde_json::{json, Value};
 use shared::Port;
 use std::cell::RefCell;
@@ -35,6 +36,8 @@ type OutWriter = Rc<dyn Fn(&str, &str, &str)>; // (url, sub_id, raw_text)
 type StatusWriter = Rc<dyn Fn(&str, &str)>; // (status, url)
 
 const RECONNECT_RETRY_DELAY_MS: u64 = 30_000;
+const HEALTHY_RETRY_DELAYS_MS: [u32; 3] = [200, 800, 2_000];
+const COLD_START_RETRY_DELAYS_MS: [u32; 1] = [200];
 
 fn normalize_token(token: &str) -> String {
     let t = token.trim();
@@ -337,7 +340,9 @@ impl RelayConnection {
     // Policy:
     // - Try immediate send first.
     // - If send fails, attempt one immediate reconnect + one retry for the same frame.
-    // - If reconnect/retry fails, drop that frame, mark relay unreliable (cooldown window), continue.
+    // - If reconnect/retry fails, perform staged forced reconnect+retry attempts (mobile timing mitigation).
+    // - If relay was previously healthy (Connected), try harder before cooldown.
+    // - If all retries fail, drop that frame, mark relay unreliable (cooldown window), continue.
     // - While unreliable window is active, skip reconnect attempts and drop incoming queued frames quickly.
     async fn queue_drainer(self: Arc<Self>, mut rx: Receiver<String>) {
         while let Some(frame) = rx.next().await {
@@ -355,9 +360,13 @@ impl RelayConnection {
                 continue;
             }
 
+            let was_previously_connected =
+                matches!(*self.status.read().unwrap(), ConnectionStatus::Connected);
+
             tracing::info!(
                 relay = %self.url,
                 status = ?*self.status.read().unwrap(),
+                was_previously_connected,
                 frame_len = frame.len(),
                 "[connections][drainer] processing queued frame"
             );
@@ -377,37 +386,97 @@ impl RelayConnection {
                 }
             }
 
-            // One reconnect attempt for this frame.
+            // Reconnect attempt #1 for this frame.
             match self.connect().await {
                 Ok(()) => {
-                    tracing::info!(relay = %self.url, "[connections][drainer] reconnect succeeded; retrying same frame");
+                    tracing::info!(relay = %self.url, "[connections][drainer] reconnect #1 succeeded; retrying same frame");
                     match Self::send_raw_internal(&self, &frame).await {
                         Ok(()) => {
-                            tracing::info!(relay = %self.url, "[connections][drainer] frame sent successfully after reconnect retry");
+                            tracing::info!(relay = %self.url, "[connections][drainer] frame sent successfully after reconnect #1 retry");
+                            continue;
                         }
                         Err(e) => {
-                            tracing::error!(
+                            tracing::warn!(
                                 relay = %self.url,
                                 error = ?e,
-                                "[connections][drainer] retry send failed after successful reconnect; dropping frame and marking unreliable"
+                                "[connections][drainer] retry send failed after reconnect #1; trying one forced reconnect retry"
                             );
-                            self.set_next_retry_delay_ms(RECONNECT_RETRY_DELAY_MS);
-                            let retry_at = *self.next_retry_at_ms.read().unwrap();
-                            tracing::warn!(relay = %self.url, retry_at, "[connections][drainer] relay marked unreliable after retry send failure");
                         }
                     }
                 }
                 Err(e) => {
-                    tracing::error!(
+                    tracing::warn!(
                         relay = %self.url,
                         error = ?e,
-                        "[connections][drainer] reconnect failed; dropping frame and marking relay unreliable"
+                        "[connections][drainer] reconnect #1 failed; trying one forced reconnect retry"
                     );
-                    self.set_next_retry_delay_ms(RECONNECT_RETRY_DELAY_MS);
-                    let retry_at = *self.next_retry_at_ms.read().unwrap();
-                    tracing::warn!(relay = %self.url, retry_at, "[connections][drainer] relay marked unreliable after reconnect failure");
                 }
             }
+
+            let delays: &[u32] = if was_previously_connected {
+                &HEALTHY_RETRY_DELAYS_MS
+            } else {
+                &COLD_START_RETRY_DELAYS_MS
+            };
+
+            let mut delivered = false;
+            for (idx, delay_ms) in delays.iter().copied().enumerate() {
+                // If connect() set cooldown on previous failure path, clear it for immediate staged attempts.
+                self.clear_backoff();
+                TimeoutFuture::new(delay_ms).await;
+
+                let attempt_num = idx + 2; // #1 already happened above
+                match self.connect().await {
+                    Ok(()) => {
+                        tracing::info!(
+                            relay = %self.url,
+                            attempt_num,
+                            delay_ms,
+                            "[connections][drainer] reconnect staged attempt succeeded; retrying same frame"
+                        );
+                        match Self::send_raw_internal(&self, &frame).await {
+                            Ok(()) => {
+                                tracing::info!(
+                                    relay = %self.url,
+                                    attempt_num,
+                                    "[connections][drainer] frame sent successfully after staged reconnect retry"
+                                );
+                                delivered = true;
+                                break;
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    relay = %self.url,
+                                    attempt_num,
+                                    error = ?e,
+                                    "[connections][drainer] staged retry send failed"
+                                );
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            relay = %self.url,
+                            attempt_num,
+                            error = ?e,
+                            "[connections][drainer] staged reconnect failed"
+                        );
+                    }
+                }
+            }
+
+            if delivered {
+                continue;
+            }
+
+            tracing::error!(
+                relay = %self.url,
+                was_previously_connected,
+                "[connections][drainer] all reconnect/send retries exhausted; dropping frame and marking unreliable"
+            );
+            self.set_next_retry_delay_ms(RECONNECT_RETRY_DELAY_MS);
+            let retry_at = *self.next_retry_at_ms.read().unwrap();
+            tracing::warn!(relay = %self.url, retry_at, "[connections][drainer] relay marked unreliable after retry exhaustion");
         }
         tracing::debug!(relay = %self.url, "Queue drainer exiting");
     }
