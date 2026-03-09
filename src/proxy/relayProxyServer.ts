@@ -2,6 +2,8 @@
 
 import type { Server as HttpServer } from 'http';
 import type { Server as HttpsServer } from 'https';
+import type { IncomingMessage } from 'http';
+import type { Duplex } from 'stream';
 import * as flatbuffers from 'flatbuffers';
 import { WebSocket, WebSocketServer } from 'ws';
 import {
@@ -39,6 +41,13 @@ export type AttachRelayProxyOptions = {
 export type AttachedRelayProxy = {
 	/** Stop accepting new connections and close all existing sessions */
 	close: () => Promise<void>;
+};
+
+export type WebSocketRelayProxy = {
+	wss: WebSocketServer;
+	close: () => Promise<void>;
+	/** Manually handle a WebSocket upgrade request */
+	handleUpgrade: (request: IncomingMessage, socket: Duplex, head: Buffer) => void;
 };
 
 type Envelope = {
@@ -84,10 +93,29 @@ export function createRelayProxyServer(options: RelayProxyServerOptions = {}): R
 	const path = options.path ?? '/';
 	const logger = options.logger ?? console;
 
-	const wss = new WebSocketServer({
-		host,
-		port,
-		path
+	let wss: WebSocketServer;
+	try {
+		wss = new WebSocketServer({
+			host,
+			port,
+			path
+		});
+	} catch (err) {
+		logger.error(`[relay-proxy] failed to create WebSocketServer: ${String(err)}`);
+		throw err;
+	}
+
+	// Get the actual port (in case port 0 was passed)
+	// If the server is not yet listening, wss.address() returns null
+	// In that case, wait for the 'listening' event
+	let actualPort = port;
+	const address = wss.address();
+	if (address && typeof address === 'object') {
+		actualPort = address.port;
+	}
+
+	wss.on('error', (err) => {
+		logger.error(`[relay-proxy] WebSocketServer error: ${String(err)}`);
 	});
 
 	wss.on('connection', (clientSocket) => {
@@ -120,10 +148,10 @@ export function createRelayProxyServer(options: RelayProxyServerOptions = {}): R
 		});
 	});
 
-	logger.info(`[relay-proxy] listening on ws://${host}:${port}${path}`);
+	logger.info(`[relay-proxy] listening on ws://${host}:${actualPort}${path}`);
 
 	return {
-		port,
+		port: actualPort,
 		close: () =>
 			new Promise<void>((resolve, reject) => {
 				wss.close((err) => {
@@ -134,6 +162,113 @@ export function createRelayProxyServer(options: RelayProxyServerOptions = {}): R
 					resolve();
 				});
 			})
+	};
+}
+
+/**
+ * Create a WebSocket relay proxy that supports manual upgrade handling.
+ * Use this for Vite development servers where SvelteKit middleware might interfere
+ * with the standard WebSocket upgrade mechanism.
+ *
+ * @example
+ * // In a Vite plugin
+ * const relayProxy = createRelayProxyWebSocketServer({ path: '/ws-proxy' });
+ *
+ * // In configureServer middleware
+ * server.middlewares.use((req, res, next) => {
+ *   if (req.url?.startsWith('/ws-proxy') && req.headers.upgrade === 'websocket') {
+ *     server.httpServer.once('upgrade', (request, socket, head) => {
+ *       if (request.url?.startsWith('/ws-proxy')) {
+ *         relayProxy.handleUpgrade(request, socket, head);
+ *       }
+ *     });
+ *   }
+ *   next();
+ * });
+ */
+export function createRelayProxyWebSocketServer(
+	options: Omit<AttachRelayProxyOptions, 'server'> & { server?: HttpServer | HttpsServer }
+): WebSocketRelayProxy {
+	const path = options.path ?? '/';
+	const logger = options.logger ?? console;
+
+	// Create WebSocket server with noServer mode to handle upgrades manually
+	const wss = new WebSocketServer({
+		noServer: true
+	});
+
+	const sessions = new Map<WebSocket, Session>();
+
+	wss.on('connection', (clientSocket) => {
+		const session: Session = {
+			relaySockets: new Map(),
+			pendingFrames: new Map(),
+			dedupBySubId: new Map(),
+			lastSubIdByRelay: new Map()
+		};
+		sessions.set(clientSocket, session);
+
+		clientSocket.on('message', (data, isBinary) => {
+			const session = sessions.get(clientSocket);
+			if (!session) return;
+
+			if (isBinary) {
+				const envelope = parseEnvelope(data);
+				if (!envelope) return;
+				handleEnvelope(session, clientSocket, envelope, logger);
+				return;
+			}
+
+			const text = toUtf8(data);
+			if (!text) return;
+			handleClientCommand(session, text, logger);
+		});
+
+		clientSocket.on('close', () => {
+			const session = sessions.get(clientSocket);
+			if (session) {
+				closeSession(session);
+				sessions.delete(clientSocket);
+			}
+		});
+
+		clientSocket.on('error', () => {
+			const session = sessions.get(clientSocket);
+			if (session) {
+				closeSession(session);
+				sessions.delete(clientSocket);
+			}
+		});
+	});
+
+	const handleUpgrade = (request: IncomingMessage, socket: Duplex, head: Buffer) => {
+		// Verify path matches
+		const url = request.url ?? '';
+		if (!url.startsWith(path)) {
+			return;
+		}
+
+		wss.handleUpgrade(request, socket, head, (ws) => {
+			wss.emit('connection', ws, request);
+		});
+	};
+
+	return {
+		wss,
+		close: () =>
+			new Promise<void>((resolve, reject) => {
+				// Close all sessions first
+				sessions.forEach((session) => closeSession(session));
+				sessions.clear();
+				wss.close((err) => {
+					if (err) {
+						reject(err);
+						return;
+					}
+					resolve();
+				});
+			}),
+		handleUpgrade
 	};
 }
 
@@ -261,6 +396,9 @@ export function createExpressRelayProxyMiddleware<
 			sessions.set(clientSocket, session);
 
 			clientSocket.on('message', (data, isBinary) => {
+				const session = sessions.get(clientSocket);
+				if (!session) return;
+
 				if (isBinary) {
 					const envelope = parseEnvelope(data);
 					if (!envelope) return;
@@ -274,13 +412,19 @@ export function createExpressRelayProxyMiddleware<
 			});
 
 			clientSocket.on('close', () => {
-				closeSession(session);
-				sessions.delete(clientSocket);
+				const session = sessions.get(clientSocket);
+				if (session) {
+					closeSession(session);
+					sessions.delete(clientSocket);
+				}
 			});
 
 			clientSocket.on('error', () => {
-				closeSession(session);
-				sessions.delete(clientSocket);
+				const session = sessions.get(clientSocket);
+				if (session) {
+					closeSession(session);
+					sessions.delete(clientSocket);
+				}
 			});
 		});
 
@@ -382,13 +526,19 @@ function ensureRelaySocket(
 	});
 
 	upstream.on('close', () => {
-		session.relaySockets.delete(relayUrl);
+		// Mark as closed but don't delete - ensureRelaySocket will reconnect on next use
+		// This keeps subscriptions alive across reconnects
 		session.pendingFrames.delete(relayUrl);
 	});
 
 	upstream.on('error', (err) => {
-		logger.warn(`[relay-proxy] relay socket error for ${relayUrl}: ${String(err)}`);
-		session.relaySockets.delete(relayUrl);
+		// Only log the first error per relay to reduce spam
+		if (!session.pendingFrames.has(relayUrl)) return;
+		const errorMsg = String(err);
+		// Skip common repetitive errors
+		if (!errorMsg.includes('ECONNREFUSED') && !errorMsg.includes('ENOTFOUND')) {
+			logger.warn(`[relay-proxy] relay socket error for ${relayUrl}: ${errorMsg.slice(0, 100)}`);
+		}
 		session.pendingFrames.delete(relayUrl);
 	});
 }

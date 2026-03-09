@@ -1,3 +1,6 @@
+// Import ByteString first to patch flatbuffers.ByteBuffer.prototype
+import './lib/ByteString.js';
+
 import * as flatbuffers from 'flatbuffers';
 import type { EventTemplate, NostrEvent } from 'nostr-tools';
 

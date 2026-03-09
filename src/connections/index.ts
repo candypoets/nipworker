@@ -1,5 +1,8 @@
 /* WASM-based WS worker runtime (dedicated Web Worker, module) */
 
+// Import ByteString first to patch flatbuffers.ByteBuffer.prototype
+import '../lib/ByteString.js';
+
 import * as flatbuffers from 'flatbuffers';
 import initWasm, { WSRust } from './pkg/connections.js';
 import wasmUrl from './pkg/connections_bg.wasm?url';
