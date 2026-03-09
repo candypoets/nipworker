@@ -276,6 +276,7 @@ export class NostrManager {
 		// (these require main thread access to window.nostr)
 		this.crypto.onmessage = async (event) => {
 			const msg = event.data;
+			console.log('[main] crypto.onmessage:', msg?.type, msg);
 
 			// Handle signer ready event (ALL signers send this when connected and ready)
 			// Contains all info needed to reconstruct session: pubkey, signer_type, bunker_url (for nip46)
@@ -604,7 +605,7 @@ export class NostrManager {
 		console.log('[main] saveSession:', {
 			pubkey: pubkey.slice(0, 16) + '...',
 			type,
-			hasClientSecret: !!payload.clientSecret
+			hasClientSecret: !!payload?.clientSecret
 		});
 		const accounts = this.getAccounts();
 		accounts[pubkey] = { type, payload };
