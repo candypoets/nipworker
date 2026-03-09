@@ -7,16 +7,34 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "default": "./dist/index.js"
     },
     "./hooks": {
+      "types": "./dist/hooks.d.ts",
       "import": "./dist/hooks.js",
-      "types": "./dist/hooks.d.ts"
+      "default": "./dist/hooks.js"
     },
     "./utils": {
+      "types": "./dist/utils.d.ts",
       "import": "./dist/utils.js",
-      "types": "./dist/utils.d.ts"
+      "default": "./dist/utils.js"
+    },
+    "./proxy": {
+      "types": "./dist/proxy/index.d.ts",
+      "import": "./dist/proxy/index.js",
+      "default": "./dist/proxy/index.js"
+    },
+    "./proxy/server": {
+      "types": "./dist/proxy/server.d.ts",
+      "import": "./dist/proxy/server.js",
+      "default": "./dist/proxy/server.js"
+    },
+    "./proxy/vite": {
+      "types": "./dist/proxy/vite.d.ts",
+      "import": "./dist/proxy/vite.js",
+      "default": "./dist/proxy/vite.js"
     }
   },
   "files": [
@@ -34,7 +52,11 @@
     "flatc:rust": "flatc --rust --gen-object-api --gen-all --filename-suffix '' -o ./src/shared/src/generated ./schemas/message.fbs",
     "flatc:ts": "flatc --ts --gen-object-api --gen-all --filename-suffix '' -o ./src/generated ./schemas/message.fbs && node ./scripts/patch-strings.js",
     "build:types": "tsc --emitDeclarationOnly --outDir dist",
-    "prepublishOnly": "npm run build"
+    "proxy:start": "node ./dist/proxy/server.js",
+    "prepublishOnly": "npm run build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:ui": "vitest --ui"
   },
   "keywords": [
     "nostr",
@@ -55,10 +77,22 @@
   },
   "homepage": "https://github.com/candypoets/nipworker#readme",
   "peerDependencies": {
-    "flatbuffers": "^25.2.10"
+    "flatbuffers": "^25.2.10",
+    "vite": "^5.0.0 || ^6.0.0",
+    "ws": "^8.0.0"
+  },
+  "peerDependenciesMeta": {
+    "vite": {
+      "optional": true
+    },
+    "ws": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@types/node": "^20.19.17",
+    "@types/ws": "^8.5.12",
+    "@vitest/ui": "^4.0.18",
     "npm-run-all": "^4.1.5",
     "prettier": "^3.6.2",
     "typescript": "^5.0.0",
@@ -66,10 +100,12 @@
     "vite-plugin-dts": "^3.0.0",
     "vite-plugin-static-copy": "^3.1.1",
     "vite-plugin-top-level-await": "^1.6.0",
-    "vite-plugin-wasm": "^3.0.0"
+    "vite-plugin-wasm": "^3.0.0",
+    "vitest": "^4.0.18"
   },
   "dependencies": {
-    "nostr-tools": "^2.0.0"
+    "nostr-tools": "^2.0.0",
+    "ws": "^8.0.0"
   },
   "engines": {
     "node": ">=18.0.0"

@@ -1,7 +1,7 @@
 import { Event, EventTemplate } from 'nostr-tools';
 import { ArrayBufferReader } from 'src/lib/ArrayBufferReader';
 import { WorkerMessage } from './generated/nostr/fb';
-import { RequestObject, manager, type SubscriptionConfig } from '.';
+import { RequestObject, getManager, type SubscriptionConfig } from '.';
 // Re-export type guard utilities for hooks users
 export {
 	isParsedEvent,
@@ -23,7 +23,7 @@ export function useRelayStatus(onStatus: StatusHandler) {
 	let stopped = false;
 
 	// Get current statuses immediately
-	const statuses = manager.getRelayStatuses();
+	const statuses = getManager().getRelayStatuses();
 	for (const [url, { status }] of statuses) {
 		onStatus(status, url);
 	}
@@ -40,12 +40,12 @@ export function useRelayStatus(onStatus: StatusHandler) {
 	};
 
 	// Subscribe to updates
-	manager.addEventListener('relay:status', handleStatus as globalThis.EventListener);
+	getManager().addEventListener('relay:status', handleStatus as globalThis.EventListener);
 
 	// Return a stop handle
 	return () => {
 		stopped = true;
-		manager.removeEventListener('relay:status', handleStatus as globalThis.EventListener);
+		getManager().removeEventListener('relay:status', handleStatus as globalThis.EventListener);
 	};
 }
 
@@ -64,7 +64,7 @@ export function useSubscription(
 	let running = true;
 	let hasUnsubscribed = false;
 	let hasSubscribed = false;
-	subId = manager.createShortId(subId);
+	subId = getManager().createShortId(subId);
 
 	// Reentrancy/coalescing flags
 	let scheduled = false;
@@ -107,8 +107,8 @@ export function useSubscription(
 		if (hasUnsubscribed) return;
 		running = false;
 		if (hasSubscribed) {
-			manager.removeEventListener(`subscription:${subId}`, scheduleProcess);
-			manager.unsubscribe(subId);
+			getManager().removeEventListener(`subscription:${subId}`, scheduleProcess);
+			getManager().unsubscribe(subId);
 			hasUnsubscribed = true;
 		}
 		Promise.resolve().then(() => {
@@ -117,9 +117,9 @@ export function useSubscription(
 		});
 	};
 
-	buffer = manager.subscribe(subId, requests, options);
+	buffer = getManager().subscribe(subId, requests, options);
 	hasSubscribed = true;
-	manager.addEventListener(`subscription:${subId}`, scheduleProcess);
+	getManager().addEventListener(`subscription:${subId}`, scheduleProcess);
 	scheduleProcess();
 
 	return unsubscribe;
@@ -148,10 +148,10 @@ export function usePublish(
 
 	const unsubscribe = (): void => {
 		running = false;
-		manager.removeEventListener(`publish:${pubId}`, processEvents);
+		getManager().removeEventListener(`publish:${pubId}`, processEvents);
 	};
 
-	buffer = manager.publish(pubId, event as any, options.defaultRelays);
+	buffer = getManager().publish(pubId, event as any, options.defaultRelays);
 
 	const processEvents = (): void => {
 		if (!running || !buffer) {
@@ -167,7 +167,7 @@ export function usePublish(
 	};
 
 	if (options.trackStatus) {
-		manager.addEventListener(`publish:${pubId}`, processEvents);
+		getManager().addEventListener(`publish:${pubId}`, processEvents);
 		queueMicrotask(processEvents);
 	}
 
@@ -177,5 +177,5 @@ export function usePublish(
 export function useSignEvent(template: EventTemplate, callback: (event: Event) => void) {
 	// const manager = nipWorker.getManager('');
 
-	manager.signEvent(template, callback);
+	getManager().signEvent(template, callback);
 }

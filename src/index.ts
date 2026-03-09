@@ -1,9 +1,12 @@
+// Import ByteString first to patch flatbuffers.ByteBuffer.prototype
+import './lib/ByteString.js';
+
 import * as flatbuffers from 'flatbuffers';
 import type { EventTemplate, NostrEvent } from 'nostr-tools';
 
 import { ArrayBufferReader } from 'src/lib/ArrayBufferReader';
 
-import { RequestObject, SubscriptionConfig } from 'src/types';
+import { NostrManagerConfig, RequestObject, SubscriptionConfig } from 'src/types';
 import { InitCacheMsg } from './cache/index';
 import { InitConnectionsMsg } from './connections/index';
 import { InitCryptoMsg } from './crypto/index';
@@ -63,7 +66,7 @@ export class NostrManager {
 
 	public PERPETUAL_SUBSCRIPTIONS = ['notifications', 'starterpack'];
 
-	constructor() {
+	constructor(config: NostrManagerConfig = {}) {
 		// Create 7 MessageChannels for worker-to-worker communication
 		// Each channel connects two workers - each worker gets one port (which is bidirectional)
 		// Channel naming: workerA_workerB (no direction, just identifies the pair)
@@ -95,7 +98,8 @@ export class NostrManager {
 					mainPort: connections_main.port2,
 					cachePort: cache_connections.port1,
 					parserPort: parser_connections.port1,
-					cryptoPort: crypto_connections.port1
+					cryptoPort: crypto_connections.port1,
+					...(config.proxy ? { proxy: config.proxy } : {})
 				}
 			} as InitConnectionsMsg,
 			[
@@ -224,7 +228,11 @@ export class NostrManager {
 			if (msg.ok) {
 				this.activePubkey = msg.result;
 				// Check if bunker was discovered (QR flow) - convert to bunker format
-				if (this._discoveredBunkerUrl && this._pendingSession?.type === 'nip46_qr' && this._pendingSession?.payload?.clientSecret) {
+				if (
+					this._discoveredBunkerUrl &&
+					this._pendingSession?.type === 'nip46_qr' &&
+					this._pendingSession?.payload?.clientSecret
+				) {
 					console.log('[main] Converting QR to bunker for pubkey:', this.activePubkey);
 					this.saveSession(this.activePubkey!, 'nip46_bunker', {
 						url: this._discoveredBunkerUrl,
@@ -268,6 +276,7 @@ export class NostrManager {
 		// (these require main thread access to window.nostr)
 		this.crypto.onmessage = async (event) => {
 			const msg = event.data;
+			console.log('[main] crypto.onmessage:', msg?.type, msg);
 
 			// Handle signer ready event (ALL signers send this when connected and ready)
 			// Contains all info needed to reconstruct session: pubkey, signer_type, bunker_url (for nip46)
@@ -276,7 +285,11 @@ export class NostrManager {
 				this.activePubkey = msg.pubkey;
 
 				// For NIP-46, use the bunker_url from the message (covers both QR and bunker flows)
-				if (msg.signer_type === 'nip46' && msg.bunker_url && this._pendingSession?.payload?.clientSecret) {
+				if (
+					msg.signer_type === 'nip46' &&
+					msg.bunker_url &&
+					this._pendingSession?.payload?.clientSecret
+				) {
 					console.log('[main] NIP-46 session saved for:', msg.pubkey);
 					this.saveSession(msg.pubkey, 'nip46', {
 						url: msg.bunker_url,
@@ -592,7 +605,7 @@ export class NostrManager {
 		console.log('[main] saveSession:', {
 			pubkey: pubkey.slice(0, 16) + '...',
 			type,
-			hasClientSecret: !!payload.clientSecret
+			hasClientSecret: !!payload?.clientSecret
 		});
 		const accounts = this.getAccounts();
 		accounts[pubkey] = { type, payload };
@@ -670,4 +683,43 @@ export class NostrManager {
 	}
 }
 
-export const manager = new NostrManager();
+export function createNostrManager(config?: NostrManagerConfig): NostrManager {
+	return new NostrManager(config);
+}
+
+// Global manager instance for hooks - can be overridden for custom configuration
+let globalManager: NostrManager | null = null;
+
+/**
+ * Get the global manager instance used by hooks.
+ * Creates a default singleton on first access.
+ * Use `setGlobalManager()` to provide a custom-configured instance.
+ */
+export function getManager(): NostrManager {
+	if (!globalManager) {
+		globalManager = new NostrManager();
+	}
+	return globalManager;
+}
+
+/**
+ * Set a custom manager instance to be used by all hooks.
+ * Call this early in your app before using any hooks.
+ *
+ * @example
+ * import { createNostrManager, setGlobalManager } from '@candypoets/nipworker';
+ *
+ * const myManager = createNostrManager({
+ *   proxy: { url: import.meta.env.VITE_NIPWORKER_PROXY_URL }
+ * });
+ * setGlobalManager(myManager);
+ */
+export function setGlobalManager(manager: NostrManager): void {
+	globalManager = manager;
+}
+
+/**
+ * Legacy singleton export. Same as `getManager()`.
+ * @deprecated Use `getManager()` or `setGlobalManager()` for custom config.
+ */
+export const manager = getManager();
