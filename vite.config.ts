@@ -44,6 +44,7 @@ export default defineConfig({
 				proxyServer: resolve(__dirname, 'src/proxy/server.ts'),
 				proxyVite: resolve(__dirname, 'src/proxy/vite.ts'),
 				connections: resolve(__dirname, 'src/connections/index.ts'),
+				connectionsProxy: resolve(__dirname, 'src/connections/proxy.ts'),
 				cache: resolve(__dirname, 'src/cache/index.ts'),
 				parser: resolve(__dirname, 'src/parser/index.ts'),
 				crypto: resolve(__dirname, 'src/crypto/index.ts')
@@ -59,6 +60,7 @@ export default defineConfig({
 						proxyServer: 'proxy/server.js',
 						proxyVite: 'proxy/vite.js',
 						connections: 'connections/index.js',
+						connectionsProxy: 'connections/proxy.js',
 						cache: 'cache/index.js',
 						parser: 'parser/index.js',
 						crypto: 'crypto/index.js'

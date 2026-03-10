@@ -1,8 +1,7 @@
 import { generateSecretKey, getPublicKey } from 'nostr-tools';
-import { manager } from '.';
+import { getManager } from '.';
 
 export { ConnectionTracker } from './lib/ConnectionTracker';
-export { ByteString } from './lib/ByteString';
 
 export * from './lib/NarrowTypes';
 export * from './lib/ParseContent';
@@ -89,7 +88,7 @@ export async function connectWithQRCode(appName: string, relays: string[]) {
 
 	// Set up the NIP-46 signer with the client's pubkey and relays
 	// Note: We don't know the remote signer's pubkey yet - that's what we're discovering
-	manager.setNip46QR(nostrconnectUrl, clientSecretHex);
+	getManager().setNip46QR(nostrconnectUrl, clientSecretHex);
 
 	return nostrconnectUrl;
 }

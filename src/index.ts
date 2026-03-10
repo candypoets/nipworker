@@ -1,6 +1,3 @@
-// Import ByteString first to patch flatbuffers.ByteBuffer.prototype
-import './lib/ByteString.js';
-
 import * as flatbuffers from 'flatbuffers';
 import type { EventTemplate, NostrEvent } from 'nostr-tools';
 
@@ -8,7 +5,7 @@ import { ArrayBufferReader } from 'src/lib/ArrayBufferReader';
 
 import { NostrManagerConfig, RequestObject, SubscriptionConfig } from 'src/types';
 import { InitCacheMsg } from './cache/index';
-import { InitConnectionsMsg } from './connections/index';
+import type { InitConnectionsMsg } from './connections/types';
 import { InitCryptoMsg } from './crypto/index';
 import {
 	GetPublicKeyT,
@@ -79,29 +76,34 @@ export class NostrManager {
 		const parser_main = new MessageChannel(); // parser ↔ main (for batched events)
 		const connections_main = new MessageChannel(); // connections ↔ main (for relay status)
 
-		const connectionURL = new URL('./connections/index.js', import.meta.url);
+		const useProxyConnections = !!config.proxy;
+		// Keep literal paths so Vite can statically rewrite worker URLs in production builds.
+		const connectionURL = useProxyConnections
+			? new URL('./connections/proxy.js', import.meta.url)
+			: new URL('./connections/index.js', import.meta.url);
 		const cacheURL = new URL('./cache/index.js', import.meta.url);
 		const parserURL = new URL('./parser/index.js', import.meta.url);
 		const cryptoURL = new URL('./crypto/index.js', import.meta.url);
-
+		console.log('constructing crates');
 		this.connections = new Worker(connectionURL, { type: 'module' });
 		this.cache = new Worker(cacheURL, { type: 'module' });
 		this.parser = new Worker(parserURL, { type: 'module' });
 		this.crypto = new Worker(cryptoURL, { type: 'module' });
 
+		console.log('connectionMode', useProxyConnections ? 'proxy' : 'rust');
 		// Transfer ports to connections worker
 		// Needs: mainPort, cachePort, parserPort, cryptoPort
 		this.connections.postMessage(
 			{
 				type: 'init',
-				payload: {
-					mainPort: connections_main.port2,
-					cachePort: cache_connections.port1,
-					parserPort: parser_connections.port1,
-					cryptoPort: crypto_connections.port1,
-					...(config.proxy ? { proxy: config.proxy } : {})
-				}
-			} as InitConnectionsMsg,
+					payload: {
+						mainPort: connections_main.port2,
+						cachePort: cache_connections.port1,
+						parserPort: parser_connections.port1,
+						cryptoPort: crypto_connections.port1,
+						...(config.proxy ? { proxy: config.proxy } : {})
+					}
+				} as InitConnectionsMsg,
 			[
 				connections_main.port2,
 				cache_connections.port1,
@@ -687,39 +689,42 @@ export function createNostrManager(config?: NostrManagerConfig): NostrManager {
 	return new NostrManager(config);
 }
 
-// Global manager instance for hooks - can be overridden for custom configuration
+// Global manager instance for hooks. Must be explicitly set by the app.
 let globalManager: NostrManager | null = null;
 
 /**
  * Get the global manager instance used by hooks.
- * Creates a default singleton on first access.
- * Use `setGlobalManager()` to provide a custom-configured instance.
+ * Throws if no manager has been set.
  */
 export function getManager(): NostrManager {
 	if (!globalManager) {
-		globalManager = new NostrManager();
+		throw new Error(
+			'[nipworker] Global manager is not set. Call setManager(createNostrManager(...)) before using hooks.'
+		);
 	}
 	return globalManager;
 }
 
 /**
- * Set a custom manager instance to be used by all hooks.
+ * Set the global manager instance used by all hooks.
  * Call this early in your app before using any hooks.
  *
  * @example
- * import { createNostrManager, setGlobalManager } from '@candypoets/nipworker';
+ * import { createNostrManager, setManager } from '@candypoets/nipworker';
  *
  * const myManager = createNostrManager({
  *   proxy: { url: import.meta.env.VITE_NIPWORKER_PROXY_URL }
  * });
- * setGlobalManager(myManager);
+ * setManager(myManager);
  */
-export function setGlobalManager(manager: NostrManager): void {
+export function setManager(manager: NostrManager): void {
 	globalManager = manager;
 }
 
 /**
- * Legacy singleton export. Same as `getManager()`.
- * @deprecated Use `getManager()` or `setGlobalManager()` for custom config.
+ * Backward-compatible alias for `setManager`.
+ * @deprecated Use `setManager()`.
  */
-export const manager = getManager();
+export function setGlobalManager(manager: NostrManager): void {
+	setManager(manager);
+}
