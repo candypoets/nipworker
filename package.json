@@ -50,7 +50,7 @@
     "build:crypto": "wasm-pack build ./src/crypto --release --target web",
     "flatc": "npm run flatc:rust && npm run flatc:ts",
     "flatc:rust": "flatc --rust --gen-object-api --gen-all --filename-suffix '' -o ./src/shared/src/generated ./schemas/message.fbs",
-    "flatc:ts": "flatc --ts --gen-object-api --gen-all --filename-suffix '' -o ./src/generated ./schemas/message.fbs && node ./scripts/patch-strings.js",
+    "flatc:ts": "flatc --ts --gen-object-api --gen-all --filename-suffix '' -o ./src/generated ./schemas/message.fbs",
     "build:types": "tsc --emitDeclarationOnly --outDir dist",
     "proxy:start": "node ./dist/proxy/server.js",
     "prepublishOnly": "npm run build",

@@ -65,11 +65,7 @@ pub type NostrResult<T> = Result<T, NostrError>;
 
 // Worker implementation
 use js_sys::Uint8Array;
-use std::{
-    cell::RefCell,
-    rc::Rc,
-    sync::Arc,
-};
+use std::{cell::RefCell, rc::Rc, sync::Arc};
 use tracing::info;
 
 use crate::utils::js_interop::post_worker_message;

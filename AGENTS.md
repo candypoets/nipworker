@@ -25,7 +25,7 @@ NIPWorker is a high-performance Nostr client library using a multi-worker archit
 ### Schema Commands
 - **Generate FlatBuffers**: `npm run flatc` - Regenerate TS/Rust types from `/schemas`
   - `npm run flatc:rust` - Rust types only
-  - `npm run flatc:ts` - TypeScript types only (runs patch-strings.js after)
+  - `npm run flatc:ts` - TypeScript types only
 
 ### Release Commands
 - **Release**: `./release.sh <version>` - Bump version, commit, tag, and push
@@ -82,11 +82,10 @@ The crypto worker supports multiple signer backends:
 | `src/hooks.ts` | React-style hooks (useSubscription, usePublish, useRelayStatus) |
 | `src/utils.ts` | Utility functions, type guards, NIP-46 QR helper |
 | `src/types/index.ts` | TypeScript type definitions |
-| `src/lib/` | Shared library code (ByteString, SharedBuffer, NostrUtils, etc.) |
+| `src/lib/` | Shared library code (SharedBuffer, NostrUtils, etc.) |
 | `src/ws/` | WebSocket runtime and connection management |
 | `src/generated/` | FlatBuffers generated TypeScript code |
 | `schemas/` | FlatBuffers schema definitions (.fbs files) |
-| `scripts/patch-strings.js` | Post-processing for FlatBuffers TS output |
 | `release.sh` | Version bump and release automation |
 | `.github/workflows/npm-publish.yml` | CI/CD for automated npm publishing |
 
@@ -95,7 +94,7 @@ The crypto worker supports multiple signer backends:
 ### Schema Changes
 1. Edit `.fbs` files in `/schemas` or `/schemas/kinds/`
 2. Run `npm run flatc` immediately after modifications
-3. The patch-strings.js script auto-runs to fix ByteString imports
+
 
 ### IPC Safety
 - Header layout in `sab_ring.rs` must remain 32-byte consistent
