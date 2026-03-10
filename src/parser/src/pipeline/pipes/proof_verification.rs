@@ -9,168 +9,14 @@ use std::cell::RefCell;
 use std::sync::Arc;
 
 type Result<T> = std::result::Result<T, NostrError>;
-use crate::utils::json::BaseJsonParser;
 use flatbuffers::FlatBufferBuilder;
 use gloo_net;
-use hex;
 use rustc_hash::{FxHashMap, FxHashSet};
-use std::fmt::Write;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, warn};
 use futures::stream::{self, StreamExt};
 
 // Cap concurrent proof verifications to avoid SAB ring overflow and CPU saturation
 const MAX_CONCURRENT_PROOFS: usize = 4;
-
-#[derive(Debug, Clone)]
-struct CheckStateRequest {
-    ys: Vec<String>,
-}
-
-impl CheckStateRequest {
-    pub fn new(ys: Vec<String>) -> Self {
-        Self { ys }
-    }
-
-    pub fn to_json(&self) -> String {
-        let mut result = String::with_capacity(self.calculate_json_size());
-
-        result.push('{');
-        result.push_str("\"Ys\":[");
-
-        for (i, y) in self.ys.iter().enumerate() {
-            if i > 0 {
-                result.push(',');
-            }
-            result.push('"');
-            Self::escape_string_to(&mut result, y);
-            result.push('"');
-        }
-
-        result.push_str("]}");
-        result
-    }
-
-    #[inline(always)]
-    fn calculate_json_size(&self) -> usize {
-        10 + // {"Ys":[]}
-        self.ys.iter().map(|y| y.len() * 2 + 4).sum::<usize>() // Escaped strings + quotes + commas
-    }
-
-    #[inline(always)]
-    fn escape_string_to(result: &mut String, s: &str) {
-        for ch in s.chars() {
-            match ch {
-                '\\' => result.push_str("\\\\"),
-                '"' => result.push_str("\\\""),
-                '\n' => result.push_str("\\n"),
-                '\r' => result.push_str("\\r"),
-                '\t' => result.push_str("\\t"),
-                other => result.push(other),
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-struct ProofState {
-    y: String,
-    state: String,
-    witness: Option<String>,
-}
-
-impl ProofState {
-    pub fn from_json(json: &str) -> Result<Self> {
-        let parser = ProofStateParser::new(json.as_bytes());
-        parser.parse()
-    }
-
-    pub fn to_json(&self) -> String {
-        let mut result = String::with_capacity(self.calculate_json_size());
-
-        result.push('{');
-        write!(
-            result,
-            "\"Y\":\"{}\",\"state\":\"{}\"",
-            Self::escape_string(&self.y),
-            Self::escape_string(&self.state)
-        )
-        .unwrap();
-
-        if let Some(ref witness) = self.witness {
-            write!(result, ",\"witness\":\"{}\"", Self::escape_string(witness)).unwrap();
-        }
-
-        result.push('}');
-        result
-    }
-
-    #[inline(always)]
-    fn calculate_json_size(&self) -> usize {
-        20 + // Base structure
-        self.y.len() * 2 + self.state.len() * 2 + // Escaping
-        self.witness.as_ref().map(|w| w.len() * 2 + 13).unwrap_or(0) // ,"witness":""
-    }
-
-    #[inline(always)]
-    fn escape_string(s: &str) -> String {
-        if !s.contains('\\') && !s.contains('"') {
-            s.to_string()
-        } else {
-            let mut result = String::with_capacity(s.len() + 4);
-            Self::escape_string_to(&mut result, s);
-            result
-        }
-    }
-
-    #[inline(always)]
-    fn escape_string_to(result: &mut String, s: &str) {
-        for ch in s.chars() {
-            match ch {
-                '\\' => result.push_str("\\\\"),
-                '"' => result.push_str("\\\""),
-                '\n' => result.push_str("\\n"),
-                '\r' => result.push_str("\\r"),
-                '\t' => result.push_str("\\t"),
-                other => result.push(other),
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-struct CheckStateResponse {
-    states: Vec<ProofState>,
-}
-
-impl CheckStateResponse {
-    pub fn from_json(json: &str) -> Result<Self> {
-        let parser = CheckStateResponseParser::new(json.as_bytes());
-        parser.parse()
-    }
-
-    pub fn to_json(&self) -> String {
-        let mut result = String::with_capacity(self.calculate_json_size());
-
-        result.push('{');
-        result.push_str("\"states\":[");
-
-        for (i, state) in self.states.iter().enumerate() {
-            if i > 0 {
-                result.push(',');
-            }
-            result.push_str(&state.to_json());
-        }
-
-        result.push_str("]}");
-        result
-    }
-
-    #[inline(always)]
-    fn calculate_json_size(&self) -> usize {
-        15 + // {"states":[]}
-        self.states.iter().map(|s| s.calculate_json_size() + 1).sum::<usize>() // States + commas
-    }
-}
 
 /// Cached mint keys for avoiding repeated network requests
 #[derive(Clone)]
@@ -178,16 +24,18 @@ struct CachedKeys {
     keys_json: String,
 }
 
-/// Pipe that extracts proofs from Kind 9321 and 7375 events and verifies their state with mints
+/// Pipe that extracts proofs from Kind 9321 and 7375 events and verifies their DLEQ signatures.
+/// Note: Spent state checking is intentionally NOT done here - clients should check state
+/// when attempting to spend, as proof states change over time.
 pub struct ProofVerificationPipe {
-    seen_proofs: FxHashSet<String>, // secrets we've already seen
+    seen_proofs: FxHashSet<String>, // secrets we've already seen (session-only dedup)
     pending_verifications: FxHashMap<String, String>, // secret -> Y point
     pending_proofs: FxHashMap<String, FxHashMap<String, Proof>>, // mint_url -> secret -> proof
     max_proofs: usize,
     name: String,
     verification_running: bool,
     crypto_client: Arc<CryptoClient>,
-    mint_keys_cache: Arc<RefCell<FxHashMap<String, CachedKeys>>>, // cached mint keys with TTL
+    mint_keys_cache: Arc<RefCell<FxHashMap<String, CachedKeys>>>, // cached mint keys
 }
 
 impl ProofVerificationPipe {
@@ -288,143 +136,35 @@ impl ProofVerificationPipe {
         Ok(())
     }
 
-    /// Check proofs with mints and return serialized valid proofs (iterative)
+    /// Collect all DLEQ-verified proofs and return them as serialized bytes.
+    /// Note: Spent state is NOT checked here - clients must check state when spending.
     async fn verify_pending_proofs(&mut self) -> Result<Vec<u8>> {
-        // Set the running state
         self.verification_running = true;
 
         let mut valid_proofs: FxHashMap<String, Vec<Proof>> = FxHashMap::default();
 
-        // Keep processing until no more pending proofs
-        loop {
-            // Take a snapshot of current pending proofs to process
-            let current_pending = self.pending_proofs.clone();
-
-            if current_pending.is_empty() {
-                break;
-            }
-
-            let mut made_progress = false;
-
-            for (mint_url, mint_proofs) in &current_pending {
-                if mint_proofs.is_empty() {
-                    continue;
-                }
-
-                // Get Y points for this mint's proofs, filtering out empty Y points
-                let mut y_points = Vec::new();
-                let mut secret_to_y: FxHashMap<String, String> = FxHashMap::default();
-                let mut secrets_to_remove = Vec::new();
-
-                for secret in mint_proofs.keys() {
-                    if let Some(y_point) = self.pending_verifications.get(secret) {
-                        // Skip proofs with empty/invalid Y points (failed DLEQ verification)
-                        if !y_point.is_empty() {
-                            y_points.push(y_point.clone());
-                            secret_to_y.insert(secret.clone(), y_point.clone());
-                        } else {
-                            // Mark for removal - failed DLEQ verification
-                            secrets_to_remove.push(secret.clone());
-                        }
-                    } else {
-                        // No Y point found - shouldn't happen, but clean up
-                        secrets_to_remove.push(secret.clone());
+        // Process all pending proofs - just collect those with valid Y points (DLEQ verified)
+        for (mint_url, mint_proofs) in &self.pending_proofs {
+            for (secret, proof) in mint_proofs {
+                if let Some(y_point) = self.pending_verifications.get(secret) {
+                    // Non-empty Y point means DLEQ verification passed
+                    if !y_point.is_empty() {
+                        valid_proofs
+                            .entry(mint_url.clone())
+                            .or_default()
+                            .push(proof.clone());
                     }
                 }
-
-                // Clean up secrets with no valid Y point
-                for secret in secrets_to_remove {
-                    self.pending_verifications.remove(&secret);
-                    if let Some(mint_proofs_mut) = self.pending_proofs.get_mut(mint_url) {
-                        mint_proofs_mut.remove(&secret);
-                    }
-                }
-
-                if y_points.is_empty() {
-                    continue;
-                }
-
-                match self.check_proofs_with_mint(mint_url, &y_points).await {
-                    Ok(states) => {
-                        // Process the states and collect valid proofs
-                        for state in &states {
-                            // Find the secret by Y point
-                            let mut found_secret = None;
-                            for (secret, y_point) in &secret_to_y {
-                                if y_point == &state.y {
-                                    found_secret = Some(secret.clone());
-                                    break;
-                                }
-                            }
-
-                            if let Some(secret) = found_secret {
-                                match state.state.as_str() {
-                                    "SPENT" => {
-                                        self.pending_verifications.remove(&secret);
-                                        // Remove from pending proofs
-                                        if let Some(mint_proofs) =
-                                            self.pending_proofs.get_mut(mint_url)
-                                        {
-                                            mint_proofs.remove(&secret);
-                                        }
-                                        made_progress = true;
-                                    }
-                                    "UNSPENT" => {
-                                        // Collect this valid proof
-                                        if let Some(proof) = mint_proofs.get(&secret) {
-                                            valid_proofs
-                                                .entry(mint_url.clone())
-                                                .or_default()
-                                                .push(proof.clone());
-                                        }
-                                        // Remove from pending verification
-                                        self.pending_verifications.remove(&secret);
-                                        // Remove from pending proofs
-                                        if let Some(mint_proofs) =
-                                            self.pending_proofs.get_mut(mint_url)
-                                        {
-                                            mint_proofs.remove(&secret);
-                                        }
-                                        made_progress = true;
-                                    }
-                                    "PENDING" => {
-                                        // Keep in all tracking for next check
-                                    }
-                                    unknown => {
-                                        warn!("Unknown proof state: {}", unknown);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        warn!("Failed to check proofs with mint {}: {}", mint_url, e);
-                        // Remove from current pending to avoid immediate retry
-                        self.pending_proofs.remove(mint_url);
-                        // Remove from pending verifications temporarily
-                        for secret in mint_proofs.keys() {
-                            self.pending_verifications.remove(secret);
-                        }
-                        made_progress = true;
-                    }
-                }
-            }
-
-            // Clean up empty mint entries
-            self.pending_proofs.retain(|_, proofs| !proofs.is_empty());
-
-            // If we didn't make any progress, break to avoid infinite loop
-            if !made_progress {
-                break;
             }
         }
 
-        // No more pending proofs, set verification_running to false
+        // Clear all pending state
+        self.pending_proofs.clear();
+        self.pending_verifications.clear();
         self.verification_running = false;
 
         // Serialize valid proofs to bytes
         let mut builder = FlatBufferBuilder::new();
-
         let mut proofs_mint = Vec::new();
 
         for (mint_url, proofs) in &valid_proofs {
@@ -471,43 +211,6 @@ impl ProofVerificationPipe {
         Ok(result_bytes)
     }
 
-    /// Make HTTP request to mint's checkstate endpoint
-    async fn check_proofs_with_mint(
-        &self,
-        mint_url: &str,
-        y_points: &[String],
-    ) -> Result<Vec<ProofState>> {
-        info!("check proof for mint {}", mint_url);
-        let url = format!("{}/v1/checkstate", mint_url.trim_end_matches('/'));
-
-        let request = CheckStateRequest::new(y_points.to_vec());
-
-        // ✅ UPDATED: Use custom JSON serialization instead of serde_json
-        let request_body = request.to_json();
-
-        let response = gloo_net::http::Request::post(&url)
-            .header("Content-Type", "application/json")
-            .body(request_body)?
-            .send()
-            .await
-            .map_err(|e| NostrError::Other(format!("HTTP request failed: {:?}", e)))?;
-
-        if !response.ok() {
-            return Err(NostrError::Other(format!(
-                "Mint returned status: {}",
-                response.status()
-            )));
-        }
-
-        let response_text = response
-            .text()
-            .await
-            .map_err(|e| NostrError::Other(format!("Failed to read response: {:?}", e)))?;
-
-        // ✅ UPDATED: Use custom JSON parsing instead of serde_json
-        let check_response: CheckStateResponse = CheckStateResponse::from_json(&response_text)?;
-        Ok(check_response.states)
-    }
 }
 
 impl Pipe for ProofVerificationPipe {
@@ -713,193 +416,3 @@ impl ProofVerificationPipe {
 }
 
 // Custom JSON parsers for the structs
-enum ProofStateParserData<'a> {
-    Borrowed(&'a [u8]),
-    Owned(Vec<u8>),
-}
-
-struct ProofStateParser<'a> {
-    data: ProofStateParserData<'a>,
-}
-
-impl<'a> ProofStateParser<'a> {
-    #[inline(always)]
-    fn new(bytes: &'a [u8]) -> Self {
-        Self {
-            data: ProofStateParserData::Borrowed(bytes),
-        }
-    }
-
-    #[inline(always)]
-    fn parse(mut self) -> Result<ProofState> {
-        // Get the bytes to parse
-        let bytes = match &self.data {
-            ProofStateParserData::Borrowed(b) => *b,
-            ProofStateParserData::Owned(v) => v.as_slice(),
-        };
-
-        // Handle escaped JSON if needed
-        let mut parser = if let Some(unescaped) = BaseJsonParser::unescape_if_needed(bytes)
-            .map_err(|e| NostrError::Other(format!("Failed to unescape JSON: {:?}", e)))?
-        {
-            // Use the unescaped data
-            self.data = ProofStateParserData::Owned(unescaped);
-            match &self.data {
-                ProofStateParserData::Owned(v) => BaseJsonParser::new(v.as_slice()),
-                _ => unreachable!(),
-            }
-        } else {
-            BaseJsonParser::new(bytes)
-        };
-
-        parser.skip_whitespace();
-        parser.expect_byte(b'{')?;
-
-        let mut y = String::new();
-        let mut state = String::new();
-        let mut witness = None;
-
-        while parser.pos < parser.bytes.len() {
-            parser.skip_whitespace();
-            if parser.peek() == b'}' {
-                parser.pos += 1;
-                break;
-            }
-
-            let key = parser.parse_string()?;
-            parser.skip_whitespace();
-            parser.expect_byte(b':')?;
-            parser.skip_whitespace();
-
-            match key {
-                "Y" => {
-                    y = parser
-                        .parse_string_unescaped()
-                        .map_err(|e| NostrError::Other(format!("Failed to parse Y: {:?}", e)))?
-                }
-                "state" => {
-                    state = parser
-                        .parse_string_unescaped()
-                        .map_err(|e| NostrError::Other(format!("Failed to parse state: {:?}", e)))?
-                }
-                "witness" => {
-                    parser.skip_whitespace();
-                    match parser.peek() {
-                        b'"' => {
-                            // It's a string: parse and unescape
-                            witness = Some(parser.parse_string_unescaped().map_err(|e| {
-                                NostrError::Other(format!(
-                                    "Failed to parse witness string: {:?}",
-                                    e
-                                ))
-                            })?);
-                        }
-                        b'n' => {
-                            // Handle null
-                            parser.skip_null()?;
-                            witness = None;
-                        }
-                        _ => {
-                            // Skip other types (e.g., objects, arrays, numbers, booleans)
-                            parser.skip_value()?;
-                            witness = None;
-                            warn!("Witness field is not a string or null, skipping: unexpected byte '{}'", parser.peek() as char);
-                        }
-                    }
-                }
-                _ => parser.skip_value()?,
-            }
-
-            parser.skip_comma_or_end()?;
-        }
-
-        if y.is_empty() || state.is_empty() {
-            return Err(NostrError::Other(
-                "Missing required fields in ProofState".to_string(),
-            ));
-        }
-
-        Ok(ProofState { y, state, witness })
-    }
-}
-
-enum CheckStateResponseParserData<'a> {
-    Borrowed(&'a [u8]),
-    Owned(Vec<u8>),
-}
-
-struct CheckStateResponseParser<'a> {
-    data: CheckStateResponseParserData<'a>,
-}
-
-impl<'a> CheckStateResponseParser<'a> {
-    #[inline(always)]
-    fn new(bytes: &'a [u8]) -> Self {
-        Self {
-            data: CheckStateResponseParserData::Borrowed(bytes),
-        }
-    }
-
-    #[inline(always)]
-    fn parse(mut self) -> Result<CheckStateResponse> {
-        // Get the bytes to parse
-        let bytes = match &self.data {
-            CheckStateResponseParserData::Borrowed(b) => *b,
-            CheckStateResponseParserData::Owned(v) => v.as_slice(),
-        };
-
-        // Handle escaped JSON if needed
-        let mut parser = if let Some(unescaped) = BaseJsonParser::unescape_if_needed(bytes)
-            .map_err(|e| NostrError::Other(format!("Failed to unescape JSON: {:?}", e)))?
-        {
-            // Use the unescaped data
-            self.data = CheckStateResponseParserData::Owned(unescaped);
-            match &self.data {
-                CheckStateResponseParserData::Owned(v) => BaseJsonParser::new(v.as_slice()),
-                _ => unreachable!(),
-            }
-        } else {
-            BaseJsonParser::new(bytes)
-        };
-
-        parser.skip_whitespace();
-        parser.expect_byte(b'{')?;
-
-        let mut states = Vec::new();
-
-        while parser.pos < parser.bytes.len() {
-            parser.skip_whitespace();
-            if parser.peek() == b'}' {
-                parser.pos += 1;
-                break;
-            }
-
-            let key = parser.parse_string()?;
-            parser.skip_whitespace();
-            parser.expect_byte(b':')?;
-            parser.skip_whitespace();
-
-            match key {
-                "states" => {
-                    parser.expect_byte(b'[')?;
-                    while parser.pos < parser.bytes.len() {
-                        parser.skip_whitespace();
-                        if parser.peek() == b']' {
-                            parser.pos += 1;
-                            break;
-                        }
-
-                        let state_json = parser.parse_raw_json_value()?;
-                        states.push(ProofState::from_json(state_json)?);
-                        parser.skip_comma_or_end()?;
-                    }
-                }
-                _ => parser.skip_value()?,
-            }
-
-            parser.skip_comma_or_end()?;
-        }
-
-        Ok(CheckStateResponse { states })
-    }
-}

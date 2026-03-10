@@ -244,7 +244,7 @@ impl ClientMessage {
                 filters,
             } => {
                 let mut parts = vec![format!(r#""REQ""#), format!(r#""{}""#, subscription_id)];
-                for filter in filters {
+                for _filter in filters {
                     // TODO: Implement Filter::to_json() method
                     parts.push("{}".to_string()); // Placeholder for filter JSON
                 }

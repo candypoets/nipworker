@@ -2,7 +2,7 @@
 
 use flatbuffers::FlatBufferBuilder;
 use shared::{
-    init_with_component, telemetry,
+    init_with_component,
     types::{nostr::Template, Event, ParserError, TypesError},
     Port,
 };
@@ -68,7 +68,7 @@ use js_sys::Uint8Array;
 use std::{
     cell::RefCell,
     rc::Rc,
-    sync::{Arc, Once},
+    sync::Arc,
 };
 use tracing::info;
 
@@ -279,7 +279,7 @@ impl NostrClient {
 
             fb::MainContent::SignEvent => {
                 if let Some(sign_event) = main_message.content_as_sign_event() {
-                    let template = Template::from_flatbuffer(&sign_event.template());
+                    let _template = Template::from_flatbuffer(&sign_event.template());
                     // self.sign_event(template)?;
                 } else {
                     return Err(JsValue::from_str("Invalid SignEvent message"));

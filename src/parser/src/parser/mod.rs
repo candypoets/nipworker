@@ -1,8 +1,6 @@
-use shared::types::{nostr::Template, Event, ParserError, TypesError};
+use shared::types::{nostr::Template, Event, ParserError};
 use crate::crypto_client::CryptoClient;
-use std::cell::RefCell;
 use std::sync::Arc;
-use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, ParserError>;
 

@@ -247,7 +247,7 @@ impl SubscriptionManager {
 
                             let kinds: Vec<u16> = config.kinds().iter().map(|k| k as u16).collect();
 
-                            let pubkey = config.pubkey();
+                            let _pubkey = config.pubkey();
 
                             let pubkey = config.pubkey().to_string();
 
@@ -262,7 +262,7 @@ impl SubscriptionManager {
                             let config = pipe_config.config_as_npub_limiter_pipe_config().unwrap();
                             let kind = config.kind();
                             let limit_per_npub = config.limit_per_npub();
-                            let max_total_npubs = config.max_total_npubs();
+                            let _max_total_npubs = config.max_total_npubs();
                             PipeType::NpubLimiter(NpubLimiterPipe::new(kind, limit_per_npub))
                         }
                         fb::PipeConfig::MuteFilterPipeConfig => {

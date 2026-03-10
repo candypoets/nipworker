@@ -519,7 +519,7 @@ pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
         let tag_vector = builder.create_vector(&tag_offsets);
         description_tags_offsets.push(tag_vector);
     }
-    let description_tags_vector = builder.create_vector(&description_tags_offsets);
+    let _description_tags_vector = builder.create_vector(&description_tags_offsets);
 
     let zap_request_args = fb::ZapRequestArgs {
         kind: parsed.description.kind,

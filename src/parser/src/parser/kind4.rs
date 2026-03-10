@@ -115,8 +115,11 @@ impl Parser {
                     event.pubkey.to_hex(),
                     err
                 );
-                // If decryption fails, we can't display the content
-                // This is normal if we don't have the right keys
+                // Return error to drop the event - we can't decrypt it
+                return Err(ParserError::InvalidContent(format!(
+                    "Failed to decrypt kind 4 message: {}",
+                    err
+                )));
             }
         }
 

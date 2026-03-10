@@ -1,7 +1,6 @@
-use crate::parser::{ParserError, Result};
+use crate::parser::Result;
 use regex::Regex;
 use shared::types::nostr::nips::nip19::{self, Nip19};
-use tracing::info;
 
 use shared::generated::nostr::fb;
 
@@ -641,7 +640,7 @@ fn process_cashu(text: &str, _caps: &regex::Captures) -> Result<ContentBlock> {
     )
 }
 
-fn process_hashtag(text: &str, caps: &regex::Captures) -> Result<ContentBlock> {
+fn process_hashtag(_text: &str, caps: &regex::Captures) -> Result<ContentBlock> {
     // Now we have capture groups: full match, prefix, hashtag
     let prefix = caps.get(1).map_or("", |m| m.as_str());
     let hashtag = caps.get(2).map_or("", |m| m.as_str());

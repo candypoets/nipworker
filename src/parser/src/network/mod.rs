@@ -6,11 +6,10 @@ use crate::crypto_client::CryptoClient;
 use crate::parser::Parser;
 use crate::pipeline::Pipeline;
 use crate::utils::batch_buffer::{
-    add_message_to_batch, create_batch_buffer, flush_all_batches, flush_batch,
+    add_message_to_batch, create_batch_buffer, flush_batch,
     init_global_batch_manager, remove_batch_buffer,
 };
 use crate::utils::buffer::{serialize_connection_status, serialize_eoce};
-use crate::utils::js_interop::post_worker_message;
 use crate::NostrError;
 use flatbuffers::FlatBufferBuilder;
 use futures::channel::mpsc;
@@ -23,8 +22,7 @@ use shared::Port;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Arc, RwLock};
-use tracing::{info, info_span, warn, Span};
-use wasm_bindgen::JsValue;
+use tracing::{info, warn, Span};
 use wasm_bindgen_futures::spawn_local;
 use web_sys::MessagePort;
 
@@ -635,7 +633,7 @@ impl NetworkManager {
 
         let parsed_requests: Vec<Request> = requests.iter().map(Request::from_flatbuffer).collect();
 
-        let mut pipeline = self
+        let pipeline = self
             .subscription_manager
             .process_subscription(
                 &subscription_id,

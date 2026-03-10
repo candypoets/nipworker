@@ -6,7 +6,7 @@ use rustc_hash::FxHashMap;
 use shared::types::network::Request;
 use shared::types::nostr::Template;
 use shared::types::{Event, Proof};
-use tracing::{debug, error, info, warn};
+use tracing::{error, warn};
 
 // NEW: Imports for FlatBuffers
 use shared::generated::nostr::*;

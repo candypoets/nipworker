@@ -1,6 +1,5 @@
 use super::super::*;
 use rustc_hash::FxHashMap;
-use std::collections::VecDeque;
 
 struct NpubTracker {
     last_forwarded_timestamp: Option<u64>,

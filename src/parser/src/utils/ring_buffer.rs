@@ -35,7 +35,7 @@
 
 use std::io::{self};
 
-use flatbuffers::{self, Follow};
+use flatbuffers::{self};
 
 const HEADER_SIZE: usize = 32;
 

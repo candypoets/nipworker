@@ -73,7 +73,10 @@ impl Parser {
                 }
             }
             Err(e) => {
-                warn!("Failed to decrypt event content: {}", e);
+                return Err(ParserError::InvalidContent(format!(
+                    "Failed to decrypt kind 17375 event: {}",
+                    e
+                )));
             }
         }
 

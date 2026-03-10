@@ -63,54 +63,73 @@ impl Parser {
 
         // Attempt to decrypt spending history (NIP-44) using the sender's pubkey
         let sender_pubkey = event.pubkey.to_string();
-        if let Ok(decrypted) = self
+        match self
             .crypto_client
             .nip44_decrypt(&sender_pubkey, &event.content)
             .await
         {
-            if !decrypted.is_empty() {
-                if let Ok(tags) = NostrTags::from_json(&decrypted) {
-                    parsed.decrypted = true;
-                    parsed.tags = Vec::new();
+            Ok(decrypted) if !decrypted.is_empty() => {
+                match NostrTags::from_json(&decrypted) {
+                    Ok(tags) => {
+                        parsed.decrypted = true;
+                        parsed.tags = Vec::new();
 
-                    // Process decrypted tags - access inner Vec<Vec<String>> via .0
-                    for tag in &tags.0 {
-                        if tag.len() >= 2 {
-                            let history_tag = HistoryTag {
-                                name: tag[0].clone(),
-                                value: tag[1].clone(),
-                                relay: tag.get(2).cloned(),
-                                marker: tag.get(3).cloned(),
-                            };
-                            parsed.tags.push(history_tag);
+                        // Process decrypted tags - access inner Vec<Vec<String>> via .0
+                        for tag in &tags.0 {
+                            if tag.len() >= 2 {
+                                let history_tag = HistoryTag {
+                                    name: tag[0].clone(),
+                                    value: tag[1].clone(),
+                                    relay: tag.get(2).cloned(),
+                                    marker: tag.get(3).cloned(),
+                                };
+                                parsed.tags.push(history_tag);
 
-                            // Extract specific tag values
-                            match tag[0].as_str() {
-                                "direction" => parsed.direction = tag[1].clone(),
-                                "amount" => {
-                                    if let Ok(amt) = tag[1].parse::<i32>() {
-                                        parsed.amount = amt;
-                                    }
-                                }
-                                "e" => {
-                                    if tag.len() >= 4 {
-                                        match tag[3].as_str() {
-                                            "created" => parsed.created_events.push(tag[1].clone()),
-                                            "destroyed" => {
-                                                parsed.destroyed_events.push(tag[1].clone())
-                                            }
-                                            "redeemed" => {
-                                                parsed.redeemed_events.push(tag[1].clone())
-                                            }
-                                            _ => {}
+                                // Extract specific tag values
+                                match tag[0].as_str() {
+                                    "direction" => parsed.direction = tag[1].clone(),
+                                    "amount" => {
+                                        if let Ok(amt) = tag[1].parse::<i32>() {
+                                            parsed.amount = amt;
                                         }
                                     }
+                                    "e" => {
+                                        if tag.len() >= 4 {
+                                            match tag[3].as_str() {
+                                                "created" => parsed.created_events.push(tag[1].clone()),
+                                                "destroyed" => {
+                                                    parsed.destroyed_events.push(tag[1].clone())
+                                                }
+                                                "redeemed" => {
+                                                    parsed.redeemed_events.push(tag[1].clone())
+                                                }
+                                                _ => {}
+                                            }
+                                        }
+                                    }
+                                    _ => {}
                                 }
-                                _ => {}
                             }
                         }
                     }
+                    Err(e) => {
+                        return Err(ParserError::InvalidContent(format!(
+                            "Failed to parse decrypted kind 7376 content: {}",
+                            e
+                        )));
+                    }
                 }
+            }
+            Ok(_) => {
+                return Err(ParserError::InvalidContent(
+                    "Kind 7376 event has empty decrypted content".to_string(),
+                ));
+            }
+            Err(e) => {
+                return Err(ParserError::InvalidContent(format!(
+                    "Failed to decrypt kind 7376 event: {}",
+                    e
+                )));
             }
         }
 

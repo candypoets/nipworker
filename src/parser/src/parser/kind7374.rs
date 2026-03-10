@@ -1,7 +1,6 @@
 use crate::parser::{Parser, ParserError, Result};
 
 // NEW: Imports for FlatBuffers
-use flatbuffers::FlatBufferBuilder;
 use shared::{
     generated::nostr::*,
     types::{network::Request, nostr::Template, Event},
@@ -49,18 +48,25 @@ impl Parser {
         }
 
         // Attempt to decrypt the content using our pubkey (if present) via SignerClient (async)
-        let mut quote_id = String::new();
-
         let sender_pubkey = event.pubkey.to_string();
-        if let Ok(decrypted) = self
+        let quote_id = match self
             .crypto_client
             .nip44_decrypt(&sender_pubkey, &event.content)
             .await
         {
-            if !decrypted.is_empty() {
-                quote_id = decrypted;
+            Ok(decrypted) if !decrypted.is_empty() => decrypted,
+            Ok(_) => {
+                return Err(ParserError::InvalidContent(
+                    "Kind 7374 event has empty decrypted content".to_string(),
+                ));
             }
-        }
+            Err(e) => {
+                return Err(ParserError::InvalidContent(format!(
+                    "Failed to decrypt kind 7374 event: {}",
+                    e
+                )));
+            }
+        };
 
         let parsed = Kind7374Parsed {
             quote_id,

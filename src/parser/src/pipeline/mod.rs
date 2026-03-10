@@ -324,7 +324,7 @@ impl Pipeline {
         // 4️⃣ Parse full crate::types::nostr::Event
         let nostr_event = match Event::from_json(raw_event_json) {
             Ok(ev) => ev,
-            Err(e) => {
+            Err(_e) => {
                 return Ok(None);
             }
         };

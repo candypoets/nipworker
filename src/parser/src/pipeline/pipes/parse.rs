@@ -33,7 +33,7 @@ impl Pipe for ParsePipe {
                 }
                 Err(e) => {
                     warn!("Failed to parse event {}: {}", hex::encode(event.id), e);
-                    Ok(PipeOutput::Event(event))
+                    Ok(PipeOutput::Drop)
                 }
             }
         } else {

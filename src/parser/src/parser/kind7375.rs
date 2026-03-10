@@ -1,5 +1,4 @@
 use crate::parser::{Parser, ParserError, Result};
-use tracing::warn;
 
 use shared::{
     generated::nostr::*,
@@ -31,12 +30,12 @@ impl Parser {
 
         // Attempt to decrypt using the sender's pubkey
         let sender_pubkey = event.pubkey.to_string();
-        if let Ok(decrypted) = self
+        match self
             .crypto_client
             .nip44_decrypt(&sender_pubkey, &event.content)
             .await
         {
-            if !decrypted.is_empty() {
+            Ok(decrypted) if !decrypted.is_empty() => {
                 match TokenContent::from_json(&decrypted) {
                     Ok(content) => {
                         parsed.mint_url = content.mint;
@@ -45,9 +44,23 @@ impl Parser {
                         parsed.decrypted = true;
                     }
                     Err(e) => {
-                        warn!("Failed to parse 7375 token content: {}", e);
+                        return Err(ParserError::InvalidContent(format!(
+                            "Failed to parse decrypted kind 7375 content: {}",
+                            e
+                        )));
                     }
                 }
+            }
+            Ok(_) => {
+                return Err(ParserError::InvalidContent(
+                    "Kind 7375 event has empty decrypted content".to_string(),
+                ));
+            }
+            Err(e) => {
+                return Err(ParserError::InvalidContent(format!(
+                    "Failed to decrypt kind 7375 event: {}",
+                    e
+                )));
             }
         }
 
