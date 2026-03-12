@@ -5,8 +5,8 @@ use shared::generated::nostr::fb;
 use shared::types::network::Request;
 use shared::Port;
 
-use crate::NostrError;
 use crate::crypto_client::CryptoClient;
+use crate::NostrError;
 use rustc_hash::FxHashMap;
 
 type Result<T> = std::result::Result<T, NostrError>;
@@ -91,7 +91,12 @@ impl SubscriptionManager {
         let _permit = self.acquire_permit().await;
 
         // Create pipeline based on config
-        let pipeline = self.build_pipeline(config.pipeline(), to_cache, self.crypto_client.clone(), subscription_id.clone())?;
+        let pipeline = self.build_pipeline(
+            config.pipeline(),
+            to_cache,
+            self.crypto_client.clone(),
+            subscription_id.clone(),
+        )?;
 
         // let (network_requests, events) =
         //     match self.cache_processor.process_local_requests(_requests).await {
@@ -233,15 +238,18 @@ impl SubscriptionManager {
                         fb::PipeConfig::SerializeEventsPipeConfig => PipeType::SerializeEvents(
                             SerializeEventsPipe::new(subscription_id.clone()),
                         ),
-                         fb::PipeConfig::ProofVerificationPipeConfig => {
-                             let config = pipe_config
-                                 .config_as_proof_verification_pipe_config()
-                                 .unwrap();
-                             // max_proofs: usize, check_interval_secs: u64
-                             let max_proofs = config.max_proofs() as usize;
+                        fb::PipeConfig::ProofVerificationPipeConfig => {
+                            let config = pipe_config
+                                .config_as_proof_verification_pipe_config()
+                                .unwrap();
+                            // max_proofs: usize, check_interval_secs: u64
+                            let max_proofs = config.max_proofs() as usize;
 
-                             PipeType::ProofVerification(ProofVerificationPipe::new(max_proofs, crypto_client.clone()))
-                         }
+                            PipeType::ProofVerification(ProofVerificationPipe::new(
+                                max_proofs,
+                                crypto_client.clone(),
+                            ))
+                        }
                         fb::PipeConfig::CounterPipeConfig => {
                             let config = pipe_config.config_as_counter_pipe_config().unwrap();
 
@@ -267,22 +275,26 @@ impl SubscriptionManager {
                         }
                         fb::PipeConfig::MuteFilterPipeConfig => {
                             let config = pipe_config.config_as_mute_filter_pipe_config().unwrap();
-                            
-                            let pubkeys: Vec<String> = config.pubkeys()
+
+                            let pubkeys: Vec<String> = config
+                                .pubkeys()
                                 .map(|v| v.iter().map(|s| s.to_string()).collect())
                                 .unwrap_or_default();
-                            let hashtags: Vec<String> = config.hashtags()
+                            let hashtags: Vec<String> = config
+                                .hashtags()
                                 .map(|v| v.iter().map(|s| s.to_string()).collect())
                                 .unwrap_or_default();
-                            let words: Vec<String> = config.words()
+                            let words: Vec<String> = config
+                                .words()
                                 .map(|v| v.iter().map(|s| s.to_string()).collect())
                                 .unwrap_or_default();
-                            let event_ids: Vec<String> = config.event_ids()
+                            let event_ids: Vec<String> = config
+                                .event_ids()
                                 .map(|v| v.iter().map(|s| s.to_string()).collect())
                                 .unwrap_or_default();
-                            
+
                             PipeType::MuteFilter(MuteFilterPipe::new(MuteCriteria::new(
-                                pubkeys, hashtags, words, event_ids
+                                pubkeys, hashtags, words, event_ids,
                             )))
                         }
                         _ => {

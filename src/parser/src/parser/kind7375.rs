@@ -35,22 +35,20 @@ impl Parser {
             .nip44_decrypt(&sender_pubkey, &event.content)
             .await
         {
-            Ok(decrypted) if !decrypted.is_empty() => {
-                match TokenContent::from_json(&decrypted) {
-                    Ok(content) => {
-                        parsed.mint_url = content.mint;
-                        parsed.proofs = content.proofs;
-                        parsed.deleted_ids = content.del.unwrap_or_default();
-                        parsed.decrypted = true;
-                    }
-                    Err(e) => {
-                        return Err(ParserError::InvalidContent(format!(
-                            "Failed to parse decrypted kind 7375 content: {}",
-                            e
-                        )));
-                    }
+            Ok(decrypted) if !decrypted.is_empty() => match TokenContent::from_json(&decrypted) {
+                Ok(content) => {
+                    parsed.mint_url = content.mint;
+                    parsed.proofs = content.proofs;
+                    parsed.deleted_ids = content.del.unwrap_or_default();
+                    parsed.decrypted = true;
                 }
-            }
+                Err(e) => {
+                    return Err(ParserError::InvalidContent(format!(
+                        "Failed to parse decrypted kind 7375 content: {}",
+                        e
+                    )));
+                }
+            },
             Ok(_) => {
                 return Err(ParserError::InvalidContent(
                     "Kind 7375 event has empty decrypted content".to_string(),

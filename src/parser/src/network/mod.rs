@@ -6,8 +6,8 @@ use crate::crypto_client::CryptoClient;
 use crate::parser::Parser;
 use crate::pipeline::Pipeline;
 use crate::utils::batch_buffer::{
-    add_message_to_batch, create_batch_buffer, flush_batch,
-    init_global_batch_manager, remove_batch_buffer,
+    add_message_to_batch, create_batch_buffer, flush_batch, init_global_batch_manager,
+    remove_batch_buffer,
 };
 use crate::utils::buffer::{serialize_connection_status, serialize_eoce};
 use crate::NostrError;
@@ -138,6 +138,7 @@ impl NetworkManager {
         sid: String,
         fb_bytes_arc: Arc<Vec<u8>>,
     ) {
+        info!("[handle_message_single] Processing message for sub_id={}", sid);
         let wm = match flatbuffers::root::<fb::WorkerMessage>(&fb_bytes_arc) {
             Ok(w) => w,
             Err(_) => {
@@ -184,6 +185,7 @@ impl NetworkManager {
                         warn!("Auth needed on relay {:?}", url);
                     }
                     "EOSE" => {
+                        info!("[network] Received EOSE for sub_id={} from relay={}", sid, url);
                         // Flush the pipeline and notify it of EOSE
                         let flushed_outputs = {
                             let mut pipeline_guard = pipeline_arc.lock().await;
@@ -237,12 +239,12 @@ impl NetworkManager {
                     let mut pipeline_guard = pipeline_arc.lock().await;
                     pipeline_guard.flush()
                 };
-                
+
                 // Send flushed outputs to batch buffer
                 for output in flushed_outputs {
                     add_message_to_batch(&sid, &output);
                 }
-                
+
                 // Send via batch buffer for MessageChannel delivery
                 let eoce_bytes = serialize_eoce();
                 add_message_to_batch(&sid, &eoce_bytes);
@@ -333,7 +335,7 @@ impl NetworkManager {
     fn unpack_batched_messages(payload: &[u8]) -> Vec<Vec<u8>> {
         let mut messages = Vec::new();
         let mut offset = 0;
-        
+
         while offset + 4 <= payload.len() {
             // Read 4-byte length (little endian)
             let len = u32::from_le_bytes([
@@ -342,20 +344,24 @@ impl NetworkManager {
                 payload[offset + 2],
                 payload[offset + 3],
             ]) as usize;
-            
+
             if len == 0 || offset + 4 + len > payload.len() {
-                warn!("Invalid batched message length: {} at offset {} (payload {} bytes)", 
-                      len, offset, payload.len());
+                warn!(
+                    "Invalid batched message length: {} at offset {} (payload {} bytes)",
+                    len,
+                    offset,
+                    payload.len()
+                );
                 break;
             }
-            
+
             // Extract the WorkerMessage bytes
             let msg_bytes = payload[offset + 4..offset + 4 + len].to_vec();
             messages.push(msg_bytes);
-            
+
             offset += 4 + len;
         }
-        
+
         messages
     }
 
@@ -408,11 +414,16 @@ impl NetworkManager {
 
                     // Process in-order within the shard to preserve per-sub ordering
                     let batch = std::mem::take(&mut local_batch);
+                    // Log the batch contents
+                    for (sid, _bytes, _source, _span) in &batch {
+                        info!("[shard {}] Processing message for sub_id={}", shard_idx, sid);
+                    }
                     // Extract sub_id, bytes, and span for processing
-                    let processed_batch: Vec<(String, std::sync::Arc<Vec<u8>>, tracing::Span)> = batch
-                        .into_iter()
-                        .map(|(sid, bytes, _source, span)| (sid, bytes, span))
-                        .collect();
+                    let processed_batch: Vec<(String, std::sync::Arc<Vec<u8>>, tracing::Span)> =
+                        batch
+                            .into_iter()
+                            .map(|(sid, bytes, _source, span)| (sid, bytes, span))
+                            .collect();
                     NetworkManager::handle_message_batch(subs_clone.clone(), processed_batch).await;
                 }
             });
@@ -510,14 +521,18 @@ impl NetworkManager {
                                 };
 
                                 let sid = wm.sub_id().unwrap_or("").to_string();
+                                let msg_type = wm.type_();
+                                info!("[network] Received from network: type={:?}, sub_id={}", msg_type, sid);
                                 if sid.is_empty() {
                                     warn!("Invalid message: Missing sub_id");
                                     continue;
                                 }
 
                                 let (shard_idx, is_slow_lane) = compute_shard(&sid, &subs);
+                                info!("[network] Dispatching to shard {} (slow={}): sub_id={}", shard_idx, is_slow_lane, sid);
                                 let sub_span = info_span!("sub_request", sub_id = %sid);
-                                let task: ShardTask = (sid, Arc::new(bytes), ShardSource::Network, sub_span);
+                                let task: ShardTask =
+                                    (sid, Arc::new(bytes), ShardSource::Network, sub_span);
 
                                 let mut lane_tx = if is_slow_lane {
                                     slow_tx.clone()
@@ -564,12 +579,8 @@ impl NetworkManager {
                                 if payload.is_empty() {
                                     // EOCE - send synthetic WorkerMessage::Eoce to preserve existing handling path.
                                     let eoce_arc = Arc::new(serialize_eoce());
-                                    let task: ShardTask = (
-                                        sid,
-                                        eoce_arc,
-                                        ShardSource::Cache,
-                                        cache_sub_span,
-                                    );
+                                    let task: ShardTask =
+                                        (sid, eoce_arc, ShardSource::Cache, cache_sub_span);
                                     if let Err(_e) = lane_tx.try_send((shard_idx, task.clone())) {
                                         if let Err(e) = lane_tx.send((shard_idx, task)).await {
                                             warn!(
@@ -768,8 +779,11 @@ impl NetworkManager {
         template: &Template,
         default_relays: &Vec<String>,
     ) -> Result<()> {
-        info!("publish_event: publish_id={}, default_relays={:?}", publish_id, default_relays);
-        
+        info!(
+            "publish_event: publish_id={}, default_relays={:?}",
+            publish_id, default_relays
+        );
+
         let event = self
             .publish_manager
             .publish_event(publish_id.clone(), template)
@@ -831,8 +845,12 @@ impl NetworkManager {
             builder.finish(cache_req, None);
             let bytes = builder.finished_data().to_vec();
 
-            info!("publish_event: sending CacheRequest to cache, event_id={}, bytes={}", event_id, bytes.len());
-            
+            info!(
+                "publish_event: sending CacheRequest to cache, event_id={}, bytes={}",
+                event_id,
+                bytes.len()
+            );
+
             // Send CacheRequest bytes through the MessageChannel port
             if let Err(e) = self.to_cache.borrow().send(&bytes) {
                 warn!("publish_event: failed to send to cache: {:?}", e);

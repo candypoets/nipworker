@@ -1,7 +1,7 @@
 use crate::parser::{Parser, ParserError, Result};
 use shared::{
     generated::nostr::*,
-    types::{network::Request, Event, nostr::Template},
+    types::{network::Request, nostr::Template, Event},
 }; // brings `fb::...` into scope
 
 use tracing::warn;
@@ -213,45 +213,43 @@ impl Parser {
         }
 
         // Check for encryption tag
-        let encryption = tag_value(&template.tags, "encryption")
-            .map(|s| s.to_ascii_lowercase());
+        let encryption = tag_value(&template.tags, "encryption").map(|s| s.to_ascii_lowercase());
 
-        let (content, tags) = match encryption.as_deref() {
-            Some("nip04") | Some("nip-04") => {
-                // Get our own pubkey for self-encryption
-                let own_pubkey = self
-                    .crypto_client
-                    .get_public_key()
-                    .await
-                    .map_err(|e| ParserError::Crypto(format!("Failed to get pubkey: {}", e)))?;
-                // Encrypt content using NIP-04 (self-encrypt)
-                let encrypted = self
-                    .crypto_client
-                    .nip04_encrypt(&own_pubkey, &template.content)
-                    .await
-                    .map_err(|e| ParserError::Crypto(format!("NIP-04 encrypt error: {}", e)))?;
-                (encrypted, template.tags.clone())
-            }
-            Some("nip44") | Some("nip-44") => {
-                // Get our own pubkey for self-encryption
-                let own_pubkey = self
-                    .crypto_client
-                    .get_public_key()
-                    .await
-                    .map_err(|e| ParserError::Crypto(format!("Failed to get pubkey: {}", e)))?;
-                // Encrypt content using NIP-44 (self-encrypt)
-                let encrypted = self
-                    .crypto_client
-                    .nip44_encrypt(&own_pubkey, &template.content)
-                    .await
-                    .map_err(|e| ParserError::Crypto(format!("NIP-44 encrypt error: {}", e)))?;
-                (encrypted, template.tags.clone())
-            }
-            _ => {
-                // No encryption, pass through as-is
-                (template.content.clone(), template.tags.clone())
-            }
-        };
+        let (content, tags) =
+            match encryption.as_deref() {
+                Some("nip04") | Some("nip-04") => {
+                    // Get our own pubkey for self-encryption
+                    let own_pubkey =
+                        self.crypto_client.get_public_key().await.map_err(|e| {
+                            ParserError::Crypto(format!("Failed to get pubkey: {}", e))
+                        })?;
+                    // Encrypt content using NIP-04 (self-encrypt)
+                    let encrypted = self
+                        .crypto_client
+                        .nip04_encrypt(&own_pubkey, &template.content)
+                        .await
+                        .map_err(|e| ParserError::Crypto(format!("NIP-04 encrypt error: {}", e)))?;
+                    (encrypted, template.tags.clone())
+                }
+                Some("nip44") | Some("nip-44") => {
+                    // Get our own pubkey for self-encryption
+                    let own_pubkey =
+                        self.crypto_client.get_public_key().await.map_err(|e| {
+                            ParserError::Crypto(format!("Failed to get pubkey: {}", e))
+                        })?;
+                    // Encrypt content using NIP-44 (self-encrypt)
+                    let encrypted = self
+                        .crypto_client
+                        .nip44_encrypt(&own_pubkey, &template.content)
+                        .await
+                        .map_err(|e| ParserError::Crypto(format!("NIP-44 encrypt error: {}", e)))?;
+                    (encrypted, template.tags.clone())
+                }
+                _ => {
+                    // No encryption, pass through as-is
+                    (template.content.clone(), template.tags.clone())
+                }
+            };
 
         // Create new template with potentially encrypted content
         let new_template = Template::new(kind, content, tags);

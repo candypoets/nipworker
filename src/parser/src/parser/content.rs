@@ -4,26 +4,26 @@ use shared::types::nostr::nips::nip19::{self, Nip19};
 
 use shared::generated::nostr::fb;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MediaItem {
     pub image: Option<Image>,
     pub video: Option<Video>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Image {
     pub url: String,
     pub alt: Option<String>,
     pub dim: Option<String>, // Dimensions in "widthxheight" format (e.g., "1920x1080")
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Video {
     pub url: String,
     pub thumbnail: Option<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ContentData {
     Code {
         language: Option<String>, // optional, might be extracted or None
@@ -39,7 +39,7 @@ pub enum ContentData {
         url: String,
         alt: Option<String>,
         dim: Option<String>,
-},
+    },
     Video {
         url: String,
         thumbnail: Option<String>,
@@ -62,7 +62,7 @@ pub enum ContentData {
     },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContentBlock {
     pub block_type: String,
     pub text: String,
@@ -88,7 +88,7 @@ pub struct ContentParser {
     patterns: Vec<Pattern>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImetaData {
     pub url: String,
     pub alt: Option<String>,
@@ -315,14 +315,16 @@ impl ContentParser {
                                 items: media_group
                                     .iter()
                                     .filter_map(|block| match &block.data {
-                                        Some(ContentData::Image { url, alt, dim }) => Some(MediaItem {
-                                            image: Some(Image {
-                                                url: url.clone(),
-                                                alt: alt.clone(),
-                                                dim: dim.clone(),
-                                            }),
-                                            video: None,
-                                        }),
+                                        Some(ContentData::Image { url, alt, dim }) => {
+                                            Some(MediaItem {
+                                                image: Some(Image {
+                                                    url: url.clone(),
+                                                    alt: alt.clone(),
+                                                    dim: dim.clone(),
+                                                }),
+                                                video: None,
+                                            })
+                                        }
                                         Some(ContentData::Video { url, thumbnail }) => {
                                             Some(MediaItem {
                                                 image: None,
@@ -397,8 +399,9 @@ impl ContentParser {
         max_images: usize,
         max_lines: usize,
     ) -> Vec<ContentBlock> {
-        // Media/Quote text penalty is half of X
-        let media_text_penalty: usize = max_length / 2;
+        // Reserve a small tail budget when we append media/quote/link.
+        // Using half of max_length was too aggressive for common posts.
+        let tail_text_reserve = max_length.saturating_div(5).clamp(48, 160);
 
         // Helpers
         let is_textish = |b: &ContentBlock| -> bool {
@@ -482,8 +485,8 @@ impl ContentParser {
         // Budgets
         let has_media = !media_items.is_empty();
         let has_quote = tail_quote.is_some();
-        let text_budget = if has_media || has_quote {
-            max_length.saturating_sub(media_text_penalty)
+        let text_budget = if has_media || has_quote || tail_link.is_some() {
+            max_length.saturating_sub(tail_text_reserve)
         } else {
             max_length
         };
@@ -1072,5 +1075,44 @@ mod tests {
         let image_count = result.iter().filter(|b| b.block_type == "image").count();
         let has_grid = result.iter().any(|b| b.block_type == "mediaGrid");
         assert!(image_count == 2 || has_grid);
+    }
+
+    #[test]
+    fn test_shorten_multiline_text_truncates_single_text_block() {
+        let parser = ContentParser::new();
+        let text = (0..20)
+            .map(|i| format!("line {}", i))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let blocks = vec![ContentBlock::new("text".to_string(), text)];
+
+        let shortened = parser.shorten_content(blocks, 500, 3, 10);
+        assert_eq!(shortened.len(), 1);
+        assert_eq!(shortened[0].block_type, "text");
+        assert!(shortened[0].text.lines().count() <= 10);
+        assert!(shortened[0].text.ends_with("..."));
+    }
+
+    #[test]
+    fn test_shorten_with_media_keeps_reasonable_text_budget() {
+        let parser = ContentParser::new();
+        let text = "a".repeat(300);
+        let blocks = vec![
+            ContentBlock::new("text".to_string(), text.clone()),
+            ContentBlock::new(
+                "image".to_string(),
+                "https://example.com/pic.jpg".to_string(),
+            )
+            .with_data(ContentData::Image {
+                url: "https://example.com/pic.jpg".to_string(),
+                alt: None,
+                dim: None,
+            }),
+        ];
+
+        let shortened = parser.shorten_content(blocks, 500, 3, 10);
+        assert!(!shortened.is_empty());
+        assert_eq!(shortened[0].block_type, "text");
+        assert_eq!(shortened[0].text, text);
     }
 }

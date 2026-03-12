@@ -56,10 +56,9 @@ impl Parser {
         let title = tag_value(&event.tags, "title").unwrap_or_default();
         let alt = tag_value(&event.tags, "alt");
         let content_warning = tag_value(&event.tags, "content-warning");
-        let duration = tag_value(&event.tags, "duration")
-            .and_then(|s| s.parse::<f32>().ok());
-        let published_at = tag_value(&event.tags, "published_at")
-            .and_then(|s| s.parse::<u64>().ok());
+        let duration = tag_value(&event.tags, "duration").and_then(|s| s.parse::<f32>().ok());
+        let published_at =
+            tag_value(&event.tags, "published_at").and_then(|s| s.parse::<u64>().ok());
         let hashtags = tag_values(&event.tags, "t");
 
         // Extract imeta tags for videos

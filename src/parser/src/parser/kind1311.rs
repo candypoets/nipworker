@@ -56,8 +56,11 @@ impl Parser {
         let parsed_content = parse_content(&event.content)?;
 
         // Extract the live activity reference (required "a" tag)
-        let activity = extract_activity_ref(&event.tags)
-            .ok_or_else(|| ParserError::Other("kind 1311 requires an 'a' tag referencing a live activity".to_string()))?;
+        let activity = extract_activity_ref(&event.tags).ok_or_else(|| {
+            ParserError::Other(
+                "kind 1311 requires an 'a' tag referencing a live activity".to_string(),
+            )
+        })?;
 
         // Extract thread references ("e" tags)
         let thread_refs = extract_thread_refs(&event.tags);
@@ -89,7 +92,7 @@ fn extract_activity_ref(tags: &[Vec<String>]) -> Option<LiveActivityRef> {
         let coord = &tag[1];
         let mut parts = coord.splitn(3, ':');
         let kind = parts.next()?.parse::<u16>().ok()?;
-        
+
         // Must reference a live activity (30311)
         if kind != 30311 {
             continue;
@@ -181,7 +184,11 @@ pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
     // Build activity reference
     let activity_pubkey = builder.create_string(&parsed.activity.pubkey);
     let activity_identifier = builder.create_string(&parsed.activity.identifier);
-    let activity_relay = parsed.activity.relay.as_ref().map(|s| builder.create_string(s));
+    let activity_relay = parsed
+        .activity
+        .relay
+        .as_ref()
+        .map(|s| builder.create_string(s));
 
     let activity_args = fb::LiveActivityRefArgs {
         kind: parsed.activity.kind,

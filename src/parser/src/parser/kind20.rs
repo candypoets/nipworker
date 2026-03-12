@@ -215,7 +215,11 @@ pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
     let mut mention_offsets = Vec::new();
     for mention in &parsed.mentions {
         let pubkey = builder.create_string(&mention.pubkey);
-        let relay_offsets: Vec<_> = mention.relays.iter().map(|r| builder.create_string(r)).collect();
+        let relay_offsets: Vec<_> = mention
+            .relays
+            .iter()
+            .map(|r| builder.create_string(r))
+            .collect();
         let relays = if relay_offsets.is_empty() {
             None
         } else {

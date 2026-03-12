@@ -35,9 +35,7 @@ fn with_global_batch_manager<F, R>(f: F) -> Option<R>
 where
     F: FnOnce(&BatchBufferManager) -> R,
 {
-    GLOBAL_BATCH_MANAGER.with(|manager| {
-        manager.borrow().as_ref().map(f)
-    })
+    GLOBAL_BATCH_MANAGER.with(|manager| manager.borrow().as_ref().map(f))
 }
 
 /// Get a mutable reference to the global BatchBufferManager if initialized.
@@ -45,9 +43,7 @@ fn with_global_batch_manager_mut<F, R>(f: F) -> Option<R>
 where
     F: FnOnce(&mut BatchBufferManager) -> R,
 {
-    GLOBAL_BATCH_MANAGER.with(|manager| {
-        manager.borrow_mut().as_mut().map(f)
-    })
+    GLOBAL_BATCH_MANAGER.with(|manager| manager.borrow_mut().as_mut().map(f))
 }
 
 /// Add a message to a subscription's batch buffer via the global manager.
@@ -118,7 +114,6 @@ impl BatchBuffer {
     /// Format: [4-byte len (little endian)][WorkerMessage bytes]
     /// Returns true if the batch was flushed, false otherwise.
     pub fn add_message(&mut self, data: &[u8]) -> bool {
-        
         // Check if this is the first event in the batch
         if self.buffer.is_empty() {
             *self.first_event_time.borrow_mut() = Some(js_sys::Date::now());
@@ -129,8 +124,8 @@ impl BatchBuffer {
 
         // Check if adding this message would exceed the threshold
         // (only flush if we already have data and this would push us over)
-        let should_flush_before = !self.buffer.is_empty()
-            && (self.buffer.len() + required_space > BATCH_SIZE_THRESHOLD);
+        let should_flush_before =
+            !self.buffer.is_empty() && (self.buffer.len() + required_space > BATCH_SIZE_THRESHOLD);
 
         if should_flush_before {
             self.flush();
@@ -187,7 +182,10 @@ impl BatchBuffer {
         let message = match Self::create_message_object(&self.sub_id, &uint8_array) {
             Ok(msg) => msg,
             Err(e) => {
-                warn!("Failed to create message object for sub {}: {:?}", self.sub_id, e);
+                warn!(
+                    "Failed to create message object for sub {}: {:?}",
+                    self.sub_id, e
+                );
                 // Clear buffer even on error to avoid infinite growth
                 self.buffer.clear();
                 *self.first_event_time.borrow_mut() = None;
@@ -200,7 +198,10 @@ impl BatchBuffer {
         transferables.push(&uint8_array.buffer());
 
         // Send via MessagePort with transferable
-        match self.port.post_message_with_transferable(&message, &transferables) {
+        match self
+            .port
+            .post_message_with_transferable(&message, &transferables)
+        {
             Ok(_) => {
                 debug!(
                     "Flushed batch for sub {}: {} bytes",
@@ -221,7 +222,11 @@ impl BatchBuffer {
     /// Create a JavaScript object: { subId: string, data: Uint8Array }
     fn create_message_object(sub_id: &str, data: &Uint8Array) -> Result<JsValue, JsValue> {
         let obj = Object::new();
-        Reflect::set(&obj, &JsValue::from_str("subId"), &JsValue::from_str(sub_id))?;
+        Reflect::set(
+            &obj,
+            &JsValue::from_str("subId"),
+            &JsValue::from_str(sub_id),
+        )?;
         Reflect::set(&obj, &JsValue::from_str("data"), data)?;
         Ok(obj.into())
     }
@@ -259,7 +264,9 @@ impl BatchBufferManager {
         let port = self.port.clone();
         buffers
             .entry(sub_id.to_string())
-            .or_insert_with(move || Rc::new(RefCell::new(BatchBuffer::new(sub_id.to_string(), port))))
+            .or_insert_with(move || {
+                Rc::new(RefCell::new(BatchBuffer::new(sub_id.to_string(), port)))
+            })
             .clone()
     }
 

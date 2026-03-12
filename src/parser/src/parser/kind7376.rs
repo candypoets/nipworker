@@ -96,7 +96,9 @@ impl Parser {
                                     "e" => {
                                         if tag.len() >= 4 {
                                             match tag[3].as_str() {
-                                                "created" => parsed.created_events.push(tag[1].clone()),
+                                                "created" => {
+                                                    parsed.created_events.push(tag[1].clone())
+                                                }
                                                 "destroyed" => {
                                                     parsed.destroyed_events.push(tag[1].clone())
                                                 }

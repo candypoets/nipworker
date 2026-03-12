@@ -1,8 +1,8 @@
+use crate::crypto_client::CryptoClient;
 use crate::parser::Parser;
 use crate::types::parsed_event::ParsedEvent;
 use crate::utils::json::extract_event_id;
 use crate::NostrError;
-use crate::crypto_client::CryptoClient;
 use shared::generated::nostr::fb::{self};
 use shared::types::Event;
 use shared::Port;
@@ -359,13 +359,14 @@ impl Pipeline {
         info!("Processing event bytes");
 
         // Parse the flatbuffer root
-        let fb_worker_msg = match shared::generated::message::nostr::fb::root_as_worker_message(raw_event_bytes) {
-            Ok(msg) => msg,
-            Err(_) => {
-                tracing::warn!("Failed to parse worker message from flatbuffer bytes");
-                return Ok(None);
-            }
-        };
+        let fb_worker_msg =
+            match shared::generated::message::nostr::fb::root_as_worker_message(raw_event_bytes) {
+                Ok(msg) => msg,
+                Err(_) => {
+                    tracing::warn!("Failed to parse worker message from flatbuffer bytes");
+                    return Ok(None);
+                }
+            };
 
         // Extract the event from the worker message
         let fb_event = match fb_worker_msg.content_as_nostr_event() {
@@ -428,26 +429,31 @@ impl Pipeline {
         for message in messages {
             self.mark_as_seen(message);
         }
-        
+
         // Chain pipes that run for cached events: output of one is input to next
         // Only the last pipe that runs for cached events produces the final output
-        let pipes_that_run: Vec<usize> = self.pipes.iter().enumerate()
+        let pipes_that_run: Vec<usize> = self
+            .pipes
+            .iter()
+            .enumerate()
             .filter(|(_, p)| p.run_for_cached_events())
             .map(|(i, _)| i)
             .collect();
-        
+
         if pipes_that_run.is_empty() {
             return Ok(Vec::new());
         }
-        
+
         let last_pipe_idx = *pipes_that_run.last().unwrap();
         let mut current_messages = messages.to_vec();
         let mut final_output = Vec::new();
-        
+
         for i in pipes_that_run {
             let is_last = i == last_pipe_idx;
-            let out = self.pipes[i].process_cached_batch(&current_messages).await?;
-            
+            let out = self.pipes[i]
+                .process_cached_batch(&current_messages)
+                .await?;
+
             if is_last {
                 // Last pipe produces final output
                 final_output = out;
@@ -456,7 +462,7 @@ impl Pipeline {
                 current_messages = out;
             }
         }
-        
+
         Ok(final_output)
     }
 

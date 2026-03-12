@@ -1,6 +1,6 @@
 use super::super::*;
-use shared::generated::nostr::fb;
 use flatbuffers::FlatBufferBuilder;
+use shared::generated::nostr::fb;
 use tracing::warn;
 
 /// Terminal pipe that serializes events using WorkerToMainMessage format

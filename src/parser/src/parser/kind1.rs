@@ -1,8 +1,7 @@
-
 use crate::parser::{
     content::{
-        enrich_images_with_imeta, parse_content, serialize_content_data, ContentBlock, ContentParser,
-        ImetaData,
+        enrich_images_with_imeta, parse_content, serialize_content_data, ContentBlock,
+        ContentParser, ImetaData,
     },
     Parser,
 };
@@ -33,6 +32,13 @@ pub struct Kind1Parsed {
     pub mentions: Vec<EventPointer>,
     pub reply: Option<EventPointer>,
     pub root: Option<EventPointer>,
+}
+
+fn should_use_shortened_content(
+    parsed_blocks: &[ContentBlock],
+    shortened_blocks: &[ContentBlock],
+) -> bool {
+    !shortened_blocks.is_empty() && shortened_blocks != parsed_blocks
 }
 
 impl Parser {
@@ -131,11 +137,12 @@ impl Parser {
                     content_parser.shorten_content(parsed_blocks.clone(), 500, 3, 10);
 
                 parsed.parsed_content = parsed_blocks.clone();
-                parsed.shortened_content = if shortened_blocks.len() < parsed_blocks.len() {
-                    shortened_blocks
-                } else {
-                    Vec::new()
-                };
+                parsed.shortened_content =
+                    if should_use_shortened_content(&parsed_blocks, &shortened_blocks) {
+                        shortened_blocks
+                    } else {
+                        Vec::new()
+                    };
             }
             Err(err) => {
                 return Err(ParserError::Other(format!(
@@ -483,6 +490,41 @@ fn looks_like_marker(s: &str) -> bool {
     matches!(s, "reply" | "root" | "mention")
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_should_use_shortened_content_when_text_changes_but_len_is_same() {
+        let parsed = vec![ContentBlock::new(
+            "text".to_string(),
+            "line1\nline2".to_string(),
+        )];
+        let shortened = vec![ContentBlock::new(
+            "text".to_string(),
+            "line1...".to_string(),
+        )];
+
+        assert!(should_use_shortened_content(&parsed, &shortened));
+    }
+
+    #[test]
+    fn test_should_not_use_shortened_content_when_identical() {
+        let parsed = vec![ContentBlock::new("text".to_string(), "hello".to_string())];
+        let shortened = vec![ContentBlock::new("text".to_string(), "hello".to_string())];
+
+        assert!(!should_use_shortened_content(&parsed, &shortened));
+    }
+
+    #[test]
+    fn test_should_not_use_shortened_content_when_empty() {
+        let parsed = vec![ContentBlock::new("text".to_string(), "hello".to_string())];
+        let shortened: Vec<ContentBlock> = Vec::new();
+
+        assert!(!should_use_shortened_content(&parsed, &shortened));
+    }
+}
+
 // Synchronous author guess based on the chosen e tag index.
 // Strategy:
 // 1) If e[3] looks like a hex pubkey and not a marker, use it (NIP-01 optional field).
@@ -618,9 +660,7 @@ impl Parser {
 
 /// Extract imeta tags from event tags and build a map of URL -> ImetaData
 /// imeta tags follow NIP-92 format: ["imeta", "url <url>", "dim <wxh>", "alt <text>", ...]
-fn extract_imeta_tags(
-    tags: &[Vec<String>],
-) -> std::collections::HashMap<String, ImetaData> {
+fn extract_imeta_tags(tags: &[Vec<String>]) -> std::collections::HashMap<String, ImetaData> {
     let mut imeta_map = std::collections::HashMap::new();
 
     for tag in tags {

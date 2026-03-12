@@ -1,5 +1,5 @@
-use shared::types::{nostr::Template, Event, ParserError};
 use crate::crypto_client::CryptoClient;
+use shared::types::{nostr::Template, Event, ParserError};
 use std::sync::Arc;
 
 pub type Result<T> = std::result::Result<T, ParserError>;

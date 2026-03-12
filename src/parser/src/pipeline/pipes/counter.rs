@@ -29,30 +29,34 @@ impl CounterPipe {
     /// Build a CountResponse for a specific kind
     fn build_count_response(&self, kind: u16) -> Vec<u8> {
         let mut fbb = FlatBufferBuilder::new();
-        
+
         let counter_args = fb::CountResponseArgs {
             count: *self.counts.get(&kind).unwrap_or(&0) as u32,
             kind: kind as u16,
             you: *self.you_by_kind.get(&kind).unwrap_or(&false),
         };
-        
+
         let counter_offset = fb::CountResponse::create(&mut fbb, &counter_args);
-        
-        let worker_msg = fb::WorkerMessage::create(&mut fbb, &fb::WorkerMessageArgs {
-            sub_id: None,
-            url: None,
-            type_: fb::MessageType::CountResponse,
-            content_type: fb::Message::CountResponse,
-            content: Some(counter_offset.as_union_value()),
-        });
-        
+
+        let worker_msg = fb::WorkerMessage::create(
+            &mut fbb,
+            &fb::WorkerMessageArgs {
+                sub_id: None,
+                url: None,
+                type_: fb::MessageType::CountResponse,
+                content_type: fb::Message::CountResponse,
+                content: Some(counter_offset.as_union_value()),
+            },
+        );
+
         fbb.finish(worker_msg, None);
         fbb.finished_data().to_vec()
     }
 
     /// Build CountResponses for all tracked kinds
     fn build_all_count_responses(&self) -> Vec<Vec<u8>> {
-        self.kinds.iter()
+        self.kinds
+            .iter()
             .map(|&k| self.build_count_response(k))
             .collect()
     }

@@ -1,19 +1,19 @@
 use super::super::*;
+use crate::crypto_client::CryptoClient;
 use crate::types::parsed_event::ParsedData;
 use shared::{
     generated::nostr::fb::{self},
     types::Proof,
 };
-use crate::crypto_client::CryptoClient;
 use std::cell::RefCell;
 use std::sync::Arc;
 
 type Result<T> = std::result::Result<T, NostrError>;
 use flatbuffers::FlatBufferBuilder;
+use futures::stream::{self, StreamExt};
 use gloo_net;
 use rustc_hash::{FxHashMap, FxHashSet};
 use tracing::{debug, error, warn};
-use futures::stream::{self, StreamExt};
 
 // Cap concurrent proof verifications to avoid SAB ring overflow and CPU saturation
 const MAX_CONCURRENT_PROOFS: usize = 4;
@@ -52,8 +52,6 @@ impl ProofVerificationPipe {
         }
     }
 
-
-
     async fn add_proofs(&mut self, proofs: Vec<Proof>, mint_url: String) -> Result<()> {
         if proofs.is_empty() {
             return Ok(());
@@ -63,7 +61,10 @@ impl ProofVerificationPipe {
             Ok(keys) => keys,
             Err(e) => {
                 warn!("Failed to fetch keys for mint {}: {}", mint_url, e);
-                return Err(NostrError::Other(format!("Failed to fetch mint keys: {}", e)));
+                return Err(NostrError::Other(format!(
+                    "Failed to fetch mint keys: {}",
+                    e
+                )));
             }
         };
 
@@ -210,7 +211,6 @@ impl ProofVerificationPipe {
 
         Ok(result_bytes)
     }
-
 }
 
 impl Pipe for ProofVerificationPipe {
@@ -326,7 +326,8 @@ impl Pipe for ProofVerificationPipe {
                                             proofs.push(Proof::from_flatbuffer(&p));
                                         }
                                         if !proofs.is_empty() && !mint_url.is_empty() {
-                                            if let Err(e) = self.add_proofs(proofs, mint_url).await {
+                                            if let Err(e) = self.add_proofs(proofs, mint_url).await
+                                            {
                                                 error!("Failed to add proofs: {}", e);
                                             }
                                         }
@@ -376,17 +377,20 @@ impl ProofVerificationPipe {
                 return Ok(cached.keys_json.clone());
             }
         }
-        
+
         // Fetch from network and update cache
         let keys_json = self.fetch_mint_keys_from_network(mint_url).await?;
-        
+
         {
             let mut cache = self.mint_keys_cache.borrow_mut();
-            cache.insert(mint_url.to_string(), CachedKeys {
-                keys_json: keys_json.clone(),
-            });
+            cache.insert(
+                mint_url.to_string(),
+                CachedKeys {
+                    keys_json: keys_json.clone(),
+                },
+            );
         }
-        
+
         Ok(keys_json)
     }
 

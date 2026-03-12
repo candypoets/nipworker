@@ -137,8 +137,12 @@ fn extract_content_mentions(blocks: &[ContentBlock]) -> Vec<ProfilePointer> {
     let mut mentions = Vec::new();
 
     for block in blocks {
-        if let Some(crate::parser::content::ContentData::Nostr { id, entity, author: _, .. }) =
-            block.data.as_ref()
+        if let Some(crate::parser::content::ContentData::Nostr {
+            id,
+            entity,
+            author: _,
+            ..
+        }) = block.data.as_ref()
         {
             // Only include profile mentions (nprofile, npub)
             if entity == "nprofile" || entity == "npub" {
@@ -239,25 +243,51 @@ pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
 
     // Root scope strings
     let root_id = parsed.root_id.as_ref().map(|s| builder.create_string(s));
-    let root_coordinate = parsed.root_coordinate.as_ref().map(|s| builder.create_string(s));
-    let root_external = parsed.root_external.as_ref().map(|s| builder.create_string(s));
-    let root_author = parsed.root_author.as_ref().map(|s| builder.create_string(s));
+    let root_coordinate = parsed
+        .root_coordinate
+        .as_ref()
+        .map(|s| builder.create_string(s));
+    let root_external = parsed
+        .root_external
+        .as_ref()
+        .map(|s| builder.create_string(s));
+    let root_author = parsed
+        .root_author
+        .as_ref()
+        .map(|s| builder.create_string(s));
     let root_relays = if parsed.root_relays.is_empty() {
         None
     } else {
-        let offsets: Vec<_> = parsed.root_relays.iter().map(|r| builder.create_string(r)).collect();
+        let offsets: Vec<_> = parsed
+            .root_relays
+            .iter()
+            .map(|r| builder.create_string(r))
+            .collect();
         Some(builder.create_vector(&offsets))
     };
 
     // Parent scope strings
     let parent_id = parsed.parent_id.as_ref().map(|s| builder.create_string(s));
-    let parent_coordinate = parsed.parent_coordinate.as_ref().map(|s| builder.create_string(s));
-    let parent_external = parsed.parent_external.as_ref().map(|s| builder.create_string(s));
-    let parent_author = parsed.parent_author.as_ref().map(|s| builder.create_string(s));
+    let parent_coordinate = parsed
+        .parent_coordinate
+        .as_ref()
+        .map(|s| builder.create_string(s));
+    let parent_external = parsed
+        .parent_external
+        .as_ref()
+        .map(|s| builder.create_string(s));
+    let parent_author = parsed
+        .parent_author
+        .as_ref()
+        .map(|s| builder.create_string(s));
     let parent_relays = if parsed.parent_relays.is_empty() {
         None
     } else {
-        let offsets: Vec<_> = parsed.parent_relays.iter().map(|r| builder.create_string(r)).collect();
+        let offsets: Vec<_> = parsed
+            .parent_relays
+            .iter()
+            .map(|r| builder.create_string(r))
+            .collect();
         Some(builder.create_vector(&offsets))
     };
 
@@ -265,7 +295,11 @@ pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
     let mut citation_offsets = Vec::new();
     for cit in &parsed.citations {
         let id = builder.create_string(&cit.id);
-        let relay_offsets: Vec<_> = cit.relays.iter().map(|r| builder.create_string(r)).collect();
+        let relay_offsets: Vec<_> = cit
+            .relays
+            .iter()
+            .map(|r| builder.create_string(r))
+            .collect();
         let relays = if relay_offsets.is_empty() {
             None
         } else {
@@ -290,7 +324,11 @@ pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
     let mut mention_offsets = Vec::new();
     for mention in &parsed.mentions {
         let pubkey = builder.create_string(&mention.pubkey);
-        let relay_offsets: Vec<_> = mention.relays.iter().map(|r| builder.create_string(r)).collect();
+        let relay_offsets: Vec<_> = mention
+            .relays
+            .iter()
+            .map(|r| builder.create_string(r))
+            .collect();
         let relays = if relay_offsets.is_empty() {
             None
         } else {
