@@ -12,6 +12,12 @@ import {
 import type { InitConnectionsMsg } from './types';
 
 const AUTH_REQUEST_ID_MASK = 0x8000000000000000n;
+const TEXT_DECODER = new TextDecoder();
+const TEXT_ENCODER = new TextEncoder();
+const N46_PREFIX = new Uint8Array([110, 52, 54, 58]); // "n46:"
+const AUTH_STATUS = new Uint8Array([65, 85, 84, 72]); // "AUTH"
+const N46_PREFIX_TEXT = 'n46:';
+const AUTH_STATUS_TEXT = 'AUTH';
 
 function toUint8Array(data: unknown): Uint8Array | null {
 	if (data instanceof Uint8Array) return data;
@@ -21,24 +27,50 @@ function toUint8Array(data: unknown): Uint8Array | null {
 		return new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
 	}
 	if (typeof data === 'string') {
-		return new TextEncoder().encode(data);
+		return TEXT_ENCODER.encode(data);
 	}
 	return null;
 }
 
 function readString(value: unknown): string {
 	if (typeof value === 'string') return value;
-	if (value instanceof Uint8Array) return new TextDecoder().decode(value);
+	if (value instanceof Uint8Array) return TEXT_DECODER.decode(value);
 	if (value && typeof value === 'object' && 'toString' in value) {
 		return String(value);
 	}
 	return '';
 }
 
+function isAuthStatus(value: string | Uint8Array | null | undefined): boolean {
+	if (typeof value === 'string') return value === AUTH_STATUS_TEXT;
+	if (!(value instanceof Uint8Array) || value.length !== AUTH_STATUS.length) {
+		return false;
+	}
+	for (let i = 0; i < AUTH_STATUS.length; i++) {
+		if (value[i] !== AUTH_STATUS[i]) return false;
+	}
+	return true;
+}
+
+function hasPrefix(
+	value: string | Uint8Array | null | undefined,
+	prefix: Uint8Array,
+	prefixText: string
+): boolean {
+	if (typeof value === 'string') return value.startsWith(prefixText);
+	if (!(value instanceof Uint8Array) || value.length < prefix.length) return false;
+	for (let i = 0; i < prefix.length; i++) {
+		if (value[i] !== prefix[i]) return false;
+	}
+	return true;
+}
+
 class ProxyRuntime {
 	private ws: WebSocket | null = null;
 	private pendingFrames: ArrayBuffer[] = [];
 	private authCounter = 1n;
+	private readonly workerMessageView = new WorkerMessage();
+	private readonly connectionStatusView = new ConnectionStatus();
 
 	constructor(
 		private readonly proxyUrl: string,
@@ -110,7 +142,7 @@ class ProxyRuntime {
 	private async messageToBytes(payload: ArrayBuffer | Blob | string): Promise<Uint8Array | null> {
 		if (payload instanceof ArrayBuffer) return new Uint8Array(payload);
 		if (payload instanceof Blob) return new Uint8Array(await payload.arrayBuffer());
-		if (typeof payload === 'string') return new TextEncoder().encode(payload);
+		if (typeof payload === 'string') return TEXT_ENCODER.encode(payload);
 		return null;
 	}
 
@@ -126,35 +158,42 @@ class ProxyRuntime {
 	private handleProxyMessage(bytes: Uint8Array) {
 		let message: WorkerMessage;
 		try {
-			message = WorkerMessage.getRootAsWorkerMessage(new flatbuffers.ByteBuffer(bytes));
+			message = WorkerMessage.getRootAsWorkerMessage(
+				new flatbuffers.ByteBuffer(bytes),
+				this.workerMessageView
+			);
 		} catch {
 			return;
 		}
+		const subId = message.subId(flatbuffers.Encoding.UTF8_BYTES);
+		const isNip46 = hasPrefix(subId, N46_PREFIX, N46_PREFIX_TEXT);
 		if (
 			message.type() === MessageType.ConnectionStatus &&
 			message.contentType() === Message.ConnectionStatus
 		) {
-			const content = message.content(new ConnectionStatus());
-			const status = readString(content?.status());
+			const content = message.content(this.connectionStatusView);
+			const status = content?.status(flatbuffers.Encoding.UTF8_BYTES);
 			const relayUrl =
-				readString(content?.relayUrl()) ||
-				readString(message.url()) ||
-				readString(message.subId());
+				content?.relayUrl(flatbuffers.Encoding.UTF8_BYTES) ||
+				message.url(flatbuffers.Encoding.UTF8_BYTES) ||
+				subId;
 
-			if (status === 'AUTH') {
-				const challenge = readString(content?.message());
-				this.forwardAuthChallenge(challenge, relayUrl);
+			if (isAuthStatus(status)) {
+				const challenge = readString(content?.message(flatbuffers.Encoding.UTF8_BYTES));
+				this.forwardAuthChallenge(challenge, readString(relayUrl));
 				return;
 			}
 
 			// Forward upstream relay status to main thread
 			// (NOTICE, OK, CLOSED, EOSE, etc.)
-			if (relayUrl && relayUrl !== this.proxyUrl) {
-				this.postRelayStatus(status, relayUrl);
+			const relayUrlText = readString(relayUrl);
+			if (relayUrlText && relayUrlText !== this.proxyUrl) {
+				this.postRelayStatus(readString(status), relayUrlText);
 			}
 		}
 
-		this.parserPort.postMessage(bytes, [bytes.buffer]);
+		const targetPort = isNip46 ? this.cryptoPort : this.parserPort;
+		targetPort.postMessage(bytes, [bytes.buffer]);
 	}
 
 	private forwardAuthChallenge(challenge: string, relay: string) {

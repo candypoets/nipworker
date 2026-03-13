@@ -7,13 +7,13 @@ import type { Duplex } from 'stream';
 import * as flatbuffers from 'flatbuffers';
 import { WebSocket, WebSocketServer } from 'ws';
 import {
-	ConnectionStatusT,
+	ConnectionStatus,
 	Message,
 	MessageType,
-	NostrEventT,
-	RawT,
-	StringVecT,
-	WorkerMessageT
+	NostrEvent,
+	Raw,
+	StringVec,
+	WorkerMessage
 } from '../generated/nostr/fb';
 
 type RelayProxyServerLogger = Pick<Console, 'info' | 'warn' | 'error'>;
@@ -82,6 +82,11 @@ type Session = {
 	dedupBySubId: Map<string, Set<string>>;
 	lastSubIdByRelay: Map<string, string>;
 };
+
+type SubscriptionFrameState = {
+	type: 'REQ' | 'CLOSE';
+	subId: string;
+} | null;
 
 /**
  * Create a standalone relay proxy server on its own port.
@@ -485,10 +490,16 @@ function handleEnvelope(
 	envelope: Envelope,
 	logger: RelayProxyServerLogger
 ) {
+	const trackedFrames = envelope.frames.map((frame) => ({
+		frame,
+		state: parseSubscriptionFrameState(frame)
+	}));
+
 	for (const relay of envelope.relays) {
 		ensureRelaySocket(session, clientSocket, relay, logger);
-		for (const frame of envelope.frames) {
-			trackSubscriptionState(session, relay, frame);
+		for (const tracked of trackedFrames) {
+			trackSubscriptionState(session, relay, tracked.state);
+			const frame = tracked.frame;
 			sendFrameToRelay(session, relay, frame, logger);
 		}
 	}
@@ -543,24 +554,30 @@ function ensureRelaySocket(
 	});
 }
 
-function trackSubscriptionState(session: Session, relayUrl: string, frame: string) {
-	const parsed = parseRelayFrame(frame);
-	if (!parsed) return;
-	const type = parsed[0];
-	if (type !== 'REQ' && type !== 'CLOSE') return;
+function trackSubscriptionState(session: Session, relayUrl: string, state: SubscriptionFrameState) {
+	if (!state) return;
+	session.lastSubIdByRelay.set(relayUrl, state.subId);
 
-	const subId = typeof parsed[1] === 'string' ? parsed[1] : null;
-	if (!subId) return;
-	session.lastSubIdByRelay.set(relayUrl, subId);
-
-	if (type === 'REQ') {
+	if (state.type === 'REQ') {
+		const subId = state.subId;
 		if (!session.dedupBySubId.has(subId)) {
 			session.dedupBySubId.set(subId, new Set());
 		}
 		return;
 	}
 
-	session.dedupBySubId.delete(subId);
+	session.dedupBySubId.delete(state.subId);
+}
+
+function parseSubscriptionFrameState(frame: string): SubscriptionFrameState {
+	const parsed = parseRelayFrame(frame);
+	if (!parsed) return null;
+	const type = parsed[0];
+	if (type !== 'REQ' && type !== 'CLOSE') return null;
+
+	const subId = typeof parsed[1] === 'string' ? parsed[1] : null;
+	if (!subId) return null;
+	return { type, subId };
 }
 
 function sendFrameToRelay(
@@ -648,22 +665,41 @@ function relayFrameToWorkerMessage(
 
 function buildNostrEventWorkerMessage(subId: string, relayUrl: string, event: NostrEventJson): Uint8Array {
 	const builder = new flatbuffers.Builder(1024);
-	const workerMessage = new WorkerMessageT(
-		subId || null,
-		relayUrl,
+
+	const subIdOffset = subId ? builder.createString(subId) : 0;
+	const relayUrlOffset = builder.createString(relayUrl);
+	const idOffset = builder.createString(event.id);
+	const pubkeyOffset = builder.createString(event.pubkey);
+	const contentOffset = builder.createString(event.content);
+	const sigOffset = builder.createString(event.sig);
+
+	const tagOffsets = new Array<flatbuffers.Offset>(event.tags.length);
+	for (let i = 0; i < event.tags.length; i++) {
+		tagOffsets[i] = createStringVecOffset(builder, event.tags[i]!);
+	}
+	const tagsOffset = NostrEvent.createTagsVector(builder, tagOffsets);
+
+	const eventOffset = NostrEvent.createNostrEvent(
+		builder,
+		idOffset,
+		pubkeyOffset,
+		event.kind,
+		contentOffset,
+		tagsOffset,
+		event.created_at,
+		sigOffset
+	);
+
+	const workerMessageOffset = WorkerMessage.createWorkerMessage(
+		builder,
+		subIdOffset,
+		relayUrlOffset,
 		MessageType.NostrEvent,
 		Message.NostrEvent,
-		new NostrEventT(
-			event.id,
-			event.pubkey,
-			event.kind,
-			event.content,
-			event.tags.map((tag) => new StringVecT(tag)),
-			event.created_at,
-			event.sig
-		)
+		eventOffset
 	);
-	builder.finish(workerMessage.pack(builder));
+
+	builder.finish(workerMessageOffset);
 	return builder.asUint8Array();
 }
 
@@ -674,27 +710,50 @@ function buildConnectionStatusWorkerMessage(
 	message: string | null
 ): Uint8Array {
 	const builder = new flatbuffers.Builder(256);
-	const workerMessage = new WorkerMessageT(
-		subId || null,
-		relayUrl,
+
+	const subIdOffset = subId ? builder.createString(subId) : 0;
+	const relayUrlOffset = builder.createString(relayUrl);
+	const statusOffset = builder.createString(status);
+	const messageOffset = message === null ? 0 : builder.createString(message);
+
+	const contentOffset = ConnectionStatus.createConnectionStatus(
+		builder,
+		relayUrlOffset,
+		statusOffset,
+		messageOffset
+	);
+
+	const workerMessageOffset = WorkerMessage.createWorkerMessage(
+		builder,
+		subIdOffset,
+		relayUrlOffset,
 		MessageType.ConnectionStatus,
 		Message.ConnectionStatus,
-		new ConnectionStatusT(relayUrl, status, message)
+		contentOffset
 	);
-	builder.finish(workerMessage.pack(builder));
+
+	builder.finish(workerMessageOffset);
 	return builder.asUint8Array();
 }
 
 function buildRawWorkerMessage(subId: string, relayUrl: string, rawFrame: string): Uint8Array {
 	const builder = new flatbuffers.Builder(256);
-	const workerMessage = new WorkerMessageT(
-		subId || null,
-		relayUrl,
+
+	const subIdOffset = subId ? builder.createString(subId) : 0;
+	const relayUrlOffset = builder.createString(relayUrl);
+	const rawOffset = builder.createString(rawFrame);
+	const contentOffset = Raw.createRaw(builder, rawOffset);
+
+	const workerMessageOffset = WorkerMessage.createWorkerMessage(
+		builder,
+		subIdOffset,
+		relayUrlOffset,
 		MessageType.Raw,
 		Message.Raw,
-		new RawT(rawFrame)
+		contentOffset
 	);
-	builder.finish(workerMessage.pack(builder));
+
+	builder.finish(workerMessageOffset);
 	return builder.asUint8Array();
 }
 
@@ -713,9 +772,39 @@ function asNostrEvent(value: unknown): NostrEventJson | null {
 		return null;
 	}
 
-	const tags = candidate.tags
-		.map((tag) => (Array.isArray(tag) ? tag.filter((item) => typeof item === 'string') : []))
-		.filter((tag) => tag.length > 0);
+	const rawTags = candidate.tags;
+	let needsSanitization = false;
+	for (const tag of rawTags) {
+		if (!Array.isArray(tag) || tag.length === 0) {
+			needsSanitization = true;
+			continue;
+		}
+		for (const item of tag) {
+			if (typeof item !== 'string') {
+				needsSanitization = true;
+				break;
+			}
+		}
+	}
+
+	let tags: string[][];
+	if (!needsSanitization) {
+		tags = rawTags as string[][];
+	} else {
+		tags = [];
+		for (const tag of rawTags) {
+			if (!Array.isArray(tag)) continue;
+			const sanitizedTag: string[] = [];
+			for (const item of tag) {
+				if (typeof item === 'string') {
+					sanitizedTag.push(item);
+				}
+			}
+			if (sanitizedTag.length > 0) {
+				tags.push(sanitizedTag);
+			}
+		}
+	}
 
 	return {
 		id: candidate.id,
@@ -726,6 +815,15 @@ function asNostrEvent(value: unknown): NostrEventJson | null {
 		sig: candidate.sig,
 		tags
 	};
+}
+
+function createStringVecOffset(builder: flatbuffers.Builder, values: string[]): flatbuffers.Offset {
+	const itemOffsets = new Array<flatbuffers.Offset>(values.length);
+	for (let i = 0; i < values.length; i++) {
+		itemOffsets[i] = builder.createString(values[i]!);
+	}
+	const itemsOffset = StringVec.createItemsVector(builder, itemOffsets);
+	return StringVec.createStringVec(builder, itemsOffset);
 }
 
 function parseRelayFrame(rawFrame: string): unknown[] | null {

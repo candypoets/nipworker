@@ -1183,7 +1183,7 @@ pub fn wrap_event_with_worker_message_in<'a>(
             &fb::WorkerMessageArgs {
                 sub_id: Some(sid),
                 url: None,
-                type_: fb::MessageType::ParsedNostrEvent,
+                type_: fb::MessageType::NostrEvent,
                 content_type: fb::Message::NostrEvent,
                 content: Some(nostr_event.as_union_value()),
             },

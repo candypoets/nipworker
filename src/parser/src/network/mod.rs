@@ -315,6 +315,10 @@ impl NetworkManager {
                     Ok(Some(output)) => {
                         // Send via batch buffer for MessageChannel delivery
                         add_message_to_batch(&sid, &output);
+                        // Mirror Raw-path behavior: after EOSE, flush each event immediately.
+                        if eosed {
+                            flush_batch(&sid);
+                        }
                     }
                     Ok(None) => {
                         // Event dropped by pipeline

@@ -408,10 +408,30 @@ impl Caching {
             let mut batched_payload = Vec::with_capacity(total_bytes);
 
             for ev_bytes in &cached_events {
-                // Write 4-byte length prefix (little endian)
-                batched_payload.extend_from_slice(&(ev_bytes.len() as u32).to_le_bytes());
-                // Write the WorkerMessage bytes
-                batched_payload.extend_from_slice(ev_bytes);
+                // Prefer canonical WorkerMessage bytes. Legacy direct ParsedEvent/NostrEvent bytes
+                // are wrapped so parser ingress can decode them consistently.
+                let is_worker_message = flatbuffers::root::<fb::WorkerMessage>(ev_bytes)
+                    .map(|wm| wm.content_type() != fb::Message::NONE)
+                    .unwrap_or(false);
+
+                if is_worker_message {
+                    // Write 4-byte length prefix (little endian)
+                    batched_payload.extend_from_slice(&(ev_bytes.len() as u32).to_le_bytes());
+                    // Write the WorkerMessage bytes
+                    batched_payload.extend_from_slice(ev_bytes);
+                    continue;
+                }
+
+                if let Some(wrapped) = wrap_event_with_worker_message(sub_id, ev_bytes) {
+                    batched_payload.extend_from_slice(&(wrapped.len() as u32).to_le_bytes());
+                    batched_payload.extend_from_slice(&wrapped);
+                } else {
+                    warn!(
+                        "Skipping cached event with unknown format for sub_id={} ({} bytes)",
+                        sub_id,
+                        ev_bytes.len()
+                    );
+                }
             }
 
             info!(

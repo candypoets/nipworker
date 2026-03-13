@@ -213,6 +213,16 @@ impl<S: EventStorage> NostrDB<S> {
         parsed: ParsedEvent<'_>,
         worker_msg_bytes: &[u8],
     ) -> Result<()> {
+        let event_id = parsed.id().to_string();
+        // Avoid re-storing duplicates (common when cached events re-enter pipelines with SaveToDb).
+        if let Some(existing_offset) = self.indexes.events_by_id.borrow().get(&event_id).cloned() {
+            // Only skip when the indexed offset still points to a readable event.
+            // Offsets can become stale after ring-buffer eviction.
+            if self.storage.get_event(existing_offset)?.is_some() {
+                return Ok(());
+            }
+        }
+
         // Store WorkerMessage bytes directly (no rebuilding!)
         let offset = if let Some(sharded) = self
             .storage
@@ -237,6 +247,16 @@ impl<S: EventStorage> NostrDB<S> {
         event: NostrEvent<'_>,
         worker_msg_bytes: &[u8],
     ) -> Result<()> {
+        let event_id = event.id().to_string();
+        // Avoid re-storing duplicates (common when cached events re-enter pipelines with SaveToDb).
+        if let Some(existing_offset) = self.indexes.events_by_id.borrow().get(&event_id).cloned() {
+            // Only skip when the indexed offset still points to a readable event.
+            // Offsets can become stale after ring-buffer eviction.
+            if self.storage.get_event(existing_offset)?.is_some() {
+                return Ok(());
+            }
+        }
+
         // Store WorkerMessage bytes directly
         let offset = if let Some(sharded) = self
             .storage
