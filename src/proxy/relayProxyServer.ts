@@ -280,7 +280,7 @@ export function createRelayProxyWebSocketServer(
  * // SvelteKit with adapter-node
  * import { createServer } from 'http';
  * import { handler } from './build/handler.js';
- * import { attachRelayProxyToServer } from '@candypoets/nipworker/proxy';
+ * import { attachRelayProxyToServer } from '@candypoets/nipworker/proxy/server';
  *
  * const server = createServer(handler);
  * attachRelayProxyToServer({ server, path: '/ws-proxy' });
@@ -346,7 +346,7 @@ export function attachRelayProxyToServer(options: AttachRelayProxyOptions): Atta
  *
  * @example
  * import express from 'express';
- * import { createExpressRelayProxyMiddleware } from '@candypoets/nipworker/proxy';
+ * import { createExpressRelayProxyMiddleware } from '@candypoets/nipworker/proxy/server';
  *
  * const app = express();
  *

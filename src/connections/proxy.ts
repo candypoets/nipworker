@@ -136,14 +136,21 @@ class ProxyRuntime {
 		) {
 			const content = message.content(new ConnectionStatus());
 			const status = readString(content?.status());
+			const relayUrl =
+				readString(content?.relayUrl()) ||
+				readString(message.url()) ||
+				readString(message.subId());
+
 			if (status === 'AUTH') {
 				const challenge = readString(content?.message());
-				const relay =
-					readString(content?.relayUrl()) ||
-					readString(message.url()) ||
-					readString(message.subId());
-				this.forwardAuthChallenge(challenge, relay);
+				this.forwardAuthChallenge(challenge, relayUrl);
 				return;
+			}
+
+			// Forward upstream relay status to main thread
+			// (NOTICE, OK, CLOSED, EOSE, etc.)
+			if (relayUrl && relayUrl !== this.proxyUrl) {
+				this.postRelayStatus(status, relayUrl);
 			}
 		}
 
@@ -212,7 +219,6 @@ self.addEventListener(
 		if (msg?.type === 'init') {
 			const { mainPort, cachePort, parserPort, cryptoPort, proxy } = msg.payload;
 			if (!proxy?.url) {
-				console.error('[connections proxy worker] Missing proxy URL in init payload');
 				return;
 			}
 			proxyRuntime = new ProxyRuntime(proxy.url, mainPort, cachePort, parserPort, cryptoPort);
