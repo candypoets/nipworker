@@ -7,6 +7,7 @@ import * as flatbuffers from 'flatbuffers';
 import { Coordinate, CoordinateT } from '../../nostr/fb/coordinate.js';
 import { PreParticipant, PreParticipantT } from '../../nostr/fb/pre-participant.js';
 import { PreRefEvent, PreRefEventT } from '../../nostr/fb/pre-ref-event.js';
+import { StringVec, StringVecT } from '../../nostr/fb/string-vec.js';
 
 
 export class PreGenericParsed implements flatbuffers.IUnpackableObject<PreGenericParsedT> {
@@ -39,164 +40,188 @@ d(optionalEncoding?:any):string|Uint8Array|null {
   return offset ? this.bb!.__string(this.bb_pos + offset, optionalEncoding) : null;
 }
 
+content():string|null
+content(optionalEncoding:flatbuffers.Encoding):string|Uint8Array|null
+content(optionalEncoding?:any):string|Uint8Array|null {
+  const offset = this.bb!.__offset(this.bb_pos, 8);
+  return offset ? this.bb!.__string(this.bb_pos + offset, optionalEncoding) : null;
+}
+
 title():string|null
 title(optionalEncoding:flatbuffers.Encoding):string|Uint8Array|null
 title(optionalEncoding?:any):string|Uint8Array|null {
-  const offset = this.bb!.__offset(this.bb_pos, 8);
+  const offset = this.bb!.__offset(this.bb_pos, 10);
   return offset ? this.bb!.__string(this.bb_pos + offset, optionalEncoding) : null;
 }
 
 description():string|null
 description(optionalEncoding:flatbuffers.Encoding):string|Uint8Array|null
 description(optionalEncoding?:any):string|Uint8Array|null {
-  const offset = this.bb!.__offset(this.bb_pos, 10);
+  const offset = this.bb!.__offset(this.bb_pos, 12);
   return offset ? this.bb!.__string(this.bb_pos + offset, optionalEncoding) : null;
 }
 
 image():string|null
 image(optionalEncoding:flatbuffers.Encoding):string|Uint8Array|null
 image(optionalEncoding?:any):string|Uint8Array|null {
-  const offset = this.bb!.__offset(this.bb_pos, 12);
+  const offset = this.bb!.__offset(this.bb_pos, 14);
   return offset ? this.bb!.__string(this.bb_pos + offset, optionalEncoding) : null;
 }
 
 streaming():string|null
 streaming(optionalEncoding:flatbuffers.Encoding):string|Uint8Array|null
 streaming(optionalEncoding?:any):string|Uint8Array|null {
-  const offset = this.bb!.__offset(this.bb_pos, 14);
+  const offset = this.bb!.__offset(this.bb_pos, 16);
   return offset ? this.bb!.__string(this.bb_pos + offset, optionalEncoding) : null;
 }
 
 recording():string|null
 recording(optionalEncoding:flatbuffers.Encoding):string|Uint8Array|null
 recording(optionalEncoding?:any):string|Uint8Array|null {
-  const offset = this.bb!.__offset(this.bb_pos, 16);
+  const offset = this.bb!.__offset(this.bb_pos, 18);
   return offset ? this.bb!.__string(this.bb_pos + offset, optionalEncoding) : null;
 }
 
 service():string|null
 service(optionalEncoding:flatbuffers.Encoding):string|Uint8Array|null
 service(optionalEncoding?:any):string|Uint8Array|null {
-  const offset = this.bb!.__offset(this.bb_pos, 18);
+  const offset = this.bb!.__offset(this.bb_pos, 20);
   return offset ? this.bb!.__string(this.bb_pos + offset, optionalEncoding) : null;
 }
 
 endpoint():string|null
 endpoint(optionalEncoding:flatbuffers.Encoding):string|Uint8Array|null
 endpoint(optionalEncoding?:any):string|Uint8Array|null {
-  const offset = this.bb!.__offset(this.bb_pos, 20);
+  const offset = this.bb!.__offset(this.bb_pos, 22);
   return offset ? this.bb!.__string(this.bb_pos + offset, optionalEncoding) : null;
 }
 
 room():string|null
 room(optionalEncoding:flatbuffers.Encoding):string|Uint8Array|null
 room(optionalEncoding?:any):string|Uint8Array|null {
-  const offset = this.bb!.__offset(this.bb_pos, 22);
+  const offset = this.bb!.__offset(this.bb_pos, 24);
   return offset ? this.bb!.__string(this.bb_pos + offset, optionalEncoding) : null;
 }
 
 status():string|null
 status(optionalEncoding:flatbuffers.Encoding):string|Uint8Array|null
 status(optionalEncoding?:any):string|Uint8Array|null {
-  const offset = this.bb!.__offset(this.bb_pos, 24);
+  const offset = this.bb!.__offset(this.bb_pos, 26);
   return offset ? this.bb!.__string(this.bb_pos + offset, optionalEncoding) : null;
 }
 
 starts():bigint {
-  const offset = this.bb!.__offset(this.bb_pos, 26);
-  return offset ? this.bb!.readUint64(this.bb_pos + offset) : BigInt('0');
-}
-
-ends():bigint {
   const offset = this.bb!.__offset(this.bb_pos, 28);
   return offset ? this.bb!.readUint64(this.bb_pos + offset) : BigInt('0');
 }
 
-currentParticipants():bigint {
+ends():bigint {
   const offset = this.bb!.__offset(this.bb_pos, 30);
   return offset ? this.bb!.readUint64(this.bb_pos + offset) : BigInt('0');
 }
 
-totalParticipants():bigint {
+location():string|null
+location(optionalEncoding:flatbuffers.Encoding):string|Uint8Array|null
+location(optionalEncoding?:any):string|Uint8Array|null {
   const offset = this.bb!.__offset(this.bb_pos, 32);
+  return offset ? this.bb!.__string(this.bb_pos + offset, optionalEncoding) : null;
+}
+
+currentParticipants():bigint {
+  const offset = this.bb!.__offset(this.bb_pos, 34);
+  return offset ? this.bb!.readUint64(this.bb_pos + offset) : BigInt('0');
+}
+
+totalParticipants():bigint {
+  const offset = this.bb!.__offset(this.bb_pos, 36);
   return offset ? this.bb!.readUint64(this.bb_pos + offset) : BigInt('0');
 }
 
 pinned():string|null
 pinned(optionalEncoding:flatbuffers.Encoding):string|Uint8Array|null
 pinned(optionalEncoding?:any):string|Uint8Array|null {
-  const offset = this.bb!.__offset(this.bb_pos, 34);
+  const offset = this.bb!.__offset(this.bb_pos, 38);
   return offset ? this.bb!.__string(this.bb_pos + offset, optionalEncoding) : null;
 }
 
 topics(index: number):string
 topics(index: number,optionalEncoding:flatbuffers.Encoding):string|Uint8Array
 topics(index: number,optionalEncoding?:any):string|Uint8Array|null {
-  const offset = this.bb!.__offset(this.bb_pos, 36);
+  const offset = this.bb!.__offset(this.bb_pos, 40);
   return offset ? this.bb!.__string(this.bb!.__vector(this.bb_pos + offset) + index * 4, optionalEncoding) : null;
 }
 
 topicsLength():number {
-  const offset = this.bb!.__offset(this.bb_pos, 36);
+  const offset = this.bb!.__offset(this.bb_pos, 40);
   return offset ? this.bb!.__vector_len(this.bb_pos + offset) : 0;
 }
 
 links(index: number):string
 links(index: number,optionalEncoding:flatbuffers.Encoding):string|Uint8Array
 links(index: number,optionalEncoding?:any):string|Uint8Array|null {
-  const offset = this.bb!.__offset(this.bb_pos, 38);
+  const offset = this.bb!.__offset(this.bb_pos, 42);
   return offset ? this.bb!.__string(this.bb!.__vector(this.bb_pos + offset) + index * 4, optionalEncoding) : null;
 }
 
 linksLength():number {
-  const offset = this.bb!.__offset(this.bb_pos, 38);
+  const offset = this.bb!.__offset(this.bb_pos, 42);
   return offset ? this.bb!.__vector_len(this.bb_pos + offset) : 0;
 }
 
 relays(index: number):string
 relays(index: number,optionalEncoding:flatbuffers.Encoding):string|Uint8Array
 relays(index: number,optionalEncoding?:any):string|Uint8Array|null {
-  const offset = this.bb!.__offset(this.bb_pos, 40);
+  const offset = this.bb!.__offset(this.bb_pos, 44);
   return offset ? this.bb!.__string(this.bb!.__vector(this.bb_pos + offset) + index * 4, optionalEncoding) : null;
 }
 
 relaysLength():number {
-  const offset = this.bb!.__offset(this.bb_pos, 40);
+  const offset = this.bb!.__offset(this.bb_pos, 44);
   return offset ? this.bb!.__vector_len(this.bb_pos + offset) : 0;
 }
 
 participants(index: number, obj?:PreParticipant):PreParticipant|null {
-  const offset = this.bb!.__offset(this.bb_pos, 42);
+  const offset = this.bb!.__offset(this.bb_pos, 46);
   return offset ? (obj || new PreParticipant()).__init(this.bb!.__indirect(this.bb!.__vector(this.bb_pos + offset) + index * 4), this.bb!) : null;
 }
 
 participantsLength():number {
-  const offset = this.bb!.__offset(this.bb_pos, 42);
+  const offset = this.bb!.__offset(this.bb_pos, 46);
   return offset ? this.bb!.__vector_len(this.bb_pos + offset) : 0;
 }
 
 events(index: number, obj?:PreRefEvent):PreRefEvent|null {
-  const offset = this.bb!.__offset(this.bb_pos, 44);
+  const offset = this.bb!.__offset(this.bb_pos, 48);
   return offset ? (obj || new PreRefEvent()).__init(this.bb!.__indirect(this.bb!.__vector(this.bb_pos + offset) + index * 4), this.bb!) : null;
 }
 
 eventsLength():number {
-  const offset = this.bb!.__offset(this.bb_pos, 44);
+  const offset = this.bb!.__offset(this.bb_pos, 48);
   return offset ? this.bb!.__vector_len(this.bb_pos + offset) : 0;
 }
 
 addresses(index: number, obj?:Coordinate):Coordinate|null {
-  const offset = this.bb!.__offset(this.bb_pos, 46);
+  const offset = this.bb!.__offset(this.bb_pos, 50);
   return offset ? (obj || new Coordinate()).__init(this.bb!.__indirect(this.bb!.__vector(this.bb_pos + offset) + index * 4), this.bb!) : null;
 }
 
 addressesLength():number {
-  const offset = this.bb!.__offset(this.bb_pos, 46);
+  const offset = this.bb!.__offset(this.bb_pos, 50);
+  return offset ? this.bb!.__vector_len(this.bb_pos + offset) : 0;
+}
+
+tags(index: number, obj?:StringVec):StringVec|null {
+  const offset = this.bb!.__offset(this.bb_pos, 52);
+  return offset ? (obj || new StringVec()).__init(this.bb!.__indirect(this.bb!.__vector(this.bb_pos + offset) + index * 4), this.bb!) : null;
+}
+
+tagsLength():number {
+  const offset = this.bb!.__offset(this.bb_pos, 52);
   return offset ? this.bb!.__vector_len(this.bb_pos + offset) : 0;
 }
 
 static startPreGenericParsed(builder:flatbuffers.Builder) {
-  builder.startObject(22);
+  builder.startObject(25);
 }
 
 static addKind(builder:flatbuffers.Builder, kind:number) {
@@ -207,64 +232,72 @@ static addD(builder:flatbuffers.Builder, dOffset:flatbuffers.Offset) {
   builder.addFieldOffset(1, dOffset, 0);
 }
 
+static addContent(builder:flatbuffers.Builder, contentOffset:flatbuffers.Offset) {
+  builder.addFieldOffset(2, contentOffset, 0);
+}
+
 static addTitle(builder:flatbuffers.Builder, titleOffset:flatbuffers.Offset) {
-  builder.addFieldOffset(2, titleOffset, 0);
+  builder.addFieldOffset(3, titleOffset, 0);
 }
 
 static addDescription(builder:flatbuffers.Builder, descriptionOffset:flatbuffers.Offset) {
-  builder.addFieldOffset(3, descriptionOffset, 0);
+  builder.addFieldOffset(4, descriptionOffset, 0);
 }
 
 static addImage(builder:flatbuffers.Builder, imageOffset:flatbuffers.Offset) {
-  builder.addFieldOffset(4, imageOffset, 0);
+  builder.addFieldOffset(5, imageOffset, 0);
 }
 
 static addStreaming(builder:flatbuffers.Builder, streamingOffset:flatbuffers.Offset) {
-  builder.addFieldOffset(5, streamingOffset, 0);
+  builder.addFieldOffset(6, streamingOffset, 0);
 }
 
 static addRecording(builder:flatbuffers.Builder, recordingOffset:flatbuffers.Offset) {
-  builder.addFieldOffset(6, recordingOffset, 0);
+  builder.addFieldOffset(7, recordingOffset, 0);
 }
 
 static addService(builder:flatbuffers.Builder, serviceOffset:flatbuffers.Offset) {
-  builder.addFieldOffset(7, serviceOffset, 0);
+  builder.addFieldOffset(8, serviceOffset, 0);
 }
 
 static addEndpoint(builder:flatbuffers.Builder, endpointOffset:flatbuffers.Offset) {
-  builder.addFieldOffset(8, endpointOffset, 0);
+  builder.addFieldOffset(9, endpointOffset, 0);
 }
 
 static addRoom(builder:flatbuffers.Builder, roomOffset:flatbuffers.Offset) {
-  builder.addFieldOffset(9, roomOffset, 0);
+  builder.addFieldOffset(10, roomOffset, 0);
 }
 
 static addStatus(builder:flatbuffers.Builder, statusOffset:flatbuffers.Offset) {
-  builder.addFieldOffset(10, statusOffset, 0);
+  builder.addFieldOffset(11, statusOffset, 0);
 }
 
 static addStarts(builder:flatbuffers.Builder, starts:bigint) {
-  builder.addFieldInt64(11, starts, BigInt('0'));
+  builder.addFieldInt64(12, starts, BigInt('0'));
 }
 
 static addEnds(builder:flatbuffers.Builder, ends:bigint) {
-  builder.addFieldInt64(12, ends, BigInt('0'));
+  builder.addFieldInt64(13, ends, BigInt('0'));
+}
+
+static addLocation(builder:flatbuffers.Builder, locationOffset:flatbuffers.Offset) {
+  builder.addFieldOffset(14, locationOffset, 0);
 }
 
 static addCurrentParticipants(builder:flatbuffers.Builder, currentParticipants:bigint) {
-  builder.addFieldInt64(13, currentParticipants, BigInt('0'));
+  builder.addFieldInt64(15, currentParticipants, BigInt('0'));
 }
 
 static addTotalParticipants(builder:flatbuffers.Builder, totalParticipants:bigint) {
-  builder.addFieldInt64(14, totalParticipants, BigInt('0'));
+  builder.addFieldInt64(16, totalParticipants, BigInt('0'));
 }
 
 static addPinned(builder:flatbuffers.Builder, pinnedOffset:flatbuffers.Offset) {
-  builder.addFieldOffset(15, pinnedOffset, 0);
+  builder.addFieldOffset(17, pinnedOffset, 0);
 }
 
 static addTopics(builder:flatbuffers.Builder, topicsOffset:flatbuffers.Offset) {
-  builder.addFieldOffset(16, topicsOffset, 0);
+  builder.addFieldOffset(18, topicsOffset, 0);
 }
 
 static createTopicsVector(builder:flatbuffers.Builder, data:flatbuffers.Offset[]):flatbuffers.Offset {
@@ -280,7 +313,7 @@ static startTopicsVector(builder:flatbuffers.Builder, numElems:number) {
 }
 
 static addLinks(builder:flatbuffers.Builder, linksOffset:flatbuffers.Offset) {
-  builder.addFieldOffset(17, linksOffset, 0);
+  builder.addFieldOffset(19, linksOffset, 0);
 }
 
 static createLinksVector(builder:flatbuffers.Builder, data:flatbuffers.Offset[]):flatbuffers.Offset {
@@ -296,7 +329,7 @@ static startLinksVector(builder:flatbuffers.Builder, numElems:number) {
 }
 
 static addRelays(builder:flatbuffers.Builder, relaysOffset:flatbuffers.Offset) {
-  builder.addFieldOffset(18, relaysOffset, 0);
+  builder.addFieldOffset(20, relaysOffset, 0);
 }
 
 static createRelaysVector(builder:flatbuffers.Builder, data:flatbuffers.Offset[]):flatbuffers.Offset {
@@ -312,7 +345,7 @@ static startRelaysVector(builder:flatbuffers.Builder, numElems:number) {
 }
 
 static addParticipants(builder:flatbuffers.Builder, participantsOffset:flatbuffers.Offset) {
-  builder.addFieldOffset(19, participantsOffset, 0);
+  builder.addFieldOffset(21, participantsOffset, 0);
 }
 
 static createParticipantsVector(builder:flatbuffers.Builder, data:flatbuffers.Offset[]):flatbuffers.Offset {
@@ -328,7 +361,7 @@ static startParticipantsVector(builder:flatbuffers.Builder, numElems:number) {
 }
 
 static addEvents(builder:flatbuffers.Builder, eventsOffset:flatbuffers.Offset) {
-  builder.addFieldOffset(20, eventsOffset, 0);
+  builder.addFieldOffset(22, eventsOffset, 0);
 }
 
 static createEventsVector(builder:flatbuffers.Builder, data:flatbuffers.Offset[]):flatbuffers.Offset {
@@ -344,7 +377,7 @@ static startEventsVector(builder:flatbuffers.Builder, numElems:number) {
 }
 
 static addAddresses(builder:flatbuffers.Builder, addressesOffset:flatbuffers.Offset) {
-  builder.addFieldOffset(21, addressesOffset, 0);
+  builder.addFieldOffset(23, addressesOffset, 0);
 }
 
 static createAddressesVector(builder:flatbuffers.Builder, data:flatbuffers.Offset[]):flatbuffers.Offset {
@@ -359,15 +392,32 @@ static startAddressesVector(builder:flatbuffers.Builder, numElems:number) {
   builder.startVector(4, numElems, 4);
 }
 
+static addTags(builder:flatbuffers.Builder, tagsOffset:flatbuffers.Offset) {
+  builder.addFieldOffset(24, tagsOffset, 0);
+}
+
+static createTagsVector(builder:flatbuffers.Builder, data:flatbuffers.Offset[]):flatbuffers.Offset {
+  builder.startVector(4, data.length, 4);
+  for (let i = data.length - 1; i >= 0; i--) {
+    builder.addOffset(data[i]!);
+  }
+  return builder.endVector();
+}
+
+static startTagsVector(builder:flatbuffers.Builder, numElems:number) {
+  builder.startVector(4, numElems, 4);
+}
+
 static endPreGenericParsed(builder:flatbuffers.Builder):flatbuffers.Offset {
   const offset = builder.endObject();
   return offset;
 }
 
-static createPreGenericParsed(builder:flatbuffers.Builder, kind:number, dOffset:flatbuffers.Offset, titleOffset:flatbuffers.Offset, descriptionOffset:flatbuffers.Offset, imageOffset:flatbuffers.Offset, streamingOffset:flatbuffers.Offset, recordingOffset:flatbuffers.Offset, serviceOffset:flatbuffers.Offset, endpointOffset:flatbuffers.Offset, roomOffset:flatbuffers.Offset, statusOffset:flatbuffers.Offset, starts:bigint, ends:bigint, currentParticipants:bigint, totalParticipants:bigint, pinnedOffset:flatbuffers.Offset, topicsOffset:flatbuffers.Offset, linksOffset:flatbuffers.Offset, relaysOffset:flatbuffers.Offset, participantsOffset:flatbuffers.Offset, eventsOffset:flatbuffers.Offset, addressesOffset:flatbuffers.Offset):flatbuffers.Offset {
+static createPreGenericParsed(builder:flatbuffers.Builder, kind:number, dOffset:flatbuffers.Offset, contentOffset:flatbuffers.Offset, titleOffset:flatbuffers.Offset, descriptionOffset:flatbuffers.Offset, imageOffset:flatbuffers.Offset, streamingOffset:flatbuffers.Offset, recordingOffset:flatbuffers.Offset, serviceOffset:flatbuffers.Offset, endpointOffset:flatbuffers.Offset, roomOffset:flatbuffers.Offset, statusOffset:flatbuffers.Offset, starts:bigint, ends:bigint, locationOffset:flatbuffers.Offset, currentParticipants:bigint, totalParticipants:bigint, pinnedOffset:flatbuffers.Offset, topicsOffset:flatbuffers.Offset, linksOffset:flatbuffers.Offset, relaysOffset:flatbuffers.Offset, participantsOffset:flatbuffers.Offset, eventsOffset:flatbuffers.Offset, addressesOffset:flatbuffers.Offset, tagsOffset:flatbuffers.Offset):flatbuffers.Offset {
   PreGenericParsed.startPreGenericParsed(builder);
   PreGenericParsed.addKind(builder, kind);
   PreGenericParsed.addD(builder, dOffset);
+  PreGenericParsed.addContent(builder, contentOffset);
   PreGenericParsed.addTitle(builder, titleOffset);
   PreGenericParsed.addDescription(builder, descriptionOffset);
   PreGenericParsed.addImage(builder, imageOffset);
@@ -379,6 +429,7 @@ static createPreGenericParsed(builder:flatbuffers.Builder, kind:number, dOffset:
   PreGenericParsed.addStatus(builder, statusOffset);
   PreGenericParsed.addStarts(builder, starts);
   PreGenericParsed.addEnds(builder, ends);
+  PreGenericParsed.addLocation(builder, locationOffset);
   PreGenericParsed.addCurrentParticipants(builder, currentParticipants);
   PreGenericParsed.addTotalParticipants(builder, totalParticipants);
   PreGenericParsed.addPinned(builder, pinnedOffset);
@@ -388,6 +439,7 @@ static createPreGenericParsed(builder:flatbuffers.Builder, kind:number, dOffset:
   PreGenericParsed.addParticipants(builder, participantsOffset);
   PreGenericParsed.addEvents(builder, eventsOffset);
   PreGenericParsed.addAddresses(builder, addressesOffset);
+  PreGenericParsed.addTags(builder, tagsOffset);
   return PreGenericParsed.endPreGenericParsed(builder);
 }
 
@@ -395,6 +447,7 @@ unpack(): PreGenericParsedT {
   return new PreGenericParsedT(
     this.kind(),
     this.d(),
+    this.content(),
     this.title(),
     this.description(),
     this.image(),
@@ -406,6 +459,7 @@ unpack(): PreGenericParsedT {
     this.status(),
     this.starts(),
     this.ends(),
+    this.location(),
     this.currentParticipants(),
     this.totalParticipants(),
     this.pinned(),
@@ -414,7 +468,8 @@ unpack(): PreGenericParsedT {
     this.bb!.createScalarList<string>(this.relays.bind(this), this.relaysLength()),
     this.bb!.createObjList<PreParticipant, PreParticipantT>(this.participants.bind(this), this.participantsLength()),
     this.bb!.createObjList<PreRefEvent, PreRefEventT>(this.events.bind(this), this.eventsLength()),
-    this.bb!.createObjList<Coordinate, CoordinateT>(this.addresses.bind(this), this.addressesLength())
+    this.bb!.createObjList<Coordinate, CoordinateT>(this.addresses.bind(this), this.addressesLength()),
+    this.bb!.createObjList<StringVec, StringVecT>(this.tags.bind(this), this.tagsLength())
   );
 }
 
@@ -422,6 +477,7 @@ unpack(): PreGenericParsedT {
 unpackTo(_o: PreGenericParsedT): void {
   _o.kind = this.kind();
   _o.d = this.d();
+  _o.content = this.content();
   _o.title = this.title();
   _o.description = this.description();
   _o.image = this.image();
@@ -433,6 +489,7 @@ unpackTo(_o: PreGenericParsedT): void {
   _o.status = this.status();
   _o.starts = this.starts();
   _o.ends = this.ends();
+  _o.location = this.location();
   _o.currentParticipants = this.currentParticipants();
   _o.totalParticipants = this.totalParticipants();
   _o.pinned = this.pinned();
@@ -442,6 +499,7 @@ unpackTo(_o: PreGenericParsedT): void {
   _o.participants = this.bb!.createObjList<PreParticipant, PreParticipantT>(this.participants.bind(this), this.participantsLength());
   _o.events = this.bb!.createObjList<PreRefEvent, PreRefEventT>(this.events.bind(this), this.eventsLength());
   _o.addresses = this.bb!.createObjList<Coordinate, CoordinateT>(this.addresses.bind(this), this.addressesLength());
+  _o.tags = this.bb!.createObjList<StringVec, StringVecT>(this.tags.bind(this), this.tagsLength());
 }
 }
 
@@ -449,6 +507,7 @@ export class PreGenericParsedT implements flatbuffers.IGeneratedObject {
 constructor(
   public kind: number = 0,
   public d: string|Uint8Array|null = null,
+  public content: string|Uint8Array|null = null,
   public title: string|Uint8Array|null = null,
   public description: string|Uint8Array|null = null,
   public image: string|Uint8Array|null = null,
@@ -460,6 +519,7 @@ constructor(
   public status: string|Uint8Array|null = null,
   public starts: bigint = BigInt('0'),
   public ends: bigint = BigInt('0'),
+  public location: string|Uint8Array|null = null,
   public currentParticipants: bigint = BigInt('0'),
   public totalParticipants: bigint = BigInt('0'),
   public pinned: string|Uint8Array|null = null,
@@ -468,12 +528,14 @@ constructor(
   public relays: (string)[] = [],
   public participants: (PreParticipantT)[] = [],
   public events: (PreRefEventT)[] = [],
-  public addresses: (CoordinateT)[] = []
+  public addresses: (CoordinateT)[] = [],
+  public tags: (StringVecT)[] = []
 ){}
 
 
 pack(builder:flatbuffers.Builder): flatbuffers.Offset {
   const d = (this.d !== null ? builder.createString(this.d!) : 0);
+  const content = (this.content !== null ? builder.createString(this.content!) : 0);
   const title = (this.title !== null ? builder.createString(this.title!) : 0);
   const description = (this.description !== null ? builder.createString(this.description!) : 0);
   const image = (this.image !== null ? builder.createString(this.image!) : 0);
@@ -483,6 +545,7 @@ pack(builder:flatbuffers.Builder): flatbuffers.Offset {
   const endpoint = (this.endpoint !== null ? builder.createString(this.endpoint!) : 0);
   const room = (this.room !== null ? builder.createString(this.room!) : 0);
   const status = (this.status !== null ? builder.createString(this.status!) : 0);
+  const location = (this.location !== null ? builder.createString(this.location!) : 0);
   const pinned = (this.pinned !== null ? builder.createString(this.pinned!) : 0);
   const topics = PreGenericParsed.createTopicsVector(builder, builder.createObjectOffsetList(this.topics));
   const links = PreGenericParsed.createLinksVector(builder, builder.createObjectOffsetList(this.links));
@@ -490,10 +553,12 @@ pack(builder:flatbuffers.Builder): flatbuffers.Offset {
   const participants = PreGenericParsed.createParticipantsVector(builder, builder.createObjectOffsetList(this.participants));
   const events = PreGenericParsed.createEventsVector(builder, builder.createObjectOffsetList(this.events));
   const addresses = PreGenericParsed.createAddressesVector(builder, builder.createObjectOffsetList(this.addresses));
+  const tags = PreGenericParsed.createTagsVector(builder, builder.createObjectOffsetList(this.tags));
 
   return PreGenericParsed.createPreGenericParsed(builder,
     this.kind,
     d,
+    content,
     title,
     description,
     image,
@@ -505,6 +570,7 @@ pack(builder:flatbuffers.Builder): flatbuffers.Offset {
     status,
     this.starts,
     this.ends,
+    location,
     this.currentParticipants,
     this.totalParticipants,
     pinned,
@@ -513,7 +579,8 @@ pack(builder:flatbuffers.Builder): flatbuffers.Offset {
     relays,
     participants,
     events,
-    addresses
+    addresses,
+    tags
   );
 }
 }

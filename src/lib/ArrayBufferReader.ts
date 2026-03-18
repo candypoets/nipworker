@@ -125,11 +125,8 @@ export class ArrayBufferReader {
 				// Need the full payload to be available
 				if (nextPos > currentWritePosition) break;
 
-				// Create a copy of the data since ArrayBuffer is not shared
-				const flatBufferData = new Uint8Array(uint8View.subarray(payloadStart, nextPos));
-
-				// Parse directly
-				const bb = new ByteBuffer(flatBufferData);
+				// Parse directly from the existing buffer view to avoid per-message copies.
+				const bb = new ByteBuffer(uint8View.subarray(payloadStart, nextPos));
 				const message = WorkerMessage.getRootAsWorkerMessage(bb);
 
 				messages[msgCount++] = message;

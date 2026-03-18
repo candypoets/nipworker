@@ -14,6 +14,9 @@ import {
 	Kind6Parsed,
 	Kind7Parsed,
 	Kind17Parsed,
+	Kind20Parsed,
+	Kind22Parsed,
+	Kind1111Parsed,
 	Kind10002Parsed,
 	Kind10019Parsed,
 	Kind17375Parsed,
@@ -22,6 +25,7 @@ import {
 	Kind7376Parsed,
 	Kind9321Parsed,
 	Kind9735Parsed,
+	Kind30023Parsed,
 	Kind1311Parsed,
 	ContentBlock,
 	LinkPreviewData,
@@ -33,16 +37,16 @@ import {
 	NostrData,
 	VideoData,
 	NostrEvent,
-	ListParsed
+	ListParsed,
+	PreGenericParsed
 } from 'src/generated/nostr/fb';
-import { unionToContentData } from 'src/generated/nostr/fb/content-data';
-import { unionToMessage } from 'src/generated/nostr/fb/message';
-import { unionToParsedData, ParsedData } from 'src/generated/nostr/fb/parsed-data';
+import { ImageData as FbImageData } from 'src/generated/nostr/fb';
+import { ParsedData } from 'src/generated/nostr/fb/parsed-data';
 
 // ---- Top-level Message helpers ----
 export function isConnectionStatus(msg: WorkerMessage): ConnectionStatus | null {
 	if (msg.type() !== MessageType.ConnectionStatus) return null;
-	return unionToMessage(msg.contentType(), msg.content.bind(msg)) as ConnectionStatus;
+	return msg.content(new ConnectionStatus()) ?? null;
 }
 
 export const asConnectionStatus = isConnectionStatus;
@@ -78,14 +82,14 @@ export const asValidProofs = isValidProofs;
 // ---- Generic ParsedEvent --------
 export function isParsedEvent(msg: WorkerMessage): ParsedEvent | null {
 	if (msg.type() !== MessageType.ParsedNostrEvent) return null;
-	return unionToMessage(msg.contentType(), msg.content.bind(msg)) as ParsedEvent;
+	return msg.content(new ParsedEvent()) ?? null;
 }
 
 export const asParsedEvent = isParsedEvent;
 
 export const isNostrEvent = (msg: WorkerMessage): NostrEvent | null => {
 	if (msg.type() !== MessageType.NostrEvent) return null;
-	return unionToMessage(msg.contentType(), msg.content.bind(msg)) as NostrEvent;
+	return msg.content(new NostrEvent()) ?? null;
 };
 
 export const asNostrEvent = isNostrEvent;
@@ -95,8 +99,57 @@ function parsedKind<T>(msg: WorkerMessage, kind: ParsedData): T | null {
 	if (!msg) return null;
 	const ev = isParsedEvent(msg);
 	if (!ev) return null;
-	if (ev?.parsedType?.() !== kind) return null;
-	return unionToParsedData(kind, ev.parsed.bind(ev)) as T;
+	const parsedType = ev.parsedType();
+	if (parsedType !== kind) return null;
+
+	switch (kind) {
+		case ParsedData.Kind0Parsed:
+			return ev.parsed(new Kind0Parsed()) as T | null;
+		case ParsedData.Kind1Parsed:
+			return ev.parsed(new Kind1Parsed()) as T | null;
+		case ParsedData.Kind3Parsed:
+			return ev.parsed(new Kind3Parsed()) as T | null;
+		case ParsedData.Kind4Parsed:
+			return ev.parsed(new Kind4Parsed()) as T | null;
+		case ParsedData.Kind6Parsed:
+			return ev.parsed(new Kind6Parsed()) as T | null;
+		case ParsedData.Kind7Parsed:
+			return ev.parsed(new Kind7Parsed()) as T | null;
+		case ParsedData.Kind17Parsed:
+			return ev.parsed(new Kind17Parsed()) as T | null;
+		case ParsedData.Kind20Parsed:
+			return ev.parsed(new Kind20Parsed()) as T | null;
+		case ParsedData.Kind22Parsed:
+			return ev.parsed(new Kind22Parsed()) as T | null;
+		case ParsedData.Kind1111Parsed:
+			return ev.parsed(new Kind1111Parsed()) as T | null;
+		case ParsedData.Kind1311Parsed:
+			return ev.parsed(new Kind1311Parsed()) as T | null;
+		case ParsedData.Kind10002Parsed:
+			return ev.parsed(new Kind10002Parsed()) as T | null;
+		case ParsedData.Kind10019Parsed:
+			return ev.parsed(new Kind10019Parsed()) as T | null;
+		case ParsedData.Kind17375Parsed:
+			return ev.parsed(new Kind17375Parsed()) as T | null;
+		case ParsedData.Kind7374Parsed:
+			return ev.parsed(new Kind7374Parsed()) as T | null;
+		case ParsedData.Kind7375Parsed:
+			return ev.parsed(new Kind7375Parsed()) as T | null;
+		case ParsedData.Kind7376Parsed:
+			return ev.parsed(new Kind7376Parsed()) as T | null;
+		case ParsedData.Kind9321Parsed:
+			return ev.parsed(new Kind9321Parsed()) as T | null;
+		case ParsedData.Kind9735Parsed:
+			return ev.parsed(new Kind9735Parsed()) as T | null;
+		case ParsedData.Kind30023Parsed:
+			return ev.parsed(new Kind30023Parsed()) as T | null;
+		case ParsedData.ListParsed:
+			return ev.parsed(new ListParsed()) as T | null;
+		case ParsedData.PreGenericParsed:
+			return ev.parsed(new PreGenericParsed()) as T | null;
+		default:
+			return null;
+	}
 }
 
 export function isKind0(msg: WorkerMessage): Kind0Parsed | null {
@@ -104,120 +157,127 @@ export function isKind0(msg: WorkerMessage): Kind0Parsed | null {
 }
 export function asKind0(ev: ParsedEvent): Kind0Parsed | null {
 	if (!ev) return null;
-	if (ev?.parsedType?.() !== ParsedData.Kind0Parsed) return null;
-	return unionToParsedData(ParsedData.Kind0Parsed, ev.parsed.bind(ev)) as Kind0Parsed;
+	if (ev.parsedType() !== ParsedData.Kind0Parsed) return null;
+	return ev.parsed(new Kind0Parsed()) ?? null;
 }
 export function isKind1(msg: WorkerMessage): Kind1Parsed | null {
 	return parsedKind<Kind1Parsed>(msg, ParsedData.Kind1Parsed);
 }
 export function asKind1(ev: ParsedEvent): Kind1Parsed | null {
-	if (ev?.parsedType?.() !== ParsedData.Kind1Parsed) return null;
-	return unionToParsedData(ParsedData.Kind1Parsed, ev.parsed.bind(ev)) as Kind1Parsed;
+	if (ev.parsedType() !== ParsedData.Kind1Parsed) return null;
+	return ev.parsed(new Kind1Parsed()) ?? null;
 }
 export function isKind3(msg: WorkerMessage): Kind3Parsed | null {
 	return parsedKind<Kind3Parsed>(msg, ParsedData.Kind3Parsed);
 }
 export function asKind3(ev: ParsedEvent): Kind3Parsed | null {
-	if (ev?.parsedType?.() !== ParsedData.Kind3Parsed) return null;
-	return unionToParsedData(ParsedData.Kind3Parsed, ev.parsed.bind(ev)) as Kind3Parsed;
+	if (ev.parsedType() !== ParsedData.Kind3Parsed) return null;
+	return ev.parsed(new Kind3Parsed()) ?? null;
 }
 export function isKind4(msg: WorkerMessage): Kind4Parsed | null {
 	return parsedKind<Kind4Parsed>(msg, ParsedData.Kind4Parsed);
 }
 export function asKind4(ev: ParsedEvent): Kind4Parsed | null {
-	if (ev?.parsedType?.() !== ParsedData.Kind4Parsed) return null;
-	return unionToParsedData(ParsedData.Kind4Parsed, ev.parsed.bind(ev)) as Kind4Parsed;
+	if (ev.parsedType() !== ParsedData.Kind4Parsed) return null;
+	return ev.parsed(new Kind4Parsed()) ?? null;
 }
 export function isKind6(msg: WorkerMessage): Kind6Parsed | null {
 	return parsedKind<Kind6Parsed>(msg, ParsedData.Kind6Parsed);
 }
 export function asKind6(ev: ParsedEvent): Kind6Parsed | null {
-	if (ev?.parsedType?.() !== ParsedData.Kind6Parsed) return null;
-	return unionToParsedData(ParsedData.Kind6Parsed, ev.parsed.bind(ev)) as Kind6Parsed;
+	if (ev.parsedType() !== ParsedData.Kind6Parsed) return null;
+	return ev.parsed(new Kind6Parsed()) ?? null;
 }
 export function isKind7(msg: WorkerMessage): Kind7Parsed | null {
 	return parsedKind<Kind7Parsed>(msg, ParsedData.Kind7Parsed);
 }
 export function asKind7(ev: ParsedEvent): Kind7Parsed | null {
-	if (ev?.parsedType?.() !== ParsedData.Kind7Parsed) return null;
-	return unionToParsedData(ParsedData.Kind7Parsed, ev.parsed.bind(ev)) as Kind7Parsed;
+	if (ev.parsedType() !== ParsedData.Kind7Parsed) return null;
+	return ev.parsed(new Kind7Parsed()) ?? null;
 }
 export function isKind17(msg: WorkerMessage): Kind17Parsed | null {
 	return parsedKind<Kind17Parsed>(msg, ParsedData.Kind17Parsed);
 }
 export function asKind17(ev: ParsedEvent): Kind17Parsed | null {
-	if (ev?.parsedType?.() !== ParsedData.Kind17Parsed) return null;
-	return unionToParsedData(ParsedData.Kind17Parsed, ev.parsed.bind(ev)) as Kind17Parsed;
+	if (ev.parsedType() !== ParsedData.Kind17Parsed) return null;
+	return ev.parsed(new Kind17Parsed()) ?? null;
+}
+export function isKind1111(msg: WorkerMessage): Kind1111Parsed | null {
+	return parsedKind<Kind1111Parsed>(msg, ParsedData.Kind1111Parsed);
+}
+export function asKind1111(ev: ParsedEvent): Kind1111Parsed | null {
+	if (ev.parsedType() !== ParsedData.Kind1111Parsed) return null;
+	return ev.parsed(new Kind1111Parsed()) ?? null;
 }
 export function isKind1311(msg: WorkerMessage): Kind1311Parsed | null {
 	return parsedKind<Kind1311Parsed>(msg, ParsedData.Kind1311Parsed);
 }
 export function asKind1311(ev: ParsedEvent): Kind1311Parsed | null {
-	if (ev?.parsedType?.() !== ParsedData.Kind1311Parsed) return null;
-	return unionToParsedData(ParsedData.Kind1311Parsed, ev.parsed.bind(ev)) as Kind1311Parsed;
+	if (ev.parsedType() !== ParsedData.Kind1311Parsed) return null;
+	return ev.parsed(new Kind1311Parsed()) ?? null;
 }
 export function isKind10002(msg: WorkerMessage): Kind10002Parsed | null {
 	return parsedKind<Kind10002Parsed>(msg, ParsedData.Kind10002Parsed);
 }
 export function asKind10002(ev: ParsedEvent): Kind10002Parsed | null {
-	if (ev?.parsedType?.() !== ParsedData.Kind10002Parsed) return null;
-	return unionToParsedData(ParsedData.Kind10002Parsed, ev.parsed.bind(ev)) as Kind10002Parsed;
+	if (ev.parsedType() !== ParsedData.Kind10002Parsed) return null;
+	return ev.parsed(new Kind10002Parsed()) ?? null;
 }
 
 export function isKind10019(msg: WorkerMessage): Kind10019Parsed | null {
 	return parsedKind<Kind10019Parsed>(msg, ParsedData.Kind10019Parsed);
 }
 export function asKind10019(ev: ParsedEvent): Kind10019Parsed | null {
-	if (ev?.parsedType?.() !== ParsedData.Kind10019Parsed) return null;
-	return unionToParsedData(ParsedData.Kind10019Parsed, ev.parsed.bind(ev)) as Kind10019Parsed;
+	if (ev.parsedType() !== ParsedData.Kind10019Parsed) return null;
+	return ev.parsed(new Kind10019Parsed()) ?? null;
 }
 
 export function isKind17375(msg: WorkerMessage): Kind17375Parsed | null {
 	return parsedKind<Kind17375Parsed>(msg, ParsedData.Kind17375Parsed);
 }
 export function asKind17375(ev: ParsedEvent): Kind17375Parsed | null {
-	if (ev?.parsedType?.() !== ParsedData.Kind17375Parsed) return null;
-	return unionToParsedData(ParsedData.Kind17375Parsed, ev.parsed.bind(ev)) as Kind17375Parsed;
+	if (ev.parsedType() !== ParsedData.Kind17375Parsed) return null;
+	return ev.parsed(new Kind17375Parsed()) ?? null;
 }
 
 export function isKind7374(msg: WorkerMessage): Kind7374Parsed | null {
 	return parsedKind<Kind7374Parsed>(msg, ParsedData.Kind7374Parsed);
 }
 export function asKind7374(ev: ParsedEvent): Kind7374Parsed | null {
-	if (ev?.parsedType?.() !== ParsedData.Kind7374Parsed) return null;
-	return unionToParsedData(ParsedData.Kind7374Parsed, ev.parsed.bind(ev)) as Kind7374Parsed;
+	if (ev.parsedType() !== ParsedData.Kind7374Parsed) return null;
+	return ev.parsed(new Kind7374Parsed()) ?? null;
 }
 
 export function isKind7375(msg: WorkerMessage): Kind7375Parsed | null {
 	return parsedKind<Kind7375Parsed>(msg, ParsedData.Kind7375Parsed);
 }
 export function asKind7375(ev: ParsedEvent): Kind7375Parsed | null {
-	if (ev?.parsedType?.() !== ParsedData.Kind7375Parsed) return null;
-	return unionToParsedData(ParsedData.Kind7375Parsed, ev.parsed.bind(ev)) as Kind7375Parsed;
+	if (ev.parsedType() !== ParsedData.Kind7375Parsed) return null;
+	return ev.parsed(new Kind7375Parsed()) ?? null;
 }
 
 export function isKind7376(msg: WorkerMessage): Kind7376Parsed | null {
 	return parsedKind<Kind7376Parsed>(msg, ParsedData.Kind7376Parsed);
 }
 export function asKind7376(ev: ParsedEvent): Kind7376Parsed | null {
-	if (ev?.parsedType?.() !== ParsedData.Kind7376Parsed) return null;
-	return unionToParsedData(ParsedData.Kind7376Parsed, ev.parsed.bind(ev)) as Kind7376Parsed;
+	if (ev.parsedType() !== ParsedData.Kind7376Parsed) return null;
+	return ev.parsed(new Kind7376Parsed()) ?? null;
 }
 
 export function isKind9321(msg: WorkerMessage): Kind9321Parsed | null {
 	return parsedKind<Kind9321Parsed>(msg, ParsedData.Kind9321Parsed);
 }
 export function asKind9321(ev: ParsedEvent): Kind9321Parsed | null {
-	if (ev?.parsedType?.() !== ParsedData.Kind9321Parsed) return null;
-	return unionToParsedData(ParsedData.Kind9321Parsed, ev.parsed.bind(ev)) as Kind9321Parsed;
+	if (ev.parsedType() !== ParsedData.Kind9321Parsed) return null;
+	return ev.parsed(new Kind9321Parsed()) ?? null;
 }
 
 export function isKind9735(msg: WorkerMessage): Kind9735Parsed | null {
 	return parsedKind<Kind9735Parsed>(msg, ParsedData.Kind9735Parsed);
 }
 export function asKind9735(ev: ParsedEvent): Kind9735Parsed | null {
-	if (ev?.parsedType?.() !== ParsedData.Kind9735Parsed) return null;
-	return unionToParsedData(ParsedData.Kind9735Parsed, ev.parsed.bind(ev)) as Kind9735Parsed;
+	if (ev.parsedType() !== ParsedData.Kind9735Parsed) return null;
+	return ev.parsed(new Kind9735Parsed()) ?? null;
 }
 
 export function isNip51(msg: WorkerMessage): ListParsed | null {
@@ -225,46 +285,55 @@ export function isNip51(msg: WorkerMessage): ListParsed | null {
 }
 
 export function asNip51(ev: ParsedEvent): ListParsed | null {
-	if (ev?.parsedType?.() !== ParsedData.ListParsed) return null;
-	return unionToParsedData(ParsedData.ListParsed, ev.parsed.bind(ev)) as ListParsed;
+	if (ev.parsedType() !== ParsedData.ListParsed) return null;
+	return ev.parsed(new ListParsed()) ?? null;
+}
+
+export function isPreGeneric(msg: WorkerMessage): PreGenericParsed | null {
+	return parsedKind<PreGenericParsed>(msg, ParsedData.PreGenericParsed);
+}
+
+export function asPreGeneric(ev: ParsedEvent): PreGenericParsed | null {
+	if (ev.parsedType() !== ParsedData.PreGenericParsed) return null;
+	return ev.parsed(new PreGenericParsed()) ?? null;
 }
 
 export function asCodeData(block: ContentBlock): CodeData | null {
 	if (block.dataType() !== ContentData.CodeData) return null;
-	return unionToContentData(ContentData.CodeData, block.data.bind(block)) as CodeData;
+	return block.data(new CodeData()) ?? null;
 }
 
 export function asHashtagData(block: ContentBlock): HashtagData | null {
 	if (block.dataType() !== ContentData.HashtagData) return null;
-	return unionToContentData(ContentData.HashtagData, block.data.bind(block)) as HashtagData;
+	return block.data(new HashtagData()) ?? null;
 }
 
 export function asCashuData(block: ContentBlock): CashuData | null {
 	if (block.dataType() !== ContentData.CashuData) return null;
-	return unionToContentData(ContentData.CashuData, block.data.bind(block)) as CashuData;
+	return block.data(new CashuData()) ?? null;
 }
 
-export function asImageData(block: ContentBlock): ImageData | null {
+export function asImageData(block: ContentBlock): FbImageData | null {
 	if (block.dataType() !== ContentData.ImageData) return null;
-	return unionToContentData(ContentData.ImageData, block.data.bind(block)) as unknown as ImageData;
+	return block.data(new FbImageData()) ?? null;
 }
 
 export function asVideoData(block: ContentBlock): VideoData | null {
 	if (block.dataType() !== ContentData.VideoData) return null;
-	return unionToContentData(ContentData.VideoData, block.data.bind(block)) as VideoData;
+	return block.data(new VideoData()) ?? null;
 }
 
 export function asMediaGroupData(block: ContentBlock): MediaGroupData | null {
 	if (block.dataType() !== ContentData.MediaGroupData) return null;
-	return unionToContentData(ContentData.MediaGroupData, block.data.bind(block)) as MediaGroupData;
+	return block.data(new MediaGroupData()) ?? null;
 }
 
 export function asNostrData(block: ContentBlock): NostrData | null {
 	if (block.dataType() !== ContentData.NostrData) return null;
-	return unionToContentData(ContentData.NostrData, block.data.bind(block)) as NostrData;
+	return block.data(new NostrData()) ?? null;
 }
 
 export function asLinkPreview(block: ContentBlock): LinkPreviewData | null {
 	if (block.dataType() !== ContentData.LinkPreviewData) return null;
-	return unionToContentData(ContentData.LinkPreviewData, block.data.bind(block)) as LinkPreviewData;
+	return block.data(new LinkPreviewData()) ?? null;
 }

@@ -19030,6 +19030,166 @@ impl Kind1311ParsedT {
     })
   }
 }
+pub enum TagOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct Tag<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for Tag<'a> {
+  type Inner = Tag<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> Tag<'a> {
+  pub const VT_KEY: flatbuffers::VOffsetT = 4;
+  pub const VT_VALUES: flatbuffers::VOffsetT = 6;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    Tag { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args TagArgs<'args>
+  ) -> flatbuffers::WIPOffset<Tag<'bldr>> {
+    let mut builder = TagBuilder::new(_fbb);
+    if let Some(x) = args.values { builder.add_values(x); }
+    if let Some(x) = args.key { builder.add_key(x); }
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> TagT {
+    let key = {
+      let x = self.key();
+      x.to_string()
+    };
+    let values = self.values().map(|x| {
+      x.iter().map(|s| s.to_string()).collect()
+    });
+    TagT {
+      key,
+      values,
+    }
+  }
+
+  #[inline]
+  pub fn key(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Tag::VT_KEY, None).unwrap()}
+  }
+  #[inline]
+  pub fn values(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>(Tag::VT_VALUES, None)}
+  }
+}
+
+impl flatbuffers::Verifiable for Tag<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("key", Self::VT_KEY, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("values", Self::VT_VALUES, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct TagArgs<'a> {
+    pub key: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub values: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>,
+}
+impl<'a> Default for TagArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    TagArgs {
+      key: None, // required field
+      values: None,
+    }
+  }
+}
+
+pub struct TagBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> TagBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_key(&mut self, key: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Tag::VT_KEY, key);
+  }
+  #[inline]
+  pub fn add_values(&mut self, values: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<&'b  str>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Tag::VT_VALUES, values);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> TagBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    TagBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<Tag<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, Tag::VT_KEY,"key");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for Tag<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("Tag");
+      ds.field("key", &self.key());
+      ds.field("values", &self.values());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct TagT {
+  pub key: String,
+  pub values: Option<Vec<String>>,
+}
+impl Default for TagT {
+  fn default() -> Self {
+    Self {
+      key: "".to_string(),
+      values: None,
+    }
+  }
+}
+impl TagT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<Tag<'b>> {
+    let key = Some({
+      let x = &self.key;
+      _fbb.create_string(x)
+    });
+    let values = self.values.as_ref().map(|x|{
+      let w: Vec<_> = x.iter().map(|s| _fbb.create_string(s)).collect();_fbb.create_vector(&w)
+    });
+    Tag::create(_fbb, &TagArgs{
+      key,
+      values,
+    })
+  }
+}
 pub enum CoordinateOffset {}
 #[derive(Copy, Clone, PartialEq)]
 
@@ -19268,6 +19428,7 @@ impl<'a> ListParsed<'a> {
   pub const VT_PEOPLE: flatbuffers::VOffsetT = 16;
   pub const VT_EVENTS: flatbuffers::VOffsetT = 18;
   pub const VT_ADDRESSES: flatbuffers::VOffsetT = 20;
+  pub const VT_OTHER_TAGS: flatbuffers::VOffsetT = 22;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -19279,6 +19440,7 @@ impl<'a> ListParsed<'a> {
     args: &'args ListParsedArgs<'args>
   ) -> flatbuffers::WIPOffset<ListParsed<'bldr>> {
     let mut builder = ListParsedBuilder::new(_fbb);
+    if let Some(x) = args.other_tags { builder.add_other_tags(x); }
     if let Some(x) = args.addresses { builder.add_addresses(x); }
     if let Some(x) = args.events { builder.add_events(x); }
     if let Some(x) = args.people { builder.add_people(x); }
@@ -19317,6 +19479,9 @@ impl<'a> ListParsed<'a> {
     let addresses = self.addresses().map(|x| {
       x.iter().map(|t| t.unpack()).collect()
     });
+    let other_tags = self.other_tags().map(|x| {
+      x.iter().map(|t| t.unpack()).collect()
+    });
     ListParsedT {
       list_kind,
       d,
@@ -19327,6 +19492,7 @@ impl<'a> ListParsed<'a> {
       people,
       events,
       addresses,
+      other_tags,
     }
   }
 
@@ -19393,6 +19559,13 @@ impl<'a> ListParsed<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Coordinate>>>>(ListParsed::VT_ADDRESSES, None)}
   }
+  #[inline]
+  pub fn other_tags(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Tag<'a>>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Tag>>>>(ListParsed::VT_OTHER_TAGS, None)}
+  }
 }
 
 impl flatbuffers::Verifiable for ListParsed<'_> {
@@ -19411,6 +19584,7 @@ impl flatbuffers::Verifiable for ListParsed<'_> {
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("people", Self::VT_PEOPLE, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("events", Self::VT_EVENTS, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<Coordinate>>>>("addresses", Self::VT_ADDRESSES, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<Tag>>>>("other_tags", Self::VT_OTHER_TAGS, false)?
      .finish();
     Ok(())
   }
@@ -19425,6 +19599,7 @@ pub struct ListParsedArgs<'a> {
     pub people: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>,
     pub events: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>,
     pub addresses: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Coordinate<'a>>>>>,
+    pub other_tags: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Tag<'a>>>>>,
 }
 impl<'a> Default for ListParsedArgs<'a> {
   #[inline]
@@ -19439,6 +19614,7 @@ impl<'a> Default for ListParsedArgs<'a> {
       people: None,
       events: None,
       addresses: None,
+      other_tags: None,
     }
   }
 }
@@ -19485,6 +19661,10 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> ListParsedBuilder<'a, 'b, A> {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(ListParsed::VT_ADDRESSES, addresses);
   }
   #[inline]
+  pub fn add_other_tags(&mut self, other_tags: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<Tag<'b >>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(ListParsed::VT_OTHER_TAGS, other_tags);
+  }
+  #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> ListParsedBuilder<'a, 'b, A> {
     let start = _fbb.start_table();
     ListParsedBuilder {
@@ -19511,6 +19691,7 @@ impl core::fmt::Debug for ListParsed<'_> {
       ds.field("people", &self.people());
       ds.field("events", &self.events());
       ds.field("addresses", &self.addresses());
+      ds.field("other_tags", &self.other_tags());
       ds.finish()
   }
 }
@@ -19526,6 +19707,7 @@ pub struct ListParsedT {
   pub people: Option<Vec<String>>,
   pub events: Option<Vec<String>>,
   pub addresses: Option<Vec<CoordinateT>>,
+  pub other_tags: Option<Vec<TagT>>,
 }
 impl Default for ListParsedT {
   fn default() -> Self {
@@ -19539,6 +19721,7 @@ impl Default for ListParsedT {
       people: None,
       events: None,
       addresses: None,
+      other_tags: None,
     }
   }
 }
@@ -19572,6 +19755,9 @@ impl ListParsedT {
     let addresses = self.addresses.as_ref().map(|x|{
       let w: Vec<_> = x.iter().map(|t| t.pack(_fbb)).collect();_fbb.create_vector(&w)
     });
+    let other_tags = self.other_tags.as_ref().map(|x|{
+      let w: Vec<_> = x.iter().map(|t| t.pack(_fbb)).collect();_fbb.create_vector(&w)
+    });
     ListParsed::create(_fbb, &ListParsedArgs{
       list_kind,
       d,
@@ -19582,6 +19768,7 @@ impl ListParsedT {
       people,
       events,
       addresses,
+      other_tags,
     })
   }
 }
@@ -20004,26 +20191,29 @@ impl<'a> flatbuffers::Follow<'a> for PreGenericParsed<'a> {
 impl<'a> PreGenericParsed<'a> {
   pub const VT_KIND: flatbuffers::VOffsetT = 4;
   pub const VT_D: flatbuffers::VOffsetT = 6;
-  pub const VT_TITLE: flatbuffers::VOffsetT = 8;
-  pub const VT_DESCRIPTION: flatbuffers::VOffsetT = 10;
-  pub const VT_IMAGE: flatbuffers::VOffsetT = 12;
-  pub const VT_STREAMING: flatbuffers::VOffsetT = 14;
-  pub const VT_RECORDING: flatbuffers::VOffsetT = 16;
-  pub const VT_SERVICE: flatbuffers::VOffsetT = 18;
-  pub const VT_ENDPOINT: flatbuffers::VOffsetT = 20;
-  pub const VT_ROOM: flatbuffers::VOffsetT = 22;
-  pub const VT_STATUS: flatbuffers::VOffsetT = 24;
-  pub const VT_STARTS: flatbuffers::VOffsetT = 26;
-  pub const VT_ENDS: flatbuffers::VOffsetT = 28;
-  pub const VT_CURRENT_PARTICIPANTS: flatbuffers::VOffsetT = 30;
-  pub const VT_TOTAL_PARTICIPANTS: flatbuffers::VOffsetT = 32;
-  pub const VT_PINNED: flatbuffers::VOffsetT = 34;
-  pub const VT_TOPICS: flatbuffers::VOffsetT = 36;
-  pub const VT_LINKS: flatbuffers::VOffsetT = 38;
-  pub const VT_RELAYS: flatbuffers::VOffsetT = 40;
-  pub const VT_PARTICIPANTS: flatbuffers::VOffsetT = 42;
-  pub const VT_EVENTS: flatbuffers::VOffsetT = 44;
-  pub const VT_ADDRESSES: flatbuffers::VOffsetT = 46;
+  pub const VT_CONTENT: flatbuffers::VOffsetT = 8;
+  pub const VT_TITLE: flatbuffers::VOffsetT = 10;
+  pub const VT_DESCRIPTION: flatbuffers::VOffsetT = 12;
+  pub const VT_IMAGE: flatbuffers::VOffsetT = 14;
+  pub const VT_STREAMING: flatbuffers::VOffsetT = 16;
+  pub const VT_RECORDING: flatbuffers::VOffsetT = 18;
+  pub const VT_SERVICE: flatbuffers::VOffsetT = 20;
+  pub const VT_ENDPOINT: flatbuffers::VOffsetT = 22;
+  pub const VT_ROOM: flatbuffers::VOffsetT = 24;
+  pub const VT_STATUS: flatbuffers::VOffsetT = 26;
+  pub const VT_STARTS: flatbuffers::VOffsetT = 28;
+  pub const VT_ENDS: flatbuffers::VOffsetT = 30;
+  pub const VT_LOCATION: flatbuffers::VOffsetT = 32;
+  pub const VT_CURRENT_PARTICIPANTS: flatbuffers::VOffsetT = 34;
+  pub const VT_TOTAL_PARTICIPANTS: flatbuffers::VOffsetT = 36;
+  pub const VT_PINNED: flatbuffers::VOffsetT = 38;
+  pub const VT_TOPICS: flatbuffers::VOffsetT = 40;
+  pub const VT_LINKS: flatbuffers::VOffsetT = 42;
+  pub const VT_RELAYS: flatbuffers::VOffsetT = 44;
+  pub const VT_PARTICIPANTS: flatbuffers::VOffsetT = 46;
+  pub const VT_EVENTS: flatbuffers::VOffsetT = 48;
+  pub const VT_ADDRESSES: flatbuffers::VOffsetT = 50;
+  pub const VT_TAGS: flatbuffers::VOffsetT = 52;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -20039,6 +20229,7 @@ impl<'a> PreGenericParsed<'a> {
     builder.add_current_participants(args.current_participants);
     builder.add_ends(args.ends);
     builder.add_starts(args.starts);
+    if let Some(x) = args.tags { builder.add_tags(x); }
     if let Some(x) = args.addresses { builder.add_addresses(x); }
     if let Some(x) = args.events { builder.add_events(x); }
     if let Some(x) = args.participants { builder.add_participants(x); }
@@ -20046,6 +20237,7 @@ impl<'a> PreGenericParsed<'a> {
     if let Some(x) = args.links { builder.add_links(x); }
     if let Some(x) = args.topics { builder.add_topics(x); }
     if let Some(x) = args.pinned { builder.add_pinned(x); }
+    if let Some(x) = args.location { builder.add_location(x); }
     if let Some(x) = args.status { builder.add_status(x); }
     if let Some(x) = args.room { builder.add_room(x); }
     if let Some(x) = args.endpoint { builder.add_endpoint(x); }
@@ -20055,6 +20247,7 @@ impl<'a> PreGenericParsed<'a> {
     if let Some(x) = args.image { builder.add_image(x); }
     if let Some(x) = args.description { builder.add_description(x); }
     if let Some(x) = args.title { builder.add_title(x); }
+    if let Some(x) = args.content { builder.add_content(x); }
     if let Some(x) = args.d { builder.add_d(x); }
     builder.add_kind(args.kind);
     builder.finish()
@@ -20063,6 +20256,9 @@ impl<'a> PreGenericParsed<'a> {
   pub fn unpack(&self) -> PreGenericParsedT {
     let kind = self.kind();
     let d = self.d().map(|x| {
+      x.to_string()
+    });
+    let content = self.content().map(|x| {
       x.to_string()
     });
     let title = self.title().map(|x| {
@@ -20094,6 +20290,9 @@ impl<'a> PreGenericParsed<'a> {
     });
     let starts = self.starts();
     let ends = self.ends();
+    let location = self.location().map(|x| {
+      x.to_string()
+    });
     let current_participants = self.current_participants();
     let total_participants = self.total_participants();
     let pinned = self.pinned().map(|x| {
@@ -20117,9 +20316,13 @@ impl<'a> PreGenericParsed<'a> {
     let addresses = self.addresses().map(|x| {
       x.iter().map(|t| t.unpack()).collect()
     });
+    let tags = self.tags().map(|x| {
+      x.iter().map(|t| t.unpack()).collect()
+    });
     PreGenericParsedT {
       kind,
       d,
+      content,
       title,
       description,
       image,
@@ -20131,6 +20334,7 @@ impl<'a> PreGenericParsed<'a> {
       status,
       starts,
       ends,
+      location,
       current_participants,
       total_participants,
       pinned,
@@ -20140,6 +20344,7 @@ impl<'a> PreGenericParsed<'a> {
       participants,
       events,
       addresses,
+      tags,
     }
   }
 
@@ -20156,6 +20361,13 @@ impl<'a> PreGenericParsed<'a> {
     // Created from valid Table for this object
     // which contains a valid value in this slot
     unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(PreGenericParsed::VT_D, None)}
+  }
+  #[inline]
+  pub fn content(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(PreGenericParsed::VT_CONTENT, None)}
   }
   #[inline]
   pub fn title(&self) -> Option<&'a str> {
@@ -20235,6 +20447,13 @@ impl<'a> PreGenericParsed<'a> {
     unsafe { self._tab.get::<u64>(PreGenericParsed::VT_ENDS, Some(0)).unwrap()}
   }
   #[inline]
+  pub fn location(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(PreGenericParsed::VT_LOCATION, None)}
+  }
+  #[inline]
   pub fn current_participants(&self) -> u64 {
     // Safety:
     // Created from valid Table for this object
@@ -20297,6 +20516,13 @@ impl<'a> PreGenericParsed<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Coordinate>>>>(PreGenericParsed::VT_ADDRESSES, None)}
   }
+  #[inline]
+  pub fn tags(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<StringVec<'a>>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<StringVec>>>>(PreGenericParsed::VT_TAGS, None)}
+  }
 }
 
 impl flatbuffers::Verifiable for PreGenericParsed<'_> {
@@ -20308,6 +20534,7 @@ impl flatbuffers::Verifiable for PreGenericParsed<'_> {
     v.visit_table(pos)?
      .visit_field::<u16>("kind", Self::VT_KIND, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("d", Self::VT_D, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("content", Self::VT_CONTENT, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("title", Self::VT_TITLE, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("description", Self::VT_DESCRIPTION, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("image", Self::VT_IMAGE, false)?
@@ -20319,6 +20546,7 @@ impl flatbuffers::Verifiable for PreGenericParsed<'_> {
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("status", Self::VT_STATUS, false)?
      .visit_field::<u64>("starts", Self::VT_STARTS, false)?
      .visit_field::<u64>("ends", Self::VT_ENDS, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("location", Self::VT_LOCATION, false)?
      .visit_field::<u64>("current_participants", Self::VT_CURRENT_PARTICIPANTS, false)?
      .visit_field::<u64>("total_participants", Self::VT_TOTAL_PARTICIPANTS, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("pinned", Self::VT_PINNED, false)?
@@ -20328,6 +20556,7 @@ impl flatbuffers::Verifiable for PreGenericParsed<'_> {
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<PreParticipant>>>>("participants", Self::VT_PARTICIPANTS, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<PreRefEvent>>>>("events", Self::VT_EVENTS, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<Coordinate>>>>("addresses", Self::VT_ADDRESSES, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<StringVec>>>>("tags", Self::VT_TAGS, false)?
      .finish();
     Ok(())
   }
@@ -20335,6 +20564,7 @@ impl flatbuffers::Verifiable for PreGenericParsed<'_> {
 pub struct PreGenericParsedArgs<'a> {
     pub kind: u16,
     pub d: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub content: Option<flatbuffers::WIPOffset<&'a str>>,
     pub title: Option<flatbuffers::WIPOffset<&'a str>>,
     pub description: Option<flatbuffers::WIPOffset<&'a str>>,
     pub image: Option<flatbuffers::WIPOffset<&'a str>>,
@@ -20346,6 +20576,7 @@ pub struct PreGenericParsedArgs<'a> {
     pub status: Option<flatbuffers::WIPOffset<&'a str>>,
     pub starts: u64,
     pub ends: u64,
+    pub location: Option<flatbuffers::WIPOffset<&'a str>>,
     pub current_participants: u64,
     pub total_participants: u64,
     pub pinned: Option<flatbuffers::WIPOffset<&'a str>>,
@@ -20355,6 +20586,7 @@ pub struct PreGenericParsedArgs<'a> {
     pub participants: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<PreParticipant<'a>>>>>,
     pub events: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<PreRefEvent<'a>>>>>,
     pub addresses: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Coordinate<'a>>>>>,
+    pub tags: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<StringVec<'a>>>>>,
 }
 impl<'a> Default for PreGenericParsedArgs<'a> {
   #[inline]
@@ -20362,6 +20594,7 @@ impl<'a> Default for PreGenericParsedArgs<'a> {
     PreGenericParsedArgs {
       kind: 0,
       d: None,
+      content: None,
       title: None,
       description: None,
       image: None,
@@ -20373,6 +20606,7 @@ impl<'a> Default for PreGenericParsedArgs<'a> {
       status: None,
       starts: 0,
       ends: 0,
+      location: None,
       current_participants: 0,
       total_participants: 0,
       pinned: None,
@@ -20382,6 +20616,7 @@ impl<'a> Default for PreGenericParsedArgs<'a> {
       participants: None,
       events: None,
       addresses: None,
+      tags: None,
     }
   }
 }
@@ -20398,6 +20633,10 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> PreGenericParsedBuilder<'a, 'b,
   #[inline]
   pub fn add_d(&mut self, d: flatbuffers::WIPOffset<&'b  str>) {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(PreGenericParsed::VT_D, d);
+  }
+  #[inline]
+  pub fn add_content(&mut self, content: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(PreGenericParsed::VT_CONTENT, content);
   }
   #[inline]
   pub fn add_title(&mut self, title: flatbuffers::WIPOffset<&'b  str>) {
@@ -20444,6 +20683,10 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> PreGenericParsedBuilder<'a, 'b,
     self.fbb_.push_slot::<u64>(PreGenericParsed::VT_ENDS, ends, 0);
   }
   #[inline]
+  pub fn add_location(&mut self, location: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(PreGenericParsed::VT_LOCATION, location);
+  }
+  #[inline]
   pub fn add_current_participants(&mut self, current_participants: u64) {
     self.fbb_.push_slot::<u64>(PreGenericParsed::VT_CURRENT_PARTICIPANTS, current_participants, 0);
   }
@@ -20480,6 +20723,10 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> PreGenericParsedBuilder<'a, 'b,
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(PreGenericParsed::VT_ADDRESSES, addresses);
   }
   #[inline]
+  pub fn add_tags(&mut self, tags: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<StringVec<'b >>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(PreGenericParsed::VT_TAGS, tags);
+  }
+  #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> PreGenericParsedBuilder<'a, 'b, A> {
     let start = _fbb.start_table();
     PreGenericParsedBuilder {
@@ -20499,6 +20746,7 @@ impl core::fmt::Debug for PreGenericParsed<'_> {
     let mut ds = f.debug_struct("PreGenericParsed");
       ds.field("kind", &self.kind());
       ds.field("d", &self.d());
+      ds.field("content", &self.content());
       ds.field("title", &self.title());
       ds.field("description", &self.description());
       ds.field("image", &self.image());
@@ -20510,6 +20758,7 @@ impl core::fmt::Debug for PreGenericParsed<'_> {
       ds.field("status", &self.status());
       ds.field("starts", &self.starts());
       ds.field("ends", &self.ends());
+      ds.field("location", &self.location());
       ds.field("current_participants", &self.current_participants());
       ds.field("total_participants", &self.total_participants());
       ds.field("pinned", &self.pinned());
@@ -20519,6 +20768,7 @@ impl core::fmt::Debug for PreGenericParsed<'_> {
       ds.field("participants", &self.participants());
       ds.field("events", &self.events());
       ds.field("addresses", &self.addresses());
+      ds.field("tags", &self.tags());
       ds.finish()
   }
 }
@@ -20527,6 +20777,7 @@ impl core::fmt::Debug for PreGenericParsed<'_> {
 pub struct PreGenericParsedT {
   pub kind: u16,
   pub d: Option<String>,
+  pub content: Option<String>,
   pub title: Option<String>,
   pub description: Option<String>,
   pub image: Option<String>,
@@ -20538,6 +20789,7 @@ pub struct PreGenericParsedT {
   pub status: Option<String>,
   pub starts: u64,
   pub ends: u64,
+  pub location: Option<String>,
   pub current_participants: u64,
   pub total_participants: u64,
   pub pinned: Option<String>,
@@ -20547,12 +20799,14 @@ pub struct PreGenericParsedT {
   pub participants: Option<Vec<PreParticipantT>>,
   pub events: Option<Vec<PreRefEventT>>,
   pub addresses: Option<Vec<CoordinateT>>,
+  pub tags: Option<Vec<StringVecT>>,
 }
 impl Default for PreGenericParsedT {
   fn default() -> Self {
     Self {
       kind: 0,
       d: None,
+      content: None,
       title: None,
       description: None,
       image: None,
@@ -20564,6 +20818,7 @@ impl Default for PreGenericParsedT {
       status: None,
       starts: 0,
       ends: 0,
+      location: None,
       current_participants: 0,
       total_participants: 0,
       pinned: None,
@@ -20573,6 +20828,7 @@ impl Default for PreGenericParsedT {
       participants: None,
       events: None,
       addresses: None,
+      tags: None,
     }
   }
 }
@@ -20583,6 +20839,9 @@ impl PreGenericParsedT {
   ) -> flatbuffers::WIPOffset<PreGenericParsed<'b>> {
     let kind = self.kind;
     let d = self.d.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    let content = self.content.as_ref().map(|x|{
       _fbb.create_string(x)
     });
     let title = self.title.as_ref().map(|x|{
@@ -20614,6 +20873,9 @@ impl PreGenericParsedT {
     });
     let starts = self.starts;
     let ends = self.ends;
+    let location = self.location.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
     let current_participants = self.current_participants;
     let total_participants = self.total_participants;
     let pinned = self.pinned.as_ref().map(|x|{
@@ -20637,9 +20899,13 @@ impl PreGenericParsedT {
     let addresses = self.addresses.as_ref().map(|x|{
       let w: Vec<_> = x.iter().map(|t| t.pack(_fbb)).collect();_fbb.create_vector(&w)
     });
+    let tags = self.tags.as_ref().map(|x|{
+      let w: Vec<_> = x.iter().map(|t| t.pack(_fbb)).collect();_fbb.create_vector(&w)
+    });
     PreGenericParsed::create(_fbb, &PreGenericParsedArgs{
       kind,
       d,
+      content,
       title,
       description,
       image,
@@ -20651,6 +20917,7 @@ impl PreGenericParsedT {
       status,
       starts,
       ends,
+      location,
       current_participants,
       total_participants,
       pinned,
@@ -20660,6 +20927,7 @@ impl PreGenericParsedT {
       participants,
       events,
       addresses,
+      tags,
     })
   }
 }

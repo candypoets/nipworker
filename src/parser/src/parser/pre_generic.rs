@@ -34,6 +34,7 @@ pub struct PreRefEvent {
 pub struct PreGenericParsed {
     pub kind: u16,
     pub d: Option<String>,
+    pub content: String,
     pub title: Option<String>,
     pub description: Option<String>,
     pub image: Option<String>,
@@ -50,6 +51,9 @@ pub struct PreGenericParsed {
     pub starts: Option<u64>,
     pub ends: Option<u64>,
 
+    // Location (NIP-52 calendar events)
+    pub location: Option<String>,
+
     // Counters / pinned
     pub current_participants: Option<u64>,
     pub total_participants: Option<u64>,
@@ -64,6 +68,9 @@ pub struct PreGenericParsed {
     pub participants: Vec<PreParticipant>,         // from "p"
     pub events: Vec<PreRefEvent>,                  // from "e"
     pub addresses: Vec<crate::parser::Coordinate>, // from "a"
+
+    // Raw tags
+    pub tags: Vec<Vec<String>>,
 }
 
 impl Parser {
@@ -94,10 +101,14 @@ impl Parser {
         let endpoint = tag_value(&event.tags, "endpoint");
         let room = tag_value(&event.tags, "room");
 
-        // Status and timing
+        // Status and timing (supports both "starts"/"ends" and NIP-52 "start"/"end")
         let status = tag_value(&event.tags, "status");
-        let starts = tag_value(&event.tags, "starts").and_then(|s| s.parse::<u64>().ok());
-        let ends = tag_value(&event.tags, "ends").and_then(|s| s.parse::<u64>().ok());
+        let starts = tag_value(&event.tags, "start")
+            .or_else(|| tag_value(&event.tags, "starts"))
+            .and_then(|s| s.parse::<u64>().ok());
+        let ends = tag_value(&event.tags, "end")
+            .or_else(|| tag_value(&event.tags, "ends"))
+            .and_then(|s| s.parse::<u64>().ok());
 
         // Counters and pinned
         let current_participants =
@@ -105,6 +116,9 @@ impl Parser {
         let total_participants =
             tag_value(&event.tags, "total_participants").and_then(|s| s.parse::<u64>().ok());
         let pinned = tag_value(&event.tags, "pinned");
+
+        // Location (NIP-52 calendar events)
+        let location = tag_value(&event.tags, "location");
 
         // Collections
         let mut topics = tag_values(&event.tags, "t");
@@ -167,6 +181,7 @@ impl Parser {
         let parsed = PreGenericParsed {
             kind: event.kind as u16,
             d,
+            content: event.content.clone(),
             title,
             description,
             image,
@@ -178,6 +193,7 @@ impl Parser {
             status,
             starts,
             ends,
+            location,
             current_participants,
             total_participants,
             pinned,
@@ -187,6 +203,7 @@ impl Parser {
             participants,
             events: events_vec,
             addresses,
+            tags: event.tags.clone(),
         };
 
         Ok((parsed, None))
@@ -200,6 +217,7 @@ pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
 ) -> Result<flatbuffers::WIPOffset<fb::PreGenericParsed<'a>>> {
     // Optionals as strings
     let d = parsed.d.as_ref().map(|s| builder.create_string(s));
+    let content = builder.create_string(&parsed.content);
     let title = parsed.title.as_ref().map(|s| builder.create_string(s));
     let description = parsed
         .description
@@ -213,6 +231,7 @@ pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
     let room = parsed.room.as_ref().map(|s| builder.create_string(s));
     let status = parsed.status.as_ref().map(|s| builder.create_string(s));
     let pinned = parsed.pinned.as_ref().map(|s| builder.create_string(s));
+    let location = parsed.location.as_ref().map(|s| builder.create_string(s));
 
     // Vectors
     let topics = if parsed.topics.is_empty() {
@@ -319,9 +338,32 @@ pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
         Some(builder.create_vector(&offs))
     };
 
+    // Raw tags as StringVec
+    let tags_vec = if parsed.tags.is_empty() {
+        None
+    } else {
+        let tag_offs: Vec<_> = parsed
+            .tags
+            .iter()
+            .map(|t| {
+                let str_offsets: Vec<_> = t.iter().map(|s| builder.create_string(s)).collect();
+                let items_vec = builder.create_vector(&str_offsets);
+                let str_vec = fb::StringVec::create(
+                    builder,
+                    &fb::StringVecArgs {
+                        items: Some(items_vec),
+                    },
+                );
+                str_vec
+            })
+            .collect();
+        Some(builder.create_vector(&tag_offs))
+    };
+
     let args = fb::PreGenericParsedArgs {
         kind: parsed.kind,
         d,
+        content: Some(content),
         title,
         description,
         image,
@@ -336,12 +378,14 @@ pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
         current_participants: parsed.current_participants.unwrap_or(0),
         total_participants: parsed.total_participants.unwrap_or(0),
         pinned,
+        location,
         topics,
         links,
         relays,
         participants,
         events,
         addresses,
+        tags: tags_vec,
     };
 
     Ok(fb::PreGenericParsed::create(builder, &args))

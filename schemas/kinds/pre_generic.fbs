@@ -31,6 +31,7 @@ table PreGenericParsed {
   // Identity
   kind: ushort;       // original kind (e.g., 30311, 30009, 31922, ...)
   d: string;          // PRE id ("d" tag) when present
+  content: string;    // raw event content (for arbitrary app data)
 
   // Common metadata
   title: string;
@@ -49,6 +50,9 @@ table PreGenericParsed {
   starts: ulong;      // unix seconds (0 if absent)
   ends: ulong;        // unix seconds (0 if absent)
 
+  // Location (NIP-52 calendar events)
+  location: string;
+
   // Counters / pinned
   current_participants: ulong;
   total_participants: ulong;
@@ -63,4 +67,7 @@ table PreGenericParsed {
   participants: [PreParticipant]; // from "p"
   events: [PreRefEvent];          // from "e"
   addresses: [Coordinate];        // from "a" (reuse Coordinate from list.fbs)
+
+  // Raw tags (for accessing arbitrary tags not parsed above)
+  tags: [StringVec];
 }

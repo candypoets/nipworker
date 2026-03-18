@@ -357,6 +357,7 @@ pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
         people: people_vec,
         events: events_vec,
         addresses: addresses_vec,
+        other_tags: None,
     };
 
     Ok(fb::ListParsed::create(builder, &args))

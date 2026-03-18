@@ -91,19 +91,21 @@ export class NostrManager {
 		this.crypto = new Worker(cryptoURL, { type: 'module' });
 
 		console.log('connectionMode', useProxyConnections ? 'proxy' : 'rust');
+
+		console.log(this.connections, this.cache, this.parser, this.crypto);
 		// Transfer ports to connections worker
 		// Needs: mainPort, cachePort, parserPort, cryptoPort
 		this.connections.postMessage(
 			{
 				type: 'init',
-					payload: {
-						mainPort: connections_main.port2,
-						cachePort: cache_connections.port1,
-						parserPort: parser_connections.port1,
-						cryptoPort: crypto_connections.port1,
-						...(config.proxy ? { proxy: config.proxy } : {})
-					}
-				} as InitConnectionsMsg,
+				payload: {
+					mainPort: connections_main.port2,
+					cachePort: cache_connections.port1,
+					parserPort: parser_connections.port1,
+					cryptoPort: crypto_connections.port1,
+					...(config.proxy ? { proxy: config.proxy } : {})
+				}
+			} as InitConnectionsMsg,
 			[
 				connections_main.port2,
 				cache_connections.port1,
