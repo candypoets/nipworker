@@ -212,7 +212,8 @@ impl Caching {
                 fb_event,
                 cache_req.parsed_event(),
                 cache_req.relays(),
-            ).await;
+            )
+            .await;
             return;
         }
 
@@ -288,8 +289,12 @@ impl Caching {
         fb_parsed_event: Option<fb::ParsedEvent<'_>>,
         relay_hints: Option<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>,
     ) {
-        info!("[PUBLISH] Handling event persist for sub_id={}, event_id={}", sub_id, fb_event.id());
-        
+        info!(
+            "[PUBLISH] Handling event persist for sub_id={}, event_id={}",
+            sub_id,
+            fb_event.id()
+        );
+
         // NOTE: Persist is disabled for publish path - event will be stored when it comes back from relays
         // This avoids duplicate storage and lets the normal ingestion path handle it
         // let store_result = database.add_event_from_fb(fb_event).await;
@@ -302,11 +307,14 @@ impl Caching {
             .determine_target_relays(fb_event)
             .await
             .unwrap_or_default();
-        
+
         info!("[PUBLISH] Determined {} relays from database", relays.len());
 
         if let Some(rs) = relay_hints {
-            info!("[PUBLISH] Adding {} relay hints from CacheRequest", rs.len());
+            info!(
+                "[PUBLISH] Adding {} relay hints from CacheRequest",
+                rs.len()
+            );
             for i in 0..rs.len() as usize {
                 relays.push(rs.get(i).to_string());
             }

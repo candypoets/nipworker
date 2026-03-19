@@ -138,7 +138,10 @@ impl NetworkManager {
         sid: String,
         fb_bytes_arc: Arc<Vec<u8>>,
     ) {
-        info!("[handle_message_single] Processing message for sub_id={}", sid);
+        info!(
+            "[handle_message_single] Processing message for sub_id={}",
+            sid
+        );
         let wm = match flatbuffers::root::<fb::WorkerMessage>(&fb_bytes_arc) {
             Ok(w) => w,
             Err(_) => {
@@ -185,7 +188,10 @@ impl NetworkManager {
                         warn!("Auth needed on relay {:?}", url);
                     }
                     "EOSE" => {
-                        info!("[network] Received EOSE for sub_id={} from relay={}", sid, url);
+                        info!(
+                            "[network] Received EOSE for sub_id={} from relay={}",
+                            sid, url
+                        );
                         // Flush the pipeline and notify it of EOSE
                         let flushed_outputs = {
                             let mut pipeline_guard = pipeline_arc.lock().await;
@@ -420,7 +426,10 @@ impl NetworkManager {
                     let batch = std::mem::take(&mut local_batch);
                     // Log the batch contents
                     for (sid, _bytes, _source, _span) in &batch {
-                        info!("[shard {}] Processing message for sub_id={}", shard_idx, sid);
+                        info!(
+                            "[shard {}] Processing message for sub_id={}",
+                            shard_idx, sid
+                        );
                     }
                     // Extract sub_id, bytes, and span for processing
                     let processed_batch: Vec<(String, std::sync::Arc<Vec<u8>>, tracing::Span)> =
@@ -473,7 +482,8 @@ impl NetworkManager {
         spawn_local(async move {
             use futures::select;
 
-            let mut from_connections = from_connections.fuse();
+            // DEBUG: from_connections disabled
+            // let mut from_connections = from_connections.fuse();
             let mut from_cache = from_cache.fuse();
 
             // Helper: compute shard index + lane membership.
@@ -503,6 +513,7 @@ impl NetworkManager {
             };
 
             loop {
+                // DEBUG: Disabled from_connections channel
                 let bytes_result = select! {
                     bytes = from_connections.next() => {
                         bytes.map(|b| (b, ShardSource::Network))
@@ -526,14 +537,20 @@ impl NetworkManager {
 
                                 let sid = wm.sub_id().unwrap_or("").to_string();
                                 let msg_type = wm.type_();
-                                info!("[network] Received from network: type={:?}, sub_id={}", msg_type, sid);
+                                info!(
+                                    "[network] Received from network: type={:?}, sub_id={}",
+                                    msg_type, sid
+                                );
                                 if sid.is_empty() {
                                     warn!("Invalid message: Missing sub_id");
                                     continue;
                                 }
 
                                 let (shard_idx, is_slow_lane) = compute_shard(&sid, &subs);
-                                info!("[network] Dispatching to shard {} (slow={}): sub_id={}", shard_idx, is_slow_lane, sid);
+                                info!(
+                                    "[network] Dispatching to shard {} (slow={}): sub_id={}",
+                                    shard_idx, is_slow_lane, sid
+                                );
                                 let sub_span = info_span!("sub_request", sub_id = %sid);
                                 let task: ShardTask =
                                     (sid, Arc::new(bytes), ShardSource::Network, sub_span);

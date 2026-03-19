@@ -311,6 +311,7 @@ impl<S: EventStorage> NostrDB<S> {
             let mut P_tags: Vec<String> = Vec::new();
             let mut a_tags: Vec<String> = Vec::new();
             let mut d_tags: Vec<String> = Vec::new();
+            let mut q_tags: Vec<String> = Vec::new();
 
             for i in 0..tags_vec.len() {
                 let sv = tags_vec.get(i);
@@ -329,6 +330,7 @@ impl<S: EventStorage> NostrDB<S> {
                             "P" => P_tags.extend(values),
                             "a" => a_tags.extend(values),
                             "d" => d_tags.extend(values),
+                            "q" => q_tags.extend(values),
                             _ => { /* ignore unknown filter tags */ }
                         }
                     }
@@ -351,6 +353,9 @@ impl<S: EventStorage> NostrDB<S> {
             }
             if !d_tags.is_empty() {
                 f.d_tags = Some(d_tags);
+            }
+            if !q_tags.is_empty() {
+                f.q_tags = Some(q_tags);
             }
         }
 
@@ -628,6 +633,15 @@ impl<S: EventStorage> NostrDB<S> {
                                 .or_insert_with(FxHashSet::default)
                                 .insert(event_id.to_string());
                         }
+                        "q" => {
+                            // q tag (quote/citation)
+                            self.indexes
+                                .events_by_q_tag
+                                .borrow_mut()
+                                .entry(tag_value.to_string())
+                                .or_insert_with(FxHashSet::default)
+                                .insert(event_id.to_string());
+                        }
                         _ => {}
                     }
                 }
@@ -714,6 +728,15 @@ impl<S: EventStorage> NostrDB<S> {
                         "d" => {
                             self.indexes
                                 .events_by_d_tag
+                                .borrow_mut()
+                                .entry(tag_value.to_string())
+                                .or_insert_with(FxHashSet::default)
+                                .insert(event_id.to_string());
+                        }
+                        "q" => {
+                            // q tag (quote/citation)
+                            self.indexes
+                                .events_by_q_tag
                                 .borrow_mut()
                                 .entry(tag_value.to_string())
                                 .or_insert_with(FxHashSet::default)
@@ -834,6 +857,18 @@ impl<S: EventStorage> NostrDB<S> {
             let mut tag_events = FxHashSet::default();
             for tag in d_tags {
                 if let Some(event_ids) = self.indexes.events_by_d_tag.borrow().get(tag) {
+                    tag_events.extend(event_ids.iter().cloned());
+                }
+            }
+            candidate_sets.push(tag_events);
+            use_full_scan = false;
+        }
+
+        // Filter by q_tags (quote/citation)
+        if let Some(q_tags) = &filter.q_tags {
+            let mut tag_events = FxHashSet::default();
+            for tag in q_tags {
+                if let Some(event_ids) = self.indexes.events_by_q_tag.borrow().get(tag) {
                     tag_events.extend(event_ids.iter().cloned());
                 }
             }

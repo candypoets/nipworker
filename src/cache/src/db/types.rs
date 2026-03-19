@@ -45,6 +45,7 @@ pub struct QueryFilter {
     pub P_tags: Option<Vec<String>>, // uppercase P (NIP-22)
     pub a_tags: Option<Vec<String>>,
     pub d_tags: Option<Vec<String>>,
+    pub q_tags: Option<Vec<String>>, // q tag (quote/citation)
     pub since: Option<u32>, // use u32 (fb since/until are i32)
     pub until: Option<u32>,
     pub limit: Option<usize>,
@@ -63,6 +64,7 @@ impl QueryFilter {
             P_tags: None,
             a_tags: None,
             d_tags: None,
+            q_tags: None,
             since: None,
             until: None,
             limit: None,
@@ -142,6 +144,7 @@ pub struct DatabaseIndexes {
     pub events_by_P_tag: TagIndex,  // uppercase P (NIP-22)
     pub events_by_a_tag: TagIndex,
     pub events_by_d_tag: TagIndex,
+    pub events_by_q_tag: TagIndex,  // q tag (quote/citation)
     // pub profiles_by_pubkey: ProfileIndex,
     // pub relays_by_pubkey: RelayIndex,
 }
@@ -159,6 +162,7 @@ impl DatabaseIndexes {
             events_by_P_tag: Rc::new(RefCell::new(FxHashMap::default())),
             events_by_a_tag: Rc::new(RefCell::new(FxHashMap::default())),
             events_by_d_tag: Rc::new(RefCell::new(FxHashMap::default())),
+            events_by_q_tag: Rc::new(RefCell::new(FxHashMap::default())),
             // profiles_by_pubkey: Rc::new(RefCell::new(FxHashMap::default())),
             // relays_by_pubkey: Rc::new(RefCell::new(FxHashMap::default())),
         }
@@ -175,6 +179,7 @@ impl DatabaseIndexes {
         self.events_by_P_tag.borrow_mut().clear();
         self.events_by_a_tag.borrow_mut().clear();
         self.events_by_d_tag.borrow_mut().clear();
+        self.events_by_q_tag.borrow_mut().clear();
         // self.profiles_by_pubkey.borrow_mut().clear();
         // self.relays_by_pubkey.borrow_mut().clear();
     }
