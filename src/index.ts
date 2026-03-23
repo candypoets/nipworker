@@ -255,7 +255,9 @@ export class NostrManager {
 				}
 			}
 			const hasSigner = msg.ok && !!this._pendingSession;
-			this.dispatch('auth', { pubkey: this.activePubkey, hasSigner });
+			// Include secret key for privkey signers so app can display nsec
+			const secretKey = this._pendingSession?.type === 'privkey' ? this._pendingSession.payload : undefined;
+			this.dispatch('auth', { pubkey: this.activePubkey, hasSigner, secretKey });
 		} else if (msg.op === 'sign_event' && msg.ok) {
 			const parsed = JSON.parse(msg.result);
 			this.signCB(parsed);
@@ -289,25 +291,28 @@ export class NostrManager {
 				this.activePubkey = msg.pubkey;
 
 				// For NIP-46, use the bunker_url from the message (covers both QR and bunker flows)
-				if (
-					msg.signer_type === 'nip46' &&
-					msg.bunker_url &&
-					this._pendingSession?.payload?.clientSecret
-				) {
+					if (
+						msg.signer_type === 'nip46' &&
+						msg.bunker_url &&
+						this._pendingSession?.payload?.clientSecret
+					) {
 					console.log('[main] NIP-46 session saved for:', msg.pubkey);
 					this.saveSession(msg.pubkey, 'nip46', {
 						url: msg.bunker_url,
 						clientSecret: this._pendingSession.payload.clientSecret
-					});
-					this._pendingSession = null;
-				} else if (this._pendingSession) {
-					// Normal session save (privkey, nip07)
-					this.saveSession(msg.pubkey, msg.signer_type, this._pendingSession.payload);
-					this._pendingSession = null;
+						});
+						this._pendingSession = null;
+					}
+					// Include secret key for privkey signers so app can display nsec
+					const secretKey = this._pendingSession?.type === 'privkey' ? this._pendingSession.payload : undefined;
+					if (this._pendingSession) {
+						// Normal session save (privkey, nip07)
+						this.saveSession(msg.pubkey, msg.signer_type, this._pendingSession.payload);
+						this._pendingSession = null;
+					}
+					this.dispatch('auth', { pubkey: msg.pubkey, hasSigner: true, secretKey });
+					return;
 				}
-				this.dispatch('auth', { pubkey: msg.pubkey, hasSigner: true });
-				return;
-			}
 
 			// Handle control responses (get_pubkey, sign_event, etc.)
 			if (msg?.type === 'response') {

@@ -138,6 +138,8 @@ export function usePublish(
 		return () => {};
 	}
 
+	options = { trackStatus: true, ...options };
+
 	let buffer: ArrayBuffer | null = null;
 	let lastReadPos: number = 4;
 	let running = true;

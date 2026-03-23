@@ -483,7 +483,7 @@ impl NetworkManager {
             use futures::select;
 
             // DEBUG: from_connections disabled
-            // let mut from_connections = from_connections.fuse();
+            let mut from_connections = from_connections.fuse();
             let mut from_cache = from_cache.fuse();
 
             // Helper: compute shard index + lane membership.

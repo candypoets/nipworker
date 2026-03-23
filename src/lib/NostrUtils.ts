@@ -15,6 +15,178 @@
 import { nip19 } from 'nostr-tools';
 
 export type NostrTag = [string, ...string[]];
+export type StringVecLike = {
+	items(index: number): string | Uint8Array | null;
+	itemsLength(): number;
+};
+export type StringVecObjectLike = {
+	items: readonly (string | Uint8Array)[];
+};
+export type TagLike = NostrTag | StringVecLike | StringVecObjectLike;
+export type TagMatchOptions = {
+	where?: (tag: readonly string[]) => boolean;
+};
+export type TagCollectionLike =
+	| readonly TagLike[]
+	| {
+			tags(index: number): TagLike | null;
+			tagsLength(): number;
+	  };
+
+const textDecoder = new TextDecoder();
+
+function toUtf8String(value: string | Uint8Array | null | undefined): string | undefined {
+	if (typeof value === 'string') return value;
+	if (value instanceof Uint8Array) return textDecoder.decode(value);
+	return undefined;
+}
+
+/**
+ * Normalize a FlatBuffers `StringVec`, `StringVecT`, or `NostrTag`-style array
+ * into a plain string array.
+ */
+export function readStringVec(vec: TagLike): string[] {
+	if (Array.isArray(vec)) {
+		return vec.filter((item): item is string => typeof item === 'string');
+	}
+	if ('itemsLength' in vec && typeof vec.itemsLength === 'function') {
+		const out: string[] = [];
+		for (let i = 0; i < vec.itemsLength(); i++) {
+			const item = toUtf8String(vec.items(i));
+			if (item !== undefined) out.push(item);
+		}
+		return out;
+	}
+	if ('items' in vec) {
+		return vec.items.flatMap((item) => {
+			const value = toUtf8String(item);
+			return value ? [value] : [];
+		});
+	}
+	return [];
+}
+
+function matchesTag(tag: readonly string[], key: string, options?: TagMatchOptions): boolean {
+	if (tag[0] !== key) return false;
+	return options?.where ? options.where(tag) : true;
+}
+
+/**
+ * Read a single tag from either a tag collection or a concrete tag vector.
+ * If the source is a collection, this returns the first matching tag vector.
+ */
+export function extractTag(
+	source: TagCollectionLike,
+	key: string,
+	options?: TagMatchOptions
+): string[] | undefined {
+	if (Array.isArray(source)) {
+		for (const tag of source) {
+			const items = readStringVec(tag);
+			if (matchesTag(items, key, options)) {
+				return items;
+			}
+		}
+		return undefined;
+	}
+
+	for (let i = 0; i < source.tagsLength(); i++) {
+		const tag = source.tags(i);
+		if (!tag) continue;
+		const items = readStringVec(tag);
+		if (matchesTag(items, key, options)) {
+			return items;
+		}
+	}
+
+	return undefined;
+}
+
+/**
+ * Return the first value for a tag key, e.g. `extractTagValue(tags, 'd')`.
+ */
+export function extractTagValue(
+	source: TagCollectionLike,
+	key: string,
+	valueIndexOrOptions: number | TagMatchOptions = 1,
+	options?: TagMatchOptions
+): string | undefined {
+	const valueIndex = typeof valueIndexOrOptions === 'number' ? valueIndexOrOptions : 1;
+	const tagOptions = typeof valueIndexOrOptions === 'number' ? options : valueIndexOrOptions;
+	return extractTag(source, key, tagOptions)?.[valueIndex];
+}
+
+/**
+ * Return every value for a tag key across the collection.
+ * This is useful for multi-value tags like `e`, `p`, or `t`.
+ */
+export function extractTagValues(
+	source: TagCollectionLike,
+	key: string,
+	valueIndexOrOptions: number | TagMatchOptions = 1,
+	options?: TagMatchOptions
+): string[] {
+	const valueIndex = typeof valueIndexOrOptions === 'number' ? valueIndexOrOptions : 1;
+	const tagOptions = typeof valueIndexOrOptions === 'number' ? options : valueIndexOrOptions;
+	const values: string[] = [];
+
+	if (Array.isArray(source)) {
+		for (const tag of source) {
+			const items = readStringVec(tag);
+			if (matchesTag(items, key, tagOptions) && items[valueIndex] !== undefined) {
+				values.push(items[valueIndex]!);
+			}
+		}
+		return values;
+	}
+
+	for (let i = 0; i < source.tagsLength(); i++) {
+		const tag = source.tags(i);
+		if (!tag) continue;
+		const items = readStringVec(tag);
+		if (matchesTag(items, key, tagOptions) && items[valueIndex] !== undefined) {
+			values.push(items[valueIndex]!);
+		}
+	}
+
+	return values;
+}
+
+/**
+ * Convert a tag collection into a lookup table of key -> values.
+ */
+export function extractTagMap(
+	source: TagCollectionLike,
+	options?: TagMatchOptions
+): Record<string, string[]> {
+	const tags = new Map<string, string[]>();
+
+	if (Array.isArray(source)) {
+		for (const tag of source) {
+			const items = readStringVec(tag);
+			if (items.length < 2) continue;
+			const key = items[0]!;
+			if (!matchesTag(items, key, options)) continue;
+			const values = tags.get(key) || [];
+			values.push(...items.slice(1));
+			tags.set(key, values);
+		}
+	} else {
+		for (let i = 0; i < source.tagsLength(); i++) {
+			const tag = source.tags(i);
+			if (!tag) continue;
+			const items = readStringVec(tag);
+			if (items.length < 2) continue;
+			const key = items[0]!;
+			if (!matchesTag(items, key, options)) continue;
+			const values = tags.get(key) || [];
+			values.push(...items.slice(1));
+			tags.set(key, values);
+		}
+	}
+
+	return Object.fromEntries(tags);
+}
 
 /* ---------------------------- NIP-19 naddr helpers --------------------------- */
 
