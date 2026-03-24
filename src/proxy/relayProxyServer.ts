@@ -6,6 +6,7 @@ import type { IncomingMessage } from 'http';
 import type { Duplex } from 'stream';
 import * as flatbuffers from 'flatbuffers';
 import { WebSocket, WebSocketServer } from 'ws';
+import { SocksProxyAgent } from 'socks-proxy-agent';
 import {
 	ConnectionStatus,
 	Message,
@@ -23,6 +24,8 @@ export type RelayProxyServerOptions = {
 	port?: number;
 	path?: string;
 	logger?: RelayProxyServerLogger;
+	/** SOCKS proxy URL for connecting to .onion relays (e.g., 'socks5h://127.0.0.1:9050') */
+	torSocksProxy?: string;
 };
 
 export type RelayProxyServer = {
@@ -36,6 +39,8 @@ export type AttachRelayProxyOptions = {
 	/** The path to mount the WebSocket endpoint on (e.g., '/ws-proxy') */
 	path?: string;
 	logger?: RelayProxyServerLogger;
+	/** SOCKS proxy URL for connecting to .onion relays (e.g., 'socks5h://127.0.0.1:9050') */
+	torSocksProxy?: string;
 };
 
 export type AttachedRelayProxy = {
@@ -81,6 +86,9 @@ type Session = {
 	pendingFrames: Map<string, string[]>;
 	dedupBySubId: Map<string, Set<string>>;
 	lastSubIdByRelay: Map<string, string>;
+	torSocksProxy?: string;
+	// Rate limiting for AUTH challenges per relay
+	lastAuthChallenge: Map<string, { challenge: string; timestamp: number }>;
 };
 
 type SubscriptionFrameState = {
@@ -97,6 +105,7 @@ export function createRelayProxyServer(options: RelayProxyServerOptions = {}): R
 	const port = options.port ?? 7777;
 	const path = options.path ?? '/';
 	const logger = options.logger ?? console;
+	const torSocksProxy = options.torSocksProxy;
 
 	let wss: WebSocketServer;
 	try {
@@ -128,7 +137,9 @@ export function createRelayProxyServer(options: RelayProxyServerOptions = {}): R
 			relaySockets: new Map(),
 			pendingFrames: new Map(),
 			dedupBySubId: new Map(),
-			lastSubIdByRelay: new Map()
+			lastSubIdByRelay: new Map(),
+			torSocksProxy,
+			lastAuthChallenge: new Map()
 		};
 
 		clientSocket.on('message', (data, isBinary) => {
@@ -196,6 +207,7 @@ export function createRelayProxyWebSocketServer(
 ): WebSocketRelayProxy {
 	const path = options.path ?? '/';
 	const logger = options.logger ?? console;
+	const torSocksProxy = options.torSocksProxy;
 
 	// Create WebSocket server with noServer mode to handle upgrades manually
 	const wss = new WebSocketServer({
@@ -209,7 +221,8 @@ export function createRelayProxyWebSocketServer(
 			relaySockets: new Map(),
 			pendingFrames: new Map(),
 			dedupBySubId: new Map(),
-			lastSubIdByRelay: new Map()
+			lastSubIdByRelay: new Map(),
+			torSocksProxy
 		};
 		sessions.set(clientSocket, session);
 
@@ -292,7 +305,7 @@ export function createRelayProxyWebSocketServer(
  * server.listen(3000);
  */
 export function attachRelayProxyToServer(options: AttachRelayProxyOptions): AttachedRelayProxy {
-	const { server, path = '/', logger = console } = options;
+	const { server, path = '/', logger = console, torSocksProxy } = options;
 
 	const wss = new WebSocketServer({
 		server,
@@ -304,7 +317,8 @@ export function attachRelayProxyToServer(options: AttachRelayProxyOptions): Atta
 			relaySockets: new Map(),
 			pendingFrames: new Map(),
 			dedupBySubId: new Map(),
-			lastSubIdByRelay: new Map()
+			lastSubIdByRelay: new Map(),
+			torSocksProxy
 		};
 
 		clientSocket.on('message', (data, isBinary) => {
@@ -376,6 +390,7 @@ export function createExpressRelayProxyMiddleware<
 >(app: T, options: Omit<AttachRelayProxyOptions, 'server'>): AttachedRelayProxy {
 	const path = options.path ?? '/ws-proxy';
 	const logger = options.logger ?? console;
+	const torSocksProxy = options.torSocksProxy;
 
 	// Store reference to the server once it's created
 	let wss: WebSocketServer | null = null;
@@ -396,7 +411,8 @@ export function createExpressRelayProxyMiddleware<
 				relaySockets: new Map(),
 				pendingFrames: new Map(),
 				dedupBySubId: new Map(),
-				lastSubIdByRelay: new Map()
+				lastSubIdByRelay: new Map(),
+				torSocksProxy
 			};
 			sessions.set(clientSocket, session);
 
@@ -531,12 +547,22 @@ function ensureRelaySocket(
 	// Add default Origin header - many relays (like nostr.wine) require this
 	const url = new URL(relayUrl);
 	const origin = `${url.protocol}//${url.host}`;
-	const upstream = new WebSocket(relayUrl, {
+	
+	// Check if this is an .onion relay and we have a Tor SOCKS proxy configured
+	const isOnion = url.hostname.endsWith('.onion');
+	const wsOptions: WebSocket.ClientOptions = {
 		headers: {
 			'Origin': origin,
 			'User-Agent': 'nipworker/0.91.0'
 		}
-	});
+	};
+	
+	if (isOnion && session.torSocksProxy) {
+		logger.info(`[relay-proxy] using Tor SOCKS proxy ${session.torSocksProxy} for ${relayUrl}`);
+		wsOptions.agent = new SocksProxyAgent(session.torSocksProxy);
+	}
+	
+	const upstream = new WebSocket(relayUrl, wsOptions);
 	session.relaySockets.set(relayUrl, upstream);
 	session.pendingFrames.set(relayUrl, []);
 
@@ -706,6 +732,24 @@ function relayFrameToWorkerMessage(
 
 	if (kind === 'AUTH') {
 		const challenge = frame[1] === undefined ? null : String(frame[1]);
+		const now = Date.now();
+		const lastAuth = session.lastAuthChallenge.get(relayUrl);
+		
+		// Rate limit: max 1 AUTH challenge per 5 seconds per relay
+		// and don't forward duplicate challenges
+		if (lastAuth) {
+			const timeSinceLast = now - lastAuth.timestamp;
+			if (lastAuth.challenge === challenge && timeSinceLast < 5000) {
+				logger?.info(`[relay-proxy] dropping duplicate AUTH from ${relayUrl} (${timeSinceLast}ms ago)`);
+				return null;
+			}
+			if (timeSinceLast < 1000) {
+				logger?.info(`[relay-proxy] rate limiting AUTH from ${relayUrl} (${timeSinceLast}ms since last)`);
+				return null;
+			}
+		}
+		
+		session.lastAuthChallenge.set(relayUrl, { challenge, timestamp: now });
 		logger?.info(`[relay-proxy] received AUTH challenge from ${relayUrl}: ${challenge}`);
 		const msg = buildConnectionStatusWorkerMessage(subIdHint ?? '', relayUrl, 'AUTH', challenge);
 		logger?.info(`[relay-proxy] built AUTH worker message (${msg.length} bytes)`);

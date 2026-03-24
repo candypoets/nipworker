@@ -80,7 +80,7 @@ export default defineConfig({
 		},
 		rollupOptions: {
 			external: (id) => {
-				return ['flatbuffers', 'nostr-tools', 'ws'].includes(id) || id.startsWith('node:');
+				return ['flatbuffers', 'nostr-tools', 'ws', 'socks-proxy-agent'].includes(id) || id.startsWith('node:');
 			},
 			input: {
 				index: resolve(__dirname, 'src/index.ts'),

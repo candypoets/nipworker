@@ -9,7 +9,6 @@ import {
 	SignerResponse,
 	WorkerMessage
 } from '../generated/nostr/fb';
-import type { InitConnectionsMsg } from './types';
 
 const AUTH_REQUEST_ID_MASK = 0x8000000000000000n;
 const TEXT_DECODER = new TextDecoder();
@@ -71,6 +70,8 @@ class ProxyRuntime {
 	private authCounter = 1n;
 	private readonly workerMessageView = new WorkerMessage();
 	private readonly connectionStatusView = new ConnectionStatus();
+	// Track challenges we've already responded to (NIP-42 dedup)
+	private respondedChallenges = new Set<string>();
 
 	constructor(
 		private readonly proxyUrl: string,
@@ -202,13 +203,27 @@ class ProxyRuntime {
 			return;
 		}
 
+		// Deduplicate - don't respond to same challenge twice
+		const challengeKey = `${relay}:${challenge}`;
+		if (this.respondedChallenges.has(challengeKey)) {
+			console.log('[proxy] already responded to challenge:', challengeKey);
+			return;
+		}
+		this.respondedChallenges.add(challengeKey);
+		
+		// Clean up old challenges (keep last 100)
+		if (this.respondedChallenges.size > 100) {
+			const toDelete = Array.from(this.respondedChallenges).slice(0, 50);
+			toDelete.forEach(k => this.respondedChallenges.delete(k));
+		}
+
 		const requestId = this.authCounter | AUTH_REQUEST_ID_MASK;
 		this.authCounter += 1n;
 
 		const payload = JSON.stringify({
 			challenge,
 			relay,
-			created_at: Date.now()
+			created_at: Math.floor(Date.now() / 1000) // Nostr uses seconds, not milliseconds
 		});
 
 		const request = new SignerRequestT(requestId, SignerOp.AuthEvent, payload, null, null, null);

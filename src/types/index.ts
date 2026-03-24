@@ -70,6 +70,8 @@ export type SubscriptionConfig = {
 
 export type ProxyConfig = {
 	url: string;
+	/** SOCKS proxy URL for connecting to .onion relays (e.g., 'socks5h://127.0.0.1:9050') */
+	torSocksProxy?: string;
 };
 
 export type NostrManagerConfig = {
