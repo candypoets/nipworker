@@ -87,8 +87,6 @@ type Session = {
 	dedupBySubId: Map<string, Set<string>>;
 	lastSubIdByRelay: Map<string, string>;
 	torSocksProxy?: string;
-	// Rate limiting for AUTH challenges per relay
-	lastAuthChallenge: Map<string, { challenge: string; timestamp: number }>;
 };
 
 type SubscriptionFrameState = {
@@ -138,8 +136,7 @@ export function createRelayProxyServer(options: RelayProxyServerOptions = {}): R
 			pendingFrames: new Map(),
 			dedupBySubId: new Map(),
 			lastSubIdByRelay: new Map(),
-			torSocksProxy,
-			lastAuthChallenge: new Map()
+			torSocksProxy
 		};
 
 		clientSocket.on('message', (data, isBinary) => {
@@ -732,24 +729,6 @@ function relayFrameToWorkerMessage(
 
 	if (kind === 'AUTH') {
 		const challenge = frame[1] === undefined ? null : String(frame[1]);
-		const now = Date.now();
-		const lastAuth = session.lastAuthChallenge.get(relayUrl);
-		
-		// Rate limit: max 1 AUTH challenge per 5 seconds per relay
-		// and don't forward duplicate challenges
-		if (lastAuth) {
-			const timeSinceLast = now - lastAuth.timestamp;
-			if (lastAuth.challenge === challenge && timeSinceLast < 5000) {
-				logger?.info(`[relay-proxy] dropping duplicate AUTH from ${relayUrl} (${timeSinceLast}ms ago)`);
-				return null;
-			}
-			if (timeSinceLast < 1000) {
-				logger?.info(`[relay-proxy] rate limiting AUTH from ${relayUrl} (${timeSinceLast}ms since last)`);
-				return null;
-			}
-		}
-		
-		session.lastAuthChallenge.set(relayUrl, { challenge, timestamp: now });
 		logger?.info(`[relay-proxy] received AUTH challenge from ${relayUrl}: ${challenge}`);
 		const msg = buildConnectionStatusWorkerMessage(subIdHint ?? '', relayUrl, 'AUTH', challenge);
 		logger?.info(`[relay-proxy] built AUTH worker message (${msg.length} bytes)`);
