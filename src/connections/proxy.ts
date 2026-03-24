@@ -180,7 +180,8 @@ class ProxyRuntime {
 
 			if (isAuthStatus(status)) {
 				const challenge = readString(content?.message(flatbuffers.Encoding.UTF8_BYTES));
-				this.forwardAuthChallenge(challenge, readString(relayUrl));
+				const relay = readString(relayUrl);
+				this.forwardAuthChallenge(challenge, relay);
 				return;
 			}
 
@@ -197,7 +198,9 @@ class ProxyRuntime {
 	}
 
 	private forwardAuthChallenge(challenge: string, relay: string) {
-		if (!challenge || !relay) return;
+		if (!challenge || !relay) {
+			return;
+		}
 
 		const requestId = this.authCounter | AUTH_REQUEST_ID_MASK;
 		this.authCounter += 1n;
@@ -250,28 +253,24 @@ class ProxyRuntime {
 
 let proxyRuntime: ProxyRuntime | null = null;
 
-self.addEventListener(
-	'message',
-	(evt: MessageEvent<InitConnectionsMsg | { type: 'wake' } | string>) => {
-		const msg = evt.data;
-
-		if (msg?.type === 'init') {
-			const { mainPort, cachePort, parserPort, cryptoPort, proxy } = msg.payload;
-			if (!proxy?.url) {
-				return;
-			}
-			proxyRuntime = new ProxyRuntime(proxy.url, mainPort, cachePort, parserPort, cryptoPort);
-			proxyRuntime.start();
+self.addEventListener('message', (evt: MessageEvent<any | { type: 'wake' } | string>) => {
+	const msg = evt.data;
+	if (msg?.type === 'init') {
+		const { mainPort, cachePort, parserPort, cryptoPort, proxy } = msg.payload;
+		if (!proxy?.url) {
 			return;
 		}
-
-		// Optional: wake signal; the proxy loops are event-driven, so this is a no-op.
-		if (msg?.type === 'wake') {
-			return;
-		}
-
-		if (typeof msg === 'string') {
-			proxyRuntime?.close(msg);
-		}
+		proxyRuntime = new ProxyRuntime(proxy.url, mainPort, cachePort, parserPort, cryptoPort);
+		proxyRuntime.start();
+		return;
 	}
-);
+
+	// Optional: wake signal; the proxy loops are event-driven, so this is a no-op.
+	if (msg?.type === 'wake') {
+		return;
+	}
+
+	if (typeof msg === 'string') {
+		proxyRuntime?.close(msg);
+	}
+});

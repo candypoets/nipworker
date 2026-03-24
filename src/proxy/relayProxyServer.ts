@@ -145,11 +145,11 @@ export function createRelayProxyServer(options: RelayProxyServerOptions = {}): R
 		});
 
 		clientSocket.on('close', () => {
-			closeSession(session);
+			closeSession(session, logger);
 		});
 
 		clientSocket.on('error', () => {
-			closeSession(session);
+			closeSession(session, logger);
 		});
 	});
 
@@ -232,7 +232,7 @@ export function createRelayProxyWebSocketServer(
 		clientSocket.on('close', () => {
 			const session = sessions.get(clientSocket);
 			if (session) {
-				closeSession(session);
+				closeSession(session, logger);
 				sessions.delete(clientSocket);
 			}
 		});
@@ -240,7 +240,7 @@ export function createRelayProxyWebSocketServer(
 		clientSocket.on('error', () => {
 			const session = sessions.get(clientSocket);
 			if (session) {
-				closeSession(session);
+				closeSession(session, logger);
 				sessions.delete(clientSocket);
 			}
 		});
@@ -263,7 +263,7 @@ export function createRelayProxyWebSocketServer(
 		close: () =>
 			new Promise<void>((resolve, reject) => {
 				// Close all sessions first
-				sessions.forEach((session) => closeSession(session));
+				sessions.forEach((session) => closeSession(session, logger));
 				sessions.clear();
 				wss.close((err) => {
 					if (err) {
@@ -321,11 +321,11 @@ export function attachRelayProxyToServer(options: AttachRelayProxyOptions): Atta
 		});
 
 		clientSocket.on('close', () => {
-			closeSession(session);
+			closeSession(session, logger);
 		});
 
 		clientSocket.on('error', () => {
-			closeSession(session);
+			closeSession(session, logger);
 		});
 	});
 
@@ -419,7 +419,7 @@ export function createExpressRelayProxyMiddleware<
 			clientSocket.on('close', () => {
 				const session = sessions.get(clientSocket);
 				if (session) {
-					closeSession(session);
+					closeSession(session, logger);
 					sessions.delete(clientSocket);
 				}
 			});
@@ -427,7 +427,7 @@ export function createExpressRelayProxyMiddleware<
 			clientSocket.on('error', () => {
 				const session = sessions.get(clientSocket);
 				if (session) {
-					closeSession(session);
+					closeSession(session, logger);
 					sessions.delete(clientSocket);
 				}
 			});
@@ -446,7 +446,7 @@ export function createExpressRelayProxyMiddleware<
 					return;
 				}
 				// Close all sessions first
-				sessions.forEach((session) => closeSession(session));
+				sessions.forEach((session) => closeSession(session, logger));
 				sessions.clear();
 				wss.close((err) => {
 					if (err) {
@@ -460,15 +460,19 @@ export function createExpressRelayProxyMiddleware<
 }
 
 function handleClientCommand(session: Session, text: string, logger: RelayProxyServerLogger) {
+	logger.info(`[relay-proxy] handleClientCommand: ${text.slice(0, 200)}`);
 	let command: unknown;
 	try {
 		command = JSON.parse(text);
-	} catch {
+	} catch (err) {
+		logger.warn(`[relay-proxy] failed to parse command JSON: ${err}`);
 		return;
 	}
 
 	if (isAuthResponseCommand(command)) {
+		logger.info(`[relay-proxy] received auth_response for relay: ${command.relay}`);
 		const frame = JSON.stringify(['AUTH', command.event]);
+		logger.info(`[relay-proxy] sending AUTH frame to relay: ${command.relay}`);
 		sendFrameToRelay(session, command.relay, frame, logger);
 		return;
 	}
@@ -490,16 +494,22 @@ function handleEnvelope(
 	envelope: Envelope,
 	logger: RelayProxyServerLogger
 ) {
+	logger.info(`[relay-proxy] handleEnvelope: ${envelope.relays.length} relays, ${envelope.frames.length} frames`);
+	logger.info(`[relay-proxy] relays: ${envelope.relays.join(', ')}`);
+	
 	const trackedFrames = envelope.frames.map((frame) => ({
 		frame,
 		state: parseSubscriptionFrameState(frame)
 	}));
+	logger.info(`[relay-proxy] tracked ${trackedFrames.length} frames`);
 
 	for (const relay of envelope.relays) {
+		logger.info(`[relay-proxy] processing relay: ${relay}`);
 		ensureRelaySocket(session, clientSocket, relay, logger);
 		for (const tracked of trackedFrames) {
 			trackSubscriptionState(session, relay, tracked.state);
 			const frame = tracked.frame;
+			logger.info(`[relay-proxy] sending frame to ${relay}: ${frame.slice(0, 100)}`);
 			sendFrameToRelay(session, relay, frame, logger);
 		}
 	}
@@ -512,15 +522,32 @@ function ensureRelaySocket(
 	logger: RelayProxyServerLogger
 ) {
 	const existing = session.relaySockets.get(relayUrl);
-	if (existing && existing.readyState !== WebSocket.CLOSED) return;
+	if (existing && existing.readyState !== WebSocket.CLOSED) {
+		logger.info(`[relay-proxy] reusing existing connection to ${relayUrl}`);
+		return;
+	}
 
-	const upstream = new WebSocket(relayUrl);
+	logger.info(`[relay-proxy] creating new WebSocket connection to ${relayUrl}`);
+	// Add default Origin header - many relays (like nostr.wine) require this
+	const url = new URL(relayUrl);
+	const origin = `${url.protocol}//${url.host}`;
+	const upstream = new WebSocket(relayUrl, {
+		headers: {
+			'Origin': origin,
+			'User-Agent': 'nipworker/0.91.0'
+		}
+	});
 	session.relaySockets.set(relayUrl, upstream);
 	session.pendingFrames.set(relayUrl, []);
 
+	// Track connection start time for debugging
+	const connectStart = Date.now();
+
 	upstream.on('open', () => {
+		logger.info(`[relay-proxy] connected to ${relayUrl}`);
 		const pending = session.pendingFrames.get(relayUrl);
 		if (!pending) return;
+		logger.info(`[relay-proxy] sending ${pending.length} pending frames to ${relayUrl}`);
 		for (const frame of pending) {
 			upstream.send(frame);
 		}
@@ -529,14 +556,42 @@ function ensureRelaySocket(
 
 	upstream.on('message', (data) => {
 		const raw = toUtf8(data);
-		if (!raw || clientSocket.readyState !== WebSocket.OPEN) return;
+		logger.info(`[relay-proxy] received from ${relayUrl}: ${raw?.slice(0, 100)}`);
+		if (!raw || clientSocket.readyState !== WebSocket.OPEN) {
+			logger.warn(`[relay-proxy] cannot forward message: raw=${!!raw}, clientOpen=${clientSocket.readyState === WebSocket.OPEN}`);
+			return;
+		}
 		const subIdHint = session.lastSubIdByRelay.get(relayUrl);
-		const workerMessage = relayFrameToWorkerMessage(session, relayUrl, raw, subIdHint);
-		if (!workerMessage) return;
+		const workerMessage = relayFrameToWorkerMessage(session, relayUrl, raw, subIdHint, logger);
+		if (!workerMessage) {
+			logger.warn(`[relay-proxy] failed to convert relay frame to worker message`);
+			return;
+		}
+		logger.info(`[relay-proxy] forwarding ${workerMessage.length} bytes to client`);
 		clientSocket.send(workerMessage, { binary: true });
 	});
 
-	upstream.on('close', () => {
+	upstream.on('close', (code, reason) => {
+		logger.info(`[relay-proxy] connection closed to ${relayUrl} (code: ${code}, reason: ${reason})`);
+		
+		// Notify client of connection failure if we never got an 'open' event
+		// (e.g., 403 forbidden during handshake)
+		if (session.pendingFrames.has(relayUrl) && session.pendingFrames.get(relayUrl)?.length > 0) {
+			const pendingCount = session.pendingFrames.get(relayUrl)?.length ?? 0;
+			logger.warn(`[relay-proxy] connection to ${relayUrl} closed with ${pendingCount} pending frames - subscription may fail`);
+			
+			// Send connection status to client so it knows the relay failed
+			if (clientSocket.readyState === WebSocket.OPEN) {
+				const statusMsg = buildConnectionStatusWorkerMessage(
+					session.lastSubIdByRelay.get(relayUrl) ?? '',
+					relayUrl,
+					'failed',
+					`Connection failed: ${code} ${reason}`
+				);
+				clientSocket.send(statusMsg, { binary: true });
+			}
+		}
+		
 		// Mark as closed but don't delete - ensureRelaySocket will reconnect on next use
 		// This keeps subscriptions alive across reconnects
 		session.pendingFrames.delete(relayUrl);
@@ -546,10 +601,16 @@ function ensureRelaySocket(
 		// Only log the first error per relay to reduce spam
 		if (!session.pendingFrames.has(relayUrl)) return;
 		const errorMsg = String(err);
-		// Skip common repetitive errors
-		if (!errorMsg.includes('ECONNREFUSED') && !errorMsg.includes('ENOTFOUND')) {
-			logger.warn(`[relay-proxy] relay socket error for ${relayUrl}: ${errorMsg.slice(0, 100)}`);
+		const connectTime = Date.now() - connectStart;
+		
+		// Log all errors with more detail
+		logger.warn(`[relay-proxy] relay socket error for ${relayUrl} after ${connectTime}ms: ${errorMsg}`);
+		
+		// If 403, the relay is blocking us - could be missing NIP-42, bad headers, or IP block
+		if (errorMsg.includes('403')) {
+			logger.warn(`[relay-proxy] 403 Forbidden from ${relayUrl} - relay may require NIP-42 auth or block this connection`);
 		}
+		
 		session.pendingFrames.delete(relayUrl);
 	});
 }
@@ -587,28 +648,34 @@ function sendFrameToRelay(
 	logger: RelayProxyServerLogger
 ) {
 	const relaySocket = session.relaySockets.get(relayUrl);
-	if (!relaySocket) return;
+	if (!relaySocket) {
+		logger.warn(`[relay-proxy] no relay socket for ${relayUrl}`);
+		return;
+	}
 
 	if (relaySocket.readyState === WebSocket.OPEN) {
+		logger.info(`[relay-proxy] sending frame to ${relayUrl} (OPEN): ${frame.slice(0, 100)}`);
 		relaySocket.send(frame);
 		return;
 	}
 
 	if (relaySocket.readyState === WebSocket.CONNECTING) {
+		logger.info(`[relay-proxy] queueing frame for ${relayUrl} (CONNECTING)`);
 		const pending = session.pendingFrames.get(relayUrl) ?? [];
 		pending.push(frame);
 		session.pendingFrames.set(relayUrl, pending);
 		return;
 	}
 
-	logger.warn(`[relay-proxy] dropping frame for closed relay socket ${relayUrl}`);
+	logger.warn(`[relay-proxy] dropping frame for closed relay socket ${relayUrl} (state: ${relaySocket.readyState})`);
 }
 
 function relayFrameToWorkerMessage(
 	session: Session,
 	relayUrl: string,
 	rawFrame: string,
-	subIdHint?: string
+	subIdHint?: string,
+	logger?: RelayProxyServerLogger
 ): Uint8Array | null {
 	const frame = parseRelayFrame(rawFrame);
 	if (!frame || frame.length < 1 || typeof frame[0] !== 'string') {
@@ -639,7 +706,10 @@ function relayFrameToWorkerMessage(
 
 	if (kind === 'AUTH') {
 		const challenge = frame[1] === undefined ? null : String(frame[1]);
-		return buildConnectionStatusWorkerMessage(subIdHint ?? '', relayUrl, 'AUTH', challenge);
+		logger?.info(`[relay-proxy] received AUTH challenge from ${relayUrl}: ${challenge}`);
+		const msg = buildConnectionStatusWorkerMessage(subIdHint ?? '', relayUrl, 'AUTH', challenge);
+		logger?.info(`[relay-proxy] built AUTH worker message (${msg.length} bytes)`);
+		return msg;
 	}
 
 	if (kind === 'CLOSED') {
@@ -836,18 +906,30 @@ function parseRelayFrame(rawFrame: string): unknown[] | null {
 	}
 }
 
-function parseEnvelope(data: unknown): Envelope | null {
+function parseEnvelope(data: unknown, logger?: RelayProxyServerLogger): Envelope | null {
 	const text = toUtf8(data);
-	if (!text) return null;
+	logger?.info(`[relay-proxy] parseEnvelope: ${text?.slice(0, 200)}`);
+	if (!text) {
+		logger?.warn('[relay-proxy] parseEnvelope: empty text');
+		return null;
+	}
 
 	try {
 		const parsed = JSON.parse(text) as Partial<Envelope>;
-		if (!Array.isArray(parsed.relays) || !Array.isArray(parsed.frames)) return null;
+		if (!Array.isArray(parsed.relays) || !Array.isArray(parsed.frames)) {
+			logger?.warn(`[relay-proxy] parseEnvelope: invalid structure (relays: ${Array.isArray(parsed.relays)}, frames: ${Array.isArray(parsed.frames)})`);
+			return null;
+		}
 		const relays = parsed.relays.filter((relay): relay is string => typeof relay === 'string');
 		const frames = parsed.frames.filter((frame): frame is string => typeof frame === 'string');
-		if (relays.length === 0 || frames.length === 0) return null;
+		logger?.info(`[relay-proxy] parseEnvelope: ${relays.length} relays, ${frames.length} frames`);
+		if (relays.length === 0 || frames.length === 0) {
+			logger?.warn('[relay-proxy] parseEnvelope: empty relays or frames after filter');
+			return null;
+		}
 		return { relays, frames };
-	} catch {
+	} catch (err) {
+		logger?.warn(`[relay-proxy] parseEnvelope: JSON parse error: ${err}`);
 		return null;
 	}
 }
@@ -879,11 +961,13 @@ function isCloseSubCommand(value: unknown): value is CloseSubCommand {
 	return candidate.type === 'close_sub' && typeof candidate.subscription_id === 'string';
 }
 
-function closeSession(session: Session) {
+function closeSession(session: Session, logger?: RelayProxyServerLogger) {
+	logger?.info('[relay-proxy] closing session');
 	session.dedupBySubId.clear();
 	session.lastSubIdByRelay.clear();
-	for (const socket of session.relaySockets.values()) {
+	for (const [relayUrl, socket] of session.relaySockets.entries()) {
 		try {
+			logger?.info(`[relay-proxy] closing socket to ${relayUrl}`);
 			socket.close();
 		} catch {
 			// Best effort.

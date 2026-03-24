@@ -88,11 +88,21 @@ export function nipworkerRelayProxyPlugin(
 		name: 'nipworker-relay-proxy',
 
 		configureServer: async (_server: ViteDevServer) => {
-			await startRelayProxy(port, host, 'Vite dev');
+			try {
+				await startRelayProxy(port, host, 'Vite dev');
+			} catch (err) {
+				console.error('[nipworker-relay-proxy] Failed to start in dev mode:', err);
+				throw err;
+			}
 		},
 
 		configurePreviewServer: async (_server: PreviewServer) => {
-			await startRelayProxy(port, host, 'Vite preview');
+			try {
+				await startRelayProxy(port, host, 'Vite preview');
+			} catch (err) {
+				console.error('[nipworker-relay-proxy] Failed to start in preview mode:', err);
+				throw err;
+			}
 		}
 	};
 }
