@@ -135,6 +135,13 @@ impl WSRust {
         reg.close_all(sub_id);
     }
 
+    /// Wake all connections: reset backoffs and trigger immediate reconnection.
+    /// Called when app returns from background to foreground.
+    pub fn wake(&self) {
+        info!("[connections] Wake signal received, waking all connections");
+        self.registry.wake_all();
+    }
+
     /// Start the async loop that reads from both receivers using select!
     fn start(
         &self,

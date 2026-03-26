@@ -214,8 +214,53 @@ export class NostrManager {
 		};
 
 		this.setupWorkerListener();
+		this.setupVisibilityTracking();
 		// Defer session restore so callers have time to add auth listeners
 		queueMicrotask(() => this.restoreSession());
+	}
+
+	/**
+	 * Track page visibility changes to handle mobile background/foreground transitions.
+	 * When the app returns to foreground, wake up workers to trigger immediate reconnection.
+	 */
+	private setupVisibilityTracking(): void {
+		if (typeof document === 'undefined') return;
+
+		let wasHidden = false;
+		let hiddenTime = 0;
+
+		document.addEventListener('visibilitychange', () => {
+			if (document.hidden) {
+				wasHidden = true;
+				hiddenTime = Date.now();
+			} else if (wasHidden) {
+				// App is returning to foreground
+				const hiddenDuration = Date.now() - hiddenTime;
+				wasHidden = false;
+
+				console.log(`[main] App returned to foreground after ${hiddenDuration}ms`);
+
+				// Send wake signal to all workers to trigger immediate reconnection
+				// This bypasses the normal reconnect cooldown for better UX
+				this.wakeWorkers();
+			}
+		});
+	}
+
+	/**
+	 * Send wake signal to all workers to trigger immediate reconnection.
+	 * Called when returning from background to foreground.
+	 */
+	private wakeWorkers(): void {
+		console.log('[main] Waking workers for foreground reconnection');
+
+		// Send wake to connections worker (triggers reconnect with backoff reset)
+		this.connections.postMessage({ type: 'wake', source: 'visibility' });
+
+		// Send wake to other workers (they may need to re-initialize state)
+		this.parser.postMessage({ type: 'wake', source: 'visibility' });
+		this.cache.postMessage({ type: 'wake', source: 'visibility' });
+		this.crypto.postMessage({ type: 'wake', source: 'visibility' });
 	}
 
 	private postToWorker(message: any, transfer?: Transferable[]) {
@@ -489,7 +534,12 @@ export class NostrManager {
 		}
 	}
 
-	publish(publish_id: string, event: NostrEvent, defaultRelays: string[] = []): ArrayBuffer {
+	publish(
+		publish_id: string,
+		event: NostrEvent,
+		defaultRelays: string[] = [],
+		optimisticSubIds?: string[]
+	): ArrayBuffer {
 		const buffer = new ArrayBuffer(3072);
 		ArrayBufferReader.initializeBuffer(buffer);
 
@@ -499,7 +549,12 @@ export class NostrManager {
 			this.textEncoder.encode(event.content),
 			event.tags.map((t) => new StringVecT(t)) || []
 		);
-		const publishT = new PublishT(this.textEncoder.encode(publish_id), templateT, defaultRelays);
+		const publishT = new PublishT(
+			this.textEncoder.encode(publish_id),
+			templateT,
+			defaultRelays,
+			optimisticSubIds || []
+		);
 		const mainT = new MainMessageT(MainContent.Publish, publishT);
 		const builder = new flatbuffers.Builder(2048);
 		builder.finish(mainT.pack(builder));

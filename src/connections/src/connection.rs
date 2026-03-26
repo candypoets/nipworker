@@ -767,6 +767,32 @@ impl RelayConnection {
         Ok(())
     }
 
+    /// Wake up this connection: reset backoff and trigger immediate reconnect if needed.
+    /// Called when app returns from background to foreground.
+    pub fn wake(self: &Arc<Self>) {
+        tracing::info!(relay = %self.url, status = ?*self.status.read().unwrap(), "[connections][wake] waking connection");
+
+        // Reset backoff to allow immediate reconnection attempt
+        self.clear_backoff();
+
+        let status = *self.status.read().unwrap();
+        match status {
+            ConnectionStatus::Connected => {
+                tracing::info!(relay = %self.url, "[connections][wake] already connected, nothing to do");
+            }
+            _ => {
+                // Trigger reconnection by attempting connect
+                let conn = Arc::clone(self);
+                spawn_local(async move {
+                    tracing::info!(relay = %conn.url, "[connections][wake] triggering reconnect");
+                    if let Err(e) = conn.connect().await {
+                        tracing::warn!(relay = %conn.url, error = ?e, "[connections][wake] reconnect attempt failed");
+                    }
+                });
+            }
+        }
+    }
+
     // ------------------------------------------------------------------
     // NIP-42 Authentication handling
     // ------------------------------------------------------------------

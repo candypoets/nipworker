@@ -191,6 +191,17 @@ impl ConnectionRegistry {
             });
         }
     }
+
+    /// Wake all connections: reset backoffs and trigger immediate reconnection.
+    /// Called when app returns from background to foreground.
+    pub fn wake_all(&self) {
+        tracing::info!("[connections][wake] Waking all connections");
+        let conns: Vec<Arc<RelayConnection>> =
+            self.connections.read().unwrap().values().cloned().collect();
+        for c in conns {
+            c.wake();
+        }
+    }
 }
 
 impl Clone for ConnectionRegistry {

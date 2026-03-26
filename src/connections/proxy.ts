@@ -72,6 +72,11 @@ class ProxyRuntime {
 	private readonly connectionStatusView = new ConnectionStatus();
 	// Track challenges we've already responded to (NIP-42 dedup)
 	private respondedChallenges = new Set<string>();
+	// Reconnection state
+	private reconnectAttempts = 0;
+	private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+	private readonly maxReconnectDelay = 30000; // Max 30s between reconnection attempts
+	private isManualClose = false;
 
 	constructor(
 		private readonly proxyUrl: string,
@@ -114,10 +119,19 @@ class ProxyRuntime {
 	}
 
 	private openSocket() {
+		// Clear any pending reconnect timeout
+		if (this.reconnectTimeout) {
+			clearTimeout(this.reconnectTimeout);
+			this.reconnectTimeout = null;
+		}
+
 		this.ws = new WebSocket(this.proxyUrl);
 		this.ws.binaryType = 'arraybuffer';
 
 		this.ws.onopen = () => {
+			console.log('[proxy] WebSocket connected');
+			this.reconnectAttempts = 0; // Reset on successful connection
+			this.isManualClose = false;
 			this.postRelayStatus('connected', this.proxyUrl);
 			const queued = this.pendingFrames.splice(0, this.pendingFrames.length);
 			for (const frame of queued) {
@@ -126,11 +140,19 @@ class ProxyRuntime {
 		};
 
 		this.ws.onclose = () => {
+			console.log('[proxy] WebSocket closed, manual:', this.isManualClose);
 			this.postRelayStatus('close', this.proxyUrl);
+			
+			// Only auto-reconnect if not manually closed
+			if (!this.isManualClose) {
+				this.scheduleReconnect();
+			}
 		};
 
 		this.ws.onerror = () => {
+			console.log('[proxy] WebSocket error');
 			this.postRelayStatus('failed', this.proxyUrl);
+			// Error typically followed by close, which will trigger reconnect
 		};
 
 		this.ws.onmessage = async (event: MessageEvent<ArrayBuffer | Blob | string>) => {
@@ -138,6 +160,61 @@ class ProxyRuntime {
 			if (!bytes || bytes.byteLength === 0) return;
 			this.handleProxyMessage(bytes);
 		};
+	}
+
+	/**
+	 * Schedule a reconnection attempt with exponential backoff.
+	 */
+	private scheduleReconnect() {
+		if (this.reconnectTimeout) {
+			return; // Already scheduled
+		}
+
+		// Exponential backoff: 1s, 2s, 4s, 8s, 16s, max 30s
+		const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), this.maxReconnectDelay);
+		this.reconnectAttempts++;
+
+		console.log(`[proxy] Scheduling reconnect attempt ${this.reconnectAttempts} in ${delay}ms`);
+
+		this.reconnectTimeout = setTimeout(() => {
+			this.reconnectTimeout = null;
+			if (this.ws?.readyState !== WebSocket.OPEN && this.ws?.readyState !== WebSocket.CONNECTING) {
+				console.log(`[proxy] Attempting reconnect #${this.reconnectAttempts}`);
+				this.openSocket();
+			}
+		}, delay);
+	}
+
+	/**
+	 * Force an immediate reconnection attempt.
+	 * Called on wake signal from main thread (app returning to foreground).
+	 */
+	forceReconnect() {
+		console.log('[proxy] Force reconnect requested (wake signal)');
+		
+		// Clear any pending reconnect
+		if (this.reconnectTimeout) {
+			clearTimeout(this.reconnectTimeout);
+			this.reconnectTimeout = null;
+		}
+
+		// Reset reconnect attempts for faster reconnection
+		this.reconnectAttempts = 0;
+
+		// Close existing connection if any
+		if (this.ws) {
+			this.isManualClose = true;
+			try {
+				this.ws.close();
+			} catch {
+				// Ignore close errors
+			}
+			this.ws = null;
+		}
+
+		// Open new connection immediately
+		this.isManualClose = false;
+		this.openSocket();
 	}
 
 	private async messageToBytes(payload: ArrayBuffer | Blob | string): Promise<Uint8Array | null> {
@@ -268,7 +345,7 @@ class ProxyRuntime {
 
 let proxyRuntime: ProxyRuntime | null = null;
 
-self.addEventListener('message', (evt: MessageEvent<any | { type: 'wake' } | string>) => {
+self.addEventListener('message', (evt: MessageEvent<any | { type: 'wake'; source?: string } | string>) => {
 	const msg = evt.data;
 	if (msg?.type === 'init') {
 		const { mainPort, cachePort, parserPort, cryptoPort, proxy } = msg.payload;
@@ -280,8 +357,10 @@ self.addEventListener('message', (evt: MessageEvent<any | { type: 'wake' } | str
 		return;
 	}
 
-	// Optional: wake signal; the proxy loops are event-driven, so this is a no-op.
+	// Wake signal: app returning from background, force immediate reconnection
 	if (msg?.type === 'wake') {
+		console.log('[proxy] Wake signal received, source:', msg.source || 'unknown');
+		proxyRuntime?.forceReconnect();
 		return;
 	}
 

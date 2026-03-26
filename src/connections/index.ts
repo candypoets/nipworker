@@ -31,10 +31,12 @@ async function ensureWasm() {
 
 self.addEventListener(
 	'message',
-	async (evt: MessageEvent<InitConnectionsMsg | { type: 'wake' } | string>) => {
+	async (evt: MessageEvent<InitConnectionsMsg | { type: 'wake'; source?: string } | string>) => {
 		const msg = evt.data;
-		if (msg?.type === 'init') {
-			const { mainPort, cachePort, parserPort, cryptoPort } = msg.payload;
+
+		// Handle init message
+		if (typeof msg === 'object' && msg !== null && msg.type === 'init') {
+			const { mainPort, cachePort, parserPort, cryptoPort } = (msg as InitConnectionsMsg).payload;
 			await ensureWasm();
 
 			// Create the Rust worker and start it
@@ -43,8 +45,10 @@ self.addEventListener(
 			return;
 		}
 
-		// Optional: wake signal; the Rust loops are self-driven, so this is a no-op.
-		if (msg?.type === 'wake') {
+		// Wake signal: app returning from background, trigger immediate reconnection
+		if (typeof msg === 'object' && msg !== null && msg.type === 'wake') {
+			console.log('[connections] Wake signal received, waking Rust worker');
+			(instance as any)?.wake?.();
 			return;
 		}
 
