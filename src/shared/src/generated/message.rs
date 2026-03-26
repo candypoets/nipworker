@@ -11174,6 +11174,7 @@ impl<'a> Publish<'a> {
   pub const VT_PUBLISH_ID: flatbuffers::VOffsetT = 4;
   pub const VT_TEMPLATE: flatbuffers::VOffsetT = 6;
   pub const VT_RELAYS: flatbuffers::VOffsetT = 8;
+  pub const VT_OPTIMISTIC_SUBIDS: flatbuffers::VOffsetT = 10;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -11185,6 +11186,7 @@ impl<'a> Publish<'a> {
     args: &'args PublishArgs<'args>
   ) -> flatbuffers::WIPOffset<Publish<'bldr>> {
     let mut builder = PublishBuilder::new(_fbb);
+    if let Some(x) = args.optimistic_subids { builder.add_optimistic_subids(x); }
     if let Some(x) = args.relays { builder.add_relays(x); }
     if let Some(x) = args.template { builder.add_template(x); }
     if let Some(x) = args.publish_id { builder.add_publish_id(x); }
@@ -11204,10 +11206,14 @@ impl<'a> Publish<'a> {
       let x = self.relays();
       x.iter().map(|s| s.to_string()).collect()
     };
+    let optimistic_subids = self.optimistic_subids().map(|x| {
+      x.iter().map(|s| s.to_string()).collect()
+    });
     PublishT {
       publish_id,
       template,
       relays,
+      optimistic_subids,
     }
   }
 
@@ -11232,6 +11238,13 @@ impl<'a> Publish<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>(Publish::VT_RELAYS, None).unwrap()}
   }
+  #[inline]
+  pub fn optimistic_subids(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>(Publish::VT_OPTIMISTIC_SUBIDS, None)}
+  }
 }
 
 impl flatbuffers::Verifiable for Publish<'_> {
@@ -11244,6 +11257,7 @@ impl flatbuffers::Verifiable for Publish<'_> {
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("publish_id", Self::VT_PUBLISH_ID, true)?
      .visit_field::<flatbuffers::ForwardsUOffset<Template>>("template", Self::VT_TEMPLATE, true)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("relays", Self::VT_RELAYS, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("optimistic_subids", Self::VT_OPTIMISTIC_SUBIDS, false)?
      .finish();
     Ok(())
   }
@@ -11252,6 +11266,7 @@ pub struct PublishArgs<'a> {
     pub publish_id: Option<flatbuffers::WIPOffset<&'a str>>,
     pub template: Option<flatbuffers::WIPOffset<Template<'a>>>,
     pub relays: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>,
+    pub optimistic_subids: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>,
 }
 impl<'a> Default for PublishArgs<'a> {
   #[inline]
@@ -11260,6 +11275,7 @@ impl<'a> Default for PublishArgs<'a> {
       publish_id: None, // required field
       template: None, // required field
       relays: None, // required field
+      optimistic_subids: None,
     }
   }
 }
@@ -11280,6 +11296,10 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> PublishBuilder<'a, 'b, A> {
   #[inline]
   pub fn add_relays(&mut self, relays: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<&'b  str>>>) {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Publish::VT_RELAYS, relays);
+  }
+  #[inline]
+  pub fn add_optimistic_subids(&mut self, optimistic_subids: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<&'b  str>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Publish::VT_OPTIMISTIC_SUBIDS, optimistic_subids);
   }
   #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> PublishBuilder<'a, 'b, A> {
@@ -11305,6 +11325,7 @@ impl core::fmt::Debug for Publish<'_> {
       ds.field("publish_id", &self.publish_id());
       ds.field("template", &self.template());
       ds.field("relays", &self.relays());
+      ds.field("optimistic_subids", &self.optimistic_subids());
       ds.finish()
   }
 }
@@ -11314,6 +11335,7 @@ pub struct PublishT {
   pub publish_id: String,
   pub template: Box<TemplateT>,
   pub relays: Vec<String>,
+  pub optimistic_subids: Option<Vec<String>>,
 }
 impl Default for PublishT {
   fn default() -> Self {
@@ -11321,6 +11343,7 @@ impl Default for PublishT {
       publish_id: "".to_string(),
       template: Default::default(),
       relays: Default::default(),
+      optimistic_subids: None,
     }
   }
 }
@@ -11341,10 +11364,14 @@ impl PublishT {
       let x = &self.relays;
       let w: Vec<_> = x.iter().map(|s| _fbb.create_string(s)).collect();_fbb.create_vector(&w)
     });
+    let optimistic_subids = self.optimistic_subids.as_ref().map(|x|{
+      let w: Vec<_> = x.iter().map(|s| _fbb.create_string(s)).collect();_fbb.create_vector(&w)
+    });
     Publish::create(_fbb, &PublishArgs{
       publish_id,
       template,
       relays,
+      optimistic_subids,
     })
   }
 }

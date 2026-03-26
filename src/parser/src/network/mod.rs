@@ -794,21 +794,71 @@ impl NetworkManager {
         Ok(())
     }
 
+    /// Inject a signed event into a subscription's pipeline for optimistic updates
+    async fn inject_optimistic_event(
+        &self,
+        sub_id: &str,
+        event_json: &str,
+    ) -> Result<()> {
+        // Get the subscription's pipeline
+        let pipeline_arc = {
+            let guard = self.subscriptions.read().map_err(|_| {
+                NostrError::Other("Subscriptions lock poisoned".into())
+            })?;
+            let sub = guard.get(sub_id).ok_or_else(|| {
+                NostrError::Other(format!("Optimistic sub_id {} not found", sub_id))
+            })?;
+            Arc::clone(&sub.pipeline)
+        };
+
+        // Process the event JSON through the pipeline
+        let mut pipeline_guard = pipeline_arc.lock().await;
+        match pipeline_guard.process(event_json).await {
+            Ok(Some(output)) => {
+                add_message_to_batch(sub_id, &output);
+                flush_batch(sub_id); // Immediate flush for low-latency UI update
+                Ok(())
+            }
+            Ok(None) => {
+                // Event dropped by pipeline (duplicate, filtered, etc.)
+                info!("Optimistic event dropped by pipeline for sub {}", sub_id);
+                Ok(())
+            }
+            Err(e) => Err(NostrError::Pipeline(format!(
+                "Optimistic event failed for {}: {}", sub_id, e
+            ))),
+        }
+    }
+
     pub async fn publish_event(
         &self,
         publish_id: String,
         template: &Template,
         default_relays: &Vec<String>,
+        optimistic_subids: Vec<String>,
     ) -> Result<()> {
         info!(
-            "publish_event: publish_id={}, default_relays={:?}",
-            publish_id, default_relays
+            "publish_event: publish_id={}, default_relays={:?}, optimistic_subids={:?}",
+            publish_id, default_relays, optimistic_subids
         );
 
         let event = self
             .publish_manager
             .publish_event(publish_id.clone(), template)
             .await?;
+
+        // Inject optimistic updates into specified subscriptions
+        if !optimistic_subids.is_empty() {
+            let event_json = event.to_json();
+            for sub_id in &optimistic_subids {
+                if let Err(e) = self.inject_optimistic_event(sub_id, &event_json).await {
+                    warn!("Failed optimistic update for {}: {}", sub_id, e);
+                    // Don't fail the publish if optimistic update fails
+                } else {
+                    info!("Sent optimistic update to sub {}", sub_id);
+                }
+            }
+        }
 
         // Store by event.id so OK responses from connections worker can be routed
         let event_id = event.id.to_string();

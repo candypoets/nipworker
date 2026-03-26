@@ -585,9 +585,10 @@ function ensureRelaySocket(
 			return;
 		}
 		const subIdHint = session.lastSubIdByRelay.get(relayUrl);
-		const workerMessage = relayFrameToWorkerMessage(session, relayUrl, raw, subIdHint, logger);
+		const workerMessage = relayFrameToWorkerMessage(session, relayUrl, raw, subIdHint, logger, (level, msg) => {
+			logger[level](`[relay-proxy] ${relayUrl}: ${msg}`);
+		});
 		if (!workerMessage) {
-			logger.warn(`[relay-proxy] failed to convert relay frame to worker message`);
 			return;
 		}
 		logger.info(`[relay-proxy] forwarding ${workerMessage.length} bytes to client`);
@@ -698,10 +699,16 @@ function relayFrameToWorkerMessage(
 	relayUrl: string,
 	rawFrame: string,
 	subIdHint?: string,
-	logger?: RelayProxyServerLogger
+	logger?: RelayProxyServerLogger,
+	debugLog?: (level: 'info' | 'warn' | 'error', message: string) => void
 ): Uint8Array | null {
 	const frame = parseRelayFrame(rawFrame);
-	if (!frame || frame.length < 1 || typeof frame[0] !== 'string') {
+	if (!frame) {
+		debugLog?.('warn', `parse failed: invalid JSON or not an array, raw=${rawFrame.slice(0, 200)}`);
+		return buildRawWorkerMessage(subIdHint ?? '', relayUrl, rawFrame);
+	}
+	if (frame.length < 1 || typeof frame[0] !== 'string') {
+		debugLog?.('warn', `parse failed: empty frame or missing kind, frame=${JSON.stringify(frame).slice(0, 200)}`);
 		return buildRawWorkerMessage(subIdHint ?? '', relayUrl, rawFrame);
 	}
 
@@ -709,12 +716,19 @@ function relayFrameToWorkerMessage(
 	if (kind === 'EVENT') {
 		const subId = typeof frame[1] === 'string' ? frame[1] : '';
 		const event = asNostrEvent(frame[2]);
-		if (!subId || !event) {
+		if (!subId) {
+			debugLog?.('warn', `EVENT missing subscription ID, frame=${JSON.stringify(frame).slice(0, 200)}`);
+			return buildRawWorkerMessage(subId, relayUrl, rawFrame);
+		}
+		if (!event) {
+			const eventError = diagnoseEventError(frame[2]);
+			debugLog?.('warn', `EVENT has invalid event structure: ${eventError}, frame=${JSON.stringify(frame).slice(0, 300)}`);
 			return buildRawWorkerMessage(subId, relayUrl, rawFrame);
 		}
 
 		const dedupSet = session.dedupBySubId.get(subId);
 		if (dedupSet && dedupSet.has(event.id)) {
+			debugLog?.('info', `EVENT deduplicated: subId=${subId}, eventId=${event.id.slice(0, 16)}...`);
 			return null;
 		}
 		if (dedupSet) dedupSet.add(event.id);
@@ -753,6 +767,7 @@ function relayFrameToWorkerMessage(
 		return buildConnectionStatusWorkerMessage(subId, relayUrl, 'EOSE', null);
 	}
 
+	debugLog?.('info', `unknown frame kind='${kind}', forwarding as raw message`);
 	return buildRawWorkerMessage(subIdHint ?? '', relayUrl, rawFrame);
 }
 
@@ -908,6 +923,50 @@ function asNostrEvent(value: unknown): NostrEventJson | null {
 		sig: candidate.sig,
 		tags
 	};
+}
+
+/**
+ * Diagnose why a value cannot be converted to a NostrEventJson.
+ * Returns a human-readable error message describing the first validation failure.
+ */
+function diagnoseEventError(value: unknown): string {
+	if (!value) return 'value is null/undefined';
+	if (typeof value !== 'object') return `expected object, got ${typeof value}`;
+
+	const candidate = value as Partial<NostrEventJson>;
+	const checks: [keyof NostrEventJson, string, string][] = [
+		['id', 'string', typeof candidate.id],
+		['pubkey', 'string', typeof candidate.pubkey],
+		['kind', 'number', typeof candidate.kind],
+		['content', 'string', typeof candidate.content],
+		['created_at', 'number', typeof candidate.created_at],
+		['sig', 'string', typeof candidate.sig],
+	];
+
+	for (const [field, expected, actual] of checks) {
+		if (actual !== expected) {
+			return `${field} is ${actual === 'undefined' ? 'missing' : `type ${actual} (expected ${expected})`}`;
+		}
+	}
+
+	if (!Array.isArray(candidate.tags)) {
+		return `tags is ${candidate.tags === undefined ? 'missing' : `type ${typeof candidate.tags} (expected array)`}`;
+	}
+
+	// Check for non-string tags
+	for (let i = 0; i < candidate.tags.length; i++) {
+		const tag = candidate.tags[i];
+		if (!Array.isArray(tag)) {
+			return `tags[${i}] is not an array`;
+		}
+		for (let j = 0; j < tag.length; j++) {
+			if (typeof tag[j] !== 'string') {
+				return `tags[${i}][${j}] is type ${typeof tag[j]} (expected string)`;
+			}
+		}
+	}
+
+	return 'unknown validation error';
 }
 
 function createStringVecOffset(builder: flatbuffers.Builder, values: string[]): flatbuffers.Offset {

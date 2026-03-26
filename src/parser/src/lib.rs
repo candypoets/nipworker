@@ -44,6 +44,8 @@ pub enum NostrError {
     Parser(#[from] ParserError),
     #[error("HTTP error: {0}")]
     Http(String),
+    #[error("Pipeline error: {0}")]
+    Pipeline(String),
     #[error("Other error: {0}")]
     Other(String),
 }
@@ -260,13 +262,23 @@ impl NostrClient {
                     .map(|i| publish.relays().get(i).to_string())
                     .collect();
 
+                // Extract optimistic_subids if present
+                let optimistic_subids: Vec<String> = publish
+                    .optimistic_subids()
+                    .map(|ids| {
+                        (0..ids.len())
+                            .map(|i| ids.get(i).to_string())
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
                 info!(
-                    "[parser] received Publish message: publish_id={}, kind={}, relays={:?}",
-                    publish_id, template.kind, relays
+                    "[parser] received Publish message: publish_id={}, kind={}, relays={:?}, optimistic_subids={:?}",
+                    publish_id, template.kind, relays, optimistic_subids
                 );
 
                 self.network_manager
-                    .publish_event(publish_id, &template, &relays)
+                    .publish_event(publish_id, &template, &relays, optimistic_subids)
                     .await
                     .map_err(|e| JsValue::from_str(&format!("Failed to publish event: {}", e)))?;
 
