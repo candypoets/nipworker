@@ -129,7 +129,11 @@ export function usePublish(
 	pubId: string,
 	event: EventTemplate,
 	callback: (message: WorkerMessage) => void = () => {},
-	options: { trackStatus?: boolean; defaultRelays?: string[] } = {
+	options: {
+		trackStatus?: boolean;
+		defaultRelays?: string[];
+		subId?: string | string[];
+	} = {
 		trackStatus: true,
 		defaultRelays: []
 	}
@@ -153,7 +157,12 @@ export function usePublish(
 		getManager().removeEventListener(`publish:${pubId}`, processEvents);
 	};
 
-	buffer = getManager().publish(pubId, event as any, options.defaultRelays);
+	const optimisticSubIds = options.subId
+		? Array.isArray(options.subId)
+			? options.subId
+			: [options.subId]
+		: undefined;
+	buffer = getManager().publish(pubId, event as any, options.defaultRelays, optimisticSubIds);
 
 	const processEvents = (): void => {
 		if (!running || !buffer) {

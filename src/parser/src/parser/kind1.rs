@@ -1,6 +1,6 @@
 use crate::parser::{
     content::{
-        enrich_images_with_imeta, parse_content, serialize_content_data, ContentBlock,
+        enrich_media_with_imeta, parse_content, serialize_content_data, ContentBlock,
         ContentParser, ImetaData,
     },
     Parser,
@@ -119,8 +119,8 @@ impl Parser {
         // Parse content into structured blocks
         match parse_content(&event.content) {
             Ok(mut content_blocks) => {
-                // Enrich images with imeta data (dimensions, alt text, etc.)
-                enrich_images_with_imeta(&mut content_blocks, &imeta_map);
+                // Enrich media with imeta data (images and videos)
+                enrich_media_with_imeta(&mut content_blocks, &imeta_map);
 
                 let parsed_blocks: Vec<ContentBlock> = content_blocks
                     .into_iter()

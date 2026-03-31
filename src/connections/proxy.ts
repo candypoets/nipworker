@@ -129,7 +129,6 @@ class ProxyRuntime {
 		this.ws.binaryType = 'arraybuffer';
 
 		this.ws.onopen = () => {
-			console.log('[proxy] WebSocket connected');
 			this.reconnectAttempts = 0; // Reset on successful connection
 			this.isManualClose = false;
 			this.postRelayStatus('connected', this.proxyUrl);
@@ -140,9 +139,8 @@ class ProxyRuntime {
 		};
 
 		this.ws.onclose = () => {
-			console.log('[proxy] WebSocket closed, manual:', this.isManualClose);
 			this.postRelayStatus('close', this.proxyUrl);
-			
+
 			// Only auto-reconnect if not manually closed
 			if (!this.isManualClose) {
 				this.scheduleReconnect();
@@ -150,7 +148,6 @@ class ProxyRuntime {
 		};
 
 		this.ws.onerror = () => {
-			console.log('[proxy] WebSocket error');
 			this.postRelayStatus('failed', this.proxyUrl);
 			// Error typically followed by close, which will trigger reconnect
 		};
@@ -174,12 +171,9 @@ class ProxyRuntime {
 		const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), this.maxReconnectDelay);
 		this.reconnectAttempts++;
 
-		console.log(`[proxy] Scheduling reconnect attempt ${this.reconnectAttempts} in ${delay}ms`);
-
 		this.reconnectTimeout = setTimeout(() => {
 			this.reconnectTimeout = null;
 			if (this.ws?.readyState !== WebSocket.OPEN && this.ws?.readyState !== WebSocket.CONNECTING) {
-				console.log(`[proxy] Attempting reconnect #${this.reconnectAttempts}`);
 				this.openSocket();
 			}
 		}, delay);
@@ -190,8 +184,6 @@ class ProxyRuntime {
 	 * Called on wake signal from main thread (app returning to foreground).
 	 */
 	forceReconnect() {
-		console.log('[proxy] Force reconnect requested (wake signal)');
-		
 		// Clear any pending reconnect
 		if (this.reconnectTimeout) {
 			clearTimeout(this.reconnectTimeout);
@@ -283,15 +275,14 @@ class ProxyRuntime {
 		// Deduplicate - don't respond to same challenge twice
 		const challengeKey = `${relay}:${challenge}`;
 		if (this.respondedChallenges.has(challengeKey)) {
-			console.log('[proxy] already responded to challenge:', challengeKey);
 			return;
 		}
 		this.respondedChallenges.add(challengeKey);
-		
+
 		// Clean up old challenges (keep last 100)
 		if (this.respondedChallenges.size > 100) {
 			const toDelete = Array.from(this.respondedChallenges).slice(0, 50);
-			toDelete.forEach(k => this.respondedChallenges.delete(k));
+			toDelete.forEach((k) => this.respondedChallenges.delete(k));
 		}
 
 		const requestId = this.authCounter | AUTH_REQUEST_ID_MASK;
@@ -345,26 +336,28 @@ class ProxyRuntime {
 
 let proxyRuntime: ProxyRuntime | null = null;
 
-self.addEventListener('message', (evt: MessageEvent<any | { type: 'wake'; source?: string } | string>) => {
-	const msg = evt.data;
-	if (msg?.type === 'init') {
-		const { mainPort, cachePort, parserPort, cryptoPort, proxy } = msg.payload;
-		if (!proxy?.url) {
+self.addEventListener(
+	'message',
+	(evt: MessageEvent<any | { type: 'wake'; source?: string } | string>) => {
+		const msg = evt.data;
+		if (msg?.type === 'init') {
+			const { mainPort, cachePort, parserPort, cryptoPort, proxy } = msg.payload;
+			if (!proxy?.url) {
+				return;
+			}
+			proxyRuntime = new ProxyRuntime(proxy.url, mainPort, cachePort, parserPort, cryptoPort);
+			proxyRuntime.start();
 			return;
 		}
-		proxyRuntime = new ProxyRuntime(proxy.url, mainPort, cachePort, parserPort, cryptoPort);
-		proxyRuntime.start();
-		return;
-	}
 
-	// Wake signal: app returning from background, force immediate reconnection
-	if (msg?.type === 'wake') {
-		console.log('[proxy] Wake signal received, source:', msg.source || 'unknown');
-		proxyRuntime?.forceReconnect();
-		return;
-	}
+		// Wake signal: app returning from background, force immediate reconnection
+		if (msg?.type === 'wake') {
+			proxyRuntime?.forceReconnect();
+			return;
+		}
 
-	if (typeof msg === 'string') {
-		proxyRuntime?.close(msg);
+		if (typeof msg === 'string') {
+			proxyRuntime?.close(msg);
+		}
 	}
-});
+);

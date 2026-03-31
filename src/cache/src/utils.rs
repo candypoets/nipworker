@@ -344,11 +344,13 @@ fn build_video_data<'a>(
 ) -> WIPOffset<fb::VideoData<'a>> {
     let url = builder.create_string(v.url());
     let thumbnail = v.thumbnail().map(|s| builder.create_string(s));
+    let dim = v.dim().map(|s| builder.create_string(s));
     fb::VideoData::create(
         builder,
         &fb::VideoDataArgs {
             url: Some(url),
             thumbnail,
+            dim,
         },
     )
 }

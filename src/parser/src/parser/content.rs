@@ -21,6 +21,7 @@ pub struct Image {
 pub struct Video {
     pub url: String,
     pub thumbnail: Option<String>,
+    pub dim: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,6 +44,7 @@ pub enum ContentData {
     Video {
         url: String,
         thumbnail: Option<String>,
+        dim: Option<String>,
     },
     MediaGroup {
         items: Vec<MediaItem>, // only Image/Video variants
@@ -325,12 +327,13 @@ impl ContentParser {
                                                 video: None,
                                             })
                                         }
-                                        Some(ContentData::Video { url, thumbnail }) => {
+                                        Some(ContentData::Video { url, thumbnail, dim }) => {
                                             Some(MediaItem {
                                                 image: None,
                                                 video: Some(Video {
                                                     url: url.clone(),
                                                     thumbnail: thumbnail.clone(),
+                                                    dim: dim.clone(),
                                                 }),
                                             })
                                         }
@@ -369,12 +372,13 @@ impl ContentParser {
                                         }),
                                         video: None,
                                     }),
-                                    Some(ContentData::Video { url, thumbnail }) => {
+                                    Some(ContentData::Video { url, thumbnail, dim }) => {
                                         Some(MediaItem {
                                             image: None,
                                             video: Some(Video {
                                                 url: url.clone(),
                                                 thumbnail: thumbnail.clone(),
+                                                dim: dim.clone(),
                                             }),
                                         })
                                     }
@@ -433,12 +437,13 @@ impl ContentParser {
                         video: None,
                     });
                 }
-                ("video", Some(ContentData::Video { url, thumbnail })) => {
+                ("video", Some(ContentData::Video { url, thumbnail, dim })) => {
                     media_items.push(MediaItem {
                         image: None,
                         video: Some(Video {
                             url: url.clone(),
                             thumbnail: thumbnail.clone(),
+                            dim: dim.clone(),
                         }),
                     });
                 }
@@ -459,6 +464,7 @@ impl ContentParser {
                                 video: Some(Video {
                                     url: v.url.clone(),
                                     thumbnail: v.thumbnail.clone(),
+                                    dim: v.dim.clone(),
                                 }),
                             });
                         }
@@ -579,6 +585,7 @@ impl ContentParser {
                             ContentData::Video {
                                 url: v.url,
                                 thumbnail: v.thumbnail,
+                                dim: v.dim,
                             },
                         ),
                     );
@@ -677,6 +684,7 @@ fn process_video(text: &str, _caps: &regex::Captures) -> Result<ContentBlock> {
         ContentBlock::new("video".to_string(), text.to_string()).with_data(ContentData::Video {
             url: text.to_string(),
             thumbnail: None,
+            dim: None,
         }),
     )
 }
@@ -807,8 +815,8 @@ pub fn parse_content(content: &str) -> Result<Vec<ContentBlock>> {
     parser.parse_content(content)
 }
 
-/// Enrich image blocks with imeta data after parsing
-pub fn enrich_images_with_imeta(
+/// Enrich media (image/video) blocks with imeta data after parsing
+pub fn enrich_media_with_imeta(
     blocks: &mut [ContentBlock],
     imeta_map: &std::collections::HashMap<String, ImetaData>,
 ) {
@@ -824,6 +832,15 @@ pub fn enrich_images_with_imeta(
                     }
                 }
             }
+        } else if block.block_type == "video" {
+            if let Some(ContentData::Video { url, thumbnail, dim }) = &mut block.data {
+                if let Some(imeta) = imeta_map.get(url) {
+                    // Video doesn't have alt, but could use imeta alt as thumbnail alt
+                    if dim.is_none() && imeta.dim.is_some() {
+                        *dim = imeta.dim.clone();
+                    }
+                }
+            }
         } else if block.block_type == "mediaGrid" {
             if let Some(ContentData::MediaGroup { items }) = &mut block.data {
                 for item in items.iter_mut() {
@@ -834,6 +851,13 @@ pub fn enrich_images_with_imeta(
                             }
                             if img.dim.is_none() && imeta.dim.is_some() {
                                 img.dim = imeta.dim.clone();
+                            }
+                        }
+                    }
+                    if let Some(vid) = &mut item.video {
+                        if let Some(imeta) = imeta_map.get(&vid.url) {
+                            if vid.dim.is_none() && imeta.dim.is_some() {
+                                vid.dim = imeta.dim.clone();
                             }
                         }
                     }
@@ -896,14 +920,16 @@ pub fn serialize_content_data<'a, A: flatbuffers::Allocator + 'a>(
             );
             (fb::ContentData::ImageData, Some(image_fb.as_union_value()))
         }
-        ContentData::Video { url, thumbnail } => {
+        ContentData::Video { url, thumbnail, dim } => {
             let url_off = builder.create_string(url);
             let thumb_off = thumbnail.as_ref().map(|t| builder.create_string(t));
+            let dim_off = dim.as_ref().map(|d| builder.create_string(d));
             let video_fb = fb::VideoData::create(
                 builder,
                 &fb::VideoDataArgs {
                     url: Some(url_off),
                     thumbnail: thumb_off,
+                    dim: dim_off,
                 },
             );
             (fb::ContentData::VideoData, Some(video_fb.as_union_value()))
@@ -931,11 +957,13 @@ pub fn serialize_content_data<'a, A: flatbuffers::Allocator + 'a>(
                     let vid_off = item.video.as_ref().map(|vid| {
                         let url_off = builder.create_string(&vid.url);
                         let thumb_off = vid.thumbnail.as_ref().map(|t| builder.create_string(t));
+                        let dim_off = vid.dim.as_ref().map(|d| builder.create_string(d));
                         fb::VideoData::create(
                             builder,
                             &fb::VideoDataArgs {
                                 url: Some(url_off),
                                 thumbnail: thumb_off,
+                                dim: dim_off,
                             },
                         )
                     });

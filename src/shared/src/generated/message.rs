@@ -3782,6 +3782,7 @@ impl<'a> flatbuffers::Follow<'a> for VideoData<'a> {
 impl<'a> VideoData<'a> {
   pub const VT_URL: flatbuffers::VOffsetT = 4;
   pub const VT_THUMBNAIL: flatbuffers::VOffsetT = 6;
+  pub const VT_DIM: flatbuffers::VOffsetT = 8;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -3793,6 +3794,7 @@ impl<'a> VideoData<'a> {
     args: &'args VideoDataArgs<'args>
   ) -> flatbuffers::WIPOffset<VideoData<'bldr>> {
     let mut builder = VideoDataBuilder::new(_fbb);
+    if let Some(x) = args.dim { builder.add_dim(x); }
     if let Some(x) = args.thumbnail { builder.add_thumbnail(x); }
     if let Some(x) = args.url { builder.add_url(x); }
     builder.finish()
@@ -3806,9 +3808,13 @@ impl<'a> VideoData<'a> {
     let thumbnail = self.thumbnail().map(|x| {
       x.to_string()
     });
+    let dim = self.dim().map(|x| {
+      x.to_string()
+    });
     VideoDataT {
       url,
       thumbnail,
+      dim,
     }
   }
 
@@ -3826,6 +3832,13 @@ impl<'a> VideoData<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(VideoData::VT_THUMBNAIL, None)}
   }
+  #[inline]
+  pub fn dim(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(VideoData::VT_DIM, None)}
+  }
 }
 
 impl flatbuffers::Verifiable for VideoData<'_> {
@@ -3837,6 +3850,7 @@ impl flatbuffers::Verifiable for VideoData<'_> {
     v.visit_table(pos)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("url", Self::VT_URL, true)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("thumbnail", Self::VT_THUMBNAIL, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("dim", Self::VT_DIM, false)?
      .finish();
     Ok(())
   }
@@ -3844,6 +3858,7 @@ impl flatbuffers::Verifiable for VideoData<'_> {
 pub struct VideoDataArgs<'a> {
     pub url: Option<flatbuffers::WIPOffset<&'a str>>,
     pub thumbnail: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub dim: Option<flatbuffers::WIPOffset<&'a str>>,
 }
 impl<'a> Default for VideoDataArgs<'a> {
   #[inline]
@@ -3851,6 +3866,7 @@ impl<'a> Default for VideoDataArgs<'a> {
     VideoDataArgs {
       url: None, // required field
       thumbnail: None,
+      dim: None,
     }
   }
 }
@@ -3867,6 +3883,10 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> VideoDataBuilder<'a, 'b, A> {
   #[inline]
   pub fn add_thumbnail(&mut self, thumbnail: flatbuffers::WIPOffset<&'b  str>) {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(VideoData::VT_THUMBNAIL, thumbnail);
+  }
+  #[inline]
+  pub fn add_dim(&mut self, dim: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(VideoData::VT_DIM, dim);
   }
   #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> VideoDataBuilder<'a, 'b, A> {
@@ -3889,6 +3909,7 @@ impl core::fmt::Debug for VideoData<'_> {
     let mut ds = f.debug_struct("VideoData");
       ds.field("url", &self.url());
       ds.field("thumbnail", &self.thumbnail());
+      ds.field("dim", &self.dim());
       ds.finish()
   }
 }
@@ -3897,12 +3918,14 @@ impl core::fmt::Debug for VideoData<'_> {
 pub struct VideoDataT {
   pub url: String,
   pub thumbnail: Option<String>,
+  pub dim: Option<String>,
 }
 impl Default for VideoDataT {
   fn default() -> Self {
     Self {
       url: "".to_string(),
       thumbnail: None,
+      dim: None,
     }
   }
 }
@@ -3918,9 +3941,13 @@ impl VideoDataT {
     let thumbnail = self.thumbnail.as_ref().map(|x|{
       _fbb.create_string(x)
     });
+    let dim = self.dim.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
     VideoData::create(_fbb, &VideoDataArgs{
       url,
       thumbnail,
+      dim,
     })
   }
 }

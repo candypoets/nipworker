@@ -38,8 +38,15 @@ thumbnail(optionalEncoding?:any):string|Uint8Array|null {
   return offset ? this.bb!.__string(this.bb_pos + offset, optionalEncoding) : null;
 }
 
+dim():string|null
+dim(optionalEncoding:flatbuffers.Encoding):string|Uint8Array|null
+dim(optionalEncoding?:any):string|Uint8Array|null {
+  const offset = this.bb!.__offset(this.bb_pos, 8);
+  return offset ? this.bb!.__string(this.bb_pos + offset, optionalEncoding) : null;
+}
+
 static startVideoData(builder:flatbuffers.Builder) {
-  builder.startObject(2);
+  builder.startObject(3);
 }
 
 static addUrl(builder:flatbuffers.Builder, urlOffset:flatbuffers.Offset) {
@@ -50,23 +57,29 @@ static addThumbnail(builder:flatbuffers.Builder, thumbnailOffset:flatbuffers.Off
   builder.addFieldOffset(1, thumbnailOffset, 0);
 }
 
+static addDim(builder:flatbuffers.Builder, dimOffset:flatbuffers.Offset) {
+  builder.addFieldOffset(2, dimOffset, 0);
+}
+
 static endVideoData(builder:flatbuffers.Builder):flatbuffers.Offset {
   const offset = builder.endObject();
   builder.requiredField(offset, 4) // url
   return offset;
 }
 
-static createVideoData(builder:flatbuffers.Builder, urlOffset:flatbuffers.Offset, thumbnailOffset:flatbuffers.Offset):flatbuffers.Offset {
+static createVideoData(builder:flatbuffers.Builder, urlOffset:flatbuffers.Offset, thumbnailOffset:flatbuffers.Offset, dimOffset:flatbuffers.Offset):flatbuffers.Offset {
   VideoData.startVideoData(builder);
   VideoData.addUrl(builder, urlOffset);
   VideoData.addThumbnail(builder, thumbnailOffset);
+  VideoData.addDim(builder, dimOffset);
   return VideoData.endVideoData(builder);
 }
 
 unpack(): VideoDataT {
   return new VideoDataT(
     this.url(),
-    this.thumbnail()
+    this.thumbnail(),
+    this.dim()
   );
 }
 
@@ -74,23 +87,27 @@ unpack(): VideoDataT {
 unpackTo(_o: VideoDataT): void {
   _o.url = this.url();
   _o.thumbnail = this.thumbnail();
+  _o.dim = this.dim();
 }
 }
 
 export class VideoDataT implements flatbuffers.IGeneratedObject {
 constructor(
   public url: string|Uint8Array|null = null,
-  public thumbnail: string|Uint8Array|null = null
+  public thumbnail: string|Uint8Array|null = null,
+  public dim: string|Uint8Array|null = null
 ){}
 
 
 pack(builder:flatbuffers.Builder): flatbuffers.Offset {
   const url = (this.url !== null ? builder.createString(this.url!) : 0);
   const thumbnail = (this.thumbnail !== null ? builder.createString(this.thumbnail!) : 0);
+  const dim = (this.dim !== null ? builder.createString(this.dim!) : 0);
 
   return VideoData.createVideoData(builder,
     url,
-    thumbnail
+    thumbnail,
+    dim
   );
 }
 }
