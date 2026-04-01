@@ -202,6 +202,23 @@ export function asKind17(ev: ParsedEvent): Kind17Parsed | null {
 	if (ev.parsedType() !== ParsedData.Kind17Parsed) return null;
 	return ev.parsed(new Kind17Parsed()) ?? null;
 }
+
+export function isKind20(msg: WorkerMessage): Kind20Parsed | null {
+	return parsedKind<Kind20Parsed>(msg, ParsedData.Kind20Parsed);
+}
+export function asKind20(ev: ParsedEvent): Kind20Parsed | null {
+	if (ev.parsedType() !== ParsedData.Kind20Parsed) return null;
+	return ev.parsed(new Kind20Parsed()) ?? null;
+}
+
+export function isKind22(msg: WorkerMessage): Kind22Parsed | null {
+	return parsedKind<Kind22Parsed>(msg, ParsedData.Kind22Parsed);
+}
+export function asKind22(ev: ParsedEvent): Kind22Parsed | null {
+	if (ev.parsedType() !== ParsedData.Kind22Parsed) return null;
+	return ev.parsed(new Kind22Parsed()) ?? null;
+}
+
 export function isKind1111(msg: WorkerMessage): Kind1111Parsed | null {
 	return parsedKind<Kind1111Parsed>(msg, ParsedData.Kind1111Parsed);
 }

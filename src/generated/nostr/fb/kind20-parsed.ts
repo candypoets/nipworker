@@ -167,7 +167,6 @@ static startMentionsVector(builder:flatbuffers.Builder, numElems:number) {
 
 static endKind20Parsed(builder:flatbuffers.Builder):flatbuffers.Offset {
   const offset = builder.endObject();
-  builder.requiredField(offset, 8) // images
   return offset;
 }
 

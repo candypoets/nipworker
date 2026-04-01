@@ -19,7 +19,7 @@ table ImetaTag {
 table Kind20Parsed {
   title: string;               // "title" tag
   description: string;         // .content (plaintext description)
-  images: [ImetaTag] (required); // One or more images (each in imeta tag)
+  images: [ImetaTag];         // One or more images (each in imeta tag)
   content_warning: string;     // "content-warning" tag (if NSFW)
   location: string;            // "location" tag (city, state, country)
   geohash: string;             // "g" tag

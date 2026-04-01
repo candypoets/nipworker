@@ -16823,10 +16823,9 @@ impl<'a> Kind20Parsed<'a> {
     let description = self.description().map(|x| {
       x.to_string()
     });
-    let images = {
-      let x = self.images();
+    let images = self.images().map(|x| {
       x.iter().map(|t| t.unpack()).collect()
-    };
+    });
     let content_warning = self.content_warning().map(|x| {
       x.to_string()
     });
@@ -16869,11 +16868,11 @@ impl<'a> Kind20Parsed<'a> {
     unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Kind20Parsed::VT_DESCRIPTION, None)}
   }
   #[inline]
-  pub fn images(&self) -> flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<ImetaTag<'a>>> {
+  pub fn images(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<ImetaTag<'a>>>> {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<ImetaTag>>>>(Kind20Parsed::VT_IMAGES, None).unwrap()}
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<ImetaTag>>>>(Kind20Parsed::VT_IMAGES, None)}
   }
   #[inline]
   pub fn content_warning(&self) -> Option<&'a str> {
@@ -16921,7 +16920,7 @@ impl flatbuffers::Verifiable for Kind20Parsed<'_> {
     v.visit_table(pos)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("title", Self::VT_TITLE, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("description", Self::VT_DESCRIPTION, false)?
-     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<ImetaTag>>>>("images", Self::VT_IMAGES, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<ImetaTag>>>>("images", Self::VT_IMAGES, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("content_warning", Self::VT_CONTENT_WARNING, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("location", Self::VT_LOCATION, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("geohash", Self::VT_GEOHASH, false)?
@@ -16947,7 +16946,7 @@ impl<'a> Default for Kind20ParsedArgs<'a> {
     Kind20ParsedArgs {
       title: None,
       description: None,
-      images: None, // required field
+      images: None,
       content_warning: None,
       location: None,
       geohash: None,
@@ -17005,7 +17004,6 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> Kind20ParsedBuilder<'a, 'b, A> 
   #[inline]
   pub fn finish(self) -> flatbuffers::WIPOffset<Kind20Parsed<'a>> {
     let o = self.fbb_.end_table(self.start_);
-    self.fbb_.required(o, Kind20Parsed::VT_IMAGES,"images");
     flatbuffers::WIPOffset::new(o.value())
   }
 }
@@ -17029,7 +17027,7 @@ impl core::fmt::Debug for Kind20Parsed<'_> {
 pub struct Kind20ParsedT {
   pub title: Option<String>,
   pub description: Option<String>,
-  pub images: Vec<ImetaTagT>,
+  pub images: Option<Vec<ImetaTagT>>,
   pub content_warning: Option<String>,
   pub location: Option<String>,
   pub geohash: Option<String>,
@@ -17041,7 +17039,7 @@ impl Default for Kind20ParsedT {
     Self {
       title: None,
       description: None,
-      images: Default::default(),
+      images: None,
       content_warning: None,
       location: None,
       geohash: None,
@@ -17061,8 +17059,7 @@ impl Kind20ParsedT {
     let description = self.description.as_ref().map(|x|{
       _fbb.create_string(x)
     });
-    let images = Some({
-      let x = &self.images;
+    let images = self.images.as_ref().map(|x|{
       let w: Vec<_> = x.iter().map(|t| t.pack(_fbb)).collect();_fbb.create_vector(&w)
     });
     let content_warning = self.content_warning.as_ref().map(|x|{
