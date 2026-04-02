@@ -29,10 +29,10 @@ pub mod fb {
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_CONTENT_DATA: u8 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MAX_CONTENT_DATA: u8 = 8;
+pub const ENUM_MAX_CONTENT_DATA: u8 = 9;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_CONTENT_DATA: [ContentData; 9] = [
+pub const ENUM_VALUES_CONTENT_DATA: [ContentData; 10] = [
   ContentData::NONE,
   ContentData::CodeData,
   ContentData::HashtagData,
@@ -42,6 +42,7 @@ pub const ENUM_VALUES_CONTENT_DATA: [ContentData; 9] = [
   ContentData::MediaGroupData,
   ContentData::NostrData,
   ContentData::LinkPreviewData,
+  ContentData::EmojiData,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -58,9 +59,10 @@ impl ContentData {
   pub const MediaGroupData: Self = Self(6);
   pub const NostrData: Self = Self(7);
   pub const LinkPreviewData: Self = Self(8);
+  pub const EmojiData: Self = Self(9);
 
   pub const ENUM_MIN: u8 = 0;
-  pub const ENUM_MAX: u8 = 8;
+  pub const ENUM_MAX: u8 = 9;
   pub const ENUM_VALUES: &'static [Self] = &[
     Self::NONE,
     Self::CodeData,
@@ -71,6 +73,7 @@ impl ContentData {
     Self::MediaGroupData,
     Self::NostrData,
     Self::LinkPreviewData,
+    Self::EmojiData,
   ];
   /// Returns the variant's name or "" if unknown.
   pub fn variant_name(self) -> Option<&'static str> {
@@ -84,6 +87,7 @@ impl ContentData {
       Self::MediaGroupData => Some("MediaGroupData"),
       Self::NostrData => Some("NostrData"),
       Self::LinkPreviewData => Some("LinkPreviewData"),
+      Self::EmojiData => Some("EmojiData"),
       _ => None,
     }
   }
@@ -154,6 +158,7 @@ pub enum ContentDataT {
   MediaGroupData(Box<MediaGroupDataT>),
   NostrData(Box<NostrDataT>),
   LinkPreviewData(Box<LinkPreviewDataT>),
+  EmojiData(Box<EmojiDataT>),
 }
 impl Default for ContentDataT {
   fn default() -> Self {
@@ -172,6 +177,7 @@ impl ContentDataT {
       Self::MediaGroupData(_) => ContentData::MediaGroupData,
       Self::NostrData(_) => ContentData::NostrData,
       Self::LinkPreviewData(_) => ContentData::LinkPreviewData,
+      Self::EmojiData(_) => ContentData::EmojiData,
     }
   }
   pub fn pack<'b, A: flatbuffers::Allocator + 'b>(&self, fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>) -> Option<flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>> {
@@ -185,6 +191,7 @@ impl ContentDataT {
       Self::MediaGroupData(v) => Some(v.pack(fbb).as_union_value()),
       Self::NostrData(v) => Some(v.pack(fbb).as_union_value()),
       Self::LinkPreviewData(v) => Some(v.pack(fbb).as_union_value()),
+      Self::EmojiData(v) => Some(v.pack(fbb).as_union_value()),
     }
   }
   /// If the union variant matches, return the owned CodeDataT, setting the union to NONE.
@@ -354,6 +361,27 @@ impl ContentDataT {
   /// If the union variant matches, return a mutable reference to the LinkPreviewDataT.
   pub fn as_link_preview_data_mut(&mut self) -> Option<&mut LinkPreviewDataT> {
     if let Self::LinkPreviewData(v) = self { Some(v.as_mut()) } else { None }
+  }
+  /// If the union variant matches, return the owned EmojiDataT, setting the union to NONE.
+  pub fn take_emoji_data(&mut self) -> Option<Box<EmojiDataT>> {
+    if let Self::EmojiData(_) = self {
+      let v = core::mem::replace(self, Self::NONE);
+      if let Self::EmojiData(w) = v {
+        Some(w)
+      } else {
+        unreachable!()
+      }
+    } else {
+      None
+    }
+  }
+  /// If the union variant matches, return a reference to the EmojiDataT.
+  pub fn as_emoji_data(&self) -> Option<&EmojiDataT> {
+    if let Self::EmojiData(v) = self { Some(v.as_ref()) } else { None }
+  }
+  /// If the union variant matches, return a mutable reference to the EmojiDataT.
+  pub fn as_emoji_data_mut(&mut self) -> Option<&mut EmojiDataT> {
+    if let Self::EmojiData(v) = self { Some(v.as_mut()) } else { None }
   }
 }
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
@@ -1479,6 +1507,91 @@ impl MainContentT {
   }
 }
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
+pub const ENUM_MIN_POLL_TYPE: i8 = 0;
+#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
+pub const ENUM_MAX_POLL_TYPE: i8 = 1;
+#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
+#[allow(non_camel_case_types)]
+pub const ENUM_VALUES_POLL_TYPE: [PollType; 2] = [
+  PollType::SingleChoice,
+  PollType::MultipleChoice,
+];
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[repr(transparent)]
+pub struct PollType(pub i8);
+#[allow(non_upper_case_globals)]
+impl PollType {
+  pub const SingleChoice: Self = Self(0);
+  pub const MultipleChoice: Self = Self(1);
+
+  pub const ENUM_MIN: i8 = 0;
+  pub const ENUM_MAX: i8 = 1;
+  pub const ENUM_VALUES: &'static [Self] = &[
+    Self::SingleChoice,
+    Self::MultipleChoice,
+  ];
+  /// Returns the variant's name or "" if unknown.
+  pub fn variant_name(self) -> Option<&'static str> {
+    match self {
+      Self::SingleChoice => Some("SingleChoice"),
+      Self::MultipleChoice => Some("MultipleChoice"),
+      _ => None,
+    }
+  }
+}
+impl core::fmt::Debug for PollType {
+  fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+    if let Some(name) = self.variant_name() {
+      f.write_str(name)
+    } else {
+      f.write_fmt(format_args!("<UNKNOWN {:?}>", self.0))
+    }
+  }
+}
+impl<'a> flatbuffers::Follow<'a> for PollType {
+  type Inner = Self;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    let b = flatbuffers::read_scalar_at::<i8>(buf, loc);
+    Self(b)
+  }
+}
+
+impl flatbuffers::Push for PollType {
+    type Output = PollType;
+    #[inline]
+    unsafe fn push(&self, dst: &mut [u8], _written_len: usize) {
+        flatbuffers::emplace_scalar::<i8>(dst, self.0);
+    }
+}
+
+impl flatbuffers::EndianScalar for PollType {
+  type Scalar = i8;
+  #[inline]
+  fn to_little_endian(self) -> i8 {
+    self.0.to_le()
+  }
+  #[inline]
+  #[allow(clippy::wrong_self_convention)]
+  fn from_little_endian(v: i8) -> Self {
+    let b = i8::from_le(v);
+    Self(b)
+  }
+}
+
+impl<'a> flatbuffers::Verifiable for PollType {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    i8::run_verifier(v, pos)
+  }
+}
+
+impl flatbuffers::SimpleToVerifyInSlice for PollType {}
+#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_MESSAGE_TYPE: u32 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MAX_MESSAGE_TYPE: u32 = 9;
@@ -1601,7 +1714,7 @@ pub const ENUM_MIN_PARSED_DATA_UNION: u32 = 0;
 pub const ENUM_MAX_PARSED_DATA_UNION: u32 = 52000;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_PARSED_DATA_UNION: [ParsedDataUnion; 23] = [
+pub const ENUM_VALUES_PARSED_DATA_UNION: [ParsedDataUnion; 25] = [
   ParsedDataUnion::Kind0Parsed,
   ParsedDataUnion::Kind1Parsed,
   ParsedDataUnion::Kind3Parsed,
@@ -1611,6 +1724,8 @@ pub const ENUM_VALUES_PARSED_DATA_UNION: [ParsedDataUnion; 23] = [
   ParsedDataUnion::Kind17Parsed,
   ParsedDataUnion::Kind20Parsed,
   ParsedDataUnion::Kind22Parsed,
+  ParsedDataUnion::Kind1018Parsed,
+  ParsedDataUnion::Kind1068Parsed,
   ParsedDataUnion::Kind1111Parsed,
   ParsedDataUnion::Kind1311Parsed,
   ParsedDataUnion::Kind7374Parsed,
@@ -1641,6 +1756,8 @@ impl ParsedDataUnion {
   pub const Kind17Parsed: Self = Self(17);
   pub const Kind20Parsed: Self = Self(20);
   pub const Kind22Parsed: Self = Self(22);
+  pub const Kind1018Parsed: Self = Self(1018);
+  pub const Kind1068Parsed: Self = Self(1068);
   pub const Kind1111Parsed: Self = Self(1111);
   pub const Kind1311Parsed: Self = Self(1311);
   pub const Kind7374Parsed: Self = Self(7374);
@@ -1668,6 +1785,8 @@ impl ParsedDataUnion {
     Self::Kind17Parsed,
     Self::Kind20Parsed,
     Self::Kind22Parsed,
+    Self::Kind1018Parsed,
+    Self::Kind1068Parsed,
     Self::Kind1111Parsed,
     Self::Kind1311Parsed,
     Self::Kind7374Parsed,
@@ -1695,6 +1814,8 @@ impl ParsedDataUnion {
       Self::Kind17Parsed => Some("Kind17Parsed"),
       Self::Kind20Parsed => Some("Kind20Parsed"),
       Self::Kind22Parsed => Some("Kind22Parsed"),
+      Self::Kind1018Parsed => Some("Kind1018Parsed"),
+      Self::Kind1068Parsed => Some("Kind1068Parsed"),
       Self::Kind1111Parsed => Some("Kind1111Parsed"),
       Self::Kind1311Parsed => Some("Kind1311Parsed"),
       Self::Kind7374Parsed => Some("Kind7374Parsed"),
@@ -1767,10 +1888,10 @@ impl flatbuffers::SimpleToVerifyInSlice for ParsedDataUnion {}
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_PARSED_DATA: u8 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MAX_PARSED_DATA: u8 = 22;
+pub const ENUM_MAX_PARSED_DATA: u8 = 24;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_PARSED_DATA: [ParsedData; 23] = [
+pub const ENUM_VALUES_PARSED_DATA: [ParsedData; 25] = [
   ParsedData::NONE,
   ParsedData::Kind0Parsed,
   ParsedData::Kind1Parsed,
@@ -1783,6 +1904,8 @@ pub const ENUM_VALUES_PARSED_DATA: [ParsedData; 23] = [
   ParsedData::Kind22Parsed,
   ParsedData::Kind1111Parsed,
   ParsedData::Kind1311Parsed,
+  ParsedData::Kind1068Parsed,
+  ParsedData::Kind1018Parsed,
   ParsedData::Kind10002Parsed,
   ParsedData::Kind10019Parsed,
   ParsedData::Kind17375Parsed,
@@ -1813,20 +1936,22 @@ impl ParsedData {
   pub const Kind22Parsed: Self = Self(9);
   pub const Kind1111Parsed: Self = Self(10);
   pub const Kind1311Parsed: Self = Self(11);
-  pub const Kind10002Parsed: Self = Self(12);
-  pub const Kind10019Parsed: Self = Self(13);
-  pub const Kind17375Parsed: Self = Self(14);
-  pub const Kind7374Parsed: Self = Self(15);
-  pub const Kind7375Parsed: Self = Self(16);
-  pub const Kind7376Parsed: Self = Self(17);
-  pub const Kind9321Parsed: Self = Self(18);
-  pub const Kind9735Parsed: Self = Self(19);
-  pub const Kind30023Parsed: Self = Self(20);
-  pub const ListParsed: Self = Self(21);
-  pub const PreGenericParsed: Self = Self(22);
+  pub const Kind1068Parsed: Self = Self(12);
+  pub const Kind1018Parsed: Self = Self(13);
+  pub const Kind10002Parsed: Self = Self(14);
+  pub const Kind10019Parsed: Self = Self(15);
+  pub const Kind17375Parsed: Self = Self(16);
+  pub const Kind7374Parsed: Self = Self(17);
+  pub const Kind7375Parsed: Self = Self(18);
+  pub const Kind7376Parsed: Self = Self(19);
+  pub const Kind9321Parsed: Self = Self(20);
+  pub const Kind9735Parsed: Self = Self(21);
+  pub const Kind30023Parsed: Self = Self(22);
+  pub const ListParsed: Self = Self(23);
+  pub const PreGenericParsed: Self = Self(24);
 
   pub const ENUM_MIN: u8 = 0;
-  pub const ENUM_MAX: u8 = 22;
+  pub const ENUM_MAX: u8 = 24;
   pub const ENUM_VALUES: &'static [Self] = &[
     Self::NONE,
     Self::Kind0Parsed,
@@ -1840,6 +1965,8 @@ impl ParsedData {
     Self::Kind22Parsed,
     Self::Kind1111Parsed,
     Self::Kind1311Parsed,
+    Self::Kind1068Parsed,
+    Self::Kind1018Parsed,
     Self::Kind10002Parsed,
     Self::Kind10019Parsed,
     Self::Kind17375Parsed,
@@ -1867,6 +1994,8 @@ impl ParsedData {
       Self::Kind22Parsed => Some("Kind22Parsed"),
       Self::Kind1111Parsed => Some("Kind1111Parsed"),
       Self::Kind1311Parsed => Some("Kind1311Parsed"),
+      Self::Kind1068Parsed => Some("Kind1068Parsed"),
+      Self::Kind1018Parsed => Some("Kind1018Parsed"),
       Self::Kind10002Parsed => Some("Kind10002Parsed"),
       Self::Kind10019Parsed => Some("Kind10019Parsed"),
       Self::Kind17375Parsed => Some("Kind17375Parsed"),
@@ -1951,6 +2080,8 @@ pub enum ParsedDataT {
   Kind22Parsed(Box<Kind22ParsedT>),
   Kind1111Parsed(Box<Kind1111ParsedT>),
   Kind1311Parsed(Box<Kind1311ParsedT>),
+  Kind1068Parsed(Box<Kind1068ParsedT>),
+  Kind1018Parsed(Box<Kind1018ParsedT>),
   Kind10002Parsed(Box<Kind10002ParsedT>),
   Kind10019Parsed(Box<Kind10019ParsedT>),
   Kind17375Parsed(Box<Kind17375ParsedT>),
@@ -1983,6 +2114,8 @@ impl ParsedDataT {
       Self::Kind22Parsed(_) => ParsedData::Kind22Parsed,
       Self::Kind1111Parsed(_) => ParsedData::Kind1111Parsed,
       Self::Kind1311Parsed(_) => ParsedData::Kind1311Parsed,
+      Self::Kind1068Parsed(_) => ParsedData::Kind1068Parsed,
+      Self::Kind1018Parsed(_) => ParsedData::Kind1018Parsed,
       Self::Kind10002Parsed(_) => ParsedData::Kind10002Parsed,
       Self::Kind10019Parsed(_) => ParsedData::Kind10019Parsed,
       Self::Kind17375Parsed(_) => ParsedData::Kind17375Parsed,
@@ -2010,6 +2143,8 @@ impl ParsedDataT {
       Self::Kind22Parsed(v) => Some(v.pack(fbb).as_union_value()),
       Self::Kind1111Parsed(v) => Some(v.pack(fbb).as_union_value()),
       Self::Kind1311Parsed(v) => Some(v.pack(fbb).as_union_value()),
+      Self::Kind1068Parsed(v) => Some(v.pack(fbb).as_union_value()),
+      Self::Kind1018Parsed(v) => Some(v.pack(fbb).as_union_value()),
       Self::Kind10002Parsed(v) => Some(v.pack(fbb).as_union_value()),
       Self::Kind10019Parsed(v) => Some(v.pack(fbb).as_union_value()),
       Self::Kind17375Parsed(v) => Some(v.pack(fbb).as_union_value()),
@@ -2253,6 +2388,48 @@ impl ParsedDataT {
   /// If the union variant matches, return a mutable reference to the Kind1311ParsedT.
   pub fn as_kind_1311_parsed_mut(&mut self) -> Option<&mut Kind1311ParsedT> {
     if let Self::Kind1311Parsed(v) = self { Some(v.as_mut()) } else { None }
+  }
+  /// If the union variant matches, return the owned Kind1068ParsedT, setting the union to NONE.
+  pub fn take_kind_1068_parsed(&mut self) -> Option<Box<Kind1068ParsedT>> {
+    if let Self::Kind1068Parsed(_) = self {
+      let v = core::mem::replace(self, Self::NONE);
+      if let Self::Kind1068Parsed(w) = v {
+        Some(w)
+      } else {
+        unreachable!()
+      }
+    } else {
+      None
+    }
+  }
+  /// If the union variant matches, return a reference to the Kind1068ParsedT.
+  pub fn as_kind_1068_parsed(&self) -> Option<&Kind1068ParsedT> {
+    if let Self::Kind1068Parsed(v) = self { Some(v.as_ref()) } else { None }
+  }
+  /// If the union variant matches, return a mutable reference to the Kind1068ParsedT.
+  pub fn as_kind_1068_parsed_mut(&mut self) -> Option<&mut Kind1068ParsedT> {
+    if let Self::Kind1068Parsed(v) = self { Some(v.as_mut()) } else { None }
+  }
+  /// If the union variant matches, return the owned Kind1018ParsedT, setting the union to NONE.
+  pub fn take_kind_1018_parsed(&mut self) -> Option<Box<Kind1018ParsedT>> {
+    if let Self::Kind1018Parsed(_) = self {
+      let v = core::mem::replace(self, Self::NONE);
+      if let Self::Kind1018Parsed(w) = v {
+        Some(w)
+      } else {
+        unreachable!()
+      }
+    } else {
+      None
+    }
+  }
+  /// If the union variant matches, return a reference to the Kind1018ParsedT.
+  pub fn as_kind_1018_parsed(&self) -> Option<&Kind1018ParsedT> {
+    if let Self::Kind1018Parsed(v) = self { Some(v.as_ref()) } else { None }
+  }
+  /// If the union variant matches, return a mutable reference to the Kind1018ParsedT.
+  pub fn as_kind_1018_parsed_mut(&mut self) -> Option<&mut Kind1018ParsedT> {
+    if let Self::Kind1018Parsed(v) = self { Some(v.as_mut()) } else { None }
   }
   /// If the union variant matches, return the owned Kind10002ParsedT, setting the union to NONE.
   pub fn take_kind_10002_parsed(&mut self) -> Option<Box<Kind10002ParsedT>> {
@@ -3308,6 +3485,196 @@ impl CodeDataT {
     CodeData::create(_fbb, &CodeDataArgs{
       language,
       code,
+    })
+  }
+}
+pub enum EmojiDataOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct EmojiData<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for EmojiData<'a> {
+  type Inner = EmojiData<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> EmojiData<'a> {
+  pub const VT_SHORTCODE: flatbuffers::VOffsetT = 4;
+  pub const VT_URL: flatbuffers::VOffsetT = 6;
+  pub const VT_EMOJI_SET: flatbuffers::VOffsetT = 8;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    EmojiData { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args EmojiDataArgs<'args>
+  ) -> flatbuffers::WIPOffset<EmojiData<'bldr>> {
+    let mut builder = EmojiDataBuilder::new(_fbb);
+    if let Some(x) = args.emoji_set { builder.add_emoji_set(x); }
+    if let Some(x) = args.url { builder.add_url(x); }
+    if let Some(x) = args.shortcode { builder.add_shortcode(x); }
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> EmojiDataT {
+    let shortcode = {
+      let x = self.shortcode();
+      x.to_string()
+    };
+    let url = {
+      let x = self.url();
+      x.to_string()
+    };
+    let emoji_set = self.emoji_set().map(|x| {
+      x.to_string()
+    });
+    EmojiDataT {
+      shortcode,
+      url,
+      emoji_set,
+    }
+  }
+
+  #[inline]
+  pub fn shortcode(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(EmojiData::VT_SHORTCODE, None).unwrap()}
+  }
+  #[inline]
+  pub fn url(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(EmojiData::VT_URL, None).unwrap()}
+  }
+  #[inline]
+  pub fn emoji_set(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(EmojiData::VT_EMOJI_SET, None)}
+  }
+}
+
+impl flatbuffers::Verifiable for EmojiData<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("shortcode", Self::VT_SHORTCODE, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("url", Self::VT_URL, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("emoji_set", Self::VT_EMOJI_SET, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct EmojiDataArgs<'a> {
+    pub shortcode: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub url: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub emoji_set: Option<flatbuffers::WIPOffset<&'a str>>,
+}
+impl<'a> Default for EmojiDataArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    EmojiDataArgs {
+      shortcode: None, // required field
+      url: None, // required field
+      emoji_set: None,
+    }
+  }
+}
+
+pub struct EmojiDataBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> EmojiDataBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_shortcode(&mut self, shortcode: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(EmojiData::VT_SHORTCODE, shortcode);
+  }
+  #[inline]
+  pub fn add_url(&mut self, url: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(EmojiData::VT_URL, url);
+  }
+  #[inline]
+  pub fn add_emoji_set(&mut self, emoji_set: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(EmojiData::VT_EMOJI_SET, emoji_set);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> EmojiDataBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    EmojiDataBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<EmojiData<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, EmojiData::VT_SHORTCODE,"shortcode");
+    self.fbb_.required(o, EmojiData::VT_URL,"url");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for EmojiData<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("EmojiData");
+      ds.field("shortcode", &self.shortcode());
+      ds.field("url", &self.url());
+      ds.field("emoji_set", &self.emoji_set());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct EmojiDataT {
+  pub shortcode: String,
+  pub url: String,
+  pub emoji_set: Option<String>,
+}
+impl Default for EmojiDataT {
+  fn default() -> Self {
+    Self {
+      shortcode: "".to_string(),
+      url: "".to_string(),
+      emoji_set: None,
+    }
+  }
+}
+impl EmojiDataT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<EmojiData<'b>> {
+    let shortcode = Some({
+      let x = &self.shortcode;
+      _fbb.create_string(x)
+    });
+    let url = Some({
+      let x = &self.url;
+      _fbb.create_string(x)
+    });
+    let emoji_set = self.emoji_set.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    EmojiData::create(_fbb, &EmojiDataArgs{
+      shortcode,
+      url,
+      emoji_set,
     })
   }
 }
@@ -4781,6 +5148,11 @@ impl<'a> ContentBlock<'a> {
             .expect("Invalid union table, expected `ContentData::LinkPreviewData`.")
             .unpack()
       )),
+      ContentData::EmojiData => ContentDataT::EmojiData(Box::new(
+        self.data_as_emoji_data()
+            .expect("Invalid union table, expected `ContentData::EmojiData`.")
+            .unpack()
+      )),
       _ => ContentDataT::NONE,
     };
     ContentBlockT {
@@ -4938,6 +5310,21 @@ impl<'a> ContentBlock<'a> {
     }
   }
 
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn data_as_emoji_data(&self) -> Option<EmojiData<'a>> {
+    if self.data_type() == ContentData::EmojiData {
+      self.data().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { EmojiData::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
 }
 
 impl flatbuffers::Verifiable for ContentBlock<'_> {
@@ -4959,6 +5346,7 @@ impl flatbuffers::Verifiable for ContentBlock<'_> {
           ContentData::MediaGroupData => v.verify_union_variant::<flatbuffers::ForwardsUOffset<MediaGroupData>>("ContentData::MediaGroupData", pos),
           ContentData::NostrData => v.verify_union_variant::<flatbuffers::ForwardsUOffset<NostrData>>("ContentData::NostrData", pos),
           ContentData::LinkPreviewData => v.verify_union_variant::<flatbuffers::ForwardsUOffset<LinkPreviewData>>("ContentData::LinkPreviewData", pos),
+          ContentData::EmojiData => v.verify_union_variant::<flatbuffers::ForwardsUOffset<EmojiData>>("ContentData::EmojiData", pos),
           _ => Ok(()),
         }
      })?
@@ -5080,6 +5468,13 @@ impl core::fmt::Debug for ContentBlock<'_> {
         },
         ContentData::LinkPreviewData => {
           if let Some(x) = self.data_as_link_preview_data() {
+            ds.field("data", &x)
+          } else {
+            ds.field("data", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        ContentData::EmojiData => {
+          if let Some(x) = self.data_as_emoji_data() {
             ds.field("data", &x)
           } else {
             ds.field("data", &"InvalidFlatbuffer: Union discriminant does not match value.")
@@ -20982,6 +21377,715 @@ impl PreGenericParsedT {
     })
   }
 }
+pub enum PollOptionOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct PollOption<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for PollOption<'a> {
+  type Inner = PollOption<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> PollOption<'a> {
+  pub const VT_ID: flatbuffers::VOffsetT = 4;
+  pub const VT_LABEL: flatbuffers::VOffsetT = 6;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    PollOption { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args PollOptionArgs<'args>
+  ) -> flatbuffers::WIPOffset<PollOption<'bldr>> {
+    let mut builder = PollOptionBuilder::new(_fbb);
+    if let Some(x) = args.label { builder.add_label(x); }
+    if let Some(x) = args.id { builder.add_id(x); }
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> PollOptionT {
+    let id = {
+      let x = self.id();
+      x.to_string()
+    };
+    let label = {
+      let x = self.label();
+      x.to_string()
+    };
+    PollOptionT {
+      id,
+      label,
+    }
+  }
+
+  #[inline]
+  pub fn id(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(PollOption::VT_ID, None).unwrap()}
+  }
+  #[inline]
+  pub fn label(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(PollOption::VT_LABEL, None).unwrap()}
+  }
+}
+
+impl flatbuffers::Verifiable for PollOption<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("id", Self::VT_ID, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("label", Self::VT_LABEL, true)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct PollOptionArgs<'a> {
+    pub id: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub label: Option<flatbuffers::WIPOffset<&'a str>>,
+}
+impl<'a> Default for PollOptionArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    PollOptionArgs {
+      id: None, // required field
+      label: None, // required field
+    }
+  }
+}
+
+pub struct PollOptionBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> PollOptionBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_id(&mut self, id: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(PollOption::VT_ID, id);
+  }
+  #[inline]
+  pub fn add_label(&mut self, label: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(PollOption::VT_LABEL, label);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> PollOptionBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    PollOptionBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<PollOption<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, PollOption::VT_ID,"id");
+    self.fbb_.required(o, PollOption::VT_LABEL,"label");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for PollOption<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("PollOption");
+      ds.field("id", &self.id());
+      ds.field("label", &self.label());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct PollOptionT {
+  pub id: String,
+  pub label: String,
+}
+impl Default for PollOptionT {
+  fn default() -> Self {
+    Self {
+      id: "".to_string(),
+      label: "".to_string(),
+    }
+  }
+}
+impl PollOptionT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<PollOption<'b>> {
+    let id = Some({
+      let x = &self.id;
+      _fbb.create_string(x)
+    });
+    let label = Some({
+      let x = &self.label;
+      _fbb.create_string(x)
+    });
+    PollOption::create(_fbb, &PollOptionArgs{
+      id,
+      label,
+    })
+  }
+}
+pub enum Kind1068ParsedOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct Kind1068Parsed<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for Kind1068Parsed<'a> {
+  type Inner = Kind1068Parsed<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> Kind1068Parsed<'a> {
+  pub const VT_ID: flatbuffers::VOffsetT = 4;
+  pub const VT_PUBKEY: flatbuffers::VOffsetT = 6;
+  pub const VT_QUESTION: flatbuffers::VOffsetT = 8;
+  pub const VT_CONTENT_BLOCKS: flatbuffers::VOffsetT = 10;
+  pub const VT_OPTIONS: flatbuffers::VOffsetT = 12;
+  pub const VT_POLL_TYPE: flatbuffers::VOffsetT = 14;
+  pub const VT_ENDS_AT: flatbuffers::VOffsetT = 16;
+  pub const VT_RELAY_URLS: flatbuffers::VOffsetT = 18;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    Kind1068Parsed { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args Kind1068ParsedArgs<'args>
+  ) -> flatbuffers::WIPOffset<Kind1068Parsed<'bldr>> {
+    let mut builder = Kind1068ParsedBuilder::new(_fbb);
+    builder.add_ends_at(args.ends_at);
+    if let Some(x) = args.relay_urls { builder.add_relay_urls(x); }
+    if let Some(x) = args.options { builder.add_options(x); }
+    if let Some(x) = args.content_blocks { builder.add_content_blocks(x); }
+    if let Some(x) = args.question { builder.add_question(x); }
+    if let Some(x) = args.pubkey { builder.add_pubkey(x); }
+    if let Some(x) = args.id { builder.add_id(x); }
+    builder.add_poll_type(args.poll_type);
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> Kind1068ParsedT {
+    let id = {
+      let x = self.id();
+      x.to_string()
+    };
+    let pubkey = {
+      let x = self.pubkey();
+      x.to_string()
+    };
+    let question = {
+      let x = self.question();
+      x.to_string()
+    };
+    let content_blocks = self.content_blocks().map(|x| {
+      x.iter().map(|t| t.unpack()).collect()
+    });
+    let options = {
+      let x = self.options();
+      x.iter().map(|t| t.unpack()).collect()
+    };
+    let poll_type = self.poll_type();
+    let ends_at = self.ends_at();
+    let relay_urls = self.relay_urls().map(|x| {
+      x.iter().map(|s| s.to_string()).collect()
+    });
+    Kind1068ParsedT {
+      id,
+      pubkey,
+      question,
+      content_blocks,
+      options,
+      poll_type,
+      ends_at,
+      relay_urls,
+    }
+  }
+
+  #[inline]
+  pub fn id(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Kind1068Parsed::VT_ID, None).unwrap()}
+  }
+  #[inline]
+  pub fn pubkey(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Kind1068Parsed::VT_PUBKEY, None).unwrap()}
+  }
+  #[inline]
+  pub fn question(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Kind1068Parsed::VT_QUESTION, None).unwrap()}
+  }
+  #[inline]
+  pub fn content_blocks(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<ContentBlock<'a>>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<ContentBlock>>>>(Kind1068Parsed::VT_CONTENT_BLOCKS, None)}
+  }
+  #[inline]
+  pub fn options(&self) -> flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<PollOption<'a>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<PollOption>>>>(Kind1068Parsed::VT_OPTIONS, None).unwrap()}
+  }
+  #[inline]
+  pub fn poll_type(&self) -> PollType {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<PollType>(Kind1068Parsed::VT_POLL_TYPE, Some(PollType::SingleChoice)).unwrap()}
+  }
+  #[inline]
+  pub fn ends_at(&self) -> u64 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u64>(Kind1068Parsed::VT_ENDS_AT, Some(0)).unwrap()}
+  }
+  #[inline]
+  pub fn relay_urls(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>(Kind1068Parsed::VT_RELAY_URLS, None)}
+  }
+}
+
+impl flatbuffers::Verifiable for Kind1068Parsed<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("id", Self::VT_ID, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("pubkey", Self::VT_PUBKEY, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("question", Self::VT_QUESTION, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<ContentBlock>>>>("content_blocks", Self::VT_CONTENT_BLOCKS, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<PollOption>>>>("options", Self::VT_OPTIONS, true)?
+     .visit_field::<PollType>("poll_type", Self::VT_POLL_TYPE, false)?
+     .visit_field::<u64>("ends_at", Self::VT_ENDS_AT, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("relay_urls", Self::VT_RELAY_URLS, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct Kind1068ParsedArgs<'a> {
+    pub id: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub pubkey: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub question: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub content_blocks: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<ContentBlock<'a>>>>>,
+    pub options: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<PollOption<'a>>>>>,
+    pub poll_type: PollType,
+    pub ends_at: u64,
+    pub relay_urls: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>,
+}
+impl<'a> Default for Kind1068ParsedArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    Kind1068ParsedArgs {
+      id: None, // required field
+      pubkey: None, // required field
+      question: None, // required field
+      content_blocks: None,
+      options: None, // required field
+      poll_type: PollType::SingleChoice,
+      ends_at: 0,
+      relay_urls: None,
+    }
+  }
+}
+
+pub struct Kind1068ParsedBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> Kind1068ParsedBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_id(&mut self, id: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind1068Parsed::VT_ID, id);
+  }
+  #[inline]
+  pub fn add_pubkey(&mut self, pubkey: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind1068Parsed::VT_PUBKEY, pubkey);
+  }
+  #[inline]
+  pub fn add_question(&mut self, question: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind1068Parsed::VT_QUESTION, question);
+  }
+  #[inline]
+  pub fn add_content_blocks(&mut self, content_blocks: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<ContentBlock<'b >>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind1068Parsed::VT_CONTENT_BLOCKS, content_blocks);
+  }
+  #[inline]
+  pub fn add_options(&mut self, options: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<PollOption<'b >>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind1068Parsed::VT_OPTIONS, options);
+  }
+  #[inline]
+  pub fn add_poll_type(&mut self, poll_type: PollType) {
+    self.fbb_.push_slot::<PollType>(Kind1068Parsed::VT_POLL_TYPE, poll_type, PollType::SingleChoice);
+  }
+  #[inline]
+  pub fn add_ends_at(&mut self, ends_at: u64) {
+    self.fbb_.push_slot::<u64>(Kind1068Parsed::VT_ENDS_AT, ends_at, 0);
+  }
+  #[inline]
+  pub fn add_relay_urls(&mut self, relay_urls: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<&'b  str>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind1068Parsed::VT_RELAY_URLS, relay_urls);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> Kind1068ParsedBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    Kind1068ParsedBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<Kind1068Parsed<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, Kind1068Parsed::VT_ID,"id");
+    self.fbb_.required(o, Kind1068Parsed::VT_PUBKEY,"pubkey");
+    self.fbb_.required(o, Kind1068Parsed::VT_QUESTION,"question");
+    self.fbb_.required(o, Kind1068Parsed::VT_OPTIONS,"options");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for Kind1068Parsed<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("Kind1068Parsed");
+      ds.field("id", &self.id());
+      ds.field("pubkey", &self.pubkey());
+      ds.field("question", &self.question());
+      ds.field("content_blocks", &self.content_blocks());
+      ds.field("options", &self.options());
+      ds.field("poll_type", &self.poll_type());
+      ds.field("ends_at", &self.ends_at());
+      ds.field("relay_urls", &self.relay_urls());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct Kind1068ParsedT {
+  pub id: String,
+  pub pubkey: String,
+  pub question: String,
+  pub content_blocks: Option<Vec<ContentBlockT>>,
+  pub options: Vec<PollOptionT>,
+  pub poll_type: PollType,
+  pub ends_at: u64,
+  pub relay_urls: Option<Vec<String>>,
+}
+impl Default for Kind1068ParsedT {
+  fn default() -> Self {
+    Self {
+      id: "".to_string(),
+      pubkey: "".to_string(),
+      question: "".to_string(),
+      content_blocks: None,
+      options: Default::default(),
+      poll_type: PollType::SingleChoice,
+      ends_at: 0,
+      relay_urls: None,
+    }
+  }
+}
+impl Kind1068ParsedT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<Kind1068Parsed<'b>> {
+    let id = Some({
+      let x = &self.id;
+      _fbb.create_string(x)
+    });
+    let pubkey = Some({
+      let x = &self.pubkey;
+      _fbb.create_string(x)
+    });
+    let question = Some({
+      let x = &self.question;
+      _fbb.create_string(x)
+    });
+    let content_blocks = self.content_blocks.as_ref().map(|x|{
+      let w: Vec<_> = x.iter().map(|t| t.pack(_fbb)).collect();_fbb.create_vector(&w)
+    });
+    let options = Some({
+      let x = &self.options;
+      let w: Vec<_> = x.iter().map(|t| t.pack(_fbb)).collect();_fbb.create_vector(&w)
+    });
+    let poll_type = self.poll_type;
+    let ends_at = self.ends_at;
+    let relay_urls = self.relay_urls.as_ref().map(|x|{
+      let w: Vec<_> = x.iter().map(|s| _fbb.create_string(s)).collect();_fbb.create_vector(&w)
+    });
+    Kind1068Parsed::create(_fbb, &Kind1068ParsedArgs{
+      id,
+      pubkey,
+      question,
+      content_blocks,
+      options,
+      poll_type,
+      ends_at,
+      relay_urls,
+    })
+  }
+}
+pub enum Kind1018ParsedOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct Kind1018Parsed<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for Kind1018Parsed<'a> {
+  type Inner = Kind1018Parsed<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> Kind1018Parsed<'a> {
+  pub const VT_ID: flatbuffers::VOffsetT = 4;
+  pub const VT_PUBKEY: flatbuffers::VOffsetT = 6;
+  pub const VT_POLL_EVENT_ID: flatbuffers::VOffsetT = 8;
+  pub const VT_SELECTED_OPTIONS: flatbuffers::VOffsetT = 10;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    Kind1018Parsed { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args Kind1018ParsedArgs<'args>
+  ) -> flatbuffers::WIPOffset<Kind1018Parsed<'bldr>> {
+    let mut builder = Kind1018ParsedBuilder::new(_fbb);
+    if let Some(x) = args.selected_options { builder.add_selected_options(x); }
+    if let Some(x) = args.poll_event_id { builder.add_poll_event_id(x); }
+    if let Some(x) = args.pubkey { builder.add_pubkey(x); }
+    if let Some(x) = args.id { builder.add_id(x); }
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> Kind1018ParsedT {
+    let id = {
+      let x = self.id();
+      x.to_string()
+    };
+    let pubkey = {
+      let x = self.pubkey();
+      x.to_string()
+    };
+    let poll_event_id = {
+      let x = self.poll_event_id();
+      x.to_string()
+    };
+    let selected_options = {
+      let x = self.selected_options();
+      x.iter().map(|s| s.to_string()).collect()
+    };
+    Kind1018ParsedT {
+      id,
+      pubkey,
+      poll_event_id,
+      selected_options,
+    }
+  }
+
+  #[inline]
+  pub fn id(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Kind1018Parsed::VT_ID, None).unwrap()}
+  }
+  #[inline]
+  pub fn pubkey(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Kind1018Parsed::VT_PUBKEY, None).unwrap()}
+  }
+  #[inline]
+  pub fn poll_event_id(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Kind1018Parsed::VT_POLL_EVENT_ID, None).unwrap()}
+  }
+  #[inline]
+  pub fn selected_options(&self) -> flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>(Kind1018Parsed::VT_SELECTED_OPTIONS, None).unwrap()}
+  }
+}
+
+impl flatbuffers::Verifiable for Kind1018Parsed<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("id", Self::VT_ID, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("pubkey", Self::VT_PUBKEY, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("poll_event_id", Self::VT_POLL_EVENT_ID, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("selected_options", Self::VT_SELECTED_OPTIONS, true)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct Kind1018ParsedArgs<'a> {
+    pub id: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub pubkey: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub poll_event_id: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub selected_options: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>,
+}
+impl<'a> Default for Kind1018ParsedArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    Kind1018ParsedArgs {
+      id: None, // required field
+      pubkey: None, // required field
+      poll_event_id: None, // required field
+      selected_options: None, // required field
+    }
+  }
+}
+
+pub struct Kind1018ParsedBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> Kind1018ParsedBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_id(&mut self, id: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind1018Parsed::VT_ID, id);
+  }
+  #[inline]
+  pub fn add_pubkey(&mut self, pubkey: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind1018Parsed::VT_PUBKEY, pubkey);
+  }
+  #[inline]
+  pub fn add_poll_event_id(&mut self, poll_event_id: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind1018Parsed::VT_POLL_EVENT_ID, poll_event_id);
+  }
+  #[inline]
+  pub fn add_selected_options(&mut self, selected_options: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<&'b  str>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Kind1018Parsed::VT_SELECTED_OPTIONS, selected_options);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> Kind1018ParsedBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    Kind1018ParsedBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<Kind1018Parsed<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, Kind1018Parsed::VT_ID,"id");
+    self.fbb_.required(o, Kind1018Parsed::VT_PUBKEY,"pubkey");
+    self.fbb_.required(o, Kind1018Parsed::VT_POLL_EVENT_ID,"poll_event_id");
+    self.fbb_.required(o, Kind1018Parsed::VT_SELECTED_OPTIONS,"selected_options");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for Kind1018Parsed<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("Kind1018Parsed");
+      ds.field("id", &self.id());
+      ds.field("pubkey", &self.pubkey());
+      ds.field("poll_event_id", &self.poll_event_id());
+      ds.field("selected_options", &self.selected_options());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct Kind1018ParsedT {
+  pub id: String,
+  pub pubkey: String,
+  pub poll_event_id: String,
+  pub selected_options: Vec<String>,
+}
+impl Default for Kind1018ParsedT {
+  fn default() -> Self {
+    Self {
+      id: "".to_string(),
+      pubkey: "".to_string(),
+      poll_event_id: "".to_string(),
+      selected_options: Default::default(),
+    }
+  }
+}
+impl Kind1018ParsedT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<Kind1018Parsed<'b>> {
+    let id = Some({
+      let x = &self.id;
+      _fbb.create_string(x)
+    });
+    let pubkey = Some({
+      let x = &self.pubkey;
+      _fbb.create_string(x)
+    });
+    let poll_event_id = Some({
+      let x = &self.poll_event_id;
+      _fbb.create_string(x)
+    });
+    let selected_options = Some({
+      let x = &self.selected_options;
+      let w: Vec<_> = x.iter().map(|s| _fbb.create_string(s)).collect();_fbb.create_vector(&w)
+    });
+    Kind1018Parsed::create(_fbb, &Kind1018ParsedArgs{
+      id,
+      pubkey,
+      poll_event_id,
+      selected_options,
+    })
+  }
+}
 pub enum ParsedEventOffset {}
 #[derive(Copy, Clone, PartialEq)]
 
@@ -21096,6 +22200,16 @@ impl<'a> ParsedEvent<'a> {
       ParsedData::Kind1311Parsed => ParsedDataT::Kind1311Parsed(Box::new(
         self.parsed_as_kind_1311_parsed()
             .expect("Invalid union table, expected `ParsedData::Kind1311Parsed`.")
+            .unpack()
+      )),
+      ParsedData::Kind1068Parsed => ParsedDataT::Kind1068Parsed(Box::new(
+        self.parsed_as_kind_1068_parsed()
+            .expect("Invalid union table, expected `ParsedData::Kind1068Parsed`.")
+            .unpack()
+      )),
+      ParsedData::Kind1018Parsed => ParsedDataT::Kind1018Parsed(Box::new(
+        self.parsed_as_kind_1018_parsed()
+            .expect("Invalid union table, expected `ParsedData::Kind1018Parsed`.")
             .unpack()
       )),
       ParsedData::Kind10002Parsed => ParsedDataT::Kind10002Parsed(Box::new(
@@ -21407,6 +22521,36 @@ impl<'a> ParsedEvent<'a> {
 
   #[inline]
   #[allow(non_snake_case)]
+  pub fn parsed_as_kind_1068_parsed(&self) -> Option<Kind1068Parsed<'a>> {
+    if self.parsed_type() == ParsedData::Kind1068Parsed {
+      self.parsed().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { Kind1068Parsed::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn parsed_as_kind_1018_parsed(&self) -> Option<Kind1018Parsed<'a>> {
+    if self.parsed_type() == ParsedData::Kind1018Parsed {
+      self.parsed().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { Kind1018Parsed::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
   pub fn parsed_as_kind_10002_parsed(&self) -> Option<Kind10002Parsed<'a>> {
     if self.parsed_type() == ParsedData::Kind10002Parsed {
       self.parsed().map(|t| {
@@ -21596,6 +22740,8 @@ impl flatbuffers::Verifiable for ParsedEvent<'_> {
           ParsedData::Kind22Parsed => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Kind22Parsed>>("ParsedData::Kind22Parsed", pos),
           ParsedData::Kind1111Parsed => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Kind1111Parsed>>("ParsedData::Kind1111Parsed", pos),
           ParsedData::Kind1311Parsed => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Kind1311Parsed>>("ParsedData::Kind1311Parsed", pos),
+          ParsedData::Kind1068Parsed => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Kind1068Parsed>>("ParsedData::Kind1068Parsed", pos),
+          ParsedData::Kind1018Parsed => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Kind1018Parsed>>("ParsedData::Kind1018Parsed", pos),
           ParsedData::Kind10002Parsed => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Kind10002Parsed>>("ParsedData::Kind10002Parsed", pos),
           ParsedData::Kind10019Parsed => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Kind10019Parsed>>("ParsedData::Kind10019Parsed", pos),
           ParsedData::Kind17375Parsed => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Kind17375Parsed>>("ParsedData::Kind17375Parsed", pos),
@@ -21785,6 +22931,20 @@ impl core::fmt::Debug for ParsedEvent<'_> {
         },
         ParsedData::Kind1311Parsed => {
           if let Some(x) = self.parsed_as_kind_1311_parsed() {
+            ds.field("parsed", &x)
+          } else {
+            ds.field("parsed", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        ParsedData::Kind1068Parsed => {
+          if let Some(x) = self.parsed_as_kind_1068_parsed() {
+            ds.field("parsed", &x)
+          } else {
+            ds.field("parsed", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        ParsedData::Kind1018Parsed => {
+          if let Some(x) = self.parsed_as_kind_1018_parsed() {
             ds.field("parsed", &x)
           } else {
             ds.field("parsed", &"InvalidFlatbuffer: Union discriminant does not match value.")

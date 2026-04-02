@@ -1,0 +1,13 @@
+include "../common.fbs";
+
+namespace nostr.fb;
+
+// Poll response (kind 1018)
+// Single choice: first response tag is the vote
+// Multiple choice: multiple response tags allowed
+table Kind1018Parsed {
+  id: string (required);            // Event id
+  pubkey: string (required);          // Voter pubkey
+  poll_event_id: string (required);  // Referenced poll event (e tag)
+  selected_options: [string] (required);  // Option IDs that were selected
+}

@@ -62,6 +62,11 @@ pub enum ContentData {
         description: Option<String>,
         image: Option<String>,
     },
+    Emoji {
+        shortcode: String,
+        url: String,
+        emoji_set: Option<String>, // Optional pointer to emoji set (kind:pubkey:d-tag)
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -88,6 +93,7 @@ impl ContentBlock {
 
 pub struct ContentParser {
     patterns: Vec<Pattern>,
+    emoji_map: std::collections::HashMap<String, (String, Option<String>)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -128,6 +134,24 @@ fn normalize_escaped_whitespace(s: &str) -> String {
 
 impl ContentParser {
     pub fn new() -> Self {
+        Self::with_emojis(&[])
+    }
+
+    /// Create parser with emoji tag resolution (NIP-30)
+    /// emoji_tags: Vec of emoji tags ["emoji", "shortcode", "url", optional "emoji-set-address"]
+    pub fn with_emojis(emoji_tags: &[Vec<String>]) -> Self {
+        // Build emoji lookup map from tags: shortcode -> (url, emoji_set)
+        let emoji_map: std::collections::HashMap<String, (String, Option<String>)> = emoji_tags
+            .iter()
+            .filter(|tag| tag.len() >= 3 && tag[0] == "emoji")
+            .map(|tag| {
+                let shortcode = tag[1].clone();
+                let url = tag[2].clone();
+                let emoji_set = tag.get(3).cloned();
+                (shortcode, (url, emoji_set))
+            })
+            .collect();
+
         let patterns = vec![
             Pattern {
                 name: "code".to_string(),
@@ -171,9 +195,18 @@ impl ContentParser {
                     .unwrap(),
                 processor: process_nostr,
             },
+            Pattern {
+                name: "emoji".to_string(),
+                // NIP-30 shortcode format: :shortcode: where shortcode is alphanumeric, hyphens, underscores
+                regex: Regex::new(r":([a-zA-Z0-9_-]+):").unwrap(),
+                processor: process_emoji_placeholder,
+            },
         ];
 
-        Self { patterns }
+        Self {
+            patterns,
+            emoji_map,
+        }
     }
 
     pub fn parse_content(&self, content: &str) -> Result<Vec<ContentBlock>> {
@@ -217,14 +250,28 @@ impl ContentParser {
 
                     // Process and add the match
                     if let Some(caps) = pattern.regex.captures(&block.text[m.start()..m.end()]) {
-                        match (pattern.processor)(m.as_str(), &caps) {
-                            Ok(match_block) => new_blocks.push(match_block),
-                            Err(_) => {
-                                // If we can't process the match, treat it as text
-                                new_blocks.push(ContentBlock::new(
-                                    "text".to_string(),
-                                    m.as_str().to_string(),
-                                ));
+                        // For emoji pattern, resolve shortcode using emoji_map if available
+                        if pattern.name == "emoji" && !self.emoji_map.is_empty() {
+                            match process_emoji_with_map(m.as_str(), &caps, &self.emoji_map) {
+                                Ok(match_block) => new_blocks.push(match_block),
+                                Err(_) => {
+                                    // If we can't resolve the emoji, treat it as text
+                                    new_blocks.push(ContentBlock::new(
+                                        "text".to_string(),
+                                        m.as_str().to_string(),
+                                    ));
+                                }
+                            }
+                        } else {
+                            match (pattern.processor)(m.as_str(), &caps) {
+                                Ok(match_block) => new_blocks.push(match_block),
+                                Err(_) => {
+                                    // If we can't process the match, treat it as text
+                                    new_blocks.push(ContentBlock::new(
+                                        "text".to_string(),
+                                        m.as_str().to_string(),
+                                    ));
+                                }
                             }
                         }
                     } else {
@@ -805,13 +852,49 @@ impl LinkPreview {
     }
 }
 
+fn process_emoji_placeholder(_text: &str, _caps: &regex::Captures) -> Result<ContentBlock> {
+    // Placeholder - actual processing happens in parse_content_with_emojis
+    // This should never be called directly
+    Err(crate::parser::ParserError::Other(
+        "emoji placeholder called without emoji map".to_string(),
+    ))
+}
+
+/// Process emoji shortcode using emoji tag lookup map
+fn process_emoji_with_map(
+    text: &str,
+    caps: &regex::Captures,
+    emoji_map: &std::collections::HashMap<String, (String, Option<String>)>,
+) -> Result<ContentBlock> {
+    // Extract shortcode from capture group 1 (the content between colons)
+    let shortcode = caps.get(1).map_or("", |m| m.as_str());
+
+    if shortcode.is_empty() {
+        return Err(crate::parser::ParserError::Other("empty emoji shortcode".to_string()));
+    }
+
+    // Look up emoji in the map
+    if let Some((url, emoji_set)) = emoji_map.get(shortcode) {
+        Ok(
+            ContentBlock::new("emoji".to_string(), text.to_string()).with_data(ContentData::Emoji {
+                shortcode: shortcode.to_string(),
+                url: url.clone(),
+                emoji_set: emoji_set.clone(),
+            }),
+        )
+    } else {
+        // Emoji shortcode not found in tags - return as plain text
+        Ok(ContentBlock::new("text".to_string(), text.to_string()))
+    }
+}
+
 fn get_link_preview(url: &str) -> LinkPreview {
     LinkPreview::new(url)
 }
 
-// Public function to parse content
-pub fn parse_content(content: &str) -> Result<Vec<ContentBlock>> {
-    let parser = ContentParser::new();
+// Public function to parse content with emoji support
+pub fn parse_content(content: &str, emoji_tags: &[Vec<String>]) -> Result<Vec<ContentBlock>> {
+    let parser = ContentParser::with_emojis(emoji_tags);
     parser.parse_content(content)
 }
 
@@ -1041,6 +1124,24 @@ pub fn serialize_content_data<'a, A: flatbuffers::Allocator + 'a>(
                 Some(link_fb.as_union_value()),
             )
         }
+        ContentData::Emoji {
+            shortcode,
+            url,
+            emoji_set,
+        } => {
+            let shortcode_off = builder.create_string(shortcode);
+            let url_off = builder.create_string(url);
+            let emoji_set_off = emoji_set.as_ref().map(|s| builder.create_string(s));
+            let emoji_fb = fb::EmojiData::create(
+                builder,
+                &fb::EmojiDataArgs {
+                    shortcode: Some(shortcode_off),
+                    url: Some(url_off),
+                    emoji_set: emoji_set_off,
+                },
+            );
+            (fb::ContentData::EmojiData, Some(emoji_fb.as_union_value()))
+        }
     }
 }
 
@@ -1051,7 +1152,7 @@ mod tests {
     #[test]
     fn test_parse_plain_text() {
         let content = "This is just plain text";
-        let result = parse_content(content).unwrap();
+        let result = parse_content(content, &[]).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].block_type, "text");
         assert_eq!(result[0].text, content);
@@ -1060,7 +1161,7 @@ mod tests {
     #[test]
     fn test_parse_code_block() {
         let content = "Here is some code: ```var x = 10;``` and more text";
-        let result = parse_content(content).unwrap();
+        let result = parse_content(content, &[]).unwrap();
         assert_eq!(result.len(), 3);
         assert_eq!(result[0].block_type, "text");
         assert_eq!(result[1].block_type, "code");
@@ -1070,7 +1171,7 @@ mod tests {
     #[test]
     fn test_parse_hashtag() {
         let content = "I love #bitcoin and #lightning";
-        let result = parse_content(content).unwrap();
+        let result = parse_content(content, &[]).unwrap();
         assert_eq!(result.len(), 4);
         assert_eq!(result[1].block_type, "hashtag");
         assert_eq!(result[3].block_type, "hashtag");
@@ -1079,7 +1180,7 @@ mod tests {
     #[test]
     fn test_parse_image() {
         let content = "Check this image: https://example.com/image.jpg";
-        let result = parse_content(content).unwrap();
+        let result = parse_content(content, &[]).unwrap();
         assert_eq!(result.len(), 2);
         assert_eq!(result[1].block_type, "image");
     }
@@ -1087,7 +1188,7 @@ mod tests {
     #[test]
     fn test_parse_mixed_content() {
         let content = "Hello #world!\nCheck out https://example.com";
-        let result = parse_content(content).unwrap();
+        let result = parse_content(content, &[]).unwrap();
         assert!(result.len() >= 3);
 
         let has_hashtag = result.iter().any(|b| b.block_type == "hashtag");
@@ -1099,7 +1200,7 @@ mod tests {
     #[test]
     fn test_images_separated_by_escaped_newline() {
         let content = "https://example.com/a.jpg\\nhttps://example.com/b.png";
-        let result = parse_content(content).unwrap();
+        let result = parse_content(content, &[]).unwrap();
         let image_count = result.iter().filter(|b| b.block_type == "image").count();
         let has_grid = result.iter().any(|b| b.block_type == "mediaGrid");
         assert!(image_count == 2 || has_grid);
@@ -1142,5 +1243,74 @@ mod tests {
         assert!(!shortened.is_empty());
         assert_eq!(shortened[0].block_type, "text");
         assert_eq!(shortened[0].text, text);
+    }
+
+    #[test]
+    fn test_parse_emoji_with_tags() {
+        let content = "Do you see this emoji on your client :wisp_lazor:";
+        let emoji_tags = vec![vec![
+            "emoji".to_string(),
+            "wisp_lazor".to_string(),
+            "https://gleasonator.com/emoji/wisp_lazor.png".to_string(),
+        ]];
+
+        let parser = ContentParser::with_emojis(&emoji_tags);
+        let result = parser.parse_content(content).unwrap();
+
+        // Should have text before emoji, emoji block, and text after
+        assert!(result.len() >= 2);
+        
+        // Find the emoji block
+        let emoji_block = result.iter().find(|b| b.block_type == "emoji");
+        assert!(emoji_block.is_some(), "Should have an emoji block");
+        
+        if let Some(block) = emoji_block {
+            assert_eq!(block.text, ":wisp_lazor:");
+            if let Some(ContentData::Emoji { shortcode, url, emoji_set }) = &block.data {
+                assert_eq!(shortcode, "wisp_lazor");
+                assert_eq!(url, "https://gleasonator.com/emoji/wisp_lazor.png");
+                assert_eq!(emoji_set, &None);
+            } else {
+                panic!("Expected Emoji data");
+            }
+        }
+    }
+
+    #[test]
+    fn test_parse_emoji_without_matching_tag() {
+        let content = "Do you see this emoji on your client :wisp_lazor:";
+        // No emoji tags provided
+
+        let parser = ContentParser::new();
+        let result = parser.parse_content(content).unwrap();
+
+        // Should have no emoji block - just text
+        let emoji_block = result.iter().find(|b| b.block_type == "emoji");
+        assert!(emoji_block.is_none(), "Should NOT have an emoji block without matching tag");
+        
+        // The content should remain as text (with the colons)
+        let text_content: String = result.iter().filter(|b| b.block_type == "text").map(|b| b.text.clone()).collect();
+        assert!(text_content.contains(":wisp_lazor:"));
+    }
+
+    #[test]
+    fn test_parse_emoji_with_emoji_set() {
+        let content = "Hello :wisp_lazor: world!";
+        let emoji_tags = vec![vec![
+            "emoji".to_string(),
+            "wisp_lazor".to_string(),
+            "https://gleasonator.com/emoji/wisp_lazor.png".to_string(),
+            "30030:79c2cae114ea28a981e7559b4fe7854a473521a8d22a66bbab9fa248eb820ff6:emojis".to_string(),
+        ]];
+
+        let parser = ContentParser::with_emojis(&emoji_tags);
+        let result = parser.parse_content(content).unwrap();
+
+        let emoji_block = result.iter().find(|b| b.block_type == "emoji").unwrap();
+        if let Some(ContentData::Emoji { emoji_set, .. }) = &emoji_block.data {
+            assert_eq!(emoji_set, &Some("30030:79c2cae114ea28a981e7559b4fe7854a473521a8d22a66bbab9fa248eb820ff6:emojis".to_string()));
+        } else {
+            panic!("Expected Emoji data with emoji_set");
+        }
     }
 }

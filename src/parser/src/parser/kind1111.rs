@@ -58,8 +58,14 @@ impl Parser {
 
         let mut requests = Vec::new();
 
-        // Parse content for mentions, URLs, hashtags, nostr: refs
-        let parsed_content = parse_content(&event.content)?;
+        // Parse content for mentions, URLs, hashtags, nostr: refs, emojis
+        let emoji_tags: Vec<Vec<String>> = event
+            .tags
+            .iter()
+            .filter(|tag| tag.len() >= 3 && tag[0] == "emoji")
+            .cloned()
+            .collect();
+        let parsed_content = parse_content(&event.content, &emoji_tags)?;
 
         // Extract event mentions from parsed content (nostr: refs)
         let content_mentions = extract_content_mentions(&parsed_content);

@@ -7,6 +7,7 @@ import * as flatbuffers from 'flatbuffers';
 import { CashuData, CashuDataT } from '../../nostr/fb/cashu-data.js';
 import { CodeData, CodeDataT } from '../../nostr/fb/code-data.js';
 import { ContentData, unionToContentData, unionListToContentData } from '../../nostr/fb/content-data.js';
+import { EmojiData, EmojiDataT } from '../../nostr/fb/emoji-data.js';
 import { HashtagData, HashtagDataT } from '../../nostr/fb/hashtag-data.js';
 import { ImageData, ImageDataT } from '../../nostr/fb/image-data.js';
 import { LinkPreviewData, LinkPreviewDataT } from '../../nostr/fb/link-preview-data.js';
@@ -124,7 +125,7 @@ constructor(
   public type: string|Uint8Array|null = null,
   public text: string|Uint8Array|null = null,
   public dataType: ContentData = ContentData.NONE,
-  public data: CashuDataT|CodeDataT|HashtagDataT|ImageDataT|LinkPreviewDataT|MediaGroupDataT|NostrDataT|VideoDataT|null = null
+  public data: CashuDataT|CodeDataT|EmojiDataT|HashtagDataT|ImageDataT|LinkPreviewDataT|MediaGroupDataT|NostrDataT|VideoDataT|null = null
 ){}
 
 

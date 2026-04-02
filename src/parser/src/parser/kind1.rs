@@ -1,6 +1,6 @@
 use crate::parser::{
     content::{
-        enrich_media_with_imeta, parse_content, serialize_content_data, ContentBlock,
+        enrich_media_with_imeta, serialize_content_data, ContentBlock,
         ContentParser, ImetaData,
     },
     Parser,
@@ -116,8 +116,17 @@ impl Parser {
         // Extract imeta tags from event for image metadata enrichment
         let imeta_map = extract_imeta_tags(&event.tags);
 
-        // Parse content into structured blocks
-        match parse_content(&event.content) {
+        // Extract emoji tags for NIP-30 custom emoji support
+        let emoji_tags: Vec<Vec<String>> = event
+            .tags
+            .iter()
+            .filter(|tag| tag.len() >= 3 && tag[0] == "emoji")
+            .cloned()
+            .collect();
+
+        // Parse content into structured blocks with emoji support
+        let content_parser = ContentParser::with_emojis(&emoji_tags);
+        match content_parser.parse_content(&event.content) {
             Ok(mut content_blocks) => {
                 // Enrich media with imeta data (images and videos)
                 enrich_media_with_imeta(&mut content_blocks, &imeta_map);

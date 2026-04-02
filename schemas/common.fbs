@@ -5,6 +5,12 @@ table CodeData {
   code: string (required);
 }
 
+table EmojiData {
+  shortcode: string (required);
+  url: string (required);
+  emoji_set: string; // Optional: "kind:pubkey:d-tag" pointer to emoji set (NIP-51)
+}
+
 table HashtagData {
   tag: string (required);
 }
@@ -57,7 +63,8 @@ union ContentData {
   VideoData,
   MediaGroupData,
   NostrData,
-  LinkPreviewData
+  LinkPreviewData,
+  EmojiData
 }
 
 table ContentBlock {

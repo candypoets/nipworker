@@ -52,8 +52,14 @@ impl Parser {
             return Err(ParserError::Other("event is not kind 1311".to_string()));
         }
 
-        // Parse content for mentions, URLs, hashtags, nostr: refs
-        let parsed_content = parse_content(&event.content)?;
+        // Parse content for mentions, URLs, hashtags, nostr: refs, emojis
+        let emoji_tags: Vec<Vec<String>> = event
+            .tags
+            .iter()
+            .filter(|tag| tag.len() >= 3 && tag[0] == "emoji")
+            .cloned()
+            .collect();
+        let parsed_content = parse_content(&event.content, &emoji_tags)?;
 
         // Extract the live activity reference (required "a" tag)
         let activity = extract_activity_ref(&event.tags).ok_or_else(|| {

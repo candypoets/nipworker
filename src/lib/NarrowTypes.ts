@@ -36,6 +36,7 @@ import {
 	MediaGroupData,
 	NostrData,
 	VideoData,
+	EmojiData,
 	NostrEvent,
 	ListParsed,
 	PreGenericParsed
@@ -353,4 +354,9 @@ export function asNostrData(block: ContentBlock): NostrData | null {
 export function asLinkPreview(block: ContentBlock): LinkPreviewData | null {
 	if (block.dataType() !== ContentData.LinkPreviewData) return null;
 	return block.data(new LinkPreviewData()) ?? null;
+}
+
+export function asEmojiData(block: ContentBlock): EmojiData | null {
+	if (block.dataType() !== ContentData.EmojiData) return null;
+	return block.data(new EmojiData()) ?? null;
 }

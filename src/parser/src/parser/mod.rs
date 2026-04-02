@@ -1,4 +1,5 @@
-use crate::crypto_client::CryptoClient;
+pub mod kind1018;
+pub mod kind1068;use crate::crypto_client::CryptoClient;
 use shared::types::{nostr::Template, Event, ParserError};
 use std::sync::Arc;
 
@@ -36,6 +37,8 @@ pub use kind0::{Kind0Parsed, Nip05Response, ProfilePointer};
 pub use kind1::{EventPointer, Kind1Parsed, ProfilePointer as Kind1ProfilePointer};
 pub use kind10002::{Kind10002Parsed, RelayInfo};
 pub use kind10019::{Kind10019Parsed, MintInfo};
+pub use kind1018::Kind1018Parsed;
+pub use kind1068::{Kind1068Parsed, PollOption, PollType};
 pub use kind1111::Kind1111Parsed;
 pub use kind1311::Kind1311Parsed;
 pub use kind17::Kind17Parsed;
@@ -137,6 +140,14 @@ impl Parser {
                 let (parsed, requests) = self.parse_kind_9735(&event)?;
                 (Some(ParsedData::Kind9735(parsed)), requests)
             }
+            1018 => {
+                let (parsed, requests) = self.parse_kind_1018(&event)?;
+                (Some(ParsedData::Kind1018(parsed)), requests)
+            }
+            1068 => {
+                let (parsed, requests) = self.parse_kind_1068(&event)?;
+                (Some(ParsedData::Kind1068(parsed)), requests)
+            }
             10002 => {
                 let (parsed, requests) = self.parse_kind_10002(&event)?;
                 (Some(ParsedData::Kind10002(parsed)), requests)
@@ -206,6 +217,8 @@ impl Parser {
             7375 => self.prepare_kind_7375(template).await,
             7376 => self.prepare_kind_7376(template).await,
             9321 => self.prepare_kind_9321(template).await,
+            1018 => self.prepare_kind_1018(template).await,
+            1068 => self.prepare_kind_1068(template).await,
             10019 => self.prepare_kind_10019(template).await,
             9735 => self.prepare_kind_9735(template).await,
             17375 => self.prepare_kind_17375(template).await,

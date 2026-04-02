@@ -24,6 +24,9 @@ include "kinds/kind1311.fbs";
 include "kinds/list.fbs";
 include "kinds/pre_generic.fbs";
 
+include "kinds/kind1068.fbs";
+include "kinds/kind1018.fbs";
+
 namespace nostr.fb;
 
 // -- Union Types --
@@ -52,6 +55,8 @@ enum ParsedDataUnion : uint32 {
   Kind22Parsed = 22,
   Kind1111Parsed = 1111,
   Kind1311Parsed = 1311,
+  Kind1068Parsed = 1068,
+  Kind1018Parsed = 1018,
   Kind10002Parsed = 10002,
   Kind10019Parsed = 10019,
   Kind17375Parsed = 17375,
@@ -79,6 +84,8 @@ union ParsedData {
   Kind22Parsed,
   Kind1111Parsed,
   Kind1311Parsed,
+  Kind1068Parsed,
+  Kind1018Parsed,
   Kind10002Parsed,
   Kind10019Parsed,
   Kind17375Parsed,

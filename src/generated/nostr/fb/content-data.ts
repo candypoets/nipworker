@@ -4,6 +4,7 @@
 
 import { CashuData, CashuDataT } from '../../nostr/fb/cashu-data.js';
 import { CodeData, CodeDataT } from '../../nostr/fb/code-data.js';
+import { EmojiData, EmojiDataT } from '../../nostr/fb/emoji-data.js';
 import { HashtagData, HashtagDataT } from '../../nostr/fb/hashtag-data.js';
 import { ImageData, ImageDataT } from '../../nostr/fb/image-data.js';
 import { LinkPreviewData, LinkPreviewDataT } from '../../nostr/fb/link-preview-data.js';
@@ -21,13 +22,14 @@ export enum ContentData {
   VideoData = 5,
   MediaGroupData = 6,
   NostrData = 7,
-  LinkPreviewData = 8
+  LinkPreviewData = 8,
+  EmojiData = 9
 }
 
 export function unionToContentData(
   type: ContentData,
-  accessor: (obj:CashuData|CodeData|HashtagData|ImageData|LinkPreviewData|MediaGroupData|NostrData|VideoData) => CashuData|CodeData|HashtagData|ImageData|LinkPreviewData|MediaGroupData|NostrData|VideoData|null
-): CashuData|CodeData|HashtagData|ImageData|LinkPreviewData|MediaGroupData|NostrData|VideoData|null {
+  accessor: (obj:CashuData|CodeData|EmojiData|HashtagData|ImageData|LinkPreviewData|MediaGroupData|NostrData|VideoData) => CashuData|CodeData|EmojiData|HashtagData|ImageData|LinkPreviewData|MediaGroupData|NostrData|VideoData|null
+): CashuData|CodeData|EmojiData|HashtagData|ImageData|LinkPreviewData|MediaGroupData|NostrData|VideoData|null {
   switch(ContentData[type]) {
     case 'NONE': return null; 
     case 'CodeData': return accessor(new CodeData())! as CodeData;
@@ -38,15 +40,16 @@ export function unionToContentData(
     case 'MediaGroupData': return accessor(new MediaGroupData())! as MediaGroupData;
     case 'NostrData': return accessor(new NostrData())! as NostrData;
     case 'LinkPreviewData': return accessor(new LinkPreviewData())! as LinkPreviewData;
+    case 'EmojiData': return accessor(new EmojiData())! as EmojiData;
     default: return null;
   }
 }
 
 export function unionListToContentData(
   type: ContentData, 
-  accessor: (index: number, obj:CashuData|CodeData|HashtagData|ImageData|LinkPreviewData|MediaGroupData|NostrData|VideoData) => CashuData|CodeData|HashtagData|ImageData|LinkPreviewData|MediaGroupData|NostrData|VideoData|null, 
+  accessor: (index: number, obj:CashuData|CodeData|EmojiData|HashtagData|ImageData|LinkPreviewData|MediaGroupData|NostrData|VideoData) => CashuData|CodeData|EmojiData|HashtagData|ImageData|LinkPreviewData|MediaGroupData|NostrData|VideoData|null, 
   index: number
-): CashuData|CodeData|HashtagData|ImageData|LinkPreviewData|MediaGroupData|NostrData|VideoData|null {
+): CashuData|CodeData|EmojiData|HashtagData|ImageData|LinkPreviewData|MediaGroupData|NostrData|VideoData|null {
   switch(ContentData[type]) {
     case 'NONE': return null; 
     case 'CodeData': return accessor(index, new CodeData())! as CodeData;
@@ -57,6 +60,7 @@ export function unionListToContentData(
     case 'MediaGroupData': return accessor(index, new MediaGroupData())! as MediaGroupData;
     case 'NostrData': return accessor(index, new NostrData())! as NostrData;
     case 'LinkPreviewData': return accessor(index, new LinkPreviewData())! as LinkPreviewData;
+    case 'EmojiData': return accessor(index, new EmojiData())! as EmojiData;
     default: return null;
   }
 }

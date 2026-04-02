@@ -45,4 +45,11 @@ export class ConnectionTracker {
 	get resolutionRate(): number {
 		return this.incomingCount === 0 ? 0 : this.resolvedCount / this.incomingCount;
 	}
+
+	/** Reset all tracking state for a fresh subscription */
+	reset(): void {
+		this.knownRelays.clear();
+		this.incomingCount = 0;
+		this.resolvedCount = 0;
+	}
 }

@@ -1,0 +1,26 @@
+include "../common.fbs";
+
+namespace nostr.fb;
+
+// Poll option: ["option", "uniqueId", "label"]
+table PollOption {
+  id: string (required);      // uniqueId (e.g., "qj518h583")
+  label: string (required);    // Display label (e.g., "Yay")
+}
+
+enum PollType : byte {
+  SingleChoice = 0,
+  MultipleChoice = 1
+}
+
+// Poll event (kind 1068)
+table Kind1068Parsed {
+  id: string (required);           // Event id
+  pubkey: string (required);         // Author pubkey
+  question: string (required);     // Content of the poll (raw)
+  content_blocks: [ContentBlock];  // Parsed rich content blocks
+  options: [PollOption] (required);  // Poll options
+  poll_type: PollType;              // Single or multiple choice
+  ends_at: ulong;                   // Unix timestamp when poll closes (0 if no end)
+  relay_urls: [string];             // Relays where responses should be published
+}

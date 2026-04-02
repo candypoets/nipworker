@@ -88,7 +88,8 @@ impl Parser {
                 parsed.decrypted_content = Some(decrypted.clone());
 
                 // Parse the decrypted content into structured blocks
-                match parse_content(&decrypted) {
+                // Emoji tags would be inside encrypted content, not visible in event tags
+                match parse_content(&decrypted, &[]) {
                     Ok(content_blocks) => {
                         parsed.parsed_content = content_blocks
                             .into_iter()
