@@ -17,6 +17,7 @@ gloo-timers = { version = "0.3", features = ["futures"] }
 futures = "0.3"
 futures-channel = "0.3"
 async-lock = "3.4.1"
+async-trait = "0.1"
 tracing = "0.1"
 console_error_panic_hook = "0.1"
 serde = { version = "1", features = ["derive"] }

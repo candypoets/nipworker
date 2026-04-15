@@ -7,15 +7,33 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use wasm_bindgen_futures::spawn_local;
 
+#[derive(Debug)]
 struct WsHandle {
     write: mpsc::Sender<String>,
 }
 
-#[derive(Debug, Clone)]
 pub struct WebSocketTransport {
     connections: Rc<RefCell<HashMap<String, WsHandle>>>,
     message_callbacks: Rc<RefCell<HashMap<String, Box<dyn Fn(String)>>>>,
     status_callbacks: Rc<RefCell<HashMap<String, Box<dyn Fn(TransportStatus)>>>>,
+}
+
+impl Clone for WebSocketTransport {
+    fn clone(&self) -> Self {
+        Self {
+            connections: self.connections.clone(),
+            message_callbacks: self.message_callbacks.clone(),
+            status_callbacks: self.status_callbacks.clone(),
+        }
+    }
+}
+
+impl std::fmt::Debug for WebSocketTransport {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WebSocketTransport")
+            .field("connections", &self.connections)
+            .finish_non_exhaustive()
+    }
 }
 
 impl WebSocketTransport {
