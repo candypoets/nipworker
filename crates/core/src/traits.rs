@@ -1,58 +1,56 @@
 use async_trait::async_trait;
-use serde_json::Value;
+use thiserror::Error;
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Error, Debug, Clone)]
 pub enum TransportError {
-    #[error("Connection failed: {0}")]
-    ConnectionFailed(String),
-    #[error("Send failed: {0}")]
-    SendFailed(String),
-    #[error("Not connected")]
-    NotConnected,
+    #[error("{0}")]
+    Other(String),
+}
+
+#[derive(Error, Debug, Clone)]
+pub enum StorageError {
+    #[error("{0}")]
+    Other(String),
+}
+
+#[derive(Error, Debug, Clone)]
+pub enum SignerError {
+    #[error("{0}")]
+    Other(String),
 }
 
 #[derive(Debug, Clone)]
 pub enum TransportStatus {
-    Connected(String),
-    Failed(String),
-    Closed(String),
+    Connected,
+    Failed,
+    Closed,
 }
 
 #[async_trait(?Send)]
-pub trait Transport: core::fmt::Debug {
+pub trait Transport {
     async fn connect(&self, url: &str) -> Result<(), TransportError>;
     fn disconnect(&self, url: &str);
     fn send(&self, url: &str, frame: String) -> Result<(), TransportError>;
     fn on_message(&self, url: &str, callback: Box<dyn Fn(String)>);
-    fn on_status(&self, callback: Box<dyn Fn(TransportStatus)>);
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum StorageError {
-    #[error("DB error: {0}")]
-    Db(String),
+    fn on_status(&self, url: &str, callback: Box<dyn Fn(TransportStatus)>);
 }
 
 #[async_trait(?Send)]
-pub trait Storage: core::fmt::Debug {
-    async fn query(&self, filters: Vec<Value>) -> Result<Vec<Vec<u8>>, StorageError>;
+pub trait Storage {
+    async fn query(
+        &self,
+        filters: Vec<crate::types::nostr::Filter>,
+    ) -> Result<Vec<Vec<u8>>, StorageError>;
     async fn persist(&self, event_bytes: &[u8]) -> Result<(), StorageError>;
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum SignerError {
-    #[error("Crypto error: {0}")]
-    Crypto(String),
+    async fn initialize(&self) -> Result<(), StorageError>;
 }
 
 #[async_trait(?Send)]
-pub trait Signer: core::fmt::Debug {
+pub trait Signer {
     async fn get_public_key(&self) -> Result<String, SignerError>;
     async fn sign_event(&self, event_json: &str) -> Result<String, SignerError>;
     async fn nip04_encrypt(&self, peer: &str, plaintext: &str) -> Result<String, SignerError>;
     async fn nip04_decrypt(&self, peer: &str, ciphertext: &str) -> Result<String, SignerError>;
     async fn nip44_encrypt(&self, peer: &str, plaintext: &str) -> Result<String, SignerError>;
     async fn nip44_decrypt(&self, peer: &str, ciphertext: &str) -> Result<String, SignerError>;
-    async fn nip04_decrypt_between(&self, sender: &str, recipient: &str, ciphertext: &str) -> Result<String, SignerError>;
-    async fn nip44_decrypt_between(&self, sender: &str, recipient: &str, ciphertext: &str) -> Result<String, SignerError>;
 }

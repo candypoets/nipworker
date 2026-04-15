@@ -26,8 +26,6 @@ pub use crate::types::nostr::{
 // Type alias for Kind
 pub type Kind = u64;
 
-use wasm_bindgen::prelude::*;
-
 /// Common result type for this module
 pub type TypesResult<T> = Result<T, TypesError>;
 
@@ -88,11 +86,5 @@ impl From<ParserError> for TypesError {
 impl From<flatbuffers::InvalidFlatbuffer> for TypesError {
     fn from(err: flatbuffers::InvalidFlatbuffer) -> Self {
         TypesError::Other(err.to_string())
-    }
-}
-
-impl From<TypesError> for JsValue {
-    fn from(err: TypesError) -> Self {
-        JsValue::from_str(&err.to_string())
     }
 }

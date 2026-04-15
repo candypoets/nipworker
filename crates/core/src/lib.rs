@@ -1,6 +1,18 @@
 pub mod generated;
 pub mod types;
 pub mod utils;
+pub mod traits;
+pub mod engine;
+pub mod service;
+pub mod nostr_error;
+pub mod port;
+
+pub mod parser;
+pub mod pipeline;
+pub mod network;
+pub mod parser_types;
+pub mod parser_utils;
+pub mod crypto_client;
 
 #[cfg(feature = "crypto")]
 pub mod crypto {
@@ -8,8 +20,5 @@ pub mod crypto {
     pub mod utils;
 }
 
-// Platform-agnostic traits
-pub mod traits;
-
-// Services
-pub mod service;
+#[cfg(feature = "crypto")]
+pub use crypto::utils_crypto as crypto_utils;
