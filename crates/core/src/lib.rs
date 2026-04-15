@@ -16,6 +16,7 @@ pub mod crypto_client;
 #[cfg(feature = "crypto")]
 pub mod crypto {
     pub mod nostr_crypto;
+    pub mod signers;
     pub mod utils;
 }
 

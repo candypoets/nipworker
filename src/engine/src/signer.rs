@@ -2,18 +2,18 @@ use async_trait::async_trait;
 use nipworker_core::crypto::nostr_crypto::{compute_event_id, sign_event};
 use nipworker_core::traits::{Signer, SignerError};
 use nipworker_core::types::nostr::{Event, EventId, Keys, SecretKey, Template};
-use std::cell::RefCell;
+use std::sync::Mutex;
 
 /// WASM-compatible signer wrapping core cryptographic primitives.
 /// NIP-07 and NIP-46 can be added later as additional variants.
 pub struct LocalSigner {
-    inner: RefCell<Option<Keys>>,
+    inner: Mutex<Option<Keys>>,
 }
 
 impl std::fmt::Debug for LocalSigner {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("LocalSigner")
-            .field("configured", &self.inner.borrow().is_some())
+            .field("configured", &self.inner.lock().unwrap().is_some())
             .finish()
     }
 }
@@ -21,7 +21,7 @@ impl std::fmt::Debug for LocalSigner {
 impl LocalSigner {
     pub fn new() -> Self {
         Self {
-            inner: RefCell::new(None),
+            inner: Mutex::new(None),
         }
     }
 
@@ -29,7 +29,7 @@ impl LocalSigner {
         let secret_key = SecretKey::from_hex(secret)
             .map_err(|e| SignerError::Other(format!("Invalid private key: {}", e)))?;
         let keys = Keys::new(secret_key);
-        *self.inner.borrow_mut() = Some(keys);
+        *self.inner.lock().unwrap() = Some(keys);
         Ok(())
     }
 }
@@ -37,7 +37,11 @@ impl LocalSigner {
 #[async_trait(?Send)]
 impl Signer for LocalSigner {
     async fn get_public_key(&self) -> Result<String, SignerError> {
-        if let Some(keys) = self.inner.borrow().as_ref() {
+        let keys = {
+            let inner = self.inner.lock().unwrap();
+            inner.as_ref().cloned()
+        };
+        if let Some(keys) = keys {
             Ok(keys.public_key().to_hex())
         } else {
             Err(SignerError::Other("Signer not configured".to_string()))
@@ -45,8 +49,11 @@ impl Signer for LocalSigner {
     }
 
     async fn sign_event(&self, event_json: &str) -> Result<String, SignerError> {
-        let keys = self.inner.borrow();
-        let keys = keys.as_ref().ok_or_else(|| SignerError::Other("Signer not configured".to_string()))?;
+        let keys = {
+            let inner = self.inner.lock().unwrap();
+            inner.as_ref().cloned()
+        };
+        let keys = keys.ok_or_else(|| SignerError::Other("Signer not configured".to_string()))?;
 
         let template = Template::from_json(event_json)
             .map_err(|e| SignerError::Other(format!("Failed to parse template JSON: {}", e)))?;

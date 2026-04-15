@@ -1,23 +1,21 @@
-use async_trait::async_trait;
-use futures::channel::mpsc;
-use futures::{SinkExt, StreamExt};
 use nipworker_core::traits::{Transport, TransportError, TransportStatus};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use wasm_bindgen_futures::spawn_local;
+use futures::channel::mpsc;
+use futures::{SinkExt, StreamExt};
 
 struct WsHandle {
     write: mpsc::UnboundedSender<String>,
 }
 
-pub struct WebSocketTransport {
+pub struct NativeTransport {
     connections: Rc<RefCell<HashMap<String, WsHandle>>>,
     message_callbacks: Rc<RefCell<HashMap<String, Box<dyn Fn(String)>>>>,
     status_callbacks: Rc<RefCell<HashMap<String, Box<dyn Fn(TransportStatus)>>>>,
 }
 
-impl WebSocketTransport {
+impl NativeTransport {
     pub fn new() -> Self {
         Self {
             connections: Rc::new(RefCell::new(HashMap::new())),
@@ -27,43 +25,51 @@ impl WebSocketTransport {
     }
 }
 
-#[async_trait(?Send)]
-impl Transport for WebSocketTransport {
+#[async_trait::async_trait(?Send)]
+impl Transport for NativeTransport {
     async fn connect(&self, url: &str) -> Result<(), TransportError> {
-        use gloo_net::websocket::futures::WebSocket;
-        use gloo_net::websocket::Message;
+        use tokio_tungstenite::connect_async;
+        use tokio_tungstenite::tungstenite::Message;
 
-        let ws = WebSocket::open(url)
-            .map_err(|e| TransportError::Other(format!("WebSocket open failed: {:?}", e)))?;
+        let (ws_stream, _) = connect_async(url)
+            .await
+            .map_err(|e| TransportError::Other(format!("WebSocket connect failed: {}", e)))?;
 
-        let (mut write, mut read) = ws.split();
+        let (mut write, mut read) = ws_stream.split();
         let (tx, mut rx) = mpsc::unbounded::<String>();
 
         let url_writer = url.to_string();
-        let msg_cbs_reader = self.message_callbacks.clone();
-        let status_cbs_reader = self.status_callbacks.clone();
-        let connections_reader = self.connections.clone();
+        let url_reader = url.to_string();
+        let status_cbs = self.status_callbacks.clone();
+        let msg_cbs = self.message_callbacks.clone();
+        let connections = self.connections.clone();
 
-        spawn_local(async move {
+        // Writer task
+        let status_cbs_writer = status_cbs.clone();
+        tokio::task::spawn_local(async move {
             while let Some(msg) = rx.next().await {
                 if write.send(Message::Text(msg)).await.is_err() {
                     break;
                 }
             }
-            connections_reader.borrow_mut().remove(&url_writer);
-            if let Some(cb) = status_cbs_reader.borrow().get(&url_writer) {
+            connections.borrow_mut().remove(&url_writer);
+            if let Some(cb) = status_cbs_writer.borrow().get(&url_writer) {
                 cb(TransportStatus::Closed);
             }
         });
 
-        let url_reader2 = url.to_string();
-        spawn_local(async move {
+        // Reader task
+        let status_cbs_reader = status_cbs.clone();
+        tokio::task::spawn_local(async move {
             while let Some(Ok(msg)) = read.next().await {
                 if let Message::Text(text) = msg {
-                    if let Some(cb) = msg_cbs_reader.borrow().get(&url_reader2) {
+                    if let Some(cb) = msg_cbs.borrow().get(&url_reader) {
                         cb(text);
                     }
                 }
+            }
+            if let Some(cb) = status_cbs_reader.borrow().get(&url_reader) {
+                cb(TransportStatus::Closed);
             }
         });
 

@@ -1,0 +1,25 @@
+[package]
+name = "nipworker-native-ffi"
+version = "0.96.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+nipworker-core = { path = "../core", features = ["crypto"] }
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time"] }
+futures = { version = "0.3", default-features = false, features = ["std"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+flatbuffers = "25.2.10"
+serde_json = "1"
+
+# Native WebSocket client
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
+tungstenite = "0.24"
+
+url = "2.5"
+
+[dependencies.async-trait]
+version = "0.1"

@@ -5,8 +5,7 @@ use crate::{
     generated::nostr::fb::{self},
     types::Proof,
 };
-use std::cell::RefCell;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 type Result<T> = std::result::Result<T, NostrError>;
 use flatbuffers::FlatBufferBuilder;
@@ -34,7 +33,7 @@ pub struct ProofVerificationPipe {
     name: String,
     verification_running: bool,
     crypto_client: Arc<CryptoClient>,
-    mint_keys_cache: Arc<RefCell<FxHashMap<String, CachedKeys>>>, // cached mint keys
+    mint_keys_cache: Arc<Mutex<FxHashMap<String, CachedKeys>>>, // cached mint keys
 }
 
 impl ProofVerificationPipe {
@@ -47,7 +46,7 @@ impl ProofVerificationPipe {
             name: format!("ProofVerification(max:{})", max_proofs),
             verification_running: false,
             crypto_client,
-            mint_keys_cache: Arc::new(RefCell::new(FxHashMap::default())),
+            mint_keys_cache: Arc::new(Mutex::new(FxHashMap::default())),
         }
     }
 
@@ -371,7 +370,7 @@ impl ProofVerificationPipe {
     async fn fetch_mint_keys_json(&self, mint_url: &str) -> Result<String> {
         // Check cache first
         {
-            let cache = self.mint_keys_cache.borrow();
+            let cache = self.mint_keys_cache.lock().unwrap();
             if let Some(cached) = cache.get(mint_url) {
                 return Ok(cached.keys_json.clone());
             }
@@ -381,7 +380,7 @@ impl ProofVerificationPipe {
         let keys_json = self.fetch_mint_keys_from_network(mint_url).await?;
 
         {
-            let mut cache = self.mint_keys_cache.borrow_mut();
+            let mut cache = self.mint_keys_cache.lock().unwrap();
             cache.insert(
                 mint_url.to_string(),
                 CachedKeys {

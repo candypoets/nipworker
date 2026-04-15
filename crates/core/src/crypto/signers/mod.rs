@@ -12,6 +12,8 @@ Each implementation should expose a minimal, browser-friendly async API without 
 async_trait, and can be composed by higher-level managers.
 */
 pub mod nip04;
+#[cfg(target_arch = "wasm32")]
+#[cfg(target_arch = "wasm32")]
 pub mod nip07;
 pub mod nip44;
 pub mod nip46;
@@ -19,6 +21,8 @@ pub mod pk;
 pub mod types;
 
 // Re-exports for convenience
+#[cfg(target_arch = "wasm32")]
+#[cfg(target_arch = "wasm32")]
 pub use nip07::Nip07Signer;
 pub use nip46::{Nip46Config, Nip46Signer};
 pub use pk::PrivateKeySigner;

@@ -1,17 +1,16 @@
 use super::super::*;
 use flatbuffers::FlatBufferBuilder;
 use crate::{generated::nostr::fb, port::Port};
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::sync::Arc;
 use tracing::warn;
 
 pub struct SaveToDbPipe {
-    to_cache: Rc<RefCell<dyn Port>>,
+    to_cache: Arc<dyn Port>,
     name: String,
 }
 
 impl SaveToDbPipe {
-    pub fn new(to_cache: Rc<RefCell<dyn Port>>) -> Self {
+    pub fn new(to_cache: Arc<dyn Port>) -> Self {
         Self {
             name: "SaveToDb".to_string(),
             to_cache,
@@ -72,7 +71,7 @@ impl SaveToDbPipe {
         );
 
         builder.finish(worker_msg, None);
-        if let Err(e) = self.to_cache.borrow().send(builder.finished_data()) {
+        if let Err(e) = self.to_cache.send(builder.finished_data()) {
             warn!("Failed to send SaveToDb WorkerMessage to cache: {:?}", e);
         }
     }

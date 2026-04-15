@@ -11,9 +11,7 @@ type Result<T> = std::result::Result<T, NostrError>;
 
 use hex::decode_to_slice;
 use rustc_hash::FxHashSet;
-use std::cell::RefCell;
-use std::rc::Rc;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tracing::info;
 pub mod pipes;
 
@@ -217,7 +215,7 @@ impl PipeType {
 pub struct Pipeline {
     pipes: Vec<PipeType>,
     subscription_id: String,
-    seen_ids: RefCell<FxHashSet<[u8; 32]>>,
+    seen_ids: Mutex<FxHashSet<[u8; 32]>>,
     dedup_max_size: usize,
 }
 
@@ -237,7 +235,7 @@ impl Pipeline {
         Ok(Self {
             pipes,
             subscription_id,
-            seen_ids: RefCell::new(FxHashSet::with_capacity_and_hasher(
+            seen_ids: Mutex::new(FxHashSet::with_capacity_and_hasher(
                 10_000,
                 Default::default(),
             )),
@@ -248,7 +246,7 @@ impl Pipeline {
     /// Create default pipeline: parsing + save to db + serialize events
     pub fn default(
         parser: Arc<Parser>,
-        to_cache: Rc<RefCell<dyn Port>>,
+        to_cache: Arc<dyn Port>,
         subscription_id: String,
     ) -> Result<Self> {
         Self::new(
@@ -304,7 +302,7 @@ impl Pipeline {
 
         // 3️⃣ Deduplicate
         {
-            let mut seen = self.seen_ids.borrow_mut();
+            let mut seen = self.seen_ids.lock().unwrap();
             if seen.contains(&id_bytes) {
                 return Ok(None); // already processed
             }
@@ -382,7 +380,7 @@ impl Pipeline {
 
         // 3️⃣ Deduplicate
         {
-            let mut seen = self.seen_ids.borrow_mut();
+            let mut seen = self.seen_ids.lock().unwrap();
             if seen.contains(&id_bytes) {
                 return Ok(None); // already processed
             }
@@ -479,7 +477,7 @@ impl Pipeline {
                 return;
             }
 
-            let mut seen = self.seen_ids.borrow_mut();
+            let mut seen = self.seen_ids.lock().unwrap();
             if seen.contains(&id_bytes) {
                 return; // already processed
             }
@@ -497,8 +495,8 @@ impl Pipeline {
     /// This is used when creating a pagination subscription to inherit
     /// the seen event IDs from the parent subscription.
     pub fn clone_state_from(&self, other: &Pipeline) {
-        let other_seen = other.seen_ids.borrow();
-        let mut seen = self.seen_ids.borrow_mut();
+        let other_seen = other.seen_ids.lock().unwrap();
+        let mut seen = self.seen_ids.lock().unwrap();
         seen.extend(other_seen.iter().cloned());
     }
 

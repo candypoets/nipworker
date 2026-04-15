@@ -19,6 +19,7 @@ type Result<T> = std::result::Result<T, SignerError>;
 /// - Schnorr signing of Nostr events (BIP-340)
 /// - NIP-04 / NIP-44 encryption and decryption
 ///
+#[derive(Clone)]
 pub struct PrivateKeySigner {
     /// Secret key representation provided by the caller.
     /// Accepts hex (64 lowercase hex chars) or bech32 nsec.

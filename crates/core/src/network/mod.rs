@@ -2,12 +2,9 @@ pub mod interfaces;
 pub mod publish;
 pub mod subscription;
 
-use std::cell::RefCell;
-use std::rc::Rc;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use futures::channel::mpsc;
-use futures::lock::Mutex;
 use rustc_hash::FxHashMap;
 use tracing::{info, warn};
 
@@ -40,7 +37,7 @@ struct NetworkManagerInner {
 	parser: Arc<Parser>,
 	_crypto_client: Arc<CryptoClient>,
 	event_sink: mpsc::Sender<(String, Vec<u8>)>,
-	subscriptions: RefCell<FxHashMap<String, Arc<Mutex<Pipeline>>>>,
+	subscriptions: Mutex<FxHashMap<String, Arc<futures::lock::Mutex<Pipeline>>>>,
 	publish_manager: PublishManager,
 }
 
@@ -67,7 +64,7 @@ impl NetworkManager {
 				parser,
 				_crypto_client: crypto_client,
 				event_sink,
-				subscriptions: RefCell::new(FxHashMap::default()),
+				subscriptions: Mutex::new(FxHashMap::default()),
 				publish_manager,
 			}),
 		}
@@ -81,11 +78,11 @@ impl NetworkManager {
 		requests: Vec<Request>,
 		config: &fb::SubscriptionConfig<'_>,
 	) -> NostrResult<()> {
-		if self.inner.subscriptions.borrow().contains_key(&subscription_id) {
+		if self.inner.subscriptions.lock().unwrap().contains_key(&subscription_id) {
 			return Ok(());
 		}
 
-		let to_cache: Rc<RefCell<dyn Port>> = Rc::new(RefCell::new(DummyPort));
+		let to_cache: Arc<dyn Port> = Arc::new(DummyPort);
 		let subscription_manager =
 			SubscriptionManager::new(self.inner.parser.clone(), self.inner._crypto_client.clone());
 		let pipeline = subscription_manager
@@ -99,8 +96,8 @@ impl NetworkManager {
 
 		self.inner
 			.subscriptions
-			.borrow_mut()
-			.insert(subscription_id, Arc::new(Mutex::new(pipeline)));
+			.lock().unwrap()
+			.insert(subscription_id, Arc::new(futures::lock::Mutex::new(pipeline)));
 		Ok(())
 	}
 
@@ -110,11 +107,11 @@ impl NetworkManager {
 		subscription_id: String,
 		_requests: Vec<Request>,
 	) -> NostrResult<()> {
-		if self.inner.subscriptions.borrow().contains_key(&subscription_id) {
+		if self.inner.subscriptions.lock().unwrap().contains_key(&subscription_id) {
 			return Ok(());
 		}
 
-		let to_cache: Rc<RefCell<dyn Port>> = Rc::new(RefCell::new(DummyPort));
+		let to_cache: Arc<dyn Port> = Arc::new(DummyPort);
 		let pipeline = Pipeline::default(
 			self.inner.parser.clone(),
 			to_cache,
@@ -124,13 +121,13 @@ impl NetworkManager {
 
 		self.inner
 			.subscriptions
-			.borrow_mut()
-			.insert(subscription_id, Arc::new(Mutex::new(pipeline)));
+			.lock().unwrap()
+			.insert(subscription_id, Arc::new(futures::lock::Mutex::new(pipeline)));
 		Ok(())
 	}
 
 	pub async fn close_subscription(&self, subscription_id: String) -> NostrResult<()> {
-		self.inner.subscriptions.borrow_mut().remove(&subscription_id);
+		self.inner.subscriptions.lock().unwrap().remove(&subscription_id);
 		Ok(())
 	}
 
@@ -148,7 +145,7 @@ impl NetworkManager {
 	/// Run a single raw JSON event through the subscription's pipeline and
 	/// forward any resulting serialized bytes to `event_sink`.
 	pub async fn process_event(&self, sub_id: &str, event_json: &str) -> NostrResult<()> {
-		let subs = self.inner.subscriptions.borrow();
+		let subs = self.inner.subscriptions.lock().unwrap();
 		let Some(pipeline_arc) = subs.get(sub_id).cloned() else {
 			return Ok(());
 		};

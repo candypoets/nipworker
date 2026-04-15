@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use tracing::{debug, error, info};
 
-use futures_channel::mpsc;
+use futures::channel::mpsc;
 
 pub mod config;
 pub mod crypto;

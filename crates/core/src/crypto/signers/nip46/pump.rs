@@ -7,8 +7,8 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use tracing::{error, info};
 
-use futures_channel::mpsc;
-use futures_util::StreamExt;
+use futures::channel::mpsc;
+use futures::StreamExt;
 
 pub struct Pump;
 
