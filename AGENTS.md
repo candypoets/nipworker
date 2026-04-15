@@ -52,8 +52,8 @@ src/
 
 ### Worker Communication
 - **Orchestrator**: `NostrManager` (`src/index.ts`) spawns 4 Web Workers
-- **IPC**: MessageChannel/MessagePort for zero-copy message passing between workers
-- **Protocol**: FlatBuffers (binary) for serialized cross-thread communication
+- **IPC**: MessageChannel/MessagePort for cross-thread communication
+- **Protocol**: FlatBuffers (binary) for serialized messages
 - **Port Management**: Each worker pair has dedicated MessageChannels for bidirectional communication
 - **Rust Port Wrapper**: `src/shared/src/port.rs` bridges JS MessagePort to Rust async mpsc channels
 
@@ -109,6 +109,29 @@ The library provides multiple entry points:
 - `./proxy` - Proxy client for relay connections
 - `./proxy/server` - Proxy server implementation
 - `./proxy/vite` - Vite plugin for proxy integration
+
+## Zero-Copy Communication: What's True and What Isn't
+
+### TypeScript → TypeScript Paths
+**Fully zero-copy** via `postMessage(data, [transferable])`. Examples:
+- `connections/proxy.ts` → `parserPort` / `cryptoPort` uses `[bytes.buffer]` transfer
+- Main thread → worker init messages transfer MessagePorts directly
+
+### Rust WASM Boundary
+**Not zero-copy** in the absolute sense. WASM workers run in isolated linear memory, so data crossing the JS/WASM boundary must be copied at least once:
+
+| Direction | Copies | Notes |
+|-----------|--------|-------|
+| **JS → Rust (receive)** | 1 | `ArrayBuffer`/`Uint8Array` is copied into `Vec<u8>` in `port.rs`. Unavoidable without SharedArrayBuffer because Rust needs `&[u8]` pointing to WASM linear memory. |
+| **Rust → JS (send)** | 1 | Optimized to a single copy: Rust creates a standalone `ArrayBuffer`, copies bytes into it, then **transfers** the buffer via `post_message_with_transferable`. Before the optimization this was 2 copies. |
+
+### FlatBuffers Parsing
+FlatBuffers reads fields directly from the byte slice with **zero allocation** - no deserialization objects are created. This means the boundary copy is the primary overhead; the parsing itself is essentially free.
+
+### SharedArrayBuffer: The Only True Zero-Copy Alternative
+True zero-copy end-to-end would require `SharedArrayBuffer` (SAB) with all workers sharing the same memory buffer. This was the original architecture (`sab_ring.rs`), but it was replaced with MessageChannel for simpler synchronization and fewer COOP/COEP deployment requirements.
+
+**Bottom line**: The current architecture is optimized but not strictly zero-copy across the WASM boundary. For the vast majority of Nostr workloads, the single-copy overhead is negligible compared to WebSocket I/O latency.
 
 ## Development Rules
 
