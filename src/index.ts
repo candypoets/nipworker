@@ -21,6 +21,7 @@ import {
 	UnsubscribeT
 } from './generated/nostr/fb';
 import { InitParserMsg } from './parser/index';
+import { EngineManager } from './EngineManager';
 export * from './lib/NostrUtils';
 export * from './types';
 
@@ -749,18 +750,23 @@ export class NostrManager {
 	}
 }
 
-export function createNostrManager(config?: NostrManagerConfig): NostrManager {
+export { EngineManager } from './EngineManager';
+
+export function createNostrManager(config?: NostrManagerConfig): NostrManager | EngineManager {
+	if (config?.engine) {
+		return new EngineManager(config);
+	}
 	return new NostrManager(config);
 }
 
 // Global manager instance for hooks. Must be explicitly set by the app.
-let globalManager: NostrManager | null = null;
+let globalManager: NostrManager | EngineManager | null = null;
 
 /**
  * Get the global manager instance used by hooks.
  * Throws if no manager has been set.
  */
-export function getManager(): NostrManager {
+export function getManager(): NostrManager | EngineManager {
 	if (!globalManager) {
 		throw new Error(
 			'[nipworker] Global manager is not set. Call setManager(createNostrManager(...)) before using hooks.'
@@ -781,7 +787,7 @@ export function getManager(): NostrManager {
  * });
  * setManager(myManager);
  */
-export function setManager(manager: NostrManager): void {
+export function setManager(manager: NostrManager | EngineManager): void {
 	globalManager = manager;
 }
 
@@ -789,6 +795,6 @@ export function setManager(manager: NostrManager): void {
  * Backward-compatible alias for `setManager`.
  * @deprecated Use `setManager()`.
  */
-export function setGlobalManager(manager: NostrManager): void {
+export function setGlobalManager(manager: NostrManager | EngineManager): void {
 	setManager(manager);
 }

@@ -42,8 +42,9 @@
     "README.md"
   ],
   "scripts": {
-    "build": "npm-run-all --parallel build:connections build:cache build:parser build:crypto && vite build",
-    "build:crates": "npm-run-all --parallel build:connections build:cache build:parser build:crypto",
+    "build": "npm-run-all --parallel build:connections build:cache build:parser build:crypto build:engine && vite build",
+    "build:crates": "npm-run-all --parallel build:connections build:cache build:parser build:crypto build:engine",
+    "build:engine": "wasm-pack build ./src/engine --release --target web",
     "build:connections": "wasm-pack build ./src/connections --release --target web",
     "build:cache": "wasm-pack build ./src/cache --release --target web",
     "build:parser": "wasm-pack build ./src/parser --release --target web",
