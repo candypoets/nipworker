@@ -1,4 +1,5 @@
-use crate::{types::parsed_event::ParsedEvent, NostrError};
+use crate::parser_types::parsed_event::ParsedEvent;
+use crate::nostr_error::NostrError;
 use crate::types::{network::Request, Event, Filter};
 
 type Result<T> = std::result::Result<T, NostrError>;

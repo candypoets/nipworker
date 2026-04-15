@@ -144,18 +144,19 @@ fn extract_content_mentions(blocks: &[ContentBlock]) -> Vec<ProfilePointer> {
 
     for block in blocks {
         if let Some(crate::parser::content::ContentData::Nostr {
-            id,
             entity,
-            author: _,
+            data,
             ..
         }) = block.data.as_ref()
         {
             // Only include profile mentions (nprofile, npub)
             if entity == "nprofile" || entity == "npub" {
-                mentions.push(ProfilePointer {
-                    pubkey: id.clone(),
-                    relays: Vec::new(),
-                });
+                if let Some(id) = data {
+                    mentions.push(ProfilePointer {
+                        pubkey: id.clone(),
+                        relays: Vec::new(),
+                    });
+                }
             }
         }
     }

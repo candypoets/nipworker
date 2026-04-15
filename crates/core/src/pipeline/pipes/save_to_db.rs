@@ -1,17 +1,17 @@
 use super::super::*;
 use flatbuffers::FlatBufferBuilder;
-use crate::{generated::nostr::fb, Port};
+use crate::{generated::nostr::fb, port::Port};
 use std::cell::RefCell;
 use std::rc::Rc;
 use tracing::warn;
 
 pub struct SaveToDbPipe {
-    to_cache: Rc<RefCell<Port>>,
+    to_cache: Rc<RefCell<dyn Port>>,
     name: String,
 }
 
 impl SaveToDbPipe {
-    pub fn new(to_cache: Rc<RefCell<Port>>) -> Self {
+    pub fn new(to_cache: Rc<RefCell<dyn Port>>) -> Self {
         Self {
             name: "SaveToDb".to_string(),
             to_cache,

@@ -21,4 +21,4 @@ pub mod crypto {
 }
 
 #[cfg(feature = "crypto")]
-pub use crypto::utils_crypto as crypto_utils;
+pub use crypto::utils as crypto_utils;

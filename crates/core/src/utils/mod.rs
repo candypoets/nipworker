@@ -1,7 +1,7 @@
 use crate::types::ParserError;
 
 #[cfg(feature = "crypto")]
-pub use crate::crypto::utils_crypto as crypto;
+pub use crate::crypto::utils as crypto;
 
 #[cfg(feature = "crypto")]
 pub use crate::crypto::nostr_crypto;
@@ -513,7 +513,7 @@ pub fn extract_event_id<'a>(json: &'a str) -> Option<&'a str> {
 }
 
 /// Validate relay URL format
-pub fn validate_relay_url(url: &str) -> Result<(), crate::types::ParserError> {
+pub fn validate_relay_url(url: &str) -> Result<()> {
 	if url.is_empty() {
 		return Err(crate::types::ParserError::InvalidFormat(
 			"URL cannot be empty".to_string(),

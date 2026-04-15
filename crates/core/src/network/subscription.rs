@@ -4,9 +4,9 @@ use crate::pipeline::{PipeType, Pipeline};
 use crate::generated::nostr::fb;
 use crate::types::network::Request;
 use crate::port::Port;
+use crate::nostr_error::NostrError;
 
 use crate::crypto_client::CryptoClient;
-use crate::nostr_error::NostrError;
 use rustc_hash::FxHashMap;
 
 type Result<T> = std::result::Result<T, NostrError>;
@@ -81,7 +81,7 @@ impl SubscriptionManager {
     pub async fn process_subscription(
         &self,
         subscription_id: &String,
-        to_cache: Rc<RefCell<Port>>,
+        to_cache: Rc<RefCell<dyn Port>>,
         _requests: Vec<Request>,
         config: &fb::SubscriptionConfig<'_>,
     ) -> Result<Pipeline> {
@@ -217,7 +217,7 @@ impl SubscriptionManager {
     fn build_pipeline(
         &self,
         pipeline_config: Option<fb::PipelineConfig<'_>>,
-        to_cache: Rc<RefCell<Port>>,
+        to_cache: Rc<RefCell<dyn Port>>,
         crypto_client: Arc<CryptoClient>,
         subscription_id: String,
     ) -> Result<Pipeline> {

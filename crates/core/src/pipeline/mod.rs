@@ -248,7 +248,7 @@ impl Pipeline {
     /// Create default pipeline: parsing + save to db + serialize events
     pub fn default(
         parser: Arc<Parser>,
-        to_cache: Rc<RefCell<Port>>,
+        to_cache: Rc<RefCell<dyn Port>>,
         subscription_id: String,
     ) -> Result<Self> {
         Self::new(
