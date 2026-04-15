@@ -2,7 +2,6 @@ pub mod generated;
 pub mod types;
 pub mod utils;
 pub mod traits;
-pub mod engine;
 pub mod service;
 pub mod nostr_error;
 pub mod port;
