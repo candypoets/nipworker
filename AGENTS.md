@@ -43,7 +43,7 @@ NIPWorker is a high-performance Nostr client library using a multi-worker archit
 ### Crate Structure
 ```
 src/
-├── shared/          # Shared library (rlib) - SAB ring buffers, telemetry
+├── shared/          # Shared library (rlib) - MessagePort wrapper, telemetry
 ├── connections/     # WASM worker - WebSocket relay connections
 ├── cache/           # WASM worker - IndexedDB event caching
 ├── parser/          # WASM worker - Event parsing, validation, pipelines
@@ -52,19 +52,29 @@ src/
 
 ### Worker Communication
 - **Orchestrator**: `NostrManager` (`src/index.ts`) spawns 4 Web Workers
-- **IPC**: SharedArrayBuffer (SAB) ring buffers using `sab_ring.rs` (`src/shared/src/`)
-- **Protocol**: FlatBuffers (binary) for zero-copy cross-thread communication
-- **Ring Buffers**: Each worker pair has dedicated SABs for request/response
-- **Header Layout**: 32-byte header (capacity, head, tail, seq, reserved)
+- **IPC**: MessageChannel/MessagePort for zero-copy message passing between workers
+- **Protocol**: FlatBuffers (binary) for serialized cross-thread communication
+- **Port Management**: Each worker pair has dedicated MessageChannels for bidirectional communication
+- **Rust Port Wrapper**: `src/shared/src/port.rs` bridges JS MessagePort to Rust async mpsc channels
 
 ### Data Flow
 ```
 App → NostrManager → parser worker → (cache/connections/crypto workers)
          ↓
-    SharedArrayBuffer rings (via sab_ring.rs)
+    MessageChannel ports (via MessagePort API)
          ↓
     FlatBuffers serialized messages
 ```
+
+### MessageChannel Topology
+- `parser_cache`: parser ↔ cache
+- `parser_connections`: parser ↔ connections
+- `parser_crypto`: parser ↔ crypto
+- `cache_connections`: cache ↔ connections
+- `crypto_connections`: crypto ↔ connections
+- `crypto_main`: crypto ↔ main thread
+- `parser_main`: parser ↔ main (for batched events)
+- `connections_main`: connections ↔ main (for relay status)
 
 ## Signer Types
 
@@ -82,12 +92,23 @@ The crypto worker supports multiple signer backends:
 | `src/hooks.ts` | React-style hooks (useSubscription, usePublish, useRelayStatus) |
 | `src/utils.ts` | Utility functions, type guards, NIP-46 QR helper |
 | `src/types/index.ts` | TypeScript type definitions |
-| `src/lib/` | Shared library code (SharedBuffer, NostrUtils, etc.) |
-| `src/ws/` | WebSocket runtime and connection management |
+| `src/lib/` | Shared library code (ArrayBufferReader, NostrUtils, NarrowTypes, etc.) |
+| `src/proxy/` | WebSocket proxy server for environments needing relay connection proxying |
+| `src/shared/src/port.rs` | MessagePort wrapper bridging JS to Rust async channels |
 | `src/generated/` | FlatBuffers generated TypeScript code |
 | `schemas/` | FlatBuffers schema definitions (.fbs files) |
 | `release.sh` | Version bump and release automation |
 | `.github/workflows/npm-publish.yml` | CI/CD for automated npm publishing |
+
+## Package Exports
+
+The library provides multiple entry points:
+- `.` - Main NostrManager and types
+- `./hooks` - React-style hooks
+- `./utils` - Utility functions
+- `./proxy` - Proxy client for relay connections
+- `./proxy/server` - Proxy server implementation
+- `./proxy/vite` - Vite plugin for proxy integration
 
 ## Development Rules
 
@@ -96,17 +117,13 @@ The crypto worker supports multiple signer backends:
 2. Run `npm run flatc` immediately after modifications
 
 
-### IPC Safety
-- Header layout in `sab_ring.rs` must remain 32-byte consistent
-- Never change ring buffer header structure without updating all workers
-
 ### Build Order
 1. `shared` is built as dependency of other crates (rlib)
 2. `crypto` requires `shared` with `crypto` feature enabled
 3. Other crates (parser, cache, connections) build in parallel
 
 ### Performance Guidelines
-- Use `SharedBufferReader` class for reading from SABs
+- Use `ArrayBufferReader` class for reading MessagePort binary data
 - Favor cache over network (cacheFirst option)
 - Set appropriate `bytesPerEvent` for subscriptions
 - Use `closeOnEose: true` for one-time queries
@@ -128,9 +145,12 @@ The crypto worker supports multiple signer backends:
 
 ### Peer Dependencies (required by consumers)
 - `flatbuffers: ^25.2.10`
+- `vite: ^5.0.0 || ^6.0.0` (optional, for proxy/vite export)
+- `ws: ^8.0.0` (optional, for proxy server)
 
 ### Runtime Dependencies
 - `nostr-tools: ^2.0.0`
+- `socks-proxy-agent: ^9.0.0`
 
 ### Dev Dependencies
 - Vite with plugins: wasm, top-level-await, dts, static-copy
