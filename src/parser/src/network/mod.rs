@@ -794,39 +794,65 @@ impl NetworkManager {
         Ok(())
     }
 
-    /// Inject a signed event into a subscription's pipeline for optimistic updates
+    /// Inject a signed event into subscriptions' pipelines for optimistic updates.
+    /// Matches all subscriptions whose ID contains the provided sub_id as a substring.
     async fn inject_optimistic_event(
         &self,
         sub_id: &str,
         event_json: &str,
     ) -> Result<()> {
-        // Get the subscription's pipeline
-        let pipeline_arc = {
+        // Find all subscriptions whose ID contains the provided sub_id
+        let pipelines: Vec<(String, Arc<Mutex<Pipeline>>)> = {
             let guard = self.subscriptions.read().map_err(|_| {
                 NostrError::Other("Subscriptions lock poisoned".into())
             })?;
-            let sub = guard.get(sub_id).ok_or_else(|| {
-                NostrError::Other(format!("Optimistic sub_id {} not found", sub_id))
-            })?;
-            Arc::clone(&sub.pipeline)
+            guard
+                .iter()
+                .filter(|(key, _)| key.contains(sub_id))
+                .map(|(key, sub)| (key.clone(), Arc::clone(&sub.pipeline)))
+                .collect()
         };
 
-        // Process the event JSON through the pipeline
-        let mut pipeline_guard = pipeline_arc.lock().await;
-        match pipeline_guard.process(event_json).await {
-            Ok(Some(output)) => {
-                add_message_to_batch(sub_id, &output);
-                flush_batch(sub_id); // Immediate flush for low-latency UI update
-                Ok(())
+        if pipelines.is_empty() {
+            return Err(NostrError::Other(format!(
+                "Optimistic sub_id {} not found",
+                sub_id
+            )));
+        }
+
+        let mut any_success = false;
+        for (actual_sub_id, pipeline_arc) in pipelines {
+            let mut pipeline_guard = pipeline_arc.lock().await;
+            match pipeline_guard.process(event_json).await {
+                Ok(Some(output)) => {
+                    add_message_to_batch(&actual_sub_id, &output);
+                    flush_batch(&actual_sub_id); // Immediate flush for low-latency UI update
+                    any_success = true;
+                }
+                Ok(None) => {
+                    // Event dropped by pipeline (duplicate, filtered, etc.)
+                    info!(
+                        "Optimistic event dropped by pipeline for sub {}",
+                        actual_sub_id
+                    );
+                    any_success = true;
+                }
+                Err(e) => {
+                    warn!(
+                        "Optimistic event failed for sub {}: {}",
+                        actual_sub_id, e
+                    );
+                }
             }
-            Ok(None) => {
-                // Event dropped by pipeline (duplicate, filtered, etc.)
-                info!("Optimistic event dropped by pipeline for sub {}", sub_id);
-                Ok(())
-            }
-            Err(e) => Err(NostrError::Pipeline(format!(
-                "Optimistic event failed for {}: {}", sub_id, e
-            ))),
+        }
+
+        if any_success {
+            Ok(())
+        } else {
+            Err(NostrError::Pipeline(format!(
+                "All optimistic updates failed for sub_id {}",
+                sub_id
+            )))
         }
     }
 
