@@ -58,11 +58,18 @@ impl Port {
     }
 
     /// Send bytes through this port to the other end.
-    /// Returns Ok(()) if the message was successfully posted.
+    /// Uses a transferable ArrayBuffer to avoid the structured-clone copy,
+    /// reducing the Rust->JS path from 2 copies to 1.
     pub fn send(&self, bytes: &[u8]) -> Result<(), JsValue> {
-        // Convert bytes to Uint8Array for transfer
-        let array = Uint8Array::from(bytes);
-        self.port.post_message(&array)?;
+        // Create a standalone ArrayBuffer and copy bytes into it once.
+        let ab = ArrayBuffer::new(bytes.len() as u32);
+        let array = Uint8Array::new(&ab);
+        array.copy_from(bytes);
+
+        // Transfer the ArrayBuffer so the browser moves it without copying.
+        let transfer_list = js_sys::Array::new();
+        transfer_list.push(&ab);
+        self.port.post_message_with_transferable(&ab, &transfer_list)?;
         Ok(())
     }
 
