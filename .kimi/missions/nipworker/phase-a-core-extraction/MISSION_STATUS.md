@@ -31,3 +31,21 @@
   - EngineManager now sends FlatBuffers `SetSigner`/`SignEvent` instead of legacy JSON
   - EngineManager onmessage routes `Pubkey` and `SignedEvent` responses
   - Removed unnecessary `SignerArcWrapper` abstraction
+
+## Milestone 11: WASM IndexedDB Storage
+- **Status:** DONE
+- **Commit:** 051a6a2
+- **Changes:**
+  - Added `IndexedDbStorage` in `src/engine/src/storage.rs` backed by browser IndexedDB
+  - Added `web-sys` IDB features to `src/engine/Cargo.toml`
+  - Swapped `MemoryStorage` for `IndexedDbStorage` in `src/engine/src/lib.rs`
+- **Review fix:** Replaced `window()` with `js_sys::global()` + `Reflect::get` for Web Worker compatibility
+
+## Milestone 12: Engine NIP-07 & NIP-46 Signers
+- **Status:** DONE
+- **Commit:** 252403e
+- **Changes:**
+  - Added `ProxySigner` in `src/engine/src/signer.rs` implementing `Signer` trait via main-thread proxy
+  - Wired `set_proxy_signer` and `signer_response` in `src/engine/src/lib.rs`
+  - Updated `EngineManager` to proxy NIP-07 to `window.nostr` and NIP-46 to `nostr-tools` `BunkerSigner`
+  - Added generation counters to prevent stale async NIP-46 init races

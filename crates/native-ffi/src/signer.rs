@@ -15,13 +15,13 @@ impl NativeSigner {
     pub fn set_private_key(&self, secret: &str) -> Result<(), SignerError> {
         let signer = nipworker_core::crypto::signers::PrivateKeySigner::new(secret)
             .map_err(|e| SignerError::Other(format!("Failed to create signer: {}", e)))?;
-        *self.inner.lock().unwrap() = Some(signer);
+        *self.inner.lock().unwrap_or_else(|e| e.into_inner()) = Some(signer);
         Ok(())
     }
 
     fn with_signer<T>(&self, f: impl FnOnce(&nipworker_core::crypto::signers::PrivateKeySigner) -> Result<T, nipworker_core::crypto::signers::SignerError>) -> Result<T, SignerError> {
         let signer = {
-            let inner = self.inner.lock().unwrap();
+            let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
             inner.clone()
         };
         if let Some(signer) = signer.as_ref() {
@@ -40,7 +40,7 @@ impl Signer for NativeSigner {
 
     async fn sign_event(&self, event_json: &str) -> Result<String, SignerError> {
         let signer = {
-            let inner = self.inner.lock().unwrap();
+            let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
             inner.clone()
         };
         if let Some(signer) = signer {

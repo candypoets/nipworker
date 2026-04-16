@@ -7,6 +7,7 @@ use futures::{SinkExt, StreamExt};
 
 struct WsHandle {
     write: mpsc::UnboundedSender<String>,
+    close_tx: tokio::sync::mpsc::UnboundedSender<()>,
 }
 
 pub struct NativeTransport {
@@ -37,6 +38,7 @@ impl Transport for NativeTransport {
 
         let (mut write, mut read) = ws_stream.split();
         let (tx, mut rx) = mpsc::unbounded::<String>();
+        let (close_tx, mut close_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
 
         let url_writer = url.to_string();
         let url_reader = url.to_string();
@@ -61,11 +63,20 @@ impl Transport for NativeTransport {
         // Reader task
         let status_cbs_reader = status_cbs.clone();
         tokio::task::spawn_local(async move {
-            while let Some(Ok(msg)) = read.next().await {
-                if let Message::Text(text) = msg {
-                    if let Some(cb) = msg_cbs.borrow().get(&url_reader) {
-                        cb(text);
+            loop {
+                tokio::select! {
+                    msg = read.next() => {
+                        match msg {
+                            Some(Ok(Message::Text(text))) => {
+                                if let Some(cb) = msg_cbs.borrow().get(&url_reader) {
+                                    cb(text);
+                                }
+                            }
+                            Some(Ok(_)) => {}
+                            Some(Err(_)) | None => break,
+                        }
                     }
+                    _ = close_rx.recv() => break,
                 }
             }
             if let Some(cb) = status_cbs_reader.borrow().get(&url_reader) {
@@ -73,7 +84,7 @@ impl Transport for NativeTransport {
             }
         });
 
-        self.connections.borrow_mut().insert(url.to_string(), WsHandle { write: tx });
+        self.connections.borrow_mut().insert(url.to_string(), WsHandle { write: tx, close_tx });
         if let Some(cb) = self.status_callbacks.borrow().get(url) {
             cb(TransportStatus::Connected);
         }
@@ -82,7 +93,9 @@ impl Transport for NativeTransport {
     }
 
     fn disconnect(&self, url: &str) {
-        self.connections.borrow_mut().remove(url);
+        if let Some(handle) = self.connections.borrow_mut().remove(url) {
+            let _ = handle.close_tx.send(());
+        }
         if let Some(cb) = self.status_callbacks.borrow().get(url) {
             cb(TransportStatus::Closed);
         }

@@ -1,5 +1,6 @@
 use std::ffi::{c_char, c_void, CStr};
 use std::slice;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
 use tokio::runtime::Builder;
@@ -25,6 +26,7 @@ enum EngineCommand {
 /// Opaque handle
 pub struct NipworkerHandle {
     cmd_tx: UnboundedSender<EngineCommand>,
+    destroyed: AtomicBool,
 }
 
 #[no_mangle]
@@ -97,7 +99,10 @@ pub extern "C" fn nipworker_init(
         rt.block_on(local);
     });
 
-    let handle = Box::new(NipworkerHandle { cmd_tx });
+    let handle = Box::new(NipworkerHandle {
+        cmd_tx,
+        destroyed: AtomicBool::new(false),
+    });
     Box::into_raw(handle) as *mut c_void
 }
 
@@ -107,6 +112,9 @@ pub extern "C" fn nipworker_handle_message(handle: *mut c_void, ptr: *const u8, 
         return;
     }
     let handle = unsafe { &*(handle as *mut NipworkerHandle) };
+    if handle.destroyed.load(Ordering::Acquire) {
+        return;
+    }
     let bytes = unsafe { slice::from_raw_parts(ptr, len) }.to_vec();
     let _ = handle.cmd_tx.send(EngineCommand::HandleMessage(bytes));
 }
@@ -117,6 +125,9 @@ pub extern "C" fn nipworker_set_private_key(handle: *mut c_void, ptr: *const c_c
         return;
     }
     let handle = unsafe { &*(handle as *mut NipworkerHandle) };
+    if handle.destroyed.load(Ordering::Acquire) {
+        return;
+    }
     let secret = unsafe { CStr::from_ptr(ptr) }.to_string_lossy().to_string();
     let _ = handle.cmd_tx.send(EngineCommand::SetPrivateKey(secret));
 }
@@ -133,6 +144,8 @@ pub extern "C" fn nipworker_free_bytes(ptr: *mut u8, len: usize) {
 #[no_mangle]
 pub extern "C" fn nipworker_deinit(handle: *mut c_void) {
     if !handle.is_null() {
-        let _ = unsafe { Box::from_raw(handle as *mut NipworkerHandle) };
+        let handle = unsafe { &*(handle as *mut NipworkerHandle) };
+        handle.destroyed.store(true, Ordering::Release);
+        // Intentionally leak the Box to prevent use-after-free from other threads.
     }
 }
