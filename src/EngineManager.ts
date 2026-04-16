@@ -2,7 +2,7 @@ import * as flatbuffers from 'flatbuffers';
 import { ArrayBufferReader } from 'src/lib/ArrayBufferReader';
 import { NostrManagerConfig, RequestObject, SubscriptionConfig } from 'src/types';
 import type { EventTemplate, NostrEvent } from 'nostr-tools';
-import { BunkerSigner, parseBunkerInput } from 'nostr-tools/nip46';
+import { BunkerSigner, parseBunkerInput, toBunkerURL } from 'nostr-tools/nip46';
 import { hexToBytes } from 'nostr-tools/utils';
 import {
 	GetPublicKeyT,
@@ -365,10 +365,30 @@ export class EngineManager {
 			}
 			case 'nip07':
 				this.postMessage({ type: 'set_proxy_signer', signerType: 'nip07' });
+				this.getPublicKey();
 				break;
-			case 'nip46':
+			case 'nip46': {
 				this.postMessage({ type: 'set_proxy_signer', signerType: 'nip46' });
+				const nip46Payload = payload as { url: string; clientSecret: string } | undefined;
+				if (nip46Payload?.url) {
+					(async () => {
+						try {
+							if (nip46Payload.url.startsWith('bunker://')) {
+								await this.initNip46BunkerSigner(nip46Payload.url, nip46Payload.clientSecret);
+							} else if (nip46Payload.url.startsWith('nostrconnect://')) {
+								await this.initNip46URISigner(nip46Payload.url, nip46Payload.clientSecret);
+							}
+							this.getPublicKey();
+						} catch (err: any) {
+							console.error('[EngineManager] Failed to initialize NIP-46 signer:', err.message || String(err));
+							this.dispatch('auth', { pubkey: null, hasSigner: false });
+						}
+					})();
+				} else {
+					this.getPublicKey();
+				}
 				break;
+			}
 		}
 	}
 
@@ -382,14 +402,12 @@ export class EngineManager {
 		const secret = clientSecret || this.generateClientSecret();
 		console.log('[EngineManager] NIP-46 bunker:', bunkerUrl.slice(0, 50) + '...');
 		this.setSigner('nip46', { url: bunkerUrl, clientSecret: secret });
-		this.initNip46BunkerSigner(bunkerUrl, secret);
 	}
 
 	setNip46QR(nostrconnectUrl: string, clientSecret?: string): void {
 		const secret = clientSecret || this.generateClientSecret();
 		console.log('[EngineManager] NIP-46 QR:', nostrconnectUrl.slice(0, 50) + '...');
 		this.setSigner('nip46', { url: nostrconnectUrl, clientSecret: secret });
-		this.initNip46URISigner(nostrconnectUrl, secret);
 	}
 
 	setNip07(): void {
@@ -402,8 +420,10 @@ export class EngineManager {
 			if (!bp) throw new Error('Failed to parse bunker URL');
 			const secretKey = hexToBytes(clientSecret);
 			this.nip46Signer = BunkerSigner.fromBunker(secretKey, bp);
+			await this.nip46Signer.connect();
 		} catch (err: any) {
 			console.error('[EngineManager] Failed to initialize NIP-46 bunker signer:', err.message || err);
+			throw err;
 		}
 	}
 
@@ -411,8 +431,14 @@ export class EngineManager {
 		try {
 			const secretKey = hexToBytes(clientSecret);
 			this.nip46Signer = await BunkerSigner.fromURI(secretKey, nostrconnectUrl);
+			// Update pending session with the persistent bunker URL so it gets saved correctly
+			if (this._pendingSession && this._pendingSession.type === 'nip46' && this.nip46Signer) {
+				const bunkerUrl = toBunkerURL(this.nip46Signer.bp);
+				this._pendingSession.payload = { url: bunkerUrl, clientSecret };
+			}
 		} catch (err: any) {
 			console.error('[EngineManager] Failed to initialize NIP-46 URI signer:', err.message || err);
+			throw err;
 		}
 	}
 
