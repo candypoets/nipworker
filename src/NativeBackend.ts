@@ -206,9 +206,9 @@ export class NativeBackend {
 	}
 
 	private postMessage(bytes: Uint8Array): void {
-		// Builder.asUint8Array() always returns a view starting at byteOffset 0,
-		// so the underlying ArrayBuffer is safe to pass to the native bridge.
-		this.nativeModule.handleMessage(bytes.buffer);
+		// Builder.asUint8Array() returns a view on a potentially larger backing buffer.
+		// Copy to an exact-sized ArrayBuffer so the native bridge receives only valid bytes.
+		this.nativeModule.handleMessage(bytes.slice().buffer);
 	}
 
 	public createShortId(input: string): string {
