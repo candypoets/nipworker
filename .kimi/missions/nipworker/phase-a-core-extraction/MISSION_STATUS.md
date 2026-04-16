@@ -49,3 +49,13 @@
   - Wired `set_proxy_signer` and `signer_response` in `src/engine/src/lib.rs`
   - Updated `EngineManager` to proxy NIP-07 to `window.nostr` and NIP-46 to `nostr-tools` `BunkerSigner`
   - Added generation counters to prevent stale async NIP-46 init races
+
+## Milestone 13: Native FFI Hardening
+- **Status:** DONE
+- **Commit:** d303648b88c9a5f4abba5888292979138409f2c9
+- **Changes:**
+  - Added `AtomicBool` destruction flag and handle UAF protection in `crates/native-ffi/src/lib.rs`
+  - Fixed `NativeTransport::disconnect` to properly close WebSocket reader task via `tokio::select!`
+  - Replaced `Mutex::lock().unwrap()` with poison recovery in `crates/native-ffi/src/signer.rs`
+  - Added `macros` feature to `tokio` in `Cargo.toml`
+- **Review fixes:** Replaced separate `AtomicBool` + sender with unified `Mutex<NipworkerState>` to prevent teardown races while still leaking the Box for UAF safety

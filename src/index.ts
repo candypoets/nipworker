@@ -751,6 +751,7 @@ export class NostrManager {
 }
 
 export { EngineManager } from './EngineManager';
+export { NativeBackend } from './NativeBackend';
 
 export function createNostrManager(config?: NostrManagerConfig): NostrManager | EngineManager {
 	if (config?.engine) {
