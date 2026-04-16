@@ -12,27 +12,15 @@ use rustc_hash::FxHashMap;
 type Result<T> = std::result::Result<T, NostrError>;
 use std::sync::Arc;
 
-// Added: lightweight semaphore via atomics
-use std::sync::atomic::{AtomicUsize, Ordering};
+use async_lock::Semaphore;
 
 pub struct SubscriptionManager {
     parser: Arc<Parser>,
     crypto_client: Arc<CryptoClient>,
     relay_hints: FxHashMap<String, Vec<String>>,
 
-    // Added: simple concurrency limiter
-    permits: Arc<AtomicUsize>,
-    max_permits: usize,
-}
-
-// RAII guard that releases a permit when dropped
-struct PermitGuard {
-    permits: Arc<AtomicUsize>,
-}
-impl Drop for PermitGuard {
-    fn drop(&mut self) {
-        self.permits.fetch_sub(1, Ordering::Release);
-    }
+    // Async semaphore for concurrency limiting
+    semaphore: Arc<Semaphore>,
 }
 
 impl SubscriptionManager {
@@ -42,38 +30,14 @@ impl SubscriptionManager {
             crypto_client,
             relay_hints: FxHashMap::default(),
 
-            // Added: init limiter (12 max concurrent process_subscription calls)
-            permits: Arc::new(AtomicUsize::new(0)),
-            max_permits: 36,
+            // Allow 36 concurrent process_subscription calls
+            semaphore: Arc::new(Semaphore::new(36)),
         }
     }
 
-    // Acquire one concurrency slot with a short async backoff.
-    async fn acquire_permit(&self) -> PermitGuard {
-        // small exponential backoff to avoid tight loops
-        let mut backoff_ms: u32 = 2;
-        loop {
-            let current = self.permits.load(Ordering::Relaxed);
-            if current < self.max_permits {
-                if self
-                    .permits
-                    .compare_exchange(current, current + 1, Ordering::AcqRel, Ordering::Relaxed)
-                    .is_ok()
-                {
-                    break;
-                }
-                // CAS failed, retry quickly
-            } else {
-                // At capacity: wait a bit before trying again
-                std::thread::sleep(std::time::Duration::from_millis(backoff_ms as u64));
-                backoff_ms = (backoff_ms.saturating_mul(2)).min(32);
-            }
-            // tiny yield between attempts
-            std::thread::sleep(std::time::Duration::from_millis(0));
-        }
-        PermitGuard {
-            permits: self.permits.clone(),
-        }
+    // Acquire one concurrency slot.
+    async fn acquire_permit(&self) -> async_lock::SemaphoreGuardArc {
+        self.semaphore.acquire_arc().await
     }
 
     pub async fn process_subscription(

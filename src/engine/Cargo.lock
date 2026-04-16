@@ -731,6 +731,7 @@ dependencies = [
  "futures-channel",
  "gloo-net",
  "gloo-timers",
+ "hex",
  "js-sys",
  "nipworker-core",
  "serde",

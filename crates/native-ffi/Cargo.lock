@@ -717,6 +717,7 @@ dependencies = [
  "async-trait",
  "flatbuffers",
  "futures",
+ "hex",
  "nipworker-core",
  "serde_json",
  "tokio",

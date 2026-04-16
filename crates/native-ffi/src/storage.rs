@@ -23,7 +23,7 @@ impl Storage for InMemoryStorage {
     }
 
     async fn persist(&self, event_bytes: &[u8]) -> Result<(), StorageError> {
-        let key = format!("{}", event_bytes.len());
+        let key = hex::encode(event_bytes);
         let mut guard = self.events.write().await;
         guard.insert(key, event_bytes.to_vec());
         Ok(())

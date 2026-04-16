@@ -28,8 +28,8 @@ impl Storage for MemoryStorage {
     }
 
     async fn persist(&self, event_bytes: &[u8]) -> Result<(), StorageError> {
-        // Use a simple hash of the bytes as key.
-        let key = format!("{}", event_bytes.len());
+        // Use the hex-encoded bytes as a collision-free key.
+        let key = hex::encode(event_bytes);
         let mut guard = self.events.write().await;
         guard.insert(key, event_bytes.to_vec());
         Ok(())

@@ -23,6 +23,7 @@ import {
  */
 export class EngineManager {
 	private worker: Worker;
+	private enginePort: MessagePort;
 	private textEncoder = new TextEncoder();
 	private subscriptions = new Map<
 		string,
@@ -50,13 +51,14 @@ export class EngineManager {
 		this.worker = new Worker(engineURL, { type: 'module' });
 
 		const mainPort = new MessageChannel();
+		this.enginePort = mainPort.port1;
 
 		this.worker.postMessage(
 			{ type: 'init', payload: { port: mainPort.port2 } },
 			[mainPort.port2]
 		);
 
-		mainPort.port1.onmessage = (event) => {
+		this.enginePort.onmessage = (event) => {
 			const { subId, data, type, status, url } = event.data;
 
 			if (subId && data) {
@@ -134,7 +136,7 @@ export class EngineManager {
 	}
 
 	private postMessage(message: any, transfer?: Transferable[]) {
-		this.worker.postMessage(message, transfer || []);
+		this.enginePort.postMessage(message, transfer || []);
 	}
 
 	private handleCryptoResponse(msg: any) {

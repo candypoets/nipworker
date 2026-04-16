@@ -6,6 +6,7 @@ use tokio::runtime::Builder;
 use tokio::task::LocalSet;
 use nipworker_core::service::engine::NostrEngine;
 use futures::StreamExt;
+use tokio::sync::mpsc::UnboundedSender;
 
 pub mod transport;
 pub mod storage;
@@ -23,15 +24,14 @@ enum EngineCommand {
 
 /// Opaque handle
 pub struct NipworkerHandle {
-    cmd_tx: std::sync::mpsc::Sender<EngineCommand>,
+    cmd_tx: UnboundedSender<EngineCommand>,
 }
 
 #[no_mangle]
 pub extern "C" fn nipworker_init(
     callback: extern "C" fn(*const u8, usize),
 ) -> *mut c_void {
-    let (_event_tx, _event_rx) = std::sync::mpsc::channel::<(String, Vec<u8>)>();
-    let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<EngineCommand>();
+    let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel::<EngineCommand>();
 
     // Spawn engine thread
     thread::spawn(move || {
@@ -57,7 +57,9 @@ pub extern "C" fn nipworker_init(
                 async_event_tx,
             ));
 
-            // Bridge async events to sync callback thread
+            // Bridge async events to sync callback thread.
+            // The callback receives an owned buffer; the host must call
+            // nipworker_free_bytes() after copying to avoid leaking memory.
             tokio::task::spawn_local(async move {
                 while let Some((sub_id, bytes)) = async_event_rx.next().await {
                     let sub_id_bytes = sub_id.as_bytes();
@@ -66,12 +68,14 @@ pub extern "C" fn nipworker_init(
                     payload.extend_from_slice(sub_id_bytes);
                     payload.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
                     payload.extend_from_slice(&bytes);
-                    callback(payload.as_ptr(), payload.len());
+                    let len = payload.len();
+                    let ptr = Box::into_raw(payload.into_boxed_slice()) as *const u8;
+                    callback(ptr, len);
                 }
             });
 
-            // Process commands
-            while let Ok(cmd) = cmd_rx.recv() {
+            // Process commands asynchronously so the LocalSet isn't blocked
+            while let Some(cmd) = cmd_rx.recv().await {
                 match cmd {
                     EngineCommand::HandleMessage(bytes) => {
                         let engine = engine.clone();
@@ -115,6 +119,15 @@ pub extern "C" fn nipworker_set_private_key(handle: *mut c_void, ptr: *const c_c
     let handle = unsafe { &*(handle as *mut NipworkerHandle) };
     let secret = unsafe { CStr::from_ptr(ptr) }.to_string_lossy().to_string();
     let _ = handle.cmd_tx.send(EngineCommand::SetPrivateKey(secret));
+}
+
+/// Free a buffer previously passed to the callback in `nipworker_init`.
+/// The host must call this after copying the data to its own storage.
+#[no_mangle]
+pub extern "C" fn nipworker_free_bytes(ptr: *mut u8, len: usize) {
+    if !ptr.is_null() && len > 0 {
+        let _ = unsafe { Box::from_raw(std::slice::from_raw_parts_mut(ptr, len)) };
+    }
 }
 
 #[no_mangle]

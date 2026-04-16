@@ -42,14 +42,18 @@ impl NipworkerEngine {
         let (event_tx, mut event_rx) = mpsc::channel::<(String, Vec<u8>)>(256);
         let port_for_events = port.clone();
 
-        // Forward engine events back to main thread via MessagePort
+        // Forward engine events back to main thread via MessagePort.
+        // Prepend a 4-byte little-endian length so the TS side can use
+        // ArrayBufferReader.writeBatchedData directly.
         spawn_local(async move {
             while let Some((sub_id, bytes)) = event_rx.next().await {
-                // Pack into a simple JS object: { subId, data: Uint8Array }
+                let mut batched = Vec::with_capacity(4 + bytes.len());
+                batched.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
+                batched.extend_from_slice(&bytes);
                 let obj = js_sys::Object::new();
                 let _ = js_sys::Reflect::set(&obj, &"subId".into(), &sub_id.into());
-                let arr = Uint8Array::new_with_length(bytes.len() as u32);
-                arr.copy_from(&bytes);
+                let arr = Uint8Array::new_with_length(batched.len() as u32);
+                arr.copy_from(&batched);
                 let _ = js_sys::Reflect::set(&obj, &"data".into(), &arr.into());
                 let _ = port_for_events.post_message(&obj);
             }
