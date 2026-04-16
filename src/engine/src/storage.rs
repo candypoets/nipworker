@@ -6,22 +6,22 @@ use serde_json::Value;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{
-	IdbDatabase, IdbFactory, IdbRequest, IdbTransactionMode, IdbVersionChangeEvent, Window,
+	IdbDatabase, IdbFactory, IdbRequest, IdbTransactionMode, IdbVersionChangeEvent,
 };
 
 const DB_NAME: &str = "nipworker-engine";
 const DB_VERSION: u32 = 1;
 const STORE_NAME: &str = "events";
 
-fn window() -> Result<Window, StorageError> {
-	web_sys::window().ok_or_else(|| StorageError::Other("No window available".to_string()))
-}
-
 fn indexed_db() -> Result<IdbFactory, StorageError> {
-	window()?
-		.indexed_db()
-		.map_err(|e| StorageError::Other(format!("indexed_db error: {:?}", e)))?
-		.ok_or_else(|| StorageError::Other("IndexedDB not available".to_string()))
+	let global = js_sys::global();
+	let idb = js_sys::Reflect::get(&global, &"indexedDB".into())
+		.map_err(|e| StorageError::Other(format!("indexed_db error: {:?}", e)))?;
+	if idb.is_null() || idb.is_undefined() {
+		return Err(StorageError::Other("IndexedDB not available".to_string()));
+	}
+	idb.dyn_into::<IdbFactory>()
+		.map_err(|e| StorageError::Other(format!("Invalid IndexedDB factory: {:?}", e)))
 }
 
 async fn request_to_future(req: &IdbRequest) -> Result<JsValue, StorageError> {
