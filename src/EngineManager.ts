@@ -2,6 +2,8 @@ import * as flatbuffers from 'flatbuffers';
 import { ArrayBufferReader } from 'src/lib/ArrayBufferReader';
 import { NostrManagerConfig, RequestObject, SubscriptionConfig } from 'src/types';
 import type { EventTemplate, NostrEvent } from 'nostr-tools';
+import { BunkerSigner, parseBunkerInput } from 'nostr-tools/nip46';
+import { hexToBytes } from 'nostr-tools/utils';
 import {
 	GetPublicKeyT,
 	MainContent,
@@ -52,6 +54,13 @@ export class EngineManager {
 		string,
 		{ status: 'connected' | 'failed' | 'close'; timestamp: number }
 	>();
+
+	private proxyPending = new Map<
+		number,
+		{ resolve: (value: string) => void; reject: (err: Error) => void }
+	>();
+	private proxyNextId = 0;
+	private nip46Signer: BunkerSigner | null = null;
 
 	public PERPETUAL_SUBSCRIPTIONS = ['notifications', 'starterpack'];
 
@@ -134,6 +143,11 @@ export class EngineManager {
 						}
 					}
 				}
+				return;
+			}
+
+			if (type === 'signer_request') {
+				this.handleSignerRequest(event.data);
 				return;
 			}
 
@@ -350,19 +364,11 @@ export class EngineManager {
 				break;
 			}
 			case 'nip07':
-				this.postMessage({ type: 'set_nip07' });
+				this.postMessage({ type: 'set_proxy_signer', signerType: 'nip07' });
 				break;
-			case 'nip46': {
-				const nip46Payload = payload as { url: string; clientSecret: string };
-				if (nip46Payload?.url?.startsWith('bunker://')) {
-					this.postMessage({ type: 'set_nip46_bunker', payload: nip46Payload });
-				} else if (nip46Payload?.url?.startsWith('nostrconnect://')) {
-					this.postMessage({ type: 'set_nip46_qr', payload: nip46Payload });
-				} else {
-					console.error('[EngineManager] Unknown NIP-46 URL format:', nip46Payload?.url);
-				}
+			case 'nip46':
+				this.postMessage({ type: 'set_proxy_signer', signerType: 'nip46' });
 				break;
-			}
 		}
 	}
 
@@ -376,16 +382,145 @@ export class EngineManager {
 		const secret = clientSecret || this.generateClientSecret();
 		console.log('[EngineManager] NIP-46 bunker:', bunkerUrl.slice(0, 50) + '...');
 		this.setSigner('nip46', { url: bunkerUrl, clientSecret: secret });
+		this.initNip46BunkerSigner(bunkerUrl, secret);
 	}
 
 	setNip46QR(nostrconnectUrl: string, clientSecret?: string): void {
 		const secret = clientSecret || this.generateClientSecret();
 		console.log('[EngineManager] NIP-46 QR:', nostrconnectUrl.slice(0, 50) + '...');
 		this.setSigner('nip46', { url: nostrconnectUrl, clientSecret: secret });
+		this.initNip46URISigner(nostrconnectUrl, secret);
 	}
 
 	setNip07(): void {
 		this.setSigner('nip07', '');
+	}
+
+	private async initNip46BunkerSigner(bunkerUrl: string, clientSecret: string): Promise<void> {
+		try {
+			const bp = await parseBunkerInput(bunkerUrl);
+			if (!bp) throw new Error('Failed to parse bunker URL');
+			const secretKey = hexToBytes(clientSecret);
+			this.nip46Signer = BunkerSigner.fromBunker(secretKey, bp);
+		} catch (err: any) {
+			console.error('[EngineManager] Failed to initialize NIP-46 bunker signer:', err.message || err);
+		}
+	}
+
+	private async initNip46URISigner(nostrconnectUrl: string, clientSecret: string): Promise<void> {
+		try {
+			const secretKey = hexToBytes(clientSecret);
+			this.nip46Signer = await BunkerSigner.fromURI(secretKey, nostrconnectUrl);
+		} catch (err: any) {
+			console.error('[EngineManager] Failed to initialize NIP-46 URI signer:', err.message || err);
+		}
+	}
+
+	private getActiveSessionType(): string | null {
+		if (this._pendingSession) return this._pendingSession.type;
+		const pubkey = this.activePubkey || localStorage.getItem('nostr_active_pubkey');
+		if (!pubkey) return null;
+		const accounts = this.getAccounts();
+		return accounts[pubkey]?.type || null;
+	}
+
+	private async handleSignerRequest(msg: any): Promise<void> {
+		const { id, op, payload } = msg;
+		// Maintain pending map structure as required by M12B
+		this.proxyNextId++;
+		this.proxyPending.set(id, {
+			resolve: () => {},
+			reject: () => {}
+		});
+		try {
+			const sessionType = this.getActiveSessionType();
+			let result: string;
+
+			if (sessionType === 'nip07') {
+				result = await this.executeNip07Op(op, payload);
+			} else if (sessionType === 'nip46') {
+				result = await this.executeNip46Op(op, payload);
+			} else {
+				throw new Error(`No active proxy signer session (type: ${sessionType})`);
+			}
+
+			this.postMessage({ type: 'signer_response', id, result });
+		} catch (err: any) {
+			this.postMessage({
+				type: 'signer_response',
+				id,
+				error: err.message || String(err)
+			});
+		} finally {
+			this.proxyPending.delete(id);
+		}
+	}
+
+	private async executeNip07Op(op: string, payload: any): Promise<string> {
+		const nostr = (window as any).nostr;
+		if (!nostr) throw new Error('NIP-07 extension (window.nostr) not found');
+
+		switch (op) {
+			case 'get_public_key':
+				if (typeof nostr.getPublicKey !== 'function') {
+					throw new Error('window.nostr.getPublicKey is not available');
+				}
+				return await nostr.getPublicKey();
+			case 'sign_event': {
+				if (typeof nostr.signEvent !== 'function') {
+					throw new Error('window.nostr.signEvent is not available');
+				}
+				const ev = JSON.parse(payload.event_json);
+				const signed = await nostr.signEvent(ev);
+				return JSON.stringify(signed);
+			}
+			case 'nip04_encrypt':
+				if (!nostr.nip04 || typeof nostr.nip04.encrypt !== 'function') {
+					throw new Error('window.nostr.nip04.encrypt is not available');
+				}
+				return await nostr.nip04.encrypt(payload.peer, payload.plaintext);
+			case 'nip04_decrypt':
+				if (!nostr.nip04 || typeof nostr.nip04.decrypt !== 'function') {
+					throw new Error('window.nostr.nip04.decrypt is not available');
+				}
+				return await nostr.nip04.decrypt(payload.peer, payload.ciphertext);
+			case 'nip44_encrypt':
+				if (!nostr.nip44 || typeof nostr.nip44.encrypt !== 'function') {
+					throw new Error('window.nostr.nip44.encrypt is not available');
+				}
+				return await nostr.nip44.encrypt(payload.peer, payload.plaintext);
+			case 'nip44_decrypt':
+				if (!nostr.nip44 || typeof nostr.nip44.decrypt !== 'function') {
+					throw new Error('window.nostr.nip44.decrypt is not available');
+				}
+				return await nostr.nip44.decrypt(payload.peer, payload.ciphertext);
+			default:
+				throw new Error(`Unknown signer operation: ${op}`);
+		}
+	}
+
+	private async executeNip46Op(op: string, payload: any): Promise<string> {
+		if (!this.nip46Signer) throw new Error('NIP-46 signer not initialized');
+
+		switch (op) {
+			case 'get_public_key':
+				return await this.nip46Signer.getPublicKey();
+			case 'sign_event': {
+				const ev = JSON.parse(payload.event_json);
+				const signed = await this.nip46Signer.signEvent(ev);
+				return JSON.stringify(signed);
+			}
+			case 'nip04_encrypt':
+				return await this.nip46Signer.nip04Encrypt(payload.peer, payload.plaintext);
+			case 'nip04_decrypt':
+				return await this.nip46Signer.nip04Decrypt(payload.peer, payload.ciphertext);
+			case 'nip44_encrypt':
+				return await this.nip46Signer.nip44Encrypt(payload.peer, payload.plaintext);
+			case 'nip44_decrypt':
+				return await this.nip46Signer.nip44Decrypt(payload.peer, payload.ciphertext);
+			default:
+				throw new Error(`Unknown signer operation: ${op}`);
+		}
 	}
 
 	setPubkey(pubkey: string): void {
