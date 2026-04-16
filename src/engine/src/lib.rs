@@ -2,6 +2,7 @@ use futures::channel::mpsc;
 use futures::StreamExt;
 use js_sys::{ArrayBuffer, Uint8Array};
 use nipworker_core::service::engine::NostrEngine;
+use nipworker_core::traits::Signer;
 use std::rc::Rc;
 use std::sync::Arc;
 use tracing::info;
@@ -17,11 +18,16 @@ use signer::LocalSigner;
 use storage::MemoryStorage;
 use transport::WebSocketTransport;
 
+fn into_dyn_signer(signer: Arc<LocalSigner>) -> Arc<dyn Signer> {
+    signer
+}
+
 /// WASM-facing engine worker that hosts the full NostrEngine in a single thread.
 #[wasm_bindgen]
 pub struct NipworkerEngine {
     engine: Rc<NostrEngine>,
     port: MessagePort,
+    signer: Arc<LocalSigner>,
 }
 
 #[wasm_bindgen]
@@ -38,6 +44,7 @@ impl NipworkerEngine {
         let transport = Arc::new(WebSocketTransport::new());
         let storage = Arc::new(MemoryStorage::new());
         let signer = Arc::new(LocalSigner::new());
+        let signer_for_engine = into_dyn_signer(Arc::clone(&signer));
 
         let (event_tx, mut event_rx) = mpsc::channel::<(String, Vec<u8>)>(256);
         let port_for_events = port.clone();
@@ -59,7 +66,7 @@ impl NipworkerEngine {
             }
         });
 
-        let engine = Rc::new(NostrEngine::new(transport, storage, signer, event_tx));
+        let engine = Rc::new(NostrEngine::new(transport, storage, signer_for_engine, event_tx));
         let engine_for_messages = engine.clone();
 
         // Set up onmessage handler
@@ -95,17 +102,16 @@ impl NipworkerEngine {
         port.set_onmessage(Some(closure.as_ref().unchecked_ref()));
         closure.forget();
 
-        Self { engine, port }
+        Self { engine, port, signer }
     }
 
     /// Direct path: set a private key signer.
     #[wasm_bindgen(js_name = "setPrivateKey")]
-    pub fn set_private_key(&self, _secret: String) -> Result<(), JsValue> {
-        // In a full implementation we'd need to access the signer inside the engine.
-        // For now this is a stub that logs the request.
+    pub fn set_private_key(&self, secret: String) -> Result<(), JsValue> {
         info!("[nipworker-engine] set_private_key called");
-        // TODO: expose signer setter on NostrEngine
-        Ok(())
+        self.signer
+            .set_private_key(&secret)
+            .map_err(|e| JsValue::from_str(&e.to_string()))
     }
 
     /// Wake the engine (e.g., after returning from background).

@@ -235,6 +235,43 @@ impl PrivateKeySigner {
 // Helper utilities
 // ---------------
 
+use crate::traits::{Signer, SignerError as TraitSignerError};
+use async_trait::async_trait;
+
+#[async_trait(?Send)]
+impl Signer for PrivateKeySigner {
+    async fn get_public_key(&self) -> std::result::Result<String, TraitSignerError> {
+        self.get_public_key()
+            .map_err(|e| TraitSignerError::Other(e.to_string()))
+    }
+
+    async fn sign_event(&self, event_json: &str) -> std::result::Result<String, TraitSignerError> {
+        self.sign_event(event_json)
+            .await
+            .map_err(|e| TraitSignerError::Other(e.to_string()))
+    }
+
+    async fn nip04_encrypt(&self, peer: &str, plaintext: &str) -> std::result::Result<String, TraitSignerError> {
+        self.nip04_encrypt(peer, plaintext)
+            .map_err(|e| TraitSignerError::Other(e.to_string()))
+    }
+
+    async fn nip04_decrypt(&self, peer: &str, ciphertext: &str) -> std::result::Result<String, TraitSignerError> {
+        self.nip04_decrypt(peer, ciphertext)
+            .map_err(|e| TraitSignerError::Other(e.to_string()))
+    }
+
+    async fn nip44_encrypt(&self, peer: &str, plaintext: &str) -> std::result::Result<String, TraitSignerError> {
+        self.nip44_encrypt(peer, plaintext)
+            .map_err(|e| TraitSignerError::Other(e.to_string()))
+    }
+
+    async fn nip44_decrypt(&self, peer: &str, ciphertext: &str) -> std::result::Result<String, TraitSignerError> {
+        self.nip44_decrypt(peer, ciphertext)
+            .map_err(|e| TraitSignerError::Other(e.to_string()))
+    }
+}
+
 fn is_hex64(s: &str) -> bool {
     if s.len() != 64 {
         return false;

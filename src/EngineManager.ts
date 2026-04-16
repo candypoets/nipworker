@@ -6,14 +6,23 @@ import {
 	GetPublicKeyT,
 	MainContent,
 	MainMessageT,
+	MessageType,
 	PipelineConfigT,
+	PrivateKeyT,
 	PublishT,
+	Pubkey,
 	RequestT,
+	SetSignerT,
+	SignEventT,
+	SignedEvent,
+	SignerType,
+	StringVec,
 	StringVecT,
 	SubscribeT,
 	SubscriptionConfigT,
 	TemplateT,
-	UnsubscribeT
+	UnsubscribeT,
+	WorkerMessage
 } from './generated/nostr/fb';
 
 /**
@@ -78,6 +87,54 @@ export class EngineManager {
 					}
 					return;
 				}
+			}
+
+			// Handle direct engine responses (crypto / sign-event) with empty subId
+			if (data && (subId === '' || subId === null || subId === undefined)) {
+				const uint8Data = new Uint8Array(data);
+				if (uint8Data.length >= 4) {
+					const view = new DataView(uint8Data.buffer, uint8Data.byteOffset, uint8Data.byteLength);
+					const payloadLen = view.getUint32(0, true);
+					if (uint8Data.length >= 4 + payloadLen) {
+						const bb = new flatbuffers.ByteBuffer(uint8Data.subarray(4, 4 + payloadLen));
+						const workerMsg = WorkerMessage.getRootAsWorkerMessage(bb);
+						const msgType = workerMsg.type();
+						if (msgType === MessageType.Pubkey) {
+							const pubkeyObj = workerMsg.content(new Pubkey());
+							const pubkey = pubkeyObj ? pubkeyObj.pubkey() : null;
+							if (pubkey) {
+								this.handleCryptoResponse({ type: 'response', op: 'get_pubkey', ok: true, result: pubkey });
+							}
+						} else if (msgType === MessageType.SignedEvent) {
+							const signedEventObj = workerMsg.content(new SignedEvent());
+							const eventObj = signedEventObj ? signedEventObj.event() : null;
+							if (eventObj) {
+								const signedEvent: NostrEvent = {
+									id: eventObj.id() || '',
+									pubkey: eventObj.pubkey() || '',
+									created_at: eventObj.createdAt(),
+									kind: eventObj.kind(),
+									tags: [],
+									content: eventObj.content() || '',
+									sig: eventObj.sig() || ''
+								};
+								for (let i = 0; i < eventObj.tagsLength(); i++) {
+									const tag = eventObj.tags(i, new StringVec());
+									if (tag) {
+										const tagValues: string[] = [];
+										for (let j = 0; j < tag.itemsLength(); j++) {
+											const v = tag.items(j);
+											if (v !== null) tagValues.push(v);
+										}
+										signedEvent.tags.push(tagValues);
+									}
+								}
+								this._signCB(signedEvent);
+							}
+						}
+					}
+				}
+				return;
 			}
 
 			if (type === 'relay:status' && url && status) {
@@ -282,23 +339,73 @@ export class EngineManager {
 				this._pendingSession = null;
 				this.dispatch('auth', { pubkey: this.activePubkey, hasSigner: false });
 				break;
-			case 'privkey':
-				this.postMessage({ type: 'set_private_key', payload });
+			case 'privkey': {
+				const pkT = new PrivateKeyT(payload as string);
+				const setSignerT = new SetSignerT(SignerType.PrivateKey, pkT);
+				const mainT = new MainMessageT(MainContent.SetSigner, setSignerT);
+				const builder = new flatbuffers.Builder(2048);
+				builder.finish(mainT.pack(builder));
+				const uint8Array = builder.asUint8Array();
+				this.postMessage({ serializedMessage: uint8Array }, [uint8Array.buffer]);
 				break;
+			}
 			case 'nip07':
-				// Not supported in engine mode yet
-				console.warn('[EngineManager] NIP-07 not supported in engine mode');
+				this.postMessage({ type: 'set_nip07' });
 				break;
-			case 'nip46':
-				// Not supported in engine mode yet
-				console.warn('[EngineManager] NIP-46 not supported in engine mode');
+			case 'nip46': {
+				const nip46Payload = payload as { url: string; clientSecret: string };
+				if (nip46Payload?.url?.startsWith('bunker://')) {
+					this.postMessage({ type: 'set_nip46_bunker', payload: nip46Payload });
+				} else if (nip46Payload?.url?.startsWith('nostrconnect://')) {
+					this.postMessage({ type: 'set_nip46_qr', payload: nip46Payload });
+				} else {
+					console.error('[EngineManager] Unknown NIP-46 URL format:', nip46Payload?.url);
+				}
 				break;
+			}
 		}
+	}
+
+	private generateClientSecret(): string {
+		const array = new Uint8Array(32);
+		crypto.getRandomValues(array);
+		return Array.from(array, (b) => b.toString(16).padStart(2, '0')).join('');
+	}
+
+	setNip46Bunker(bunkerUrl: string, clientSecret?: string): void {
+		const secret = clientSecret || this.generateClientSecret();
+		console.log('[EngineManager] NIP-46 bunker:', bunkerUrl.slice(0, 50) + '...');
+		this.setSigner('nip46', { url: bunkerUrl, clientSecret: secret });
+	}
+
+	setNip46QR(nostrconnectUrl: string, clientSecret?: string): void {
+		const secret = clientSecret || this.generateClientSecret();
+		console.log('[EngineManager] NIP-46 QR:', nostrconnectUrl.slice(0, 50) + '...');
+		this.setSigner('nip46', { url: nostrconnectUrl, clientSecret: secret });
+	}
+
+	setNip07(): void {
+		this.setSigner('nip07', '');
+	}
+
+	setPubkey(pubkey: string): void {
+		this.setSigner('pubkey', pubkey);
 	}
 
 	signEvent(event: EventTemplate, cb: (event: NostrEvent) => void) {
 		this._signCB = cb;
-		this.postMessage({ type: 'sign_event', payload: JSON.stringify(event) });
+		const templateT = new TemplateT(
+			event.kind,
+			event.created_at,
+			this.textEncoder.encode(event.content),
+			event.tags.map((t) => new StringVecT(t)) || []
+		);
+		const signEventT = new SignEventT(templateT);
+		const mainT = new MainMessageT(MainContent.SignEvent, signEventT);
+		const builder = new flatbuffers.Builder(2048);
+		builder.finish(mainT.pack(builder));
+		const uint8Array = builder.asUint8Array();
+		this.postMessage({ serializedMessage: uint8Array }, [uint8Array.buffer]);
 	}
 
 	getPublicKey() {

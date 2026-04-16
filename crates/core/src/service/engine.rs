@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use async_trait::async_trait;
 use futures::channel::mpsc;
 use tracing::info;
 
@@ -7,9 +8,12 @@ use crate::generated::nostr::fb;
 use crate::network::NetworkManager;
 use crate::nostr_error::{NostrError, NostrResult};
 use crate::parser::Parser;
-use crate::traits::{Signer, Storage, Transport};
+use crate::traits::{Signer, SignerError, Storage, Transport};
 use crate::types::network::Request;
-use crate::types::nostr::Template;
+use crate::types::nostr::{Event, Template};
+
+#[cfg(feature = "crypto")]
+use crate::crypto::signers::PrivateKeySigner;
 
 /// Central Nostr engine that wires together transport, storage, signer,
 /// parser, and pipeline using platform-agnostic trait abstractions.
@@ -17,7 +21,7 @@ pub struct NostrEngine {
 	network_manager: NetworkManager,
 	_crypto_client: Arc<CryptoClient>,
 	_parser: Arc<Parser>,
-	signer: Arc<dyn Signer>,
+	signer: Arc<async_lock::RwLock<Arc<dyn Signer>>>,
 	event_sink: mpsc::Sender<(String, Vec<u8>)>,
 }
 
@@ -45,9 +49,14 @@ impl NostrEngine {
 			network_manager,
 			_crypto_client: crypto_client,
 			_parser: parser,
-			signer,
+			signer: Arc::new(async_lock::RwLock::new(signer)),
 			event_sink,
 		}
+	}
+
+	/// Replace the current signer.
+	pub async fn set_signer(&self, signer: Arc<dyn Signer>) {
+		*self.signer.write().await = signer;
 	}
 
 	/// Deserialize a FlatBuffers MainMessage and dispatch to the appropriate
@@ -96,16 +105,80 @@ impl NostrEngine {
 				Ok(())
 			}
 			fb::MainContent::SignEvent => {
-				// Stub: sign-event flow not yet fully ported to trait abstractions.
+				let sign_event = main_message.content_as_sign_event().ok_or_else(|| {
+					NostrError::Parse("Invalid SignEvent message".to_string())
+				})?;
+				let template = Template::from_flatbuffer(&sign_event.template());
+				let template_json = template.to_json();
+				let signed_json = self
+					.signer
+					.read()
+					.await
+					.sign_event(&template_json)
+					.await
+					.map_err(|e| NostrError::Crypto(format!("SignEvent error: {}", e)))?;
+				let event = Event::from_json(&signed_json)
+					.map_err(|e| NostrError::Parse(format!("Failed to parse signed event: {}", e)))?;
+
+				let mut builder = flatbuffers::FlatBufferBuilder::new();
+				let event_offset = event.build_flatbuffer(&mut builder);
+				let signed_event_payload = fb::SignedEvent::create(
+					&mut builder,
+					&fb::SignedEventArgs {
+						event: Some(event_offset),
+					},
+				);
+				let worker_msg = fb::WorkerMessage::create(
+					&mut builder,
+					&fb::WorkerMessageArgs {
+						sub_id: None,
+						url: None,
+						type_: fb::MessageType::SignedEvent,
+						content_type: fb::Message::SignedEvent,
+						content: Some(signed_event_payload.as_union_value()),
+					},
+				);
+				builder.finish(worker_msg, None);
+				let data = builder.finished_data().to_vec();
+
+				self.event_sink
+					.clone()
+					.try_send(("".to_string(), data))
+					.map_err(|e| NostrError::Other(format!("Failed to send signed event: {}", e)))?;
 				Ok(())
 			}
 			fb::MainContent::SetSigner => {
-				// Stub: signer is now provided via constructor.
-				Ok(())
+				let set_signer = main_message.content_as_set_signer().ok_or_else(|| {
+					NostrError::Parse("Invalid SetSigner message".to_string())
+				})?;
+				match set_signer.signer_type_type() {
+					fb::SignerType::PrivateKey => {
+						let pk = set_signer.signer_type_as_private_key().ok_or_else(|| {
+							NostrError::Parse("Invalid PrivateKey signer data".to_string())
+						})?;
+						let private_key = pk.private_key().to_string();
+						#[cfg(feature = "crypto")]
+						{
+							let signer = PrivateKeySigner::new(&private_key)
+								.map_err(|e| NostrError::Crypto(format!("Failed to create signer: {}", e)))?;
+							self.set_signer(Arc::new(signer)).await;
+							Ok(())
+						}
+						#[cfg(not(feature = "crypto"))]
+						{
+							Err(NostrError::Crypto(
+								"PrivateKey signer requires crypto feature".to_string(),
+							))
+						}
+					}
+					_ => Err(NostrError::Parse("Unsupported signer type".to_string())),
+				}
 			}
 			fb::MainContent::GetPublicKey => {
 				let pubkey = self
 					.signer
+					.read()
+					.await
 					.get_public_key()
 					.await
 					.map_err(|e| NostrError::Crypto(format!("Signer error: {}", e)))?;
