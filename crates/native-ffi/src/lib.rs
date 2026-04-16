@@ -34,9 +34,13 @@ pub struct NipworkerHandle {
 
 #[no_mangle]
 pub extern "C" fn nipworker_init(
-    callback: extern "C" fn(*const u8, usize),
+    callback: extern "C" fn(*mut c_void, *const u8, usize),
+    userdata: *mut c_void,
 ) -> *mut c_void {
     let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel::<EngineCommand>();
+
+    // Cast userdata to usize so it can be moved into the spawned thread.
+    let userdata = userdata as usize;
 
     // Spawn engine thread
     thread::spawn(move || {
@@ -75,7 +79,7 @@ pub extern "C" fn nipworker_init(
                     payload.extend_from_slice(&bytes);
                     let len = payload.len();
                     let ptr = Box::into_raw(payload.into_boxed_slice()) as *const u8;
-                    callback(ptr, len);
+                    callback(userdata as *mut c_void, ptr, len);
                 }
             });
 

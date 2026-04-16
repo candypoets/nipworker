@@ -8,7 +8,7 @@
 `crates/native-ffi` exposes a C API over the Rust `NostrEngine` so that native mobile applications can reuse the same core logic as the WASM/TypeScript builds.
 
 ```c
-void* nipworker_init(void (*callback)(const uint8_t* ptr, size_t len));
+void* nipworker_init(void (*callback)(void* userdata, const uint8_t* ptr, size_t len), void* userdata);
 void nipworker_handle_message(void* handle, const uint8_t* ptr, size_t len);
 void nipworker_set_private_key(void* handle, const char* ptr);
 void nipworker_deinit(void* handle);
@@ -34,13 +34,15 @@ The TypeScript side provides `NativeBackend` (`src/NativeBackend.ts`) which impl
 * **Language:** Kotlin
 * **Registration:** via `LynxViewBuilder.setModule(NipworkerLynxModule::class.java)` or your `LynxModuleAdapter`.
 * **Linking:** Bundle `libnipworker_native_ffi.so` for each target ABI.
+* **JNI Bridge:** The Kotlin `external` declarations expect a thin JNI C layer that translates between JNI types and the Rust C API above, and forwards callbacks back to Kotlin via `onNativeData()`.
 * **Build steps (typical):**
   1. Use `cargo-ndk` or a custom CMake/ndk-build step:
      ```bash
      cargo ndk -t armeabi-v7a -t arm64-v8a -t x86 -t x86_64 build --release
      ```
   2. Copy the resulting `.so` files into `jniLibs/<abi>/`.
-  3. Include `LynxNipworkerModule.kt` in the app module sources.
+  3. Write a JNI C bridge (e.g. `nipworker_jni.c`) that wraps the 5 C functions and manages global references for callbacks.
+  4. Include `LynxNipworkerModule.kt` in the app module sources.
 
 ### HarmonyOS (`harmony/LynxNipworkerModule.ets`)
 

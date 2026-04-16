@@ -16,8 +16,8 @@ export class NipworkerLynxModule extends LynxModule {
 
   /**
    * Initialise the native engine.
-   * TODO: Implement a NAPI C++ addon that calls nipworker_init() and forwards
-   * the Rust callback back to this ArkTS callback via an ArrayBuffer.
+   * TODO: Implement a NAPI C++ addon that calls nipworker_init(callbackForwarder, userdata)
+   * and forwards the Rust callback back to this ArkTS callback via an ArrayBuffer.
    */
   init(callback: (data: ArrayBuffer) => void): void {
     // TODO: wire through NAPI/FFI to nipworker_init(callbackForwarder)

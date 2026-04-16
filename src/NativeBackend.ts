@@ -146,14 +146,16 @@ export class NativeBackend {
 			const pubkey = pubkeyObj ? pubkeyObj.pubkey() : null;
 			if (pubkey) {
 				this.activePubkey = pubkey;
+				const secretKey =
+					this._pendingSession?.type === 'privkey' ? this._pendingSession.payload : undefined;
 				if (this._pendingSession) {
 					this.saveSession(pubkey, this._pendingSession.type, this._pendingSession.payload);
 					this._pendingSession = null;
 				}
+				this.dispatch('auth', { pubkey: this.activePubkey, hasSigner: true, secretKey });
+			} else {
+				this.dispatch('auth', { pubkey: null, hasSigner: false });
 			}
-			const secretKey =
-				this._pendingSession?.type === 'privkey' ? this._pendingSession.payload : undefined;
-			this.dispatch('auth', { pubkey: this.activePubkey, hasSigner: !!pubkey, secretKey });
 		} else if (msgType === MessageType.SignedEvent) {
 			const signedEventObj = workerMsg.content(new SignedEvent());
 			const eventObj = signedEventObj ? signedEventObj.event() : null;
@@ -204,7 +206,9 @@ export class NativeBackend {
 	}
 
 	private postMessage(bytes: Uint8Array): void {
-		this.nativeModule.handleMessage(bytes);
+		// Builder.asUint8Array() always returns a view starting at byteOffset 0,
+		// so the underlying ArrayBuffer is safe to pass to the native bridge.
+		this.nativeModule.handleMessage(bytes.buffer);
 	}
 
 	public createShortId(input: string): string {
@@ -359,6 +363,9 @@ export class NativeBackend {
 	}
 
 	private generateClientSecret(): string {
+		if (typeof crypto === 'undefined' || !crypto.getRandomValues) {
+			throw new Error('[NativeBackend] crypto.getRandomValues is not available in this environment');
+		}
 		const array = new Uint8Array(32);
 		crypto.getRandomValues(array);
 		return Array.from(array, (b) => b.toString(16).padStart(2, '0')).join('');
@@ -417,6 +424,7 @@ export class NativeBackend {
 	}
 
 	getAccounts(): Record<string, { type: string; payload: any }> {
+		if (typeof localStorage === 'undefined') return {};
 		const accountsJson = localStorage.getItem('nostr_signer_accounts') || '{}';
 		try {
 			return JSON.parse(accountsJson);
@@ -434,6 +442,7 @@ export class NativeBackend {
 	}
 
 	private saveSession(pubkey: string, type: string, payload: any) {
+		if (typeof localStorage === 'undefined') return;
 		const accounts = this.getAccounts();
 		accounts[pubkey] = { type, payload };
 		localStorage.setItem('nostr_signer_accounts', JSON.stringify(accounts));
@@ -441,6 +450,10 @@ export class NativeBackend {
 	}
 
 	private restoreSession() {
+		if (typeof localStorage === 'undefined') {
+			this.dispatch('auth', { pubkey: null, hasSigner: false });
+			return;
+		}
 		const activePubkey = localStorage.getItem('nostr_active_pubkey');
 		if (activePubkey) {
 			this.switchAccount(activePubkey);
@@ -453,7 +466,9 @@ export class NativeBackend {
 		this._pendingSession = null;
 		this.activePubkey = null;
 		// TODO: send clear_signer to native engine once supported via FFI
-		localStorage.removeItem('nostr_active_pubkey');
+		if (typeof localStorage !== 'undefined') {
+			localStorage.removeItem('nostr_active_pubkey');
+		}
 		this.dispatch('logout');
 	}
 
@@ -462,7 +477,9 @@ export class NativeBackend {
 		if (!currentPubkey) return;
 		const accounts = this.getAccounts();
 		delete accounts[currentPubkey];
-		localStorage.setItem('nostr_signer_accounts', JSON.stringify(accounts));
+		if (typeof localStorage !== 'undefined') {
+			localStorage.setItem('nostr_signer_accounts', JSON.stringify(accounts));
+		}
 		const remaining = Object.keys(accounts);
 		if (remaining.length > 0 && remaining[0]) {
 			this.switchAccount(remaining[0]);
