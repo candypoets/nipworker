@@ -1,6 +1,5 @@
 use std::ffi::{c_char, c_void, CStr};
 use std::slice;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use tokio::runtime::Builder;
@@ -26,7 +25,6 @@ enum EngineCommand {
 /// Opaque handle
 pub struct NipworkerHandle {
     cmd_tx: Mutex<Option<UnboundedSender<EngineCommand>>>,
-    destroyed: AtomicBool,
 }
 
 #[no_mangle]
@@ -101,7 +99,6 @@ pub extern "C" fn nipworker_init(
 
     let handle = Box::new(NipworkerHandle {
         cmd_tx: Mutex::new(Some(cmd_tx)),
-        destroyed: AtomicBool::new(false),
     });
     Box::into_raw(handle) as *mut c_void
 }
@@ -112,12 +109,11 @@ pub extern "C" fn nipworker_handle_message(handle: *mut c_void, ptr: *const u8, 
         return;
     }
     let handle = unsafe { &*(handle as *mut NipworkerHandle) };
-    if handle.destroyed.load(Ordering::Acquire) {
-        return;
-    }
     let bytes = unsafe { slice::from_raw_parts(ptr, len) }.to_vec();
-    if let Some(tx) = handle.cmd_tx.lock().unwrap_or_else(|e| e.into_inner()).clone() {
-        let _ = tx.send(EngineCommand::HandleMessage(bytes));
+    if let Ok(tx_guard) = handle.cmd_tx.lock() {
+        if let Some(ref tx) = *tx_guard {
+            let _ = tx.send(EngineCommand::HandleMessage(bytes));
+        }
     }
 }
 
@@ -127,12 +123,11 @@ pub extern "C" fn nipworker_set_private_key(handle: *mut c_void, ptr: *const c_c
         return;
     }
     let handle = unsafe { &*(handle as *mut NipworkerHandle) };
-    if handle.destroyed.load(Ordering::Acquire) {
-        return;
-    }
     let secret = unsafe { CStr::from_ptr(ptr) }.to_string_lossy().to_string();
-    if let Some(tx) = handle.cmd_tx.lock().unwrap_or_else(|e| e.into_inner()).clone() {
-        let _ = tx.send(EngineCommand::SetPrivateKey(secret));
+    if let Ok(tx_guard) = handle.cmd_tx.lock() {
+        if let Some(ref tx) = *tx_guard {
+            let _ = tx.send(EngineCommand::SetPrivateKey(secret));
+        }
     }
 }
 
@@ -149,9 +144,10 @@ pub extern "C" fn nipworker_free_bytes(ptr: *mut u8, len: usize) {
 pub extern "C" fn nipworker_deinit(handle: *mut c_void) {
     if !handle.is_null() {
         let handle = unsafe { &*(handle as *mut NipworkerHandle) };
-        handle.destroyed.store(true, Ordering::Release);
         // Drop the sender to close the channel and unblock the engine thread's recv loop.
-        let _ = handle.cmd_tx.lock().unwrap_or_else(|e| e.into_inner()).take();
+        if let Ok(mut tx_guard) = handle.cmd_tx.lock() {
+            let _ = tx_guard.take();
+        }
         // Intentionally leak the Box to prevent use-after-free from other threads.
     }
 }
