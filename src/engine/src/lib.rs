@@ -15,7 +15,7 @@ mod storage;
 mod transport;
 
 use signer::LocalSigner;
-use storage::MemoryStorage;
+use storage::IndexedDbStorage;
 use transport::WebSocketTransport;
 
 fn into_dyn_signer(signer: Arc<LocalSigner>) -> Arc<dyn Signer> {
@@ -42,7 +42,7 @@ impl NipworkerEngine {
         info!("[nipworker-engine] Initializing WASM engine...");
 
         let transport = Arc::new(WebSocketTransport::new());
-        let storage = Arc::new(MemoryStorage::new());
+        let storage = Arc::new(IndexedDbStorage::new());
         let signer = Arc::new(LocalSigner::new());
         let signer_for_engine = into_dyn_signer(Arc::clone(&signer));
 
