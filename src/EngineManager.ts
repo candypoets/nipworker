@@ -380,12 +380,18 @@ export class EngineManager {
 				if (nip46Payload?.url) {
 					(async () => {
 						try {
+							let signer: BunkerSigner | null = null;
 							if (nip46Payload.url.startsWith('bunker://')) {
-								await this.initNip46BunkerSigner(nip46Payload.url, nip46Payload.clientSecret);
+								signer = await this.initNip46BunkerSigner(nip46Payload.url, nip46Payload.clientSecret);
 							} else if (nip46Payload.url.startsWith('nostrconnect://')) {
-								await this.initNip46URISigner(nip46Payload.url, nip46Payload.clientSecret);
+								signer = await this.initNip46URISigner(nip46Payload.url, nip46Payload.clientSecret);
 							}
 							if (this._signerGeneration !== currentGeneration) return;
+							this.nip46Signer = signer;
+							if (signer && nip46Payload.url.startsWith('nostrconnect://')) {
+								const bunkerUrl = toBunkerURL(signer.bp);
+								this._pendingSession!.payload = { url: bunkerUrl, clientSecret: nip46Payload.clientSecret };
+							}
 							this.getPublicKey();
 						} catch (err: any) {
 							console.error('[EngineManager] Failed to initialize NIP-46 signer:', err.message || String(err));
@@ -423,32 +429,19 @@ export class EngineManager {
 		this.setSigner('nip07', '');
 	}
 
-	private async initNip46BunkerSigner(bunkerUrl: string, clientSecret: string): Promise<void> {
-		try {
-			const bp = await parseBunkerInput(bunkerUrl);
-			if (!bp) throw new Error('Failed to parse bunker URL');
-			const secretKey = hexToBytes(clientSecret);
-			this.nip46Signer = BunkerSigner.fromBunker(secretKey, bp);
-			await this.nip46Signer.connect();
-		} catch (err: any) {
-			console.error('[EngineManager] Failed to initialize NIP-46 bunker signer:', err.message || err);
-			throw err;
-		}
+	private async initNip46BunkerSigner(bunkerUrl: string, clientSecret: string): Promise<BunkerSigner> {
+		const bp = await parseBunkerInput(bunkerUrl);
+		if (!bp) throw new Error('Failed to parse bunker URL');
+		const secretKey = hexToBytes(clientSecret);
+		const signer = BunkerSigner.fromBunker(secretKey, bp);
+		await signer.connect();
+		return signer;
 	}
 
-	private async initNip46URISigner(nostrconnectUrl: string, clientSecret: string): Promise<void> {
-		try {
-			const secretKey = hexToBytes(clientSecret);
-			this.nip46Signer = await BunkerSigner.fromURI(secretKey, nostrconnectUrl);
-			// Update pending session with the persistent bunker URL so it gets saved correctly
-			if (this._pendingSession && this._pendingSession.type === 'nip46' && this.nip46Signer) {
-				const bunkerUrl = toBunkerURL(this.nip46Signer.bp);
-				this._pendingSession.payload = { url: bunkerUrl, clientSecret };
-			}
-		} catch (err: any) {
-			console.error('[EngineManager] Failed to initialize NIP-46 URI signer:', err.message || err);
-			throw err;
-		}
+	private async initNip46URISigner(nostrconnectUrl: string, clientSecret: string): Promise<BunkerSigner> {
+		const secretKey = hexToBytes(clientSecret);
+		const signer = await BunkerSigner.fromURI(secretKey, nostrconnectUrl);
+		return signer;
 	}
 
 	private getActiveSessionType(): string | null {
@@ -628,6 +621,8 @@ export class EngineManager {
 	}
 
 	public logout(): void {
+		this._signerGeneration++;
+		this.nip46Signer = null;
 		this._pendingSession = null;
 		this.activePubkey = null;
 		this.postMessage({ type: 'clear_signer' });
