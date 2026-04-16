@@ -22,9 +22,14 @@ enum EngineCommand {
     SetPrivateKey(String),
 }
 
+struct NipworkerState {
+    destroyed: bool,
+    cmd_tx: Option<UnboundedSender<EngineCommand>>,
+}
+
 /// Opaque handle
 pub struct NipworkerHandle {
-    cmd_tx: Mutex<Option<UnboundedSender<EngineCommand>>>,
+    state: Mutex<NipworkerState>,
 }
 
 #[no_mangle]
@@ -98,7 +103,10 @@ pub extern "C" fn nipworker_init(
     });
 
     let handle = Box::new(NipworkerHandle {
-        cmd_tx: Mutex::new(Some(cmd_tx)),
+        state: Mutex::new(NipworkerState {
+            destroyed: false,
+            cmd_tx: Some(cmd_tx),
+        }),
     });
     Box::into_raw(handle) as *mut c_void
 }
@@ -110,8 +118,11 @@ pub extern "C" fn nipworker_handle_message(handle: *mut c_void, ptr: *const u8, 
     }
     let handle = unsafe { &*(handle as *mut NipworkerHandle) };
     let bytes = unsafe { slice::from_raw_parts(ptr, len) }.to_vec();
-    if let Ok(tx_guard) = handle.cmd_tx.lock() {
-        if let Some(ref tx) = *tx_guard {
+    if let Ok(state) = handle.state.lock() {
+        if state.destroyed {
+            return;
+        }
+        if let Some(ref tx) = state.cmd_tx {
             let _ = tx.send(EngineCommand::HandleMessage(bytes));
         }
     }
@@ -124,8 +135,11 @@ pub extern "C" fn nipworker_set_private_key(handle: *mut c_void, ptr: *const c_c
     }
     let handle = unsafe { &*(handle as *mut NipworkerHandle) };
     let secret = unsafe { CStr::from_ptr(ptr) }.to_string_lossy().to_string();
-    if let Ok(tx_guard) = handle.cmd_tx.lock() {
-        if let Some(ref tx) = *tx_guard {
+    if let Ok(state) = handle.state.lock() {
+        if state.destroyed {
+            return;
+        }
+        if let Some(ref tx) = state.cmd_tx {
             let _ = tx.send(EngineCommand::SetPrivateKey(secret));
         }
     }
@@ -144,9 +158,10 @@ pub extern "C" fn nipworker_free_bytes(ptr: *mut u8, len: usize) {
 pub extern "C" fn nipworker_deinit(handle: *mut c_void) {
     if !handle.is_null() {
         let handle = unsafe { &*(handle as *mut NipworkerHandle) };
-        // Drop the sender to close the channel and unblock the engine thread's recv loop.
-        if let Ok(mut tx_guard) = handle.cmd_tx.lock() {
-            let _ = tx_guard.take();
+        // Mark destroyed and drop the sender to close the channel and unblock the engine thread.
+        if let Ok(mut state) = handle.state.lock() {
+            state.destroyed = true;
+            let _ = state.cmd_tx.take();
         }
         // Intentionally leak the Box to prevent use-after-free from other threads.
     }
