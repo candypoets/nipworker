@@ -61,6 +61,7 @@ export class EngineManager {
 	>();
 	private proxyNextId = 0;
 	private nip46Signer: BunkerSigner | null = null;
+	private _signerGeneration = 0;
 
 	public PERPETUAL_SUBSCRIPTIONS = ['notifications', 'starterpack'];
 
@@ -345,7 +346,12 @@ export class EngineManager {
 	}
 
 	setSigner(name: string, payload?: string | { url: string; clientSecret: string }): void {
+		this._signerGeneration++;
+		const currentGeneration = this._signerGeneration;
 		this._pendingSession = { type: name, payload };
+		if (name !== 'nip46') {
+			this.nip46Signer = null;
+		}
 		switch (name) {
 			case 'pubkey':
 				this.activePubkey = payload as string;
@@ -369,6 +375,7 @@ export class EngineManager {
 				break;
 			case 'nip46': {
 				this.postMessage({ type: 'set_proxy_signer', signerType: 'nip46' });
+				this.nip46Signer = null;
 				const nip46Payload = payload as { url: string; clientSecret: string } | undefined;
 				if (nip46Payload?.url) {
 					(async () => {
@@ -378,9 +385,11 @@ export class EngineManager {
 							} else if (nip46Payload.url.startsWith('nostrconnect://')) {
 								await this.initNip46URISigner(nip46Payload.url, nip46Payload.clientSecret);
 							}
+							if (this._signerGeneration !== currentGeneration) return;
 							this.getPublicKey();
 						} catch (err: any) {
 							console.error('[EngineManager] Failed to initialize NIP-46 signer:', err.message || String(err));
+							if (this._signerGeneration !== currentGeneration) return;
 							this.dispatch('auth', { pubkey: null, hasSigner: false });
 						}
 					})();
