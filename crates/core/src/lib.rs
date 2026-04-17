@@ -1,8 +1,10 @@
+pub mod channel;
 pub mod generated;
 pub mod types;
 pub mod utils;
 pub mod traits;
 pub mod service;
+pub mod spawn;
 pub mod nostr_error;
 pub mod port;
 
@@ -12,6 +14,7 @@ pub mod network;
 pub mod parser_types;
 pub mod parser_utils;
 pub mod crypto_client;
+pub mod worker;
 
 #[cfg(feature = "crypto")]
 pub mod crypto {

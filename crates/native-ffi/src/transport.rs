@@ -1,4 +1,4 @@
-use nipworker_core::traits::{Transport, TransportError, TransportStatus};
+use nipworker_core::traits::{RelayTransport, TransportError, TransportStatus};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -27,7 +27,7 @@ impl NativeTransport {
 }
 
 #[async_trait::async_trait(?Send)]
-impl Transport for NativeTransport {
+impl RelayTransport for NativeTransport {
     async fn connect(&self, url: &str) -> Result<(), TransportError> {
         use tokio_tungstenite::connect_async;
         use tokio_tungstenite::tungstenite::Message;
@@ -56,7 +56,7 @@ impl Transport for NativeTransport {
             }
             connections.borrow_mut().remove(&url_writer);
             if let Some(cb) = status_cbs_writer.borrow().get(&url_writer) {
-                cb(TransportStatus::Closed);
+                cb(TransportStatus::Closed { url: url_writer.clone() });
             }
         });
 
@@ -80,13 +80,13 @@ impl Transport for NativeTransport {
                 }
             }
             if let Some(cb) = status_cbs_reader.borrow().get(&url_reader) {
-                cb(TransportStatus::Closed);
+                cb(TransportStatus::Closed { url: url_reader.clone() });
             }
         });
 
         self.connections.borrow_mut().insert(url.to_string(), WsHandle { write: tx, close_tx });
         if let Some(cb) = self.status_callbacks.borrow().get(url) {
-            cb(TransportStatus::Connected);
+            cb(TransportStatus::Connected { url: url.to_string() });
         }
 
         Ok(())
@@ -97,7 +97,7 @@ impl Transport for NativeTransport {
             let _ = handle.close_tx.send(());
         }
         if let Some(cb) = self.status_callbacks.borrow().get(url) {
-            cb(TransportStatus::Closed);
+            cb(TransportStatus::Closed { url: url.to_string() });
         }
     }
 

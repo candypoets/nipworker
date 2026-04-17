@@ -10,14 +10,14 @@ use std::sync::{Arc, RwLock};
 
 use wasm_bindgen_futures::spawn_local;
 
-use crate::traits::{Transport, TransportStatus};
+use crate::traits::{RelayTransport, TransportStatus};
 use crate::transport::fb_utils::parse_relay_response;
 use crate::transport::types::{RelayConfig, RelayError};
 use crate::utils::normalize_relay_url;
 use serde_json::Value;
 
 pub struct ConnectionRegistry {
-	transport: Arc<dyn Transport>,
+	transport: Arc<dyn RelayTransport>,
 	config: RelayConfig,
 	connected_urls: Arc<RwLock<HashSet<String>>>,
 	message_handler: Arc<dyn Fn(&str, &str, &str)>,
@@ -32,7 +32,7 @@ impl Drop for ConnectionRegistry {
 
 impl ConnectionRegistry {
 	pub fn new(
-		transport: Arc<dyn Transport>,
+		transport: Arc<dyn RelayTransport>,
 		message_handler: Arc<dyn Fn(&str, &str, &str)>,
 		crypto_sender: Arc<dyn Fn(&[u8])>,
 	) -> Self {

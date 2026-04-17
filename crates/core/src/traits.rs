@@ -21,13 +21,13 @@ pub enum SignerError {
 
 #[derive(Debug, Clone)]
 pub enum TransportStatus {
-    Connected,
-    Failed,
-    Closed,
+    Connected { url: String },
+    Failed { url: String },
+    Closed { url: String },
 }
 
 #[async_trait(?Send)]
-pub trait Transport {
+pub trait RelayTransport {
     async fn connect(&self, url: &str) -> Result<(), TransportError>;
     fn disconnect(&self, url: &str);
     fn send(&self, url: &str, frame: String) -> Result<(), TransportError>;
