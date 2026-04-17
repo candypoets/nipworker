@@ -65,7 +65,7 @@ impl NostrEngine {
 		let (parser_main_tx, mut parser_main_rx) =
 			tokio::sync::mpsc::unbounded_channel::<(String, Vec<u8>)>();
 
-		let parser = Arc::new(Parser::new());
+		let parser = Arc::new(Parser::new(Some(signer.clone())));
 
 
 

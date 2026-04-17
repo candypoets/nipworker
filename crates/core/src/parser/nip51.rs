@@ -195,26 +195,41 @@ impl Parser {
         // Check for encryption tag
         let encryption = tag_value(&template.tags, "encryption").map(|s| s.to_ascii_lowercase());
 
-        match encryption.as_deref() {
-            Some("nip04") | Some("nip-04") | Some("nip44") | Some("nip-44") => {
-                Err(ParserError::Crypto("encryption not available in parser; use crypto worker".into()))
+        let signer = self.signer.as_ref().ok_or_else(|| {
+            ParserError::Crypto("encryption not available in parser; signer not configured".into())
+        })?;
+
+        let (content, tags) = match encryption.as_deref() {
+            Some("nip04") | Some("nip-04") => {
+                let own_pubkey = signer
+                    .get_public_key()
+                    .await
+                    .map_err(|e| ParserError::Crypto(format!("get_public_key error: {}", e)))?;
+                let encrypted = signer
+                    .nip04_encrypt(&own_pubkey, &template.content)
+                    .await
+                    .map_err(|e| ParserError::Crypto(format!("NIP-04 encrypt error: {}", e)))?;
+                (encrypted, template.tags.clone())
+            }
+            Some("nip44") | Some("nip-44") => {
+                let own_pubkey = signer
+                    .get_public_key()
+                    .await
+                    .map_err(|e| ParserError::Crypto(format!("get_public_key error: {}", e)))?;
+                let encrypted = signer
+                    .nip44_encrypt(&own_pubkey, &template.content)
+                    .await
+                    .map_err(|e| ParserError::Crypto(format!("NIP-44 encrypt error: {}", e)))?;
+                (encrypted, template.tags.clone())
             }
             _ => {
                 // No encryption, pass through as-is
-                let new_template = Template::new(kind, template.content.clone(), template.tags.clone());
-
-                let new_event = Event {
-                    id: EventId([0u8; 32]),
-                    pubkey: PublicKey([0u8; 32]),
-                    created_at: new_template.created_at,
-                    kind: new_template.kind,
-                    tags: new_template.tags.clone(),
-                    content: new_template.content.clone(),
-                    sig: String::new(),
-                };
-                Ok(new_event)
+                (template.content.clone(), template.tags.clone())
             }
-        }
+        };
+
+        let new_template = Template::new(kind, content, tags);
+        self.sign_template(&new_template).await
     }
 }
 

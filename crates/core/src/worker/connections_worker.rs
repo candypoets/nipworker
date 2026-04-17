@@ -173,10 +173,10 @@ impl ConnectionsWorker {
 							}
 							let t = transport_cache.clone();
 							let r = relay.clone();
-							// Await connect before sending frames
+							// Attempt connect, but proceed with send even if it fails
+							// because an existing live socket may already be available.
 							if let Err(e) = t.connect(&r).await {
-								warn!("[ConnectionsWorker] connect failed for {}: {:?}", r, e);
-								continue;
+								warn!("[ConnectionsWorker] connect failed for {} (may already be connected): {:?}", r, e);
 							}
 							for frame in &env.frames {
 								if let Err(e) = t.send(&r, frame.clone()) {

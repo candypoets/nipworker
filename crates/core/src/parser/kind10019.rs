@@ -106,16 +106,7 @@ impl Parser {
                 "kind 10019 must include a pubkey tag".to_string(),
             ));
         }
-        let new_event = Event {
-            id: EventId([0u8; 32]),
-            pubkey: PublicKey([0u8; 32]),
-            created_at: template.created_at,
-            kind: template.kind,
-            tags: template.tags.clone(),
-            content: template.content.clone(),
-            sig: String::new(),
-        };
-        Ok(new_event)
+        self.sign_template(template).await
     }
 }
 

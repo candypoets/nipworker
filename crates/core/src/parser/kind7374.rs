@@ -85,7 +85,15 @@ impl Parser {
             ));
         }
 
-        Err(ParserError::Crypto("encryption not available in parser; use crypto worker".into()))
+        let signer = self.signer.as_ref().ok_or_else(|| {
+            ParserError::Crypto("encryption not available in parser; signer not configured".into())
+        })?;
+        let encrypted = signer
+            .nip44_encrypt("", &template.content)
+            .await
+            .map_err(|e| ParserError::Crypto(format!("NIP-44 encrypt error: {}", e)))?;
+        let encrypted_template = Template::new(template.kind, encrypted, template.tags.clone());
+        self.sign_template(&encrypted_template).await
     }
 }
 

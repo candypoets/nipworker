@@ -475,16 +475,7 @@ impl Parser {
             created_at: template.created_at,
         };
 
-        let new_event = Event {
-            id: EventId([0u8; 32]),
-            pubkey: PublicKey([0u8; 32]),
-            created_at: new_template.created_at,
-            kind: new_template.kind,
-            tags: new_template.tags.clone(),
-            content: new_template.content.clone(),
-            sig: String::new(),
-        };
-        Ok(new_event)
+        self.sign_template(&new_template).await
     }
 }
 

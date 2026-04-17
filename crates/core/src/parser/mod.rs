@@ -1,5 +1,6 @@
 pub mod kind1018;
 pub mod kind1068;
+use crate::traits::Signer;
 use crate::types::{nostr::Template, Event, ParserError};
 use crate::types::nostr::{EventId, PublicKey};
 use std::sync::Arc;
@@ -64,11 +65,28 @@ pub use pre_adapters::{
 
 use crate::parser_types::parsed_event::{ParsedData, ParsedEvent};
 
-pub struct Parser;
+pub struct Parser {
+    signer: Option<Arc<dyn Signer>>,
+}
 
 impl Parser {
-    pub fn new() -> Self {
-        Self
+    pub fn new(signer: Option<Arc<dyn Signer>>) -> Self {
+        Self { signer }
+    }
+
+    async fn sign_template(&self, template: &Template) -> Result<Event> {
+        if let Some(signer) = &self.signer {
+            let template_json = template.to_json();
+            let signed_event_json = signer
+                .sign_event(&template_json)
+                .await
+                .map_err(|e| ParserError::Crypto(format!("Signer error: {}", e)))?;
+            Ok(Event::from_json(&signed_event_json)?)
+        } else {
+            Err(ParserError::Crypto(
+                "event signing not available in parser; signer not configured".into(),
+            ))
+        }
     }
 
     pub async fn parse(&self, event: Event) -> Result<ParsedEvent> {
@@ -222,7 +240,7 @@ impl Parser {
             9735 => self.prepare_kind_9735(template).await,
             17375 => self.prepare_kind_17375(template).await,
             _ if is_nip51 => self.prepare_nip51(template).await,
-            _ => Err(ParserError::Crypto("event signing not available in parser; use crypto worker".into())),
+            _ => self.sign_template(template).await,
         }
     }
 }

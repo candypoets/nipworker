@@ -125,7 +125,15 @@ impl Parser {
             })
             .ok_or_else(|| ParserError::Other("no recipient found in p tag".to_string()))?;
 
-        Err(ParserError::Crypto("encryption not available in parser; use crypto worker".into()))
+        let signer = self.signer.as_ref().ok_or_else(|| {
+            ParserError::Crypto("encryption not available in parser; signer not configured".into())
+        })?;
+        let encrypted_content = signer
+            .nip04_encrypt(&recipient, &event.content)
+            .await
+            .map_err(|e| ParserError::Crypto(format!("NIP-04 encrypt error: {}", e)))?;
+        let new_template = Template::new(event.kind, encrypted_content, event.tags.clone());
+        self.sign_template(&new_template).await
     }
 }
 

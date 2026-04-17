@@ -463,7 +463,9 @@ impl ParserWorker {
                         );
                         let flushed_outputs = if let Ok(guard) = self.subscriptions.read() {
                             if let Some(sub) = guard.get(&sid) {
-                                let mut pipeline_guard = sub.pipeline.lock().await;
+                                let pipeline_arc = Arc::clone(&sub.pipeline);
+                                drop(guard);
+                                let mut pipeline_guard = pipeline_arc.lock().await;
                                 let outputs = pipeline_guard.flush();
                                 pipeline_guard.on_eose();
                                 outputs
@@ -646,7 +648,9 @@ impl ParserWorker {
         if let Some(parent_id) = config.pagination.as_deref() {
             if let Ok(guard) = self.subscriptions.read() {
                 if let Some(parent_sub) = guard.get(parent_id) {
-                    let parent_pipeline = parent_sub.pipeline.lock().await;
+                    let parent_pipeline_arc = Arc::clone(&parent_sub.pipeline);
+                    drop(guard);
+                    let parent_pipeline = parent_pipeline_arc.lock().await;
                     pipeline.clone_state_from(&parent_pipeline);
                     info!(
                         "Cloned pipeline state from parent subscription '{}' to '{}'",
