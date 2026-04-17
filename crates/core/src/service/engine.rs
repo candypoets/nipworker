@@ -8,7 +8,7 @@ use crate::generated::nostr::fb;
 use crate::network::NetworkManager;
 use crate::nostr_error::{NostrError, NostrResult};
 use crate::parser::Parser;
-use crate::traits::{Signer, SignerError, Storage, Transport};
+use crate::traits::{RelayTransport, Signer, SignerError, Storage};
 use crate::types::network::Request;
 use crate::types::nostr::{Event, Template};
 
@@ -27,7 +27,7 @@ pub struct NostrEngine {
 
 impl NostrEngine {
 	pub fn new(
-		transport: Arc<dyn Transport>,
+		transport: Arc<dyn RelayTransport>,
 		storage: Arc<dyn Storage>,
 		signer: Arc<dyn Signer>,
 		event_sink: mpsc::Sender<(String, Vec<u8>)>,

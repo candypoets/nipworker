@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use futures::channel::mpsc;
 use futures::{SinkExt, StreamExt};
-use nipworker_core::traits::{Transport, TransportError, TransportStatus};
+use nipworker_core::traits::{RelayTransport, TransportError, TransportStatus};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -28,7 +28,7 @@ impl WebSocketTransport {
 }
 
 #[async_trait(?Send)]
-impl Transport for WebSocketTransport {
+impl RelayTransport for WebSocketTransport {
     async fn connect(&self, url: &str) -> Result<(), TransportError> {
         use gloo_net::websocket::futures::WebSocket;
         use gloo_net::websocket::Message;
@@ -52,7 +52,7 @@ impl Transport for WebSocketTransport {
             }
             connections_reader.borrow_mut().remove(&url_writer);
             if let Some(cb) = status_cbs_reader.borrow().get(&url_writer) {
-                cb(TransportStatus::Closed);
+                cb(TransportStatus::Closed { url: url_writer.clone() });
             }
         });
 
@@ -69,7 +69,7 @@ impl Transport for WebSocketTransport {
 
         self.connections.borrow_mut().insert(url.to_string(), WsHandle { write: tx });
         if let Some(cb) = self.status_callbacks.borrow().get(url) {
-            cb(TransportStatus::Connected);
+            cb(TransportStatus::Connected { url: url.to_string() });
         }
 
         Ok(())
@@ -78,7 +78,7 @@ impl Transport for WebSocketTransport {
     fn disconnect(&self, url: &str) {
         self.connections.borrow_mut().remove(url);
         if let Some(cb) = self.status_callbacks.borrow().get(url) {
-            cb(TransportStatus::Closed);
+            cb(TransportStatus::Closed { url: url.to_string() });
         }
     }
 

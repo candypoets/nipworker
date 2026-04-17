@@ -16,7 +16,7 @@ use crate::nostr_error::{NostrError, NostrResult};
 use crate::parser::Parser;
 use crate::pipeline::Pipeline;
 use crate::port::Port;
-use crate::traits::{Storage, Transport};
+use crate::traits::{RelayTransport, Storage};
 use crate::types::network::Request;
 use crate::types::nostr::Template;
 use crate::types::Event;
@@ -32,7 +32,7 @@ impl Port for DummyPort {
 }
 
 struct NetworkManagerInner {
-	_transport: Arc<dyn Transport>,
+	_transport: Arc<dyn RelayTransport>,
 	_storage: Arc<dyn Storage>,
 	parser: Arc<Parser>,
 	_crypto_client: Arc<CryptoClient>,
@@ -50,7 +50,7 @@ pub struct NetworkManager {
 
 impl NetworkManager {
 	pub fn new(
-		transport: Arc<dyn Transport>,
+		transport: Arc<dyn RelayTransport>,
 		storage: Arc<dyn Storage>,
 		parser: Arc<Parser>,
 		crypto_client: Arc<CryptoClient>,
