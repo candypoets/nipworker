@@ -8,6 +8,7 @@ pub mod spawn;
 pub mod nostr_error;
 pub mod port;
 
+pub mod crypto_client;
 pub mod parser;
 pub mod pipeline;
 pub mod network;

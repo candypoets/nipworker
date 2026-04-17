@@ -65,7 +65,8 @@ impl NostrEngine {
 		let (parser_main_tx, mut parser_main_rx) =
 			tokio::sync::mpsc::unbounded_channel::<(String, Vec<u8>)>();
 
-		let parser = Arc::new(Parser::new(Some(signer.clone())));
+		let crypto_client = crate::crypto_client::CryptoClient::new(Box::new(parser_crypto_ch));
+		let parser = Arc::new(Parser::new(Some(Arc::new(crypto_client))));
 
 
 
@@ -97,7 +98,7 @@ impl NostrEngine {
 		let crypto_worker = CryptoWorker::new(signer);
 		crypto_worker.run(
 			Box::new(crypto_engine_ch),
-			Box::new(parser_crypto_ch),
+			Box::new(crypto_parser_ch),
 			crypto_engine_tx,
 			crypto_parser_tx,
 		);
