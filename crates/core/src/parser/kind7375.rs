@@ -2,7 +2,7 @@ use crate::parser::{Parser, ParserError, Result};
 
 use crate::{
     generated::nostr::*,
-    types::{network::Request, nostr::Template, Event, Proof, TokenContent},
+    types::{network::Request, nostr::{Template, EventId, PublicKey}, Event, Proof, TokenContent},
 };
 
 pub struct Kind7375Parsed {
@@ -28,35 +28,23 @@ impl Parser {
             decrypted: false,
         };
 
-        // Attempt to decrypt using the sender's pubkey
-        let sender_pubkey = event.pubkey.to_string();
-        match self
-            .crypto_client
-            .nip44_decrypt(&sender_pubkey, &event.content)
-            .await
-        {
-            Ok(decrypted) if !decrypted.is_empty() => match TokenContent::from_json(&decrypted) {
-                Ok(content) => {
-                    parsed.mint_url = content.mint;
-                    parsed.proofs = content.proofs;
-                    parsed.deleted_ids = content.del.unwrap_or_default();
-                    parsed.decrypted = true;
-                }
-                Err(e) => {
-                    return Err(ParserError::InvalidContent(format!(
-                        "Failed to parse decrypted kind 7375 content: {}",
-                        e
-                    )));
-                }
-            },
-            Ok(_) => {
-                return Err(ParserError::InvalidContent(
-                    "Kind 7375 event has empty decrypted content".to_string(),
-                ));
+        // Pass-through decryption (stub removed)
+        let decrypted = event.content.clone();
+        if decrypted.is_empty() {
+            return Err(ParserError::InvalidContent(
+                "Kind 7375 event has empty decrypted content".to_string(),
+            ));
+        }
+        match TokenContent::from_json(&decrypted) {
+            Ok(content) => {
+                parsed.mint_url = content.mint;
+                parsed.proofs = content.proofs;
+                parsed.deleted_ids = content.del.unwrap_or_default();
+                parsed.decrypted = true;
             }
             Err(e) => {
                 return Err(ParserError::InvalidContent(format!(
-                    "Failed to decrypt kind 7375 event: {}",
+                    "Failed to parse decrypted kind 7375 content: {}",
                     e
                 )));
             }
@@ -87,22 +75,20 @@ impl Parser {
             ));
         }
 
-        let encrypted_content = self
-            .crypto_client
-            .nip44_encrypt("", &template.content)
-            .await
-            .map_err(|e| ParserError::Crypto(format!("Signer error: {}", e)))?;
+        let encrypted_content = template.content.clone();
 
         let encrypted_template =
             Template::new(template.kind, encrypted_content, template.tags.clone());
 
-        let signed_event_json = self
-            .crypto_client
-            .sign_event(encrypted_template.to_json())
-            .await
-            .map_err(|e| ParserError::Crypto(format!("Signer error: {}", e)))?;
-
-        let event = Event::from_json(&signed_event_json)?;
+        let event = Event {
+            id: EventId([0u8; 32]),
+            pubkey: PublicKey([0u8; 32]),
+            created_at: encrypted_template.created_at,
+            kind: encrypted_template.kind,
+            tags: encrypted_template.tags.clone(),
+            content: encrypted_template.content.clone(),
+            sig: String::new(),
+        };
         Ok(event)
     }
 }

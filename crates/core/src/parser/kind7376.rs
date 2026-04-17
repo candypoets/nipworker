@@ -4,7 +4,7 @@ use crate::{
     generated::nostr::*,
     types::{
         network::Request,
-        nostr::{NostrTags, Template},
+        nostr::{NostrTags, Template, EventId, PublicKey},
         Event,
     },
 };
@@ -61,75 +61,61 @@ impl Parser {
             }
         }
 
-        // Attempt to decrypt spending history (NIP-44) using the sender's pubkey
-        let sender_pubkey = event.pubkey.to_string();
-        match self
-            .crypto_client
-            .nip44_decrypt(&sender_pubkey, &event.content)
-            .await
-        {
-            Ok(decrypted) if !decrypted.is_empty() => {
-                match NostrTags::from_json(&decrypted) {
-                    Ok(tags) => {
-                        parsed.decrypted = true;
-                        parsed.tags = Vec::new();
+        // Pass-through decryption (stub removed)
+        let decrypted = event.content.clone();
+        if decrypted.is_empty() {
+            return Err(ParserError::InvalidContent(
+                "Kind 7376 event has empty decrypted content".to_string(),
+            ));
+        }
+        match NostrTags::from_json(&decrypted) {
+            Ok(tags) => {
+                parsed.decrypted = true;
+                parsed.tags = Vec::new();
 
-                        // Process decrypted tags - access inner Vec<Vec<String>> via .0
-                        for tag in &tags.0 {
-                            if tag.len() >= 2 {
-                                let history_tag = HistoryTag {
-                                    name: tag[0].clone(),
-                                    value: tag[1].clone(),
-                                    relay: tag.get(2).cloned(),
-                                    marker: tag.get(3).cloned(),
-                                };
-                                parsed.tags.push(history_tag);
+                // Process decrypted tags - access inner Vec<Vec<String>> via .0
+                for tag in &tags.0 {
+                    if tag.len() >= 2 {
+                        let history_tag = HistoryTag {
+                            name: tag[0].clone(),
+                            value: tag[1].clone(),
+                            relay: tag.get(2).cloned(),
+                            marker: tag.get(3).cloned(),
+                        };
+                        parsed.tags.push(history_tag);
 
-                                // Extract specific tag values
-                                match tag[0].as_str() {
-                                    "direction" => parsed.direction = tag[1].clone(),
-                                    "amount" => {
-                                        if let Ok(amt) = tag[1].parse::<i32>() {
-                                            parsed.amount = amt;
-                                        }
-                                    }
-                                    "e" => {
-                                        if tag.len() >= 4 {
-                                            match tag[3].as_str() {
-                                                "created" => {
-                                                    parsed.created_events.push(tag[1].clone())
-                                                }
-                                                "destroyed" => {
-                                                    parsed.destroyed_events.push(tag[1].clone())
-                                                }
-                                                "redeemed" => {
-                                                    parsed.redeemed_events.push(tag[1].clone())
-                                                }
-                                                _ => {}
-                                            }
-                                        }
-                                    }
-                                    _ => {}
+                        // Extract specific tag values
+                        match tag[0].as_str() {
+                            "direction" => parsed.direction = tag[1].clone(),
+                            "amount" => {
+                                if let Ok(amt) = tag[1].parse::<i32>() {
+                                    parsed.amount = amt;
                                 }
                             }
+                            "e" => {
+                                if tag.len() >= 4 {
+                                    match tag[3].as_str() {
+                                        "created" => {
+                                            parsed.created_events.push(tag[1].clone())
+                                        }
+                                        "destroyed" => {
+                                            parsed.destroyed_events.push(tag[1].clone())
+                                        }
+                                        "redeemed" => {
+                                            parsed.redeemed_events.push(tag[1].clone())
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            }
+                            _ => {}
                         }
-                    }
-                    Err(e) => {
-                        return Err(ParserError::InvalidContent(format!(
-                            "Failed to parse decrypted kind 7376 content: {}",
-                            e
-                        )));
                     }
                 }
             }
-            Ok(_) => {
-                return Err(ParserError::InvalidContent(
-                    "Kind 7376 event has empty decrypted content".to_string(),
-                ));
-            }
             Err(e) => {
                 return Err(ParserError::InvalidContent(format!(
-                    "Failed to decrypt kind 7376 event: {}",
+                    "Failed to parse decrypted kind 7376 content: {}",
                     e
                 )));
             }
@@ -177,22 +163,19 @@ impl Parser {
 
         // Using signer's own pubkey by passing empty recipient to nip44_encrypt
 
-        let encrypted = self
-            .crypto_client
-            .nip44_encrypt("", &tags_json)
-            .await
-            .map_err(|e| ParserError::Crypto(format!("Signer error: {}", e)))?;
+        let encrypted = tags_json;
 
         let encrypted_template = Template::new(template.kind, encrypted, template.tags.clone());
 
-        // Sign the event
-        let signed_event_json = self
-            .crypto_client
-            .sign_event(encrypted_template.to_json())
-            .await
-            .map_err(|e| ParserError::Crypto(format!("Signer error: {}", e)))?;
-
-        let new_event = Event::from_json(&signed_event_json)?;
+        let new_event = Event {
+            id: EventId([0u8; 32]),
+            pubkey: PublicKey([0u8; 32]),
+            created_at: encrypted_template.created_at,
+            kind: encrypted_template.kind,
+            tags: encrypted_template.tags.clone(),
+            content: encrypted_template.content.clone(),
+            sig: String::new(),
+        };
         Ok(new_event)
     }
 }

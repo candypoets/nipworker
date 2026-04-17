@@ -66,4 +66,22 @@ impl Signer for NativeSigner {
     async fn nip44_decrypt(&self, peer: &str, ciphertext: &str) -> Result<String, SignerError> {
         self.with_signer(|s| s.nip44_decrypt(peer, ciphertext))
     }
+
+    async fn nip04_decrypt_between(
+        &self,
+        sender: &str,
+        recipient: &str,
+        ciphertext: &str,
+    ) -> Result<String, SignerError> {
+        self.with_signer(|s| s.nip04_decrypt_between(sender, recipient, ciphertext))
+    }
+
+    async fn nip44_decrypt_between(
+        &self,
+        sender: &str,
+        recipient: &str,
+        ciphertext: &str,
+    ) -> Result<String, SignerError> {
+        self.with_signer(|s| s.nip44_decrypt_between(sender, recipient, ciphertext))
+    }
 }

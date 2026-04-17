@@ -5,7 +5,7 @@ use crate::{
     generated::nostr::*,
     types::{
         network::Request,
-        nostr::{NostrTags, Template},
+        nostr::{NostrTags, Template, EventId, PublicKey},
         Event,
     },
 };
@@ -33,50 +33,36 @@ impl Parser {
             decrypted: false,
         };
 
-        // Attempt to decrypt using the sender's pubkey
-        let sender_pubkey = event.pubkey.to_string();
-        match self
-            .crypto_client
-            .nip44_decrypt(&sender_pubkey, &event.content)
-            .await
-        {
-            Ok(decrypted) => {
-                if !decrypted.is_empty() {
-                    match NostrTags::from_json(&decrypted) {
-                        Ok(tags) => {
-                            parsed.decrypted = true;
+        // Pass-through decryption (stub removed)
+        let decrypted = event.content.clone();
+        if !decrypted.is_empty() {
+            match NostrTags::from_json(&decrypted) {
+                Ok(tags) => {
+                    parsed.decrypted = true;
 
-                            // Process decrypted tags
-                            for tag in tags.0 {
-                                if tag.len() >= 2 {
-                                    match tag[0].as_str() {
-                                        "mint" => {
-                                            parsed.mints.push(tag[1].clone());
-                                        }
-                                        "privkey" => {
-                                            parsed.p2pk_priv_key = Some(tag[1].clone());
-                                            // TODO: Derive public key from private key via crypto worker if needed
-                                            parsed.p2pk_pub_key = Some(String::new());
-                                        }
-                                        _ => {}
-                                    }
+                    // Process decrypted tags
+                    for tag in tags.0 {
+                        if tag.len() >= 2 {
+                            match tag[0].as_str() {
+                                "mint" => {
+                                    parsed.mints.push(tag[1].clone());
                                 }
+                                "privkey" => {
+                                    parsed.p2pk_priv_key = Some(tag[1].clone());
+                                    // TODO: Derive public key from private key via crypto worker if needed
+                                    parsed.p2pk_pub_key = Some(String::new());
+                                }
+                                _ => {}
                             }
-                        }
-                        Err(e) => {
-                            warn!(
-                                "Failed to parse decrypted tags for content {}, {}: {}",
-                                decrypted, event.content, e
-                            );
                         }
                     }
                 }
-            }
-            Err(e) => {
-                return Err(ParserError::InvalidContent(format!(
-                    "Failed to decrypt kind 17375 event: {}",
-                    e
-                )));
+                Err(e) => {
+                    warn!(
+                        "Failed to parse decrypted tags for content {}, {}: {}",
+                        decrypted, event.content, e
+                    );
+                }
             }
         }
 
@@ -139,24 +125,21 @@ impl Parser {
             ));
         }
 
-        // Encrypt the message content using NIP-44; let signer use its own pubkey (empty recipient)
-        let encrypted_content = self
-            .crypto_client
-            .nip44_encrypt("", &template.content)
-            .await
-            .map_err(|e| ParserError::Crypto(format!("Signer error: {}", e)))?;
+        // Pass-through encryption (stub removed)
+        let encrypted_content = template.content.clone();
 
         let encrypted_template =
             Template::new(template.kind, encrypted_content, template.tags.clone());
 
-        // Sign the event (SignerClient returns JSON)
-        let signed_event_json = self
-            .crypto_client
-            .sign_event(encrypted_template.to_json())
-            .await
-            .map_err(|e| ParserError::Crypto(format!("Signer error: {}", e)))?;
-
-        let new_event = Event::from_json(&signed_event_json)?;
+        let new_event = Event {
+            id: EventId([0u8; 32]),
+            pubkey: PublicKey([0u8; 32]),
+            created_at: encrypted_template.created_at,
+            kind: encrypted_template.kind,
+            tags: encrypted_template.tags.clone(),
+            content: encrypted_template.content.clone(),
+            sig: String::new(),
+        };
         Ok(new_event)
     }
 }

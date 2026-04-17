@@ -8,7 +8,6 @@ use futures::channel::mpsc;
 use rustc_hash::FxHashMap;
 use tracing::{info, warn};
 
-use crate::crypto_client::CryptoClient;
 use crate::generated::nostr::fb;
 use crate::network::publish::PublishManager;
 use crate::network::subscription::SubscriptionManager;
@@ -35,7 +34,6 @@ struct NetworkManagerInner {
 	_transport: Arc<dyn RelayTransport>,
 	_storage: Arc<dyn Storage>,
 	parser: Arc<Parser>,
-	_crypto_client: Arc<CryptoClient>,
 	event_sink: mpsc::Sender<(String, Vec<u8>)>,
 	subscriptions: Mutex<FxHashMap<String, Arc<futures::lock::Mutex<Pipeline>>>>,
 	publish_manager: PublishManager,
@@ -53,7 +51,6 @@ impl NetworkManager {
 		transport: Arc<dyn RelayTransport>,
 		storage: Arc<dyn Storage>,
 		parser: Arc<Parser>,
-		crypto_client: Arc<CryptoClient>,
 		event_sink: mpsc::Sender<(String, Vec<u8>)>,
 	) -> Self {
 		let publish_manager = PublishManager::new(parser.clone());
@@ -62,7 +59,6 @@ impl NetworkManager {
 				_transport: transport,
 				_storage: storage,
 				parser,
-				_crypto_client: crypto_client,
 				event_sink,
 				subscriptions: Mutex::new(FxHashMap::default()),
 				publish_manager,
@@ -84,7 +80,7 @@ impl NetworkManager {
 
 		let to_cache: Arc<dyn Port> = Arc::new(DummyPort);
 		let subscription_manager =
-			SubscriptionManager::new(self.inner.parser.clone(), self.inner._crypto_client.clone());
+			SubscriptionManager::new(self.inner.parser.clone());
 		let pipeline = subscription_manager
 			.process_subscription(&subscription_id, to_cache, requests, config)
 			.await?;

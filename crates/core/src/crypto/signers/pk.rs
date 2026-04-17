@@ -270,6 +270,26 @@ impl Signer for PrivateKeySigner {
         self.nip44_decrypt(peer, ciphertext)
             .map_err(|e| TraitSignerError::Other(e.to_string()))
     }
+
+    async fn nip04_decrypt_between(
+        &self,
+        sender: &str,
+        recipient: &str,
+        ciphertext: &str,
+    ) -> std::result::Result<String, TraitSignerError> {
+        self.nip04_decrypt_between(sender, recipient, ciphertext)
+            .map_err(|e| TraitSignerError::Other(e.to_string()))
+    }
+
+    async fn nip44_decrypt_between(
+        &self,
+        sender: &str,
+        recipient: &str,
+        ciphertext: &str,
+    ) -> std::result::Result<String, TraitSignerError> {
+        self.nip44_decrypt_between(sender, recipient, ciphertext)
+            .map_err(|e| TraitSignerError::Other(e.to_string()))
+    }
 }
 
 fn is_hex64(s: &str) -> bool {

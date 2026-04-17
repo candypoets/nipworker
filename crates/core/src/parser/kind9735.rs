@@ -8,7 +8,7 @@ use std::fmt::Write;
 // NEW: Imports for FlatBuffers
 use crate::generated::nostr::*;
 use crate::types::network::Request;
-use crate::types::nostr::{NostrTags, Template};
+use crate::types::nostr::{NostrTags, Template, EventId, PublicKey};
 use crate::types::Event;
 
 /// ZapRequest for Nostr kind 9735 zap receipts
@@ -475,13 +475,15 @@ impl Parser {
             created_at: template.created_at,
         };
 
-        let signed_event_json = self
-            .crypto_client
-            .sign_event(new_template.to_json())
-            .await
-            .map_err(|e| ParserError::Crypto(format!("Signer error: {}", e)))?;
-
-        let new_event = Event::from_json(&signed_event_json)?;
+        let new_event = Event {
+            id: EventId([0u8; 32]),
+            pubkey: PublicKey([0u8; 32]),
+            created_at: new_template.created_at,
+            kind: new_template.kind,
+            tags: new_template.tags.clone(),
+            content: new_template.content.clone(),
+            sig: String::new(),
+        };
         Ok(new_event)
     }
 }

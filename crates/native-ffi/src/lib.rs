@@ -116,7 +116,7 @@ pub extern "C" fn nipworker_init(
 }
 
 #[no_mangle]
-pub extern "C" fn nipworker_handle_message(handle: *mut c_void, ptr: *const u8, len: usize) {
+pub unsafe extern "C" fn nipworker_handle_message(handle: *mut c_void, ptr: *const u8, len: usize) {
     if handle.is_null() || ptr.is_null() {
         return;
     }
@@ -133,7 +133,7 @@ pub extern "C" fn nipworker_handle_message(handle: *mut c_void, ptr: *const u8, 
 }
 
 #[no_mangle]
-pub extern "C" fn nipworker_set_private_key(handle: *mut c_void, ptr: *const c_char) {
+pub unsafe extern "C" fn nipworker_set_private_key(handle: *mut c_void, ptr: *const c_char) {
     if handle.is_null() || ptr.is_null() {
         return;
     }
@@ -152,9 +152,9 @@ pub extern "C" fn nipworker_set_private_key(handle: *mut c_void, ptr: *const c_c
 /// Free a buffer previously passed to the callback in `nipworker_init`.
 /// The host must call this after copying the data to its own storage.
 #[no_mangle]
-pub extern "C" fn nipworker_free_bytes(ptr: *mut u8, len: usize) {
+pub unsafe extern "C" fn nipworker_free_bytes(ptr: *mut u8, len: usize) {
     if !ptr.is_null() && len > 0 {
-        let _ = unsafe { Box::from_raw(std::slice::from_raw_parts_mut(ptr, len)) };
+        let _ = unsafe { Box::from_raw(std::ptr::slice_from_raw_parts_mut(ptr, len)) };
     }
 }
 

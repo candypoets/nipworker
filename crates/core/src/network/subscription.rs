@@ -6,7 +6,6 @@ use crate::types::network::Request;
 use crate::port::Port;
 use crate::nostr_error::NostrError;
 
-use crate::crypto_client::CryptoClient;
 use rustc_hash::FxHashMap;
 
 type Result<T> = std::result::Result<T, NostrError>;
@@ -16,7 +15,6 @@ use async_lock::Semaphore;
 
 pub struct SubscriptionManager {
     parser: Arc<Parser>,
-    crypto_client: Arc<CryptoClient>,
     relay_hints: FxHashMap<String, Vec<String>>,
 
     // Async semaphore for concurrency limiting
@@ -24,10 +22,9 @@ pub struct SubscriptionManager {
 }
 
 impl SubscriptionManager {
-    pub fn new(parser: Arc<Parser>, crypto_client: Arc<CryptoClient>) -> Self {
+    pub fn new(parser: Arc<Parser>) -> Self {
         Self {
             parser,
-            crypto_client,
             relay_hints: FxHashMap::default(),
 
             // Allow 36 concurrent process_subscription calls
@@ -54,7 +51,6 @@ impl SubscriptionManager {
         let pipeline = self.build_pipeline(
             config.pipeline(),
             to_cache,
-            self.crypto_client.clone(),
             subscription_id.clone(),
         )?;
 
@@ -180,7 +176,6 @@ impl SubscriptionManager {
         &self,
         pipeline_config: Option<fb::PipelineConfig<'_>>,
         to_cache: Arc<dyn Port>,
-        crypto_client: Arc<CryptoClient>,
         subscription_id: String,
     ) -> Result<Pipeline> {
         match pipeline_config {
@@ -205,10 +200,7 @@ impl SubscriptionManager {
                             // max_proofs: usize, check_interval_secs: u64
                             let max_proofs = config.max_proofs() as usize;
 
-                            PipeType::ProofVerification(ProofVerificationPipe::new(
-                                max_proofs,
-                                crypto_client.clone(),
-                            ))
+                            PipeType::ProofVerification(ProofVerificationPipe::new(max_proofs))
                         }
                         fb::PipeConfig::CounterPipeConfig => {
                             let config = pipe_config.config_as_counter_pipe_config().unwrap();

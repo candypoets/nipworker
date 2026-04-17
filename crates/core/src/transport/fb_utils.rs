@@ -1,4 +1,7 @@
-use crate::generated::*;
+use crate::generated::nostr::fb::{
+	ConnectionStatus, ConnectionStatusArgs, Eoce, EoceArgs, Message, MessageType, Raw, RawArgs,
+	WorkerMessage, WorkerMessageArgs,
+};
 use crate::utils::extract_first_three;
 use serde_json::Value;
 
@@ -239,4 +242,55 @@ pub fn build_worker_message<'a>(
 			)
 		}
 	}
+}
+
+
+pub fn serialize_connection_status(url: &str, status: &str, message: &str) -> Vec<u8> {
+	let mut builder = flatbuffers::FlatBufferBuilder::new();
+	let url_off = builder.create_string(url);
+	let status_off = builder.create_string(status);
+	let message_off = if message.is_empty() { None } else { Some(builder.create_string(message)) };
+	let cs = ConnectionStatus::create(
+		&mut builder,
+		&ConnectionStatusArgs {
+			relay_url: Some(url_off),
+			status: Some(status_off),
+			message: message_off,
+		},
+	);
+	let wm = WorkerMessage::create(
+		&mut builder,
+		&WorkerMessageArgs {
+			sub_id: None,
+			url: Some(url_off),
+			type_: MessageType::ConnectionStatus,
+			content_type: Message::ConnectionStatus,
+			content: Some(cs.as_union_value()),
+		},
+	);
+	builder.finish(wm, None);
+	builder.finished_data().to_vec()
+}
+
+pub fn serialize_eoce() -> Vec<u8> {
+	let mut builder = flatbuffers::FlatBufferBuilder::new();
+	let sid = builder.create_string("");
+	let eoce = Eoce::create(
+		&mut builder,
+		&EoceArgs {
+			subscription_id: Some(sid),
+		},
+	);
+	let wm = WorkerMessage::create(
+		&mut builder,
+		&WorkerMessageArgs {
+			sub_id: None,
+			url: None,
+			type_: MessageType::Eoce,
+			content_type: Message::Eoce,
+			content: Some(eoce.as_union_value()),
+		},
+	);
+	builder.finish(wm, None);
+	builder.finished_data().to_vec()
 }

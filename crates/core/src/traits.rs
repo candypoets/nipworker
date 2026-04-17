@@ -53,4 +53,16 @@ pub trait Signer {
     async fn nip04_decrypt(&self, peer: &str, ciphertext: &str) -> Result<String, SignerError>;
     async fn nip44_encrypt(&self, peer: &str, plaintext: &str) -> Result<String, SignerError>;
     async fn nip44_decrypt(&self, peer: &str, ciphertext: &str) -> Result<String, SignerError>;
+    async fn nip04_decrypt_between(
+        &self,
+        sender: &str,
+        recipient: &str,
+        ciphertext: &str,
+    ) -> Result<String, SignerError>;
+    async fn nip44_decrypt_between(
+        &self,
+        sender: &str,
+        recipient: &str,
+        ciphertext: &str,
+    ) -> Result<String, SignerError>;
 }

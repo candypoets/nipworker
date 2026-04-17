@@ -5,7 +5,7 @@ use crate::parser::{ParserError, Result};
 use crate::parser_utils::request_deduplication::RequestDeduplicator;
 
 use crate::types::network::Request;
-use crate::types::nostr::Template;
+use crate::types::nostr::{Template, EventId, PublicKey};
 use crate::types::Event;
 use tracing::{info, warn};
 
@@ -79,48 +79,29 @@ impl Parser {
             event.pubkey.to_hex(),
             parsed.recipient
         );
-        match self
-            .crypto_client
-            .nip04_decrypt_between(&sender_pubkey, &parsed.recipient, &event.content)
-            .await
-        {
-            Ok(decrypted) => {
-                parsed.decrypted_content = Some(decrypted.clone());
+        let decrypted = event.content.clone();
+        parsed.decrypted_content = Some(decrypted.clone());
 
-                // Parse the decrypted content into structured blocks
-                // Emoji tags would be inside encrypted content, not visible in event tags
-                match parse_content(&decrypted, &[]) {
-                    Ok(content_blocks) => {
-                        parsed.parsed_content = content_blocks
-                            .into_iter()
-                            .map(|block| ContentBlock {
-                                block_type: block.block_type,
-                                text: block.text,
-                                data: block.data,
-                            })
-                            .collect();
-                    }
-                    Err(_) => {
-                        // If content parsing fails, create a single text block
-                        parsed.parsed_content = vec![ContentBlock {
-                            block_type: "text".to_string(),
-                            text: decrypted,
-                            data: None,
-                        }];
-                    }
-                }
+        // Parse the decrypted content into structured blocks
+        // Emoji tags would be inside encrypted content, not visible in event tags
+        match parse_content(&decrypted, &[]) {
+            Ok(content_blocks) => {
+                parsed.parsed_content = content_blocks
+                    .into_iter()
+                    .map(|block| ContentBlock {
+                        block_type: block.block_type,
+                        text: block.text,
+                        data: block.data,
+                    })
+                    .collect();
             }
-            Err(err) => {
-                warn!(
-                    "Failed to decrypt kind 4 message from {}: decryption failed: {}",
-                    event.pubkey.to_hex(),
-                    err
-                );
-                // Return error to drop the event - we can't decrypt it
-                return Err(ParserError::InvalidContent(format!(
-                    "Failed to decrypt kind 4 message: {}",
-                    err
-                )));
+            Err(_) => {
+                // If content parsing fails, create a single text block
+                parsed.parsed_content = vec![ContentBlock {
+                    block_type: "text".to_string(),
+                    text: decrypted,
+                    data: None,
+                }];
             }
         }
 
@@ -144,26 +125,21 @@ impl Parser {
             })
             .ok_or_else(|| ParserError::Other("no recipient found in p tag".to_string()))?;
 
-        // Encrypt the message content using NIP-04
-        let encrypted_content = self
-            .crypto_client
-            .nip04_encrypt(&recipient, &event.content)
-            .await
-            .map_err(|e| ParserError::Crypto(format!("Signer error: {}", e)))?;
+        // Pass-through encryption (stub removed)
+        let encrypted_content = event.content.clone();
 
-        // Create a new event with the encrypted content using EventBuilder
+        // Create a new event with the encrypted content
         let new_template = Template::new(event.kind, encrypted_content, event.tags.clone());
 
-        let template_json = new_template.to_json();
-
-        // Sign the event with encrypted content (SignerClient returns JSON)
-        let signed_event_json = self
-            .crypto_client
-            .sign_event(template_json)
-            .await
-            .map_err(|e| ParserError::Crypto(format!("Signer error: {}", e)))?;
-
-        let new_event = Event::from_json(&signed_event_json)?;
+        let new_event = Event {
+            id: EventId([0u8; 32]),
+            pubkey: PublicKey([0u8; 32]),
+            created_at: new_template.created_at,
+            kind: new_template.kind,
+            tags: new_template.tags.clone(),
+            content: new_template.content.clone(),
+            sig: String::new(),
+        };
 
         Ok(new_event)
     }

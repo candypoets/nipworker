@@ -122,6 +122,7 @@ pub enum RelayError {
 	ProtocolError(String),
 }
 
+#[cfg(target_arch = "wasm32")]
 impl From<gloo_net::websocket::WebSocketError> for RelayError {
 	fn from(err: gloo_net::websocket::WebSocketError) -> Self {
 		RelayError::WebSocketError(err.to_string())

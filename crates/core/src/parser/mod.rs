@@ -1,7 +1,7 @@
 pub mod kind1018;
 pub mod kind1068;
-use crate::crypto_client::CryptoClient;
 use crate::types::{nostr::Template, Event, ParserError};
+use crate::types::nostr::{EventId, PublicKey};
 use std::sync::Arc;
 
 pub type Result<T> = std::result::Result<T, ParserError>;
@@ -64,13 +64,11 @@ pub use pre_adapters::{
 
 use crate::parser_types::parsed_event::{ParsedData, ParsedEvent};
 
-pub struct Parser {
-    pub crypto_client: Arc<CryptoClient>,
-}
+pub struct Parser;
 
 impl Parser {
-    pub fn new(crypto_client: Arc<CryptoClient>) -> Self {
-        Self { crypto_client }
+    pub fn new() -> Self {
+        Self
     }
 
     pub async fn parse(&self, event: Event) -> Result<ParsedEvent> {
@@ -225,16 +223,15 @@ impl Parser {
             17375 => self.prepare_kind_17375(template).await,
             _ if is_nip51 => self.prepare_nip51(template).await,
             _ => {
-                let template_json = template.to_json();
-                // Call the async signer client and await the result
-                let signed_event_json = self
-                    .crypto_client
-                    .sign_event(template_json)
-                    .await
-                    .map_err(|e| ParserError::Crypto(format!("Signer error: {}", e)))?;
-
-                let new_event = Event::from_json(&signed_event_json)?;
-
+                let new_event = Event {
+                    id: EventId([0u8; 32]),
+                    pubkey: PublicKey([0u8; 32]),
+                    created_at: template.created_at,
+                    kind: template.kind,
+                    tags: template.tags.clone(),
+                    content: template.content.clone(),
+                    sig: String::new(),
+                };
                 Ok(new_event)
             }
         }

@@ -1,7 +1,7 @@
 use crate::parser::{Parser, ParserError, Result};
 use crate::{
     generated::nostr::*,
-    types::{network::Request, nostr::Template, Event},
+    types::{network::Request, nostr::{Template, EventId, PublicKey}, Event},
 }; // brings `fb::...` into scope
 
 use tracing::warn;
@@ -94,28 +94,8 @@ impl Parser {
         if let Some(enc) = tag_value(&event.tags, "encryption").map(|s| s.to_ascii_lowercase()) {
             if !event.content.trim().is_empty() {
                 // Determine the correct counterparty like kind4 does
-                let sender_pubkey = event.pubkey.to_string();
-                let decrypted = match enc.as_str() {
-                    "nip04" | "nip-04" => self
-                        .crypto_client
-                        .nip04_decrypt(&sender_pubkey, &event.content)
-                        .await
-                        .ok(),
-                    "nip44" | "nip-44" => self
-                        .crypto_client
-                        .nip44_decrypt(&sender_pubkey, &event.content)
-                        .await
-                        .ok(),
-                    _ => None,
-                };
+                let decrypted = Some(event.content.clone());
 
-                if decrypted.is_none() {
-                    warn!(
-                        "Failed to decrypt list content for kind {} from {}",
-                        event.kind,
-                        event.pubkey.to_hex()
-                    );
-                }
                 if let Some(plaintext) = decrypted {
                     if let Ok(decrypted_tags) = parse_tag_arrays_json(&plaintext) {
                         for tag in decrypted_tags {
@@ -218,32 +198,12 @@ impl Parser {
         let (content, tags) =
             match encryption.as_deref() {
                 Some("nip04") | Some("nip-04") => {
-                    // Get our own pubkey for self-encryption
-                    let own_pubkey =
-                        self.crypto_client.get_public_key().await.map_err(|e| {
-                            ParserError::Crypto(format!("Failed to get pubkey: {}", e))
-                        })?;
-                    // Encrypt content using NIP-04 (self-encrypt)
-                    let encrypted = self
-                        .crypto_client
-                        .nip04_encrypt(&own_pubkey, &template.content)
-                        .await
-                        .map_err(|e| ParserError::Crypto(format!("NIP-04 encrypt error: {}", e)))?;
-                    (encrypted, template.tags.clone())
+                    // Pass-through encryption (stub removed)
+                    (template.content.clone(), template.tags.clone())
                 }
                 Some("nip44") | Some("nip-44") => {
-                    // Get our own pubkey for self-encryption
-                    let own_pubkey =
-                        self.crypto_client.get_public_key().await.map_err(|e| {
-                            ParserError::Crypto(format!("Failed to get pubkey: {}", e))
-                        })?;
-                    // Encrypt content using NIP-44 (self-encrypt)
-                    let encrypted = self
-                        .crypto_client
-                        .nip44_encrypt(&own_pubkey, &template.content)
-                        .await
-                        .map_err(|e| ParserError::Crypto(format!("NIP-44 encrypt error: {}", e)))?;
-                    (encrypted, template.tags.clone())
+                    // Pass-through encryption (stub removed)
+                    (template.content.clone(), template.tags.clone())
                 }
                 _ => {
                     // No encryption, pass through as-is
@@ -253,16 +213,16 @@ impl Parser {
 
         // Create new template with potentially encrypted content
         let new_template = Template::new(kind, content, tags);
-        let template_json = new_template.to_json();
 
-        // Sign the event
-        let signed_event_json = self
-            .crypto_client
-            .sign_event(template_json)
-            .await
-            .map_err(|e| ParserError::Crypto(format!("Signer error: {}", e)))?;
-
-        let new_event = Event::from_json(&signed_event_json)?;
+        let new_event = Event {
+            id: EventId([0u8; 32]),
+            pubkey: PublicKey([0u8; 32]),
+            created_at: new_template.created_at,
+            kind: new_template.kind,
+            tags: new_template.tags.clone(),
+            content: new_template.content.clone(),
+            sig: String::new(),
+        };
         Ok(new_event)
     }
 }

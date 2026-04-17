@@ -1,5 +1,4 @@
 use crate::channel::WorkerChannel;
-use crate::crypto_client::CryptoClient;
 use crate::generated::nostr::fb;
 use crate::network::{publish::PublishManager, subscription::SubscriptionManager};
 use crate::parser::Parser;
@@ -52,7 +51,6 @@ type DispatchTask = (usize, ShardTask);
 
 pub struct ParserWorker {
     parser: Arc<Parser>,
-    crypto_client: Arc<CryptoClient>,
     to_cache: Arc<dyn Port>,
     #[cfg(not(target_arch = "wasm32"))]
     to_main: UnboundedSender<(String, Vec<u8>)>,
@@ -70,13 +68,11 @@ impl ParserWorker {
         parser: Arc<Parser>,
         to_cache: Arc<dyn Port>,
         to_main: UnboundedSender<(String, Vec<u8>)>,
-        crypto_client: Arc<CryptoClient>,
     ) -> Self {
         let publish_manager = PublishManager::new(parser.clone());
-        let subscription_manager = SubscriptionManager::new(parser.clone(), crypto_client.clone());
+        let subscription_manager = SubscriptionManager::new(parser.clone());
         Self {
             parser,
-            crypto_client,
             to_cache,
             to_main,
             publish_manager,
@@ -91,14 +87,12 @@ impl ParserWorker {
         parser: Arc<Parser>,
         to_cache: Arc<dyn Port>,
         to_main: MessagePort,
-        crypto_client: Arc<CryptoClient>,
     ) -> Self {
         let publish_manager = PublishManager::new(parser.clone());
-        let subscription_manager = SubscriptionManager::new(parser.clone(), crypto_client.clone());
+        let subscription_manager = SubscriptionManager::new(parser.clone());
         batch_buffer::init_global_batch_manager(to_main.clone());
         Self {
             parser,
-            crypto_client,
             to_cache,
             to_main,
             publish_manager,

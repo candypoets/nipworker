@@ -13,7 +13,7 @@ pub mod pipeline;
 pub mod network;
 pub mod parser_types;
 pub mod parser_utils;
-pub mod crypto_client;
+pub mod transport;
 pub mod worker;
 
 #[cfg(feature = "crypto")]

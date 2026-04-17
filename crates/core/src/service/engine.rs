@@ -7,7 +7,6 @@ use crate::channel::{ChannelPort, WorkerChannel, WorkerChannelSender};
 use crate::channel::TokioWorkerChannel;
 #[cfg(target_arch = "wasm32")]
 use crate::channel::WasmWorkerChannel;
-use crate::crypto_client::CryptoClient;
 use crate::generated::nostr::fb;
 use crate::nostr_error::{NostrError, NostrResult};
 use crate::parser::Parser;
@@ -54,6 +53,7 @@ impl NostrEngine {
 		let (parser_cache_ch, cache_parser_ch) = TokioWorkerChannel::new_pair();
 		let (parser_crypto_ch, crypto_parser_ch) = TokioWorkerChannel::new_pair();
 		let (engine_crypto_ch, crypto_engine_ch) = TokioWorkerChannel::new_pair();
+		let (cache_conn_ch, conn_cache_ch) = TokioWorkerChannel::new_pair();
 
 		let engine_parser_tx = engine_parser_ch.clone_sender();
 		let engine_crypto_tx = engine_crypto_ch.clone_sender();
@@ -65,14 +65,14 @@ impl NostrEngine {
 		let (parser_main_tx, mut parser_main_rx) =
 			tokio::sync::mpsc::unbounded_channel::<(String, Vec<u8>)>();
 
-		let crypto_client = Arc::new(CryptoClient::new());
-		let parser = Arc::new(Parser::new(crypto_client.clone()));
+		let parser = Arc::new(Parser::new());
+
+
 
 		let parser_worker = ParserWorker::new(
 			parser.clone(),
 			Arc::new(ChannelPort::new(parser_cache_ch.clone_sender())),
 			parser_main_tx,
-			crypto_client.clone(),
 		);
 		parser_worker.run(
 			Box::new(parser_engine_ch),
@@ -81,10 +81,18 @@ impl NostrEngine {
 		);
 
 		let connections_worker = ConnectionsWorker::new(transport);
-		connections_worker.run(Box::new(parser_conn_ch), conn_parser_tx);
+		connections_worker.run(
+			Box::new(parser_conn_ch),
+			conn_parser_tx,
+			Box::new(conn_cache_ch),
+		);
 
 		let cache_worker = CacheWorker::new(storage);
-		cache_worker.run(Box::new(parser_cache_ch), cache_parser_tx);
+		cache_worker.run(
+			Box::new(parser_cache_ch),
+			cache_parser_tx,
+			cache_conn_ch.clone_sender(),
+		);
 
 		let crypto_worker = CryptoWorker::new(signer);
 		crypto_worker.run(
@@ -93,6 +101,22 @@ impl NostrEngine {
 			crypto_engine_tx,
 			crypto_parser_tx,
 		);
+
+		let event_sink_crypto = event_sink.clone();
+		spawn_worker(async move {
+			let mut ch = engine_crypto_ch;
+			loop {
+				match ch.recv().await {
+					Ok(bytes) => {
+						if let Err(e) = event_sink_crypto.clone().try_send(("crypto".to_string(), bytes)) {
+							tracing::warn!("Failed to forward crypto event to sink: {}", e);
+						}
+					}
+					Err(_) => break,
+				}
+			}
+			info!("[NostrEngine] crypto listener exiting");
+		});
 
 		let event_sink_clone = event_sink.clone();
 		spawn_worker(async move {
@@ -134,46 +158,57 @@ impl NostrEngine {
 		let parser_tx = parser_main.clone_sender();
 		let crypto_tx = crypto_main.clone_sender();
 
+		let (tx, mut rx) = futures::channel::mpsc::unbounded::<(String, Vec<u8>)>();
+
+		let parser_tx_forward = tx.clone();
 		spawn_worker(async move {
-			use futures::FutureExt;
-			let mut parser_main = parser_main;
-			let mut connections_main = connections_main;
-			let mut crypto_main = crypto_main;
 			loop {
-				let mut parser_fut = parser_main.recv().fuse();
-				let mut conn_fut = connections_main.recv().fuse();
-				let mut crypto_fut = crypto_main.recv().fuse();
-				futures::select! {
-					msg = parser_fut => {
-						match msg {
-							Ok(bytes) => {
-								if let Err(e) = event_sink.clone().try_send(("parser".to_string(), bytes)) {
-									tracing::warn!("Failed to forward parser event: {}", e);
-								}
-							}
-							Err(_) => break,
+				match parser_main.recv().await {
+					Ok(bytes) => {
+						if parser_tx_forward.unbounded_send(("parser".to_string(), bytes)).is_err() {
+							break;
 						}
 					}
-					msg = conn_fut => {
-						match msg {
-							Ok(bytes) => {
-								if let Err(e) = event_sink.clone().try_send(("connections".to_string(), bytes)) {
-									tracing::warn!("Failed to forward connections status: {}", e);
-								}
-							}
-							Err(_) => break,
+					Err(_) => break,
+				}
+			}
+		});
+
+		let connections_tx_forward = tx.clone();
+		spawn_worker(async move {
+			loop {
+				match connections_main.recv().await {
+					Ok(bytes) => {
+						if connections_tx_forward.unbounded_send(("connections".to_string(), bytes)).is_err() {
+							break;
 						}
 					}
-					msg = crypto_fut => {
-						match msg {
-							Ok(bytes) => {
-								if let Err(e) = event_sink.clone().try_send(("crypto".to_string(), bytes)) {
-									tracing::warn!("Failed to forward crypto response: {}", e);
-								}
-							}
-							Err(_) => break,
+					Err(_) => break,
+				}
+			}
+		});
+
+		let crypto_tx_forward = tx.clone();
+		spawn_worker(async move {
+			loop {
+				match crypto_main.recv().await {
+					Ok(bytes) => {
+						if crypto_tx_forward.unbounded_send(("crypto".to_string(), bytes)).is_err() {
+							break;
 						}
 					}
+					Err(_) => break,
+				}
+			}
+		});
+
+		drop(tx);
+
+		spawn_worker(async move {
+			use futures::StreamExt;
+			while let Some((origin, bytes)) = rx.next().await {
+				if let Err(e) = event_sink.clone().try_send((origin.to_string(), bytes)) {
+					tracing::warn!("Failed to forward {} event: {}", origin, e);
 				}
 			}
 			info!("[NostrEngine] WASM main loop exiting");

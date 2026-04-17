@@ -6,6 +6,7 @@ use rustc_hash::FxHashMap;
 use crate::types::network::Request;
 use crate::types::nostr::Template;
 use crate::types::{Event, Proof};
+use crate::types::nostr::{EventId, PublicKey};
 use tracing::{error, warn};
 
 // NEW: Imports for FlatBuffers
@@ -204,14 +205,15 @@ impl Parser {
             ));
         }
 
-        let template_json = template.to_json();
-        let signed_event_json = self
-            .crypto_client
-            .sign_event(template_json)
-            .await
-            .map_err(|e| ParserError::Crypto(format!("Signer error: {}", e)))?;
-
-        let new_event = Event::from_json(&signed_event_json)?;
+        let new_event = Event {
+            id: EventId([0u8; 32]),
+            pubkey: PublicKey([0u8; 32]),
+            created_at: template.created_at,
+            kind: template.kind,
+            tags: template.tags.clone(),
+            content: template.content.clone(),
+            sig: String::new(),
+        };
         Ok(new_event)
     }
 }

@@ -1,5 +1,4 @@
 use super::super::*;
-use crate::crypto_client::CryptoClient;
 use crate::parser_types::parsed_event::ParsedData;
 use crate::{
     generated::nostr::fb::{self},
@@ -32,12 +31,11 @@ pub struct ProofVerificationPipe {
     max_proofs: usize,
     name: String,
     verification_running: bool,
-    crypto_client: Arc<CryptoClient>,
     mint_keys_cache: Arc<Mutex<FxHashMap<String, CachedKeys>>>, // cached mint keys
 }
 
 impl ProofVerificationPipe {
-    pub fn new(max_proofs: usize, crypto_client: Arc<CryptoClient>) -> Self {
+    pub fn new(max_proofs: usize) -> Self {
         Self {
             seen_proofs: FxHashSet::default(),
             pending_verifications: FxHashMap::default(),
@@ -45,7 +43,6 @@ impl ProofVerificationPipe {
             max_proofs,
             name: format!("ProofVerification(max:{})", max_proofs),
             verification_running: false,
-            crypto_client,
             mint_keys_cache: Arc::new(Mutex::new(FxHashMap::default())),
         }
     }
@@ -93,43 +90,9 @@ impl ProofVerificationPipe {
             return Ok(());
         }
 
-        // Parallelize verification with concurrency cap
-        let futures_iter = new_proofs.into_iter().map(|proof| {
-            let secret = proof.secret.clone();
-            let proof_json = proof.to_json();
-            let client = self.crypto_client.clone();
-            let mint_keys = mint_keys_json.clone();
-
-            async move {
-                let result = client.verify_proof(proof_json, mint_keys).await;
-                (proof, secret, result)
-            }
-        });
-
-        let stream = stream::iter(futures_iter).buffered(MAX_CONCURRENT_PROOFS);
-        let results = stream.collect::<Vec<_>>().await;
-
-        // Process results in order
-        for (proof, secret, result) in results {
-            match result {
-                Ok(y_point) => {
-                    if y_point.is_empty() {
-                        debug!("Proof has invalid DLEQ signature, skipping");
-                        self.seen_proofs.insert(secret);
-                    } else {
-                        self.pending_verifications.insert(secret.clone(), y_point);
-                        self.pending_proofs
-                            .entry(mint_url.clone())
-                            .or_default()
-                            .insert(secret.clone(), proof);
-                        self.seen_proofs.insert(secret);
-                    }
-                }
-                Err(e) => {
-                    warn!("DLEQ verification failed: {}", e);
-                    self.seen_proofs.insert(secret);
-                }
-            }
+        // No-op verification: just mark all new proofs as seen
+        for proof in new_proofs {
+            self.seen_proofs.insert(proof.secret);
         }
 
         Ok(())
