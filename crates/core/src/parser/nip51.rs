@@ -195,35 +195,26 @@ impl Parser {
         // Check for encryption tag
         let encryption = tag_value(&template.tags, "encryption").map(|s| s.to_ascii_lowercase());
 
-        let (content, tags) =
-            match encryption.as_deref() {
-                Some("nip04") | Some("nip-04") => {
-                    // Pass-through encryption (stub removed)
-                    (template.content.clone(), template.tags.clone())
-                }
-                Some("nip44") | Some("nip-44") => {
-                    // Pass-through encryption (stub removed)
-                    (template.content.clone(), template.tags.clone())
-                }
-                _ => {
-                    // No encryption, pass through as-is
-                    (template.content.clone(), template.tags.clone())
-                }
-            };
+        match encryption.as_deref() {
+            Some("nip04") | Some("nip-04") | Some("nip44") | Some("nip-44") => {
+                Err(ParserError::Crypto("encryption not available in parser; use crypto worker".into()))
+            }
+            _ => {
+                // No encryption, pass through as-is
+                let new_template = Template::new(kind, template.content.clone(), template.tags.clone());
 
-        // Create new template with potentially encrypted content
-        let new_template = Template::new(kind, content, tags);
-
-        let new_event = Event {
-            id: EventId([0u8; 32]),
-            pubkey: PublicKey([0u8; 32]),
-            created_at: new_template.created_at,
-            kind: new_template.kind,
-            tags: new_template.tags.clone(),
-            content: new_template.content.clone(),
-            sig: String::new(),
-        };
-        Ok(new_event)
+                let new_event = Event {
+                    id: EventId([0u8; 32]),
+                    pubkey: PublicKey([0u8; 32]),
+                    created_at: new_template.created_at,
+                    kind: new_template.kind,
+                    tags: new_template.tags.clone(),
+                    content: new_template.content.clone(),
+                    sig: String::new(),
+                };
+                Ok(new_event)
+            }
+        }
     }
 }
 

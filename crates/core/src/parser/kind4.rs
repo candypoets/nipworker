@@ -125,23 +125,7 @@ impl Parser {
             })
             .ok_or_else(|| ParserError::Other("no recipient found in p tag".to_string()))?;
 
-        // Pass-through encryption (stub removed)
-        let encrypted_content = event.content.clone();
-
-        // Create a new event with the encrypted content
-        let new_template = Template::new(event.kind, encrypted_content, event.tags.clone());
-
-        let new_event = Event {
-            id: EventId([0u8; 32]),
-            pubkey: PublicKey([0u8; 32]),
-            created_at: new_template.created_at,
-            kind: new_template.kind,
-            tags: new_template.tags.clone(),
-            content: new_template.content.clone(),
-            sig: String::new(),
-        };
-
-        Ok(new_event)
+        Err(ParserError::Crypto("encryption not available in parser; use crypto worker".into()))
     }
 }
 

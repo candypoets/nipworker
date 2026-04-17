@@ -159,24 +159,7 @@ impl Parser {
             ));
         }
 
-        let tags_json = tags.to_json();
-
-        // Using signer's own pubkey by passing empty recipient to nip44_encrypt
-
-        let encrypted = tags_json;
-
-        let encrypted_template = Template::new(template.kind, encrypted, template.tags.clone());
-
-        let new_event = Event {
-            id: EventId([0u8; 32]),
-            pubkey: PublicKey([0u8; 32]),
-            created_at: encrypted_template.created_at,
-            kind: encrypted_template.kind,
-            tags: encrypted_template.tags.clone(),
-            content: encrypted_template.content.clone(),
-            sig: String::new(),
-        };
-        Ok(new_event)
+        Err(ParserError::Crypto("encryption not available in parser; use crypto worker".into()))
     }
 }
 

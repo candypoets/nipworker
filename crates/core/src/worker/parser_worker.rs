@@ -441,6 +441,75 @@ impl ParserWorker {
             }
         };
 
+        match wm.type_() {
+            fb::MessageType::ConnectionStatus => {
+                // handle connection status directly without needing a subscription
+                let Some(cs) = wm.content_as_connection_status() else {
+                    warn!("WorkerMessage ConnectionStatus missing content");
+                    return;
+                };
+                let url = wm.url().unwrap_or("");
+                let status = cs.status();
+                let reason = cs.message().unwrap_or("");
+                match status {
+                    "NOTICE" => {}
+                    "AUTH" => {
+                        warn!("Auth needed on relay {:?}", url);
+                    }
+                    "EOSE" => {
+                        info!(
+                            "[network] Received EOSE for sub_id={} from relay={}",
+                            sid, url
+                        );
+                        let flushed_outputs = if let Ok(guard) = self.subscriptions.read() {
+                            if let Some(sub) = guard.get(&sid) {
+                                let mut pipeline_guard = sub.pipeline.lock().await;
+                                let outputs = pipeline_guard.flush();
+                                pipeline_guard.on_eose();
+                                outputs
+                            } else {
+                                Vec::new()
+                            }
+                        } else {
+                            warn!("Subscriptions lock poisoned");
+                            Vec::new()
+                        };
+
+                        for output in flushed_outputs {
+                            self.send_output_to_main(&sid, &output);
+                        }
+
+                        let status_bytes = serialize_connection_status(url, "EOSE", "");
+                        self.send_output_to_main(&sid, &status_bytes);
+                        self.flush_main(&sid);
+                        if let Ok(mut w) = self.subscriptions.write() {
+                            if let Some(sub) = w.get_mut(&sid) {
+                                sub.eosed = true;
+                            }
+                        }
+                    }
+                    "CLOSED" => {}
+                    accepted => {
+                        let batch_sub_id = if let Ok(guard) = self.subscriptions.read() {
+                            if let Some(sub) = guard.get(&sid) {
+                                sub.publish_id.clone().unwrap_or_else(|| sid.clone())
+                            } else {
+                                sid.clone()
+                            }
+                        } else {
+                            sid.clone()
+                        };
+
+                        let status_bytes = serialize_connection_status(url, accepted, reason);
+                        self.send_output_to_main(&batch_sub_id, &status_bytes);
+                        self.flush_main(&batch_sub_id);
+                    }
+                }
+                return;
+            }
+            _ => {}
+        }
+
         if sid.is_empty() {
             warn!("Invalid message: Missing sub_id");
             return;
@@ -463,56 +532,7 @@ impl ParserWorker {
 
         match wm.type_() {
             fb::MessageType::ConnectionStatus => {
-                let Some(cs) = wm.content_as_connection_status() else {
-                    warn!("WorkerMessage ConnectionStatus missing content");
-                    return;
-                };
-                let url = wm.url().unwrap_or("");
-                let status = cs.status();
-                let reason = cs.message().unwrap_or("");
-                match status {
-                    "NOTICE" => {}
-                    "AUTH" => {
-                        warn!("Auth needed on relay {:?}", url);
-                    }
-                    "EOSE" => {
-                        info!(
-                            "[network] Received EOSE for sub_id={} from relay={}",
-                            sid, url
-                        );
-                        let flushed_outputs = {
-                            let mut pipeline_guard = pipeline_arc.lock().await;
-                            let outputs = pipeline_guard.flush();
-                            pipeline_guard.on_eose();
-                            outputs
-                        };
-
-                        for output in flushed_outputs {
-                            self.send_output_to_main(&sid, &output);
-                        }
-
-                        let status_bytes = serialize_connection_status(url, "EOSE", "");
-                        self.send_output_to_main(&sid, &status_bytes);
-                        self.flush_main(&sid);
-                        if let Ok(mut w) = self.subscriptions.write() {
-                            if let Some(sub) = w.get_mut(&sid) {
-                                sub.eosed = true;
-                            }
-                        }
-                    }
-                    "CLOSED" => {}
-                    accepted => {
-                        let batch_sub_id = if let Some(ref pid) = publish_id {
-                            pid.clone()
-                        } else {
-                            sid.clone()
-                        };
-
-                        let status_bytes = serialize_connection_status(url, accepted, reason);
-                        self.send_output_to_main(&batch_sub_id, &status_bytes);
-                        self.flush_main(&batch_sub_id);
-                    }
-                }
+                // Handled above before subscription lookup
             }
             fb::MessageType::Eoce => {
                 let flushed_outputs = {

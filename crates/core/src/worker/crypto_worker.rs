@@ -78,11 +78,14 @@ impl CryptoWorker {
 							_ => "unknown",
 						};
 						let raw_json = match result {
-							Ok(r) => format!("{{\"op\":\"{}\",\"result\":{}}}", op_name, r),
-							Err(e) => format!(
-								"{{\"op\":\"{}\",\"error\":\"{}\"}}",
-								op_name, e
-							),
+							Ok(r) => {
+								let val = serde_json::json!({"op": op_name, "result": r});
+								val.to_string()
+							}
+							Err(e) => {
+								let val = serde_json::json!({"op": op_name, "error": e});
+								val.to_string()
+							}
 						};
 						let resp = serialize_raw_message(&raw_json);
 						if let Err(e) = to_main.send(&resp) {

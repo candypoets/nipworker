@@ -104,10 +104,16 @@ impl CacheWorker {
 				let sub_id = cache_req.sub_id().to_string();
 				if let Some(reqs) = cache_req.requests() {
 					let mut all_cached_events: Vec<Vec<u8>> = Vec::new();
+					let mut skip_req_indices = std::collections::HashSet::new();
 
 					for i in 0..reqs.len() {
 						let fb_req = reqs.get(i);
 						let request = Request::from_flatbuffer(&fb_req);
+
+						if request.no_cache {
+							continue;
+						}
+
 						let filter = match request.to_filter() {
 							Ok(f) => f,
 							Err(e) => {
@@ -117,7 +123,12 @@ impl CacheWorker {
 						};
 
 						match self._storage.query(vec![filter]).await {
-							Ok(events) => all_cached_events.extend(events),
+							Ok(events) => {
+								if request.cache_first && !events.is_empty() {
+									skip_req_indices.insert(i);
+								}
+								all_cached_events.extend(events);
+							}
 							Err(e) => warn!("[CacheWorker] query failed: {}", e),
 						}
 					}
@@ -139,6 +150,9 @@ impl CacheWorker {
 
 					// Send REQ frames to connections
 					for i in 0..reqs.len() {
+						if skip_req_indices.contains(&i) {
+							continue;
+						}
 						let fb_req = reqs.get(i);
 						let filter_json = fb_request_to_json(&fb_req);
 						let frame = json!(["REQ", &sub_id, filter_json]);

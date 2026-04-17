@@ -173,11 +173,15 @@ impl ConnectionsWorker {
 							}
 							let t = transport_cache.clone();
 							let r = relay.clone();
-							spawn_worker(async move {
-								let _ = t.connect(&r).await;
-							});
+							// Await connect before sending frames
+							if let Err(e) = t.connect(&r).await {
+								warn!("[ConnectionsWorker] connect failed for {}: {:?}", r, e);
+								continue;
+							}
 							for frame in &env.frames {
-								let _ = transport_cache.send(relay, frame.clone());
+								if let Err(e) = t.send(&r, frame.clone()) {
+									warn!("[ConnectionsWorker] send failed for {}: {:?}", r, e);
+								}
 							}
 						}
 					}

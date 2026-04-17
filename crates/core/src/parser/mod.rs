@@ -222,18 +222,7 @@ impl Parser {
             9735 => self.prepare_kind_9735(template).await,
             17375 => self.prepare_kind_17375(template).await,
             _ if is_nip51 => self.prepare_nip51(template).await,
-            _ => {
-                let new_event = Event {
-                    id: EventId([0u8; 32]),
-                    pubkey: PublicKey([0u8; 32]),
-                    created_at: template.created_at,
-                    kind: template.kind,
-                    tags: template.tags.clone(),
-                    content: template.content.clone(),
-                    sig: String::new(),
-                };
-                Ok(new_event)
-            }
+            _ => Err(ParserError::Crypto("event signing not available in parser; use crypto worker".into())),
         }
     }
 }
