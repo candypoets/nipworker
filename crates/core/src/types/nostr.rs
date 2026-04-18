@@ -200,23 +200,19 @@ impl Template {
 		fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
 	) -> flatbuffers::WIPOffset<fb::Template<'a>> {
 		let content = fbb.create_string(&self.content);
-		let tags = if !self.tags.is_empty() {
-			let mut tag_offsets = Vec::new();
-			for tag in &self.tags {
-				let items: Vec<_> = tag.iter().map(|s| fbb.create_string(s)).collect();
-				let fb_items = fbb.create_vector(&items);
-				let sv = fb::StringVec::create(
-					fbb,
-					&fb::StringVecArgs {
-						items: Some(fb_items),
-					},
-				);
-				tag_offsets.push(sv);
-			}
-			Some(fbb.create_vector(&tag_offsets))
-		} else {
-			None
-		};
+		let mut tag_offsets = Vec::new();
+		for tag in &self.tags {
+			let items: Vec<_> = tag.iter().map(|s| fbb.create_string(s)).collect();
+			let fb_items = fbb.create_vector(&items);
+			let sv = fb::StringVec::create(
+				fbb,
+				&fb::StringVecArgs {
+					items: Some(fb_items),
+				},
+			);
+			tag_offsets.push(sv);
+		}
+		let tags = Some(fbb.create_vector(&tag_offsets));
 		fb::Template::create(
 			fbb,
 			&fb::TemplateArgs {

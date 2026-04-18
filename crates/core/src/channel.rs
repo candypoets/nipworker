@@ -201,3 +201,43 @@ impl crate::port::Port for ChannelPort {
 		self.sender.send(bytes).map_err(|e| e.to_string())
 	}
 }
+
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+	use super::*;
+
+	#[tokio::test]
+	async fn test_bidirectional_send_recv() {
+		let (mut a, mut b) = TokioWorkerChannel::new_pair();
+		a.send(b"hello a").await.unwrap();
+		b.send(b"hello b").await.unwrap();
+		assert_eq!(b.recv().await.unwrap(), b"hello a");
+		assert_eq!(a.recv().await.unwrap(), b"hello b");
+	}
+
+	#[tokio::test]
+	async fn test_clone_sender_survives_drop() {
+		let (a, mut b) = TokioWorkerChannel::new_pair();
+		let sender = a.clone_sender();
+		drop(a);
+		sender.send(b"cloned msg").unwrap();
+		assert_eq!(b.recv().await.unwrap(), b"cloned msg");
+	}
+
+	#[tokio::test]
+	async fn test_recv_returns_closed_when_dropped() {
+		let (a, mut b) = TokioWorkerChannel::new_pair();
+		drop(a);
+		let result = b.recv().await;
+		assert!(matches!(result, Err(ChannelError::ChannelClosed)));
+	}
+
+	#[tokio::test]
+	async fn test_send_returns_closed_when_dropped() {
+		let (a, b) = TokioWorkerChannel::new_pair();
+		drop(b);
+		let result = a.send(b"test").await;
+		assert!(matches!(result, Err(ChannelError::ChannelClosed)));
+	}
+}
