@@ -53,7 +53,7 @@ impl RelayTransport for HangingRelayTransport {
         // No-op
     }
 
-    fn send(&self, _url: &str, _frame: String) -> Result<(), TransportError> {
+    async fn send(&self, _url: &str, _frame: String) -> Result<(), TransportError> {
         Ok(())
     }
 

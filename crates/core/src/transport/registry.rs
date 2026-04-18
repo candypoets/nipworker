@@ -111,9 +111,14 @@ impl ConnectionRegistry {
 			}
 
 			for f in frames {
-				if let Err(e) = self.transport.send(&normalized_url, f.clone()) {
-					tracing::error!("Send failed for {}: {:?}", normalized_url, e);
-				}
+				let transport = self.transport.clone();
+				let url = normalized_url.clone();
+				let frame = f.clone();
+				spawn_local(async move {
+					if let Err(e) = transport.send(&url, frame).await {
+						tracing::error!("Send failed for {}: {:?}", url, e);
+					}
+				});
 			}
 		}
 
@@ -180,9 +185,13 @@ impl ConnectionRegistry {
 		};
 
 		let auth_frame = format!(r#"["AUTH",{}]"#, signed_event);
-		if let Err(e) = self.transport.send(relay_url, auth_frame) {
-			tracing::error!("[connections][AUTH] Failed to send AUTH frame: {:?}", e);
-		}
+		let transport = self.transport.clone();
+		let relay_url = relay_url.to_string();
+		spawn_local(async move {
+			if let Err(e) = transport.send(&relay_url, auth_frame).await {
+				tracing::error!("[connections][AUTH] Failed to send AUTH frame: {:?}", e);
+			}
+		});
 
 		tracing::info!("[connections][AUTH] handle_auth_response EXIT");
 	}

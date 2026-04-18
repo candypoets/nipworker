@@ -9,29 +9,25 @@
 //! - Synthetic notifications are emitted on successful send: REQ => SUBSCRIBED, CLOSE => CLOSED.
 //!
 //! Notes:
-//! - Exactly one active WebSocket per RelayConnection: abort previous reader and close sink before opening a new socket.
 //! - Synchronous, non-blocking enqueue via bounded channel (cap: 50). `send_raw` never awaits network.
 //! - Incoming messages are written to ring buffer via `out_writer`. Status changes via `status_writer`.
 
+use crate::platform::{now_millis, sleep};
+use crate::spawn::spawn_worker;
+use crate::traits::{RelayTransport, TransportStatus};
 use crate::transport::types::{
-	AuthState, ConnectionStats, ConnectionStatus, RelayConfig, RelayError,
+	AuthState, ConnectionStats, ConnectionStatus, RelayError,
 };
 use crate::utils::{extract_first_three, validate_relay_url};
 
 use futures::channel::mpsc::{self, Receiver, Sender};
-use futures::future::{AbortHandle, Abortable};
-use futures::lock::Mutex;
-use futures::stream::{SplitSink, SplitStream};
-use futures::{SinkExt, StreamExt};
-use gloo_net::websocket::{futures::WebSocket, Message};
-use gloo_timers::future::TimeoutFuture;
+use futures::StreamExt;
 use serde_json::{json, Value};
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::rc::Rc;
 use std::sync::{Arc, RwLock};
 use tracing::warn;
-use wasm_bindgen_futures::spawn_local;
 
 type OutWriter = Rc<dyn Fn(&str, &str, &str)>; // (url, sub_id, raw_text)
 type StatusWriter = Rc<dyn Fn(&str, &str)>; // (status, url)
@@ -117,11 +113,8 @@ fn parse_incoming_relay_text(text: &str) -> Option<(String, Option<String>, Opti
 
 pub struct RelayConnection {
 	url: String,
-	config: RelayConfig,
-
 	status: Arc<RwLock<ConnectionStatus>>,
-	websocket: Arc<RwLock<Option<WebSocket>>>,
-	ws_sink: Arc<Mutex<Option<SplitSink<WebSocket, Message>>>>,
+	transport: Arc<dyn RelayTransport>,
 
 	stats: Arc<RwLock<ConnectionStats>>,
 	active_subs: Arc<RwLock<HashSet<String>>>,
@@ -132,8 +125,6 @@ pub struct RelayConnection {
 	queue_tx: Arc<RwLock<Option<Sender<String>>>>,
 	// Receiver is held until first successful connect, then consumed by the drainer.
 	queue_rx: Arc<RwLock<Option<Receiver<String>>>>,
-
-	read_abort: Arc<RwLock<Option<AbortHandle>>>,
 
 	out_writer: OutWriter,
 	status_writer: StatusWriter,
@@ -151,7 +142,7 @@ pub struct RelayConnection {
 impl RelayConnection {
 	pub fn new(
 		url: String,
-		config: RelayConfig,
+		transport: Arc<dyn RelayTransport>,
 		out_writer: OutWriter,
 		status_writer: StatusWriter,
 		to_crypto: CryptoSender,
@@ -161,17 +152,14 @@ impl RelayConnection {
 
 		let conn = Arc::new(Self {
 			url,
-			config,
 			status: Arc::new(RwLock::new(ConnectionStatus::Connecting)),
-			websocket: Arc::new(RwLock::new(None)),
-			ws_sink: Arc::new(Mutex::new(None)),
+			transport,
 			stats: Arc::new(RwLock::new(ConnectionStats::default())),
 			active_subs: Arc::new(RwLock::new(HashSet::new())),
 			backoff_attempts: Arc::new(RwLock::new(0)),
 			next_retry_at_ms: Arc::new(RwLock::new(0)),
 			queue_tx: Arc::new(RwLock::new(Some(tx))),
 			queue_rx: Arc::new(RwLock::new(Some(rx))),
-			read_abort: Arc::new(RwLock::new(None)),
 			out_writer,
 			status_writer,
 			auth_state: Arc::new(RwLock::new(AuthState::Unknown)),
@@ -183,7 +171,7 @@ impl RelayConnection {
 		// Connect immediately
 		(conn.status_writer)("connecting", &conn.url);
 		let this = Arc::clone(&conn);
-		spawn_local(async move {
+		spawn_worker(async move {
 			if let Err(e) = this.connect().await {
 				tracing::error!(relay = %this.url, error = ?e, "Initial connect failed");
 				(this.status_writer)("failed", &this.url);
@@ -205,125 +193,15 @@ impl RelayConnection {
 
 	#[inline]
 	fn should_delay_reconnect(&self) -> bool {
-		let now = js_sys::Date::now() as u64;
+		let now = now_millis();
 		let retry_at = *self.next_retry_at_ms.read().unwrap();
 		now < retry_at
 	}
 
 	#[inline]
 	fn set_next_retry_delay_ms(&self, delay_ms: u64) {
-		let retry_at = js_sys::Date::now() as u64 + delay_ms;
+		let retry_at = now_millis() + delay_ms;
 		*self.next_retry_at_ms.write().unwrap() = retry_at;
-	}
-
-	// Spawn the reader task for this connection. Non-async: it only spawns and returns.
-	fn spawn_reader(self: &Arc<Self>, mut ws_stream: SplitStream<WebSocket>) {
-		let conn = Arc::clone(self);
-		let status = self.status.clone();
-		let ws_sink = self.ws_sink.clone();
-		let url = self.url.clone();
-		let out_writer = self.out_writer.clone();
-		let status_writer = self.status_writer.clone();
-
-		let fut = async move {
-			while let Some(msg) = ws_stream.next().await {
-				match msg {
-					Ok(Message::Text(text)) => {
-						tracing::info!(relay = %url, "Raw incoming: {}", text);
-
-						if let Some((kind, sub_id, content)) = parse_incoming_relay_text(&text) {
-							// Handle NIP-42 authentication state machine on first response
-							let content_for_auth = content.as_deref().unwrap_or("");
-							conn.handle_first_response(&kind, content_for_auth).await;
-
-							// Forward the raw relay line. For frames without sub_id (AUTH/NOTICE),
-							// use empty sub_id to keep the message visible upstream.
-							let route_sub_id = sub_id.unwrap_or_default();
-							(out_writer)(&url, &route_sub_id, &text);
-						} else {
-							tracing::warn!(relay = %url, "Failed to parse incoming relay frame");
-						}
-					}
-					Ok(Message::Bytes(_)) => {
-						tracing::warn!(relay = %url, "Unexpected binary message");
-					}
-					Err(e) => {
-						// During intentional close/reconnect replacement, old reader errors are expected.
-						let intentional_transition = {
-							let st = status.read().unwrap();
-							matches!(*st, ConnectionStatus::Closed | ConnectionStatus::Connecting)
-						};
-
-						if intentional_transition {
-							tracing::info!(relay = %url, error = %e, "WebSocket error during intentional close/reconnect transition; ignoring failure transition");
-							break;
-						}
-
-						tracing::error!(relay = %url, error = %e, "WebSocket error");
-						{
-							let mut st = status.write().unwrap();
-							*st = ConnectionStatus::Failed;
-						}
-						{
-							let mut sink_guard = ws_sink.lock().await;
-							*sink_guard = None;
-						}
-						// Mark as unreliable for cooldown period (no timers, timestamp gate only)
-						conn.set_next_retry_delay_ms(RECONNECT_RETRY_DELAY_MS);
-						let retry_at = *conn.next_retry_at_ms.read().unwrap();
-						tracing::info!(relay = %conn.url, retry_at, "[connections] Connection failed, relay marked unreliable during cooldown");
-
-						// Clear pre-auth queue on connection failure to prevent memory leak
-						{
-							let queue = std::mem::take(&mut *conn.pre_auth_queue.write().unwrap());
-							tracing::info!(relay = %conn.url, cleared_frames = queue.len(), "[AUTH] Connection failed, cleared pre-auth queue");
-						}
-						// Set auth state to Failed until next successful reconnect path resets via first response
-						*conn.auth_state.write().unwrap() = AuthState::Failed;
-						(status_writer)("failed", &url);
-						break;
-					}
-				}
-			}
-
-			// Stream ended (peer/browser close, abort, lifecycle suspend).
-			// If this was an intentional transport close, do not mark failure/cooldown.
-			let was_intentional_close = {
-				let st = status.read().unwrap();
-				// Closed: explicit close(). Connecting: previous reader was intentionally replaced.
-				matches!(*st, ConnectionStatus::Closed | ConnectionStatus::Connecting)
-			};
-
-			{
-				let mut sink_guard = ws_sink.lock().await;
-				*sink_guard = None;
-			}
-
-			if was_intentional_close {
-				tracing::info!(relay = %url, "reader: stream ended after intentional close");
-				return;
-			}
-
-			{
-				let mut st = status.write().unwrap();
-				*st = ConnectionStatus::Failed;
-			}
-			conn.set_next_retry_delay_ms(RECONNECT_RETRY_DELAY_MS);
-			let retry_at = *conn.next_retry_at_ms.read().unwrap();
-			tracing::warn!(relay = %url, retry_at, "reader: stream ended unexpectedly; marked failed and unreliable during cooldown");
-			(status_writer)("failed", &url);
-		};
-
-		// Make abortable and remember handle
-		let (handle, reg) = AbortHandle::new_pair();
-		{
-			let mut ah = self.read_abort.write().unwrap();
-			*ah = Some(handle);
-		}
-		let task = Abortable::new(fut, reg);
-		spawn_local(async move {
-			let _ = task.await;
-		});
 	}
 
 	// Initialize queue drainer once, after a successful connect: take the receiver and spawn drainer.
@@ -332,7 +210,7 @@ impl RelayConnection {
 		let maybe_rx = { self.queue_rx.write().unwrap().take() };
 		if let Some(rx) = maybe_rx {
 			let conn = Arc::clone(self);
-			spawn_local(async move {
+			spawn_worker(async move {
 				conn.queue_drainer(rx).await;
 			});
 		}
@@ -348,7 +226,7 @@ impl RelayConnection {
 	// - While unreliable window is active, skip reconnect attempts and drop incoming queued frames quickly.
 	async fn queue_drainer(self: Arc<Self>, mut rx: Receiver<String>) {
 		while let Some(frame) = rx.next().await {
-			let now = js_sys::Date::now() as u64;
+			let now = now_millis();
 			let retry_at = *self.next_retry_at_ms.read().unwrap();
 
 			if now < retry_at {
@@ -374,7 +252,7 @@ impl RelayConnection {
 			);
 
 			// Attempt direct send first (covers the common connected case).
-			match Self::send_raw_internal(&self, &frame).await {
+			match self.send_raw_internal(&frame).await {
 				Ok(()) => {
 					tracing::info!(relay = %self.url, "[connections][drainer] frame sent successfully (direct)");
 					continue;
@@ -392,7 +270,7 @@ impl RelayConnection {
 			match self.connect().await {
 				Ok(()) => {
 					tracing::info!(relay = %self.url, "[connections][drainer] reconnect #1 succeeded; retrying same frame");
-					match Self::send_raw_internal(&self, &frame).await {
+					match self.send_raw_internal(&frame).await {
 						Ok(()) => {
 							tracing::info!(relay = %self.url, "[connections][drainer] frame sent successfully after reconnect #1 retry");
 							continue;
@@ -425,7 +303,7 @@ impl RelayConnection {
 			for (idx, delay_ms) in delays.iter().copied().enumerate() {
 				// If connect() set cooldown on previous failure path, clear it for immediate staged attempts.
 				self.clear_backoff();
-				TimeoutFuture::new(delay_ms).await;
+				sleep(delay_ms as u64).await;
 
 				let attempt_num = idx + 2; // #1 already happened above
 				match self.connect().await {
@@ -436,7 +314,7 @@ impl RelayConnection {
 							delay_ms,
 							"[connections][drainer] reconnect staged attempt succeeded; retrying same frame"
 						);
-						match Self::send_raw_internal(&self, &frame).await {
+						match self.send_raw_internal(&frame).await {
 							Ok(()) => {
 								tracing::info!(
 									relay = %self.url,
@@ -483,21 +361,11 @@ impl RelayConnection {
 		tracing::debug!(relay = %self.url, "Queue drainer exiting");
 	}
 
-	async fn send_raw_internal(self: &Arc<Self>, text: &str) -> Result<(), RelayError> {
-		// Lock sink and send
-		let mut sink_guard = self.ws_sink.lock().await;
-		let sink = sink_guard.as_mut().ok_or(RelayError::ConnectionClosed)?;
-
-		if let Err(e) = sink.send(Message::Text(text.to_owned())).await {
-			tracing::error!(error = %e, "Send error; closing sink");
-			{
-				let mut st = self.status.write().unwrap();
-				*st = ConnectionStatus::Failed;
-			}
-			let _ = futures::SinkExt::close(sink).await;
-			*sink_guard = None;
-			return Err(RelayError::ConnectionClosed);
-		}
+	async fn send_raw_internal(&self, text: &str) -> Result<(), RelayError> {
+		self.transport
+			.send(&self.url, text.to_string())
+			.await
+			.map_err(|e| RelayError::ConnectionError(e.to_string()))?;
 
 		// On successful send, adjust inflight and emit synthetic notifications when appropriate.
 		if let Some(parts) = extract_first_three(text) {
@@ -512,8 +380,7 @@ impl RelayConnection {
 								set.remove(&sub);
 								if set.is_empty() {
 									// Preserve the existing "auto-close when no subs remain"
-									drop(sink_guard);
-									let _ = Self::close(self).await;
+									let _ = self.close();
 								}
 							}
 							let raw_closed = format!(r#"["OK","{}","CLOSED"]"#, sub);
@@ -524,7 +391,7 @@ impl RelayConnection {
 						if let Some(sub_id) = parts[1].map(|s| s.trim_matches('"').to_string()) {
 							self.active_subs.write().unwrap().insert(sub_id.clone());
 							// optional: keep the synthetic notification
-							let raw_subscribed = format!(r#"["OK","{}", SUBSCRIBED]"#, sub_id);
+							let raw_subscribed = format!(r#"["OK","{}","SUBSCRIBED"]"#, sub_id);
 							(self.out_writer)(&self.url, &sub_id, &raw_subscribed);
 						}
 					}
@@ -595,7 +462,7 @@ impl RelayConnection {
 	async fn connect(self: &Arc<Self>) -> Result<(), RelayError> {
 		// Respect retry timestamp gate for any (re)connect attempt.
 		if self.should_delay_reconnect() {
-			let now = js_sys::Date::now() as u64;
+			let now = now_millis();
 			let retry_at = *self.next_retry_at_ms.read().unwrap();
 			let remaining = retry_at.saturating_sub(now) / 1000;
 			tracing::warn!(relay = %self.url, remaining_secs = remaining, "[connections][connect] reconnect blocked by unreliable cooldown");
@@ -604,63 +471,36 @@ impl RelayConnection {
 
 		tracing::info!(relay = %self.url, status = ?*self.status.read().unwrap(), "[connections][connect] opening websocket");
 
-		// Mark connecting now so old reader termination is treated as intentional replacement.
+		// Mark connecting now so old transport termination is treated as intentional replacement.
 		{
 			let mut st = self.status.write().unwrap();
 			*st = ConnectionStatus::Connecting;
 		}
 		(self.status_writer)("connecting", &self.url);
 
-		// Abort previous reader and close sink before opening new socket
-		{
-			if let Some(handle) = self.read_abort.write().unwrap().take() {
-				handle.abort();
-			}
-			let mut sink_guard = self.ws_sink.lock().await;
-			if let Some(sink) = sink_guard.as_mut() {
-				let _ = SinkExt::close(sink).await;
-			}
-			*sink_guard = None;
-		}
+		validate_relay_url(&self.url).map_err(|e| RelayError::InvalidUrl(e.to_string()))?;
 
-		validate_relay_url(&self.url)?;
-
-		// Open socket
-		let ws = WebSocket::open(&self.url).map_err(|e| {
+		// Open transport connection
+		self.transport.connect(&self.url).await.map_err(|e| {
 			let mut st = self.status.write().unwrap();
 			*st = ConnectionStatus::Failed;
 			(self.status_writer)("failed", &self.url);
 			// Retry delay to avoid hammering failed relays.
 			self.set_next_retry_delay_ms(RECONNECT_RETRY_DELAY_MS);
-			RelayError::WebSocketError(e.to_string())
+			RelayError::ConnectionError(e.to_string())
 		})?;
 
-		{
-			let mut ws_guard = self.websocket.write().unwrap();
-			*ws_guard = Some(ws);
-		}
+		// Register incoming message callback
+		let conn = Arc::clone(self);
+		self.transport.on_message(&self.url, Box::new(move |text: String| {
+			conn.handle_incoming_message(&text);
+		}));
 
-		// Take ownership and split
-		let ws_for_split = {
-			let mut ws_guard = self.websocket.write().unwrap();
-			ws_guard.take()
-		};
-		let Some(ws_for_split) = ws_for_split else {
-			let mut st = self.status.write().unwrap();
-			*st = ConnectionStatus::Failed;
-			(self.status_writer)("failed", &self.url);
-			self.set_next_retry_delay_ms(RECONNECT_RETRY_DELAY_MS);
-			return Err(RelayError::ConnectionError("No WebSocket".into()));
-		};
-
-		let (ws_sink, ws_stream) = ws_for_split.split();
-		{
-			let mut sink_guard = self.ws_sink.lock().await;
-			*sink_guard = Some(ws_sink);
-		}
-
-		// Reader (sync call)
-		self.spawn_reader(ws_stream);
+		// Register transport status callback
+		let conn = Arc::clone(self);
+		self.transport.on_status(&self.url, Box::new(move |status| {
+			conn.handle_transport_status(status);
+		}));
 
 		// Mark connected
 		{
@@ -669,7 +509,7 @@ impl RelayConnection {
 		}
 		{
 			let mut s = self.stats.write().unwrap();
-			s.connected_at = Some(js_sys::Date::now() as u64);
+			s.connected_at = Some(now_millis());
 		}
 
 		// Reset auth flow on each fresh transport connect.
@@ -689,7 +529,97 @@ impl RelayConnection {
 		Ok(())
 	}
 
-	pub async fn close_sub(self: &Arc<Self>, sub_id: &str) -> bool {
+	fn handle_incoming_message(&self, text: &str) {
+		tracing::info!(relay = %self.url, "Raw incoming: {}", text);
+
+		if let Some((kind, sub_id, content)) = parse_incoming_relay_text(text) {
+			// Handle NIP-42 authentication state machine on first response
+			let content_for_auth = content.as_deref().unwrap_or("");
+			self.handle_first_response(&kind, content_for_auth);
+
+			// Forward the raw relay line. For frames without sub_id (AUTH/NOTICE),
+			// use empty sub_id to keep the message visible upstream.
+			let route_sub_id = sub_id.unwrap_or_default();
+			(self.out_writer)(&self.url, &route_sub_id, text);
+		} else {
+			tracing::warn!(relay = %self.url, "Failed to parse incoming relay frame");
+		}
+	}
+
+	fn handle_transport_status(&self, status: TransportStatus) {
+		match status {
+			TransportStatus::Failed { url } => {
+				// During intentional close/reconnect replacement, old transport errors are expected.
+				let intentional_transition = {
+					let st = self.status.read().unwrap();
+					matches!(*st, ConnectionStatus::Closed | ConnectionStatus::Connecting)
+				};
+
+				if intentional_transition {
+					tracing::info!(relay = %url, "Transport error during intentional close/reconnect transition; ignoring failure transition");
+					return;
+				}
+
+				tracing::error!(relay = %url, "Transport error");
+				{
+					let mut st = self.status.write().unwrap();
+					*st = ConnectionStatus::Failed;
+				}
+				self.set_next_retry_delay_ms(RECONNECT_RETRY_DELAY_MS);
+				let retry_at = *self.next_retry_at_ms.read().unwrap();
+				tracing::info!(relay = %self.url, retry_at, "[connections] Connection failed, relay marked unreliable during cooldown");
+
+				// Clear pre-auth queue on connection failure to prevent memory leak
+				{
+					let queue = std::mem::take(&mut *self.pre_auth_queue.write().unwrap());
+					tracing::info!(relay = %self.url, cleared_frames = queue.len(), "[AUTH] Connection failed, cleared pre-auth queue");
+				}
+				// Set auth state to Failed until next successful reconnect path resets via first response
+				*self.auth_state.write().unwrap() = AuthState::Failed;
+				(self.status_writer)("failed", &url);
+			}
+			TransportStatus::Closed { url } => {
+				let was_intentional = {
+					let st = self.status.read().unwrap();
+					matches!(*st, ConnectionStatus::Closed)
+				};
+
+				if was_intentional {
+					tracing::info!(relay = %url, "Transport closed after intentional close");
+					return;
+				}
+
+				{
+					let mut st = self.status.write().unwrap();
+					*st = ConnectionStatus::Closed;
+				}
+
+				// Intentional close should NOT mark relay unreliable or start cooldown.
+				*self.next_retry_at_ms.write().unwrap() = 0;
+
+				// Clear pre-auth queue on close to prevent memory leak
+				{
+					let queue = std::mem::take(&mut *self.pre_auth_queue.write().unwrap());
+					if !queue.is_empty() {
+						tracing::info!(relay = %self.url, cleared_frames = queue.len(), "[AUTH] Connection closed, cleared pre-auth queue");
+					}
+				}
+				// Reset auth state for next transport connect.
+				*self.auth_state.write().unwrap() = AuthState::Unknown;
+
+				(self.status_writer)("close", &url);
+			}
+			TransportStatus::Connected { url } => {
+				{
+					let mut st = self.status.write().unwrap();
+					*st = ConnectionStatus::Connected;
+				}
+				(self.status_writer)("connected", &url);
+			}
+		}
+	}
+
+	pub async fn close_sub(&self, sub_id: &str) -> bool {
 		// Fast membership check
 		let present = {
 			let mut set = self.active_subs.write().unwrap();
@@ -706,49 +636,23 @@ impl RelayConnection {
 
 		// Send CLOSE only if currently connected; do not attempt reconnect.
 		if matches!(*self.status.read().unwrap(), ConnectionStatus::Connected) {
-			let mut sink_guard = self.ws_sink.lock().await;
-			if let Some(sink) = sink_guard.as_mut() {
-				// Best-effort; if it fails, we don't reconnect here.
-				let frame = format!(r#"["CLOSE","{}"]"#, sub_id);
-				let _ = sink.send(Message::Text(frame)).await;
-			}
+			let frame = format!(r#"["CLOSE","{}"]"#, sub_id);
+			let _ = self.transport.send(&self.url, frame).await;
 		}
 
 		true
 	}
 
-	pub async fn close(self: &Arc<Self>) -> Result<(), RelayError> {
+	pub fn close(&self) -> Result<(), RelayError> {
 		tracing::info!(relay = %self.url, "[connections][close] closing transport intentionally (RelayConnection remains reusable)");
 
-		// Mark as Closed first so the reader end path can distinguish intentional close.
+		// Mark as Closed first so the transport end path can distinguish intentional close.
 		{
 			let mut st = self.status.write().unwrap();
 			*st = ConnectionStatus::Closed;
 		}
 
-		// Abort reader
-		{
-			if let Some(handle) = self.read_abort.write().unwrap().take() {
-				handle.abort();
-			}
-		}
-
-		// Close sink
-		{
-			let mut sink_guard = self.ws_sink.lock().await;
-			if let Some(sink) = sink_guard.as_mut() {
-				let _ = SinkExt::close(sink).await;
-			}
-			*sink_guard = None;
-		}
-
-		// Close raw websocket handle if any (defensive)
-		{
-			let mut ws_guard = self.websocket.write().unwrap();
-			if let Some(ws) = ws_guard.take() {
-				let _ = ws.close(None, None);
-			}
-		}
+		self.transport.disconnect(&self.url);
 
 		// Intentional close should NOT mark relay unreliable or start cooldown.
 		*self.next_retry_at_ms.write().unwrap() = 0;
@@ -784,7 +688,7 @@ impl RelayConnection {
 			_ => {
 				// Trigger reconnection by attempting connect
 				let conn = Arc::clone(self);
-				spawn_local(async move {
+				spawn_worker(async move {
 					tracing::info!(relay = %conn.url, "[connections][wake] triggering reconnect");
 					if let Err(e) = conn.connect().await {
 						tracing::warn!(relay = %conn.url, error = ?e, "[connections][wake] reconnect attempt failed");
@@ -799,7 +703,7 @@ impl RelayConnection {
 	// ------------------------------------------------------------------
 
 	/// Handle the first response from relay to determine auth requirements
-	async fn handle_first_response(self: &Arc<Self>, kind: &str, content: &str) {
+	fn handle_first_response(&self, kind: &str, content: &str) {
 		tracing::debug!(relay = %self.url, kind, "handle_first_response called");
 
 		// Only process if we're in Unknown state
@@ -825,7 +729,7 @@ impl RelayConnection {
 				tracing::info!(relay = %self.url, accepted, content, "[connections][AUTH] OK response received");
 				if accepted {
 					tracing::info!(relay = %self.url, "[connections][AUTH] Accepted by relay");
-					self.set_authenticated().await;
+					self.set_authenticated();
 				} else {
 					tracing::warn!(relay = %self.url, "[connections][AUTH] Rejected or non-auth OK while pending: {}", content);
 				}
@@ -848,18 +752,18 @@ impl RelayConnection {
 				tracing::debug!(relay = %self.url, "[connections][AUTH] State set to Required");
 
 				// Request signature from crypto
-				self.request_auth_signature(challenge).await;
+				self.request_auth_signature(challenge);
 			}
 			_ => {
 				// Any other response means auth is not required
 				tracing::info!(relay = %self.url, kind, "[connections][AUTH] NOT REQUIRED - relay responds with {}", kind);
-				self.set_authenticated().await;
+				self.set_authenticated();
 			}
 		}
 	}
 
 	/// Send signing request to crypto worker for kind 22242 event
-	async fn request_auth_signature(self: &Arc<Self>, challenge: String) {
+	fn request_auth_signature(&self, challenge: String) {
 		let request_id = {
 			let mut id = self.next_auth_id.write().unwrap();
 			let current = *id;
@@ -867,7 +771,7 @@ impl RelayConnection {
 			current | 0x8000_0000_0000_0000 // Mark as auth request
 		};
 
-		let created_at = js_sys::Date::now() as u64;
+		let created_at = now_millis();
 
 		let payload = json!({
 			"challenge": challenge,
@@ -882,11 +786,12 @@ impl RelayConnection {
 		let mut fbb = flatbuffers::FlatBufferBuilder::new();
 		let payload_off = Some(fbb.create_string(&payload));
 
-		let req = crate::generated::SignerRequest::create(
+		use crate::generated::nostr::fb;
+		let req = fb::SignerRequest::create(
 			&mut fbb,
-			&crate::generated::SignerRequestArgs {
+			&fb::SignerRequestArgs {
 				request_id,
-				op: crate::generated::SignerOp::AuthEvent,
+				op: fb::SignerOp::AuthEvent,
 				payload: payload_off,
 				pubkey: None,
 				sender_pubkey: None,
@@ -903,7 +808,7 @@ impl RelayConnection {
 	}
 
 	/// Handle signed auth event response from crypto
-	pub async fn handle_signed_auth(self: &Arc<Self>, signed_event_json: &str) {
+	pub fn handle_signed_auth(&self, signed_event_json: &str) {
 		tracing::info!(relay = %self.url, event_len = signed_event_json.len(), "[connections][AUTH] Received signed event from crypto");
 		tracing::debug!(relay = %self.url, event = signed_event_json, "[connections][AUTH] Signed event content");
 
@@ -933,7 +838,7 @@ impl RelayConnection {
 	///
 	/// Frames are sent optimistically, so we do NOT replay any shadow queue here
 	/// (avoids duplicate sends on relays that don't require auth).
-	async fn set_authenticated(self: &Arc<Self>) {
+	fn set_authenticated(&self) {
 		let old_state = {
 			let mut state = self.auth_state.write().unwrap();
 			std::mem::replace(&mut *state, AuthState::Authenticated)
@@ -953,12 +858,406 @@ impl RelayConnection {
 	}
 
 	/// Public API to receive signed auth from connections main loop
-	pub fn process_signed_auth(self: &Arc<Self>, signed_event_json: &str) {
+	pub fn process_signed_auth(&self, signed_event_json: &str) {
 		tracing::info!(relay = %self.url, "[connections][AUTH] process_signed_auth called from main loop");
-		let conn = Arc::clone(self);
-		let event = signed_event_json.to_string();
-		spawn_local(async move {
-			conn.handle_signed_auth(&event).await;
-		});
+		self.handle_signed_auth(signed_event_json);
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::traits::{RelayTransport, TransportError, TransportStatus};
+	use async_trait::async_trait;
+	use std::collections::HashMap;
+	use std::sync::atomic::{AtomicUsize, Ordering};
+	use std::sync::{Arc, Mutex, RwLock};
+	use tokio::task::LocalSet;
+
+	#[derive(Clone, Debug)]
+	enum Call {
+		Connect(String),
+		Disconnect(String),
+		Send(String, String),
+	}
+
+	struct MockRelayTransport {
+		calls: Arc<Mutex<Vec<Call>>>,
+		message_callbacks: Arc<RwLock<HashMap<String, Box<dyn Fn(String)>>>>,
+		status_callbacks: Arc<RwLock<HashMap<String, Box<dyn Fn(TransportStatus)>>>>,
+		connect_result: Arc<RwLock<Result<(), TransportError>>>,
+		send_fail_count: Arc<AtomicUsize>,
+	}
+
+	impl MockRelayTransport {
+		fn new() -> Self {
+			Self {
+				calls: Arc::new(Mutex::new(Vec::new())),
+				message_callbacks: Arc::new(RwLock::new(HashMap::new())),
+				status_callbacks: Arc::new(RwLock::new(HashMap::new())),
+				connect_result: Arc::new(RwLock::new(Ok(()))),
+				send_fail_count: Arc::new(AtomicUsize::new(0)),
+			}
+		}
+
+		fn set_connect_result(&self, result: Result<(), TransportError>) {
+			*self.connect_result.write().unwrap() = result;
+		}
+
+		fn set_send_fail_count(&self, count: usize) {
+			self.send_fail_count.store(count, Ordering::SeqCst);
+		}
+
+		fn calls(&self) -> Vec<Call> {
+			self.calls.lock().unwrap().clone()
+		}
+
+		fn invoke_message_callback(&self, url: &str, msg: String) {
+			let cbs = self.message_callbacks.read().unwrap();
+			if let Some(cb) = cbs.get(url) {
+				cb(msg);
+			}
+		}
+
+		fn invoke_status_callback(&self, url: &str, status: TransportStatus) {
+			let cbs = self.status_callbacks.read().unwrap();
+			if let Some(cb) = cbs.get(url) {
+				cb(status);
+			}
+		}
+	}
+
+	#[async_trait(?Send)]
+	impl RelayTransport for MockRelayTransport {
+		async fn connect(&self, url: &str) -> Result<(), TransportError> {
+			self.calls.lock().unwrap().push(Call::Connect(url.to_string()));
+			self.connect_result.read().unwrap().clone()
+		}
+
+		fn disconnect(&self, url: &str) {
+			self.calls.lock().unwrap().push(Call::Disconnect(url.to_string()));
+		}
+
+		async fn send(&self, url: &str, frame: String) -> Result<(), TransportError> {
+			self.calls.lock().unwrap().push(Call::Send(url.to_string(), frame.clone()));
+			let remaining = self.send_fail_count.load(Ordering::SeqCst);
+			if remaining > 0 {
+				self.send_fail_count.store(remaining - 1, Ordering::SeqCst);
+				Err(TransportError::Other("send failed".to_string()))
+			} else {
+				Ok(())
+			}
+		}
+
+		fn on_message(&self, url: &str, callback: Box<dyn Fn(String)>) {
+			self.message_callbacks.write().unwrap().insert(url.to_string(), callback);
+		}
+
+		fn on_status(&self, url: &str, callback: Box<dyn Fn(TransportStatus)>) {
+			self.status_callbacks.write().unwrap().insert(url.to_string(), callback);
+		}
+	}
+
+	fn make_writers() -> (
+		OutWriter,
+		StatusWriter,
+		CryptoSender,
+		Arc<Mutex<Vec<(String, String, String)>>>,
+		Arc<Mutex<Vec<(String, String)>>>,
+		Arc<Mutex<Vec<Vec<u8>>>>,
+	) {
+		let out = Arc::new(Mutex::new(Vec::new()));
+		let status = Arc::new(Mutex::new(Vec::new()));
+		let crypto = Arc::new(Mutex::new(Vec::new()));
+
+		let out2 = out.clone();
+		let status2 = status.clone();
+		let crypto2 = crypto.clone();
+
+		let out_writer: Rc<dyn Fn(&str, &str, &str)> =
+			Rc::new(move |url: &str, sub_id: &str, raw: &str| {
+				out2.lock().unwrap().push((url.to_string(), sub_id.to_string(), raw.to_string()));
+			});
+
+		let status_writer: Rc<dyn Fn(&str, &str)> =
+			Rc::new(move |st: &str, url: &str| {
+				status2.lock().unwrap().push((st.to_string(), url.to_string()));
+			});
+
+		let to_crypto: Rc<RefCell<dyn Fn(&[u8])>> =
+			Rc::new(RefCell::new(move |bytes: &[u8]| {
+				crypto2.lock().unwrap().push(bytes.to_vec());
+			}));
+
+		(out_writer, status_writer, to_crypto, out, status, crypto)
+	}
+
+	#[tokio::test]
+	async fn test_send_raw_queues_before_connect() {
+		let local = LocalSet::new();
+		local
+			.run_until(async {
+				let transport = Arc::new(MockRelayTransport::new());
+				transport.set_connect_result(Err(TransportError::Other("not yet".to_string())));
+
+				let (out_writer, status_writer, to_crypto, _out, _status, _crypto) =
+					make_writers();
+
+				let conn = RelayConnection::new(
+					"wss://r".to_string(),
+					transport.clone(),
+					out_writer,
+					status_writer,
+					to_crypto,
+				);
+
+				// Let initial connect attempt fail
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+
+				// Queue a frame before successful connection
+				let frame = r#"["REQ","s1",{}]"#;
+				conn.send_raw(frame).unwrap();
+
+				// Verify send was not called yet
+				let calls = transport.calls();
+				assert!(
+					!calls.iter().any(|c| matches!(c, Call::Send(_, _))),
+					"send should not be called before connect"
+				);
+
+				// Now allow connection and wake
+				transport.set_connect_result(Ok(()));
+				conn.wake();
+
+				// Let reconnect and drainer run
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+
+				let calls = transport.calls();
+				assert!(
+					calls.iter().any(|c| matches!(c, Call::Send(url, f) if url == "wss://r" && f == frame)),
+					"send should be called with queued frame after connect"
+				);
+			})
+			.await;
+	}
+
+	#[tokio::test]
+	async fn test_synthetic_subscribed_notification() {
+		let local = LocalSet::new();
+		local
+			.run_until(async {
+				let transport = Arc::new(MockRelayTransport::new());
+				let (out_writer, status_writer, to_crypto, out, _status, _crypto) = make_writers();
+
+				let _conn = RelayConnection::new(
+					"wss://r".to_string(),
+					transport.clone(),
+					out_writer,
+					status_writer,
+					to_crypto,
+				);
+
+				// Let initial connect succeed and drainer start
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+
+				let frame = r#"["REQ","s1",{}]"#;
+				_conn.send_raw(frame).unwrap();
+
+				// Let drainer process
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+
+				let out_msgs = out.lock().unwrap();
+				let subscribed = out_msgs
+					.iter()
+					.any(|(_, sub_id, raw)| sub_id == "s1" && raw == r#"["OK","s1","SUBSCRIBED"]"#);
+				assert!(subscribed, "expected synthetic SUBSCRIBED notification");
+			})
+			.await;
+	}
+
+	#[tokio::test]
+	async fn test_synthetic_closed_notification() {
+		let local = LocalSet::new();
+		local
+			.run_until(async {
+				let transport = Arc::new(MockRelayTransport::new());
+				let (out_writer, status_writer, to_crypto, out, _status, _crypto) = make_writers();
+
+				let conn = RelayConnection::new(
+					"wss://r".to_string(),
+					transport.clone(),
+					out_writer,
+					status_writer,
+					to_crypto,
+				);
+
+				// Let initial connect succeed and drainer start
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+
+				// Subscribe first
+				let req_frame = r#"["REQ","s1",{}]"#;
+				conn.send_raw(req_frame).unwrap();
+
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+
+				// Clear out messages to isolate CLOSE synthetic
+				out.lock().unwrap().clear();
+
+				// Now close
+				let close_frame = r#"["CLOSE","s1"]"#;
+				conn.send_raw(close_frame).unwrap();
+
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+
+				let out_msgs = out.lock().unwrap();
+				let closed = out_msgs
+					.iter()
+					.any(|(_, sub_id, raw)| sub_id == "s1" && raw == r#"["OK","s1","CLOSED"]"#);
+				assert!(closed, "expected synthetic CLOSED notification");
+			})
+			.await;
+	}
+
+	#[tokio::test]
+	async fn test_reconnect_on_send_failure() {
+		let local = LocalSet::new();
+		local
+			.run_until(async {
+				let transport = Arc::new(MockRelayTransport::new());
+				transport.set_send_fail_count(1);
+
+				let (out_writer, status_writer, to_crypto, _out, _status, _crypto) = make_writers();
+
+				let _conn = RelayConnection::new(
+					"wss://r".to_string(),
+					transport.clone(),
+					out_writer,
+					status_writer,
+					to_crypto,
+				);
+
+				// Let initial connect succeed and drainer start
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+
+				let frame = r#"["REQ","s1",{}]"#;
+				_conn.send_raw(frame).unwrap();
+
+				// Let drainer process: send fails, then reconnect, then retry succeeds
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+
+				let calls = transport.calls();
+				let connect_count = calls.iter().filter(|c| matches!(c, Call::Connect(_))).count();
+				assert!(
+					connect_count >= 2,
+					"expected at least 2 connect calls (initial + reconnect), got {}",
+					connect_count
+				);
+			})
+			.await;
+	}
+
+	#[tokio::test]
+	async fn test_auth_state_machine() {
+		let local = LocalSet::new();
+		local
+			.run_until(async {
+				let transport = Arc::new(MockRelayTransport::new());
+				let (out_writer, status_writer, to_crypto, _out, _status, crypto) = make_writers();
+
+				let conn = RelayConnection::new(
+					"wss://r".to_string(),
+					transport.clone(),
+					out_writer,
+					status_writer,
+					to_crypto,
+				);
+
+				// Let initial connect succeed and callbacks register
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+
+				// Inject AUTH challenge from relay
+				transport.invoke_message_callback(
+					"wss://r",
+					r#"["AUTH","challenge123"]"#.to_string(),
+				);
+
+				// Let auth handling run
+				tokio::task::yield_now().await;
+
+				// Verify auth state is Required
+				{
+					let state = conn.auth_state.read().unwrap();
+					assert!(
+						matches!(*state, AuthState::Required { .. }),
+						"expected Required auth state after AUTH, got {:?}",
+						*state
+					);
+				}
+
+				// Verify crypto request was sent
+				let crypto_msgs = crypto.lock().unwrap();
+				assert!(!crypto_msgs.is_empty(), "expected crypto request to be sent");
+				drop(crypto_msgs);
+
+				// Process signed auth response
+				let signed_event = r#"{"id":"abc","pubkey":"pk","created_at":123,"kind":22242,"tags":[["challenge","challenge123"],["relay","wss://r"]],"content":"","sig":"sig"}"#;
+				conn.process_signed_auth(signed_event);
+
+				// Verify state becomes Pending
+				{
+					let state = conn.auth_state.read().unwrap();
+					assert!(
+						matches!(*state, AuthState::Pending),
+						"expected Pending auth state after process_signed_auth, got {:?}",
+						*state
+					);
+				}
+
+				// Let drainer send the AUTH frame
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+
+				// Inject OK response from relay
+				transport.invoke_message_callback(
+					"wss://r",
+					r#"["OK","auth-id","true"]"#.to_string(),
+				);
+
+				// Let auth handling run
+				tokio::task::yield_now().await;
+
+				// Verify state becomes Authenticated
+				{
+					let state = conn.auth_state.read().unwrap();
+					assert!(
+						matches!(*state, AuthState::Authenticated),
+						"expected Authenticated auth state after OK, got {:?}",
+						*state
+					);
+				}
+			})
+			.await;
 	}
 }

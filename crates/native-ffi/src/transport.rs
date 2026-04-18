@@ -101,7 +101,7 @@ impl RelayTransport for NativeTransport {
         }
     }
 
-    fn send(&self, url: &str, frame: String) -> Result<(), TransportError> {
+    async fn send(&self, url: &str, frame: String) -> Result<(), TransportError> {
         if let Some(handle) = self.connections.borrow().get(url) {
             handle.write.unbounded_send(frame)
                 .map_err(|e| TransportError::Other(format!("Send failed: {}", e)))

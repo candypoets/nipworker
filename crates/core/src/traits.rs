@@ -30,7 +30,7 @@ pub enum TransportStatus {
 pub trait RelayTransport {
     async fn connect(&self, url: &str) -> Result<(), TransportError>;
     fn disconnect(&self, url: &str);
-    fn send(&self, url: &str, frame: String) -> Result<(), TransportError>;
+    async fn send(&self, url: &str, frame: String) -> Result<(), TransportError>;
     fn on_message(&self, url: &str, callback: Box<dyn Fn(String)>);
     fn on_status(&self, url: &str, callback: Box<dyn Fn(TransportStatus)>);
 }

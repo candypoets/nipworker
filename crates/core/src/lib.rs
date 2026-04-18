@@ -1,5 +1,6 @@
 pub mod channel;
 pub mod generated;
+pub mod platform;
 pub mod types;
 pub mod utils;
 pub mod traits;

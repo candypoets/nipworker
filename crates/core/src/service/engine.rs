@@ -412,7 +412,7 @@ mod tests {
 			self.calls.lock().unwrap().push(TransportCall::Disconnect(url.to_string()));
 		}
 
-		fn send(&self, url: &str, frame: String) -> Result<(), TransportError> {
+		async fn send(&self, url: &str, frame: String) -> Result<(), TransportError> {
 			self.calls.lock().unwrap().push(TransportCall::Send(url.to_string(), frame.clone()));
 			self.sent_frames.lock().unwrap().push((url.to_string(), frame));
 			Ok(())
@@ -762,14 +762,14 @@ mod tests {
 			self.inner.disconnect(url);
 		}
 
-		fn send(&self, url: &str, frame: String) -> Result<(), TransportError> {
+		async fn send(&self, url: &str, frame: String) -> Result<(), TransportError> {
 			if self.should_fail() {
 				return Err(TransportError::Other(format!(
 					"Random failure on send to {}",
 					url
 				)));
 			}
-			self.inner.send(url, frame)
+			self.inner.send(url, frame).await
 		}
 
 		fn on_message(&self, url: &str, callback: Box<dyn Fn(String)>) {

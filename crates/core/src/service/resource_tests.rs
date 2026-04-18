@@ -31,7 +31,7 @@ impl RelayTransport for MockRelayTransport {
 
     fn disconnect(&self, _url: &str) {}
 
-    fn send(&self, _url: &str, _frame: String) -> Result<(), TransportError> {
+    async fn send(&self, _url: &str, _frame: String) -> Result<(), TransportError> {
         Ok(())
     }
 
