@@ -307,6 +307,7 @@ use futures::{SinkExt, StreamExt};
 			message_callbacks: Arc<RwLock<HashMap<String, Box<dyn Fn(String)>>>>,
 			status_callbacks: Arc<RwLock<HashMap<String, Box<dyn Fn(TransportStatus)>>>>,
 			connect_result: Arc<RwLock<Result<(), TransportError>>>,
+			on_connect_callback: Arc<Mutex<Option<Box<dyn Fn(&MockRelayTransport)>>>>,
 		}
 
 		impl MockRelayTransport {
@@ -316,11 +317,16 @@ use futures::{SinkExt, StreamExt};
 					message_callbacks: Arc::new(RwLock::new(HashMap::new())),
 					status_callbacks: Arc::new(RwLock::new(HashMap::new())),
 					connect_result: Arc::new(RwLock::new(Ok(()))),
+					on_connect_callback: Arc::new(Mutex::new(None)),
 				}
 			}
 
 			fn set_connect_result(&self, result: Result<(), TransportError>) {
 				*self.connect_result.write().unwrap() = result;
+			}
+
+			fn set_on_connect_callback(&self, callback: Box<dyn Fn(&MockRelayTransport)>) {
+				*self.on_connect_callback.lock().unwrap() = Some(callback);
 			}
 
 			fn calls(&self) -> Vec<Call> {
@@ -346,6 +352,11 @@ use futures::{SinkExt, StreamExt};
 		impl RelayTransport for MockRelayTransport {
 			async fn connect(&self, url: &str) -> Result<(), TransportError> {
 				self.calls.lock().unwrap().push(Call::Connect(url.to_string()));
+				if let Ok(cb_guard) = self.on_connect_callback.lock() {
+					if let Some(cb) = cb_guard.as_ref() {
+						cb(self);
+					}
+				}
 				self.connect_result.read().unwrap().clone()
 			}
 
@@ -465,6 +476,7 @@ use futures::{SinkExt, StreamExt};
 			let (parser_out_worker, parser_out_test) = TokioWorkerChannel::new_pair();
 			let (cache_test, cache_worker) = TokioWorkerChannel::new_pair();
 			let (crypto_test, crypto_worker) = TokioWorkerChannel::new_pair();
+			let crypto_sender = crypto_worker.clone_sender();
 
 			let transport = Arc::new(MockRelayTransport::new());
 			let worker = ConnectionsWorker::new(transport.clone());
@@ -474,7 +486,7 @@ use futures::{SinkExt, StreamExt};
 				parser_out_worker.clone_sender(),
 				Box::new(cache_worker),
 				Box::new(crypto_worker),
-				crypto_test.clone_sender(),
+				crypto_sender,
 			);
 
 			(transport, parser_test, parser_out_test, cache_test, crypto_test)
@@ -874,4 +886,97 @@ use futures::{SinkExt, StreamExt};
 				})
 				.await;
 		}
+
+	#[tokio::test]
+	async fn test_auth_event_full_flow() {
+		let local = LocalSet::new();
+		local
+			.run_until(async {
+				let (transport, _parser_test, _parser_out_test, cache_test, mut crypto_test) = setup().await;
+
+				// Send cache envelope with REQ frame to establish connection
+				let envelope = serde_json::json!({
+					"relays": ["wss://r"],
+					"frames": [r#"["REQ","s1",{}]"#]
+				});
+				let bytes = serde_json::to_vec(&envelope).unwrap();
+				cache_test.send(&bytes).await.unwrap();
+
+				// Let workers run and connection establish
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+
+				// Now inject AUTH challenge from relay (after on_message is registered)
+				transport.invoke_message_callback(
+					"wss://r",
+					r#"["AUTH","challenge123"]"#.to_string(),
+				);
+				tokio::task::yield_now().await;
+
+				// Read SignerRequest from crypto channel
+				let crypto_bytes = crypto_test.recv().await.expect("expected crypto request");
+				let req = flatbuffers::root::<fb::SignerRequest>(&crypto_bytes).unwrap();
+				assert_eq!(req.op(), fb::SignerOp::AuthEvent, "expected AuthEvent op");
+				let payload = req.payload().expect("expected payload");
+				let parsed: serde_json::Value = serde_json::from_str(payload).unwrap();
+				assert_eq!(parsed["challenge"], "challenge123", "challenge mismatch");
+				assert_eq!(parsed["relay"], "wss://r", "relay mismatch");
+				let request_id = req.request_id();
+
+				// Build SignerResponse with signed event
+				let result_json = serde_json::json!({
+					"event": r#"{"id":"abc","pubkey":"pk","created_at":123,"kind":22242,"tags":[["challenge","challenge123"],["relay","wss://r"]],"content":"","sig":"sig"}"#,
+					"relay": "wss://r"
+				})
+				.to_string();
+
+				let mut fbb = flatbuffers::FlatBufferBuilder::new();
+				let result_off = fbb.create_string(&result_json);
+				let resp = fb::SignerResponse::create(
+					&mut fbb,
+					&fb::SignerResponseArgs {
+						request_id,
+						result: Some(result_off),
+						error: None,
+					},
+				);
+				fbb.finish(resp, None);
+				crypto_test.send(fbb.finished_data()).await.unwrap();
+
+				// Let workers process the signed auth response
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+
+				// Verify AUTH frame was sent to relay
+				let calls = transport.calls();
+				let auth_sent = calls.iter().any(|c| {
+					matches!(c, Call::Send(url, frame) if url == "wss://r" && frame.starts_with(r#"["AUTH",{"#))
+				});
+				assert!(auth_sent, "expected AUTH frame to be sent to relay");
+
+				// Inject OK response from relay
+				transport.invoke_message_callback(
+					"wss://r",
+					r#"["OK","auth-id","true"]"#.to_string(),
+				);
+
+				// Let auth handling run
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+
+				// Verify original REQ frame was sent
+				let req_sent = calls.iter().any(|c| {
+					matches!(c, Call::Send(url, frame) if url == "wss://r" && frame == r#"["REQ","s1",{}]"#)
+				});
+				assert!(req_sent, "expected original REQ frame to be sent");
+			})
+			.await;
 	}
+}

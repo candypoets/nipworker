@@ -619,7 +619,7 @@ impl RelayConnection {
 		}
 	}
 
-	pub async fn close_sub(&self, sub_id: &str) -> bool {
+	pub fn close_sub(&self, sub_id: &str) -> bool {
 		// Fast membership check
 		let present = {
 			let mut set = self.active_subs.write().unwrap();
@@ -634,10 +634,10 @@ impl RelayConnection {
 			return false;
 		}
 
-		// Send CLOSE only if currently connected; do not attempt reconnect.
-		if matches!(*self.status.read().unwrap(), ConnectionStatus::Connected) {
-			let frame = format!(r#"["CLOSE","{}"]"#, sub_id);
-			let _ = self.transport.send(&self.url, frame).await;
+		// Enqueue CLOSE frame; drainer will send when connected
+		let frame = format!(r#"["CLOSE","{}"]"#, sub_id);
+		if let Some(tx) = self.queue_tx.read().unwrap().as_ref() {
+			let _ = tx.clone().try_send(frame);
 		}
 
 		true
@@ -1257,6 +1257,291 @@ mod tests {
 						*state
 					);
 				}
+			})
+			.await;
+	}
+
+	#[tokio::test]
+	async fn test_close_disconnects_transport() {
+		let local = LocalSet::new();
+		local
+			.run_until(async {
+				let transport = Arc::new(MockRelayTransport::new());
+				let (out_writer, status_writer, to_crypto, _out, _status, _crypto) = make_writers();
+
+				let conn = RelayConnection::new(
+					"wss://r".to_string(),
+					transport.clone(),
+					out_writer,
+					status_writer,
+					to_crypto,
+				);
+
+				// Let initial connect succeed
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+
+				conn.close().unwrap();
+
+				let calls = transport.calls();
+				assert!(
+					calls.iter().any(|c| matches!(c, Call::Disconnect(url) if url == "wss://r")),
+					"expected disconnect to be called on close"
+				);
+			})
+			.await;
+	}
+
+	#[tokio::test]
+	async fn test_intentional_close_does_not_trigger_cooldown() {
+		let local = LocalSet::new();
+		local
+			.run_until(async {
+				let transport = Arc::new(MockRelayTransport::new());
+				let (out_writer, status_writer, to_crypto, _out, _status, _crypto) = make_writers();
+
+				let conn = RelayConnection::new(
+					"wss://r".to_string(),
+					transport.clone(),
+					out_writer,
+					status_writer,
+					to_crypto,
+				);
+
+				// Let initial connect succeed
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+
+				conn.close().unwrap();
+
+				assert_eq!(
+					*conn.next_retry_at_ms.read().unwrap(),
+					0,
+					"expected no cooldown after intentional close"
+				);
+			})
+			.await;
+	}
+
+	#[tokio::test]
+	async fn test_no_reconnect_after_explicit_close() {
+		let local = LocalSet::new();
+		local
+			.run_until(async {
+				let transport = Arc::new(MockRelayTransport::new());
+				let (out_writer, status_writer, to_crypto, _out, _status, _crypto) = make_writers();
+
+				let conn = RelayConnection::new(
+					"wss://r".to_string(),
+					transport.clone(),
+					out_writer,
+					status_writer,
+					to_crypto,
+				);
+
+				// Let initial connect succeed
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+
+				conn.close().unwrap();
+
+				// Simulate transport failure after intentional close
+				transport.invoke_status_callback(
+					"wss://r",
+					TransportStatus::Failed {
+						url: "wss://r".to_string(),
+					},
+				);
+				tokio::task::yield_now().await;
+
+				// Status should remain Closed, not transition to Failed/cooldown
+				assert!(
+					matches!(*conn.status.read().unwrap(), ConnectionStatus::Closed),
+					"expected status to remain Closed after transport failure post-close"
+				);
+				assert_eq!(
+					*conn.next_retry_at_ms.read().unwrap(),
+					0,
+					"expected no cooldown when transport fails after explicit close"
+				);
+			})
+			.await;
+	}
+
+	#[tokio::test]
+	async fn test_cooldown_respected_after_failure() {
+		let local = LocalSet::new();
+		local
+			.run_until(async {
+				let transport = Arc::new(MockRelayTransport::new());
+				let (out_writer, status_writer, to_crypto, _out, _status, _crypto) = make_writers();
+
+				let conn = RelayConnection::new(
+					"wss://r".to_string(),
+					transport.clone(),
+					out_writer,
+					status_writer,
+					to_crypto,
+				);
+
+				// Let initial connect succeed
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+
+				// Inject transport failure to trigger cooldown
+				transport.invoke_status_callback(
+					"wss://r",
+					TransportStatus::Failed {
+						url: "wss://r".to_string(),
+					},
+				);
+				tokio::task::yield_now().await;
+
+				// Verify cooldown is set
+				let retry_at = *conn.next_retry_at_ms.read().unwrap();
+				assert!(
+					retry_at > now_millis(),
+					"expected cooldown to be set, retry_at={} now={}",
+					retry_at,
+					now_millis()
+				);
+
+				// Verify connect is blocked by cooldown
+				let result = conn.connect().await;
+				assert!(
+					matches!(result, Err(RelayError::ConnectionClosed)),
+					"expected connect to be blocked by cooldown, got {:?}",
+					result
+				);
+			})
+			.await;
+	}
+
+	#[tokio::test]
+	async fn test_staged_reconnect_with_delays() {
+		let local = LocalSet::new();
+		local
+			.run_until(async {
+				let transport = Arc::new(MockRelayTransport::new());
+				let (out_writer, status_writer, to_crypto, _out, _status, _crypto) = make_writers();
+
+				let conn = RelayConnection::new(
+					"wss://r".to_string(),
+					transport.clone(),
+					out_writer,
+					status_writer,
+					to_crypto,
+				);
+
+				// Let initial connect succeed
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+
+				// Make subsequent connects fail and the first send fail
+				transport.set_connect_result(Err(TransportError::Other("fail".to_string())));
+				transport.set_send_fail_count(1);
+
+				// Inject transport failure so status becomes Failed (cold-start delays)
+				transport.invoke_status_callback(
+					"wss://r",
+					TransportStatus::Failed {
+						url: "wss://r".to_string(),
+					},
+				);
+				tokio::task::yield_now().await;
+
+				// Clear cooldown so drainer isn't blocked, but keep Failed status for cold-start delays
+				*conn.next_retry_at_ms.write().unwrap() = 0;
+
+				conn.send_raw(r#"["REQ","s1",{}]"#).unwrap();
+
+				// Let drainer process direct send failure and reconnect #1 failure
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+
+				// Wait for the single 200ms cold-start staged delay
+				tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+
+				let calls = transport.calls();
+				let connect_count = calls.iter().filter(|c| matches!(c, Call::Connect(_))).count();
+				assert!(
+					connect_count >= 3,
+					"expected at least 3 connect attempts (initial + reconnect + staged), got {}",
+					connect_count
+				);
+
+				// Verify cooldown was set after exhaustion
+				let retry_at = *conn.next_retry_at_ms.read().unwrap();
+				assert!(
+					retry_at > 0,
+					"expected cooldown after staged reconnect exhaustion"
+				);
+			})
+			.await;
+	}
+
+	#[tokio::test]
+	async fn test_close_sub_removes_subscription_and_sends_close() {
+		let local = LocalSet::new();
+		local
+			.run_until(async {
+				let transport = Arc::new(MockRelayTransport::new());
+				let (out_writer, status_writer, to_crypto, out, _status, _crypto) = make_writers();
+
+				let conn = RelayConnection::new(
+					"wss://r".to_string(),
+					transport.clone(),
+					out_writer,
+					status_writer,
+					to_crypto,
+				);
+
+				// Let initial connect succeed
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+
+				// Subscribe
+				let req_frame = r#"["REQ","s1",{}]"#;
+				conn.send_raw(req_frame).unwrap();
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+
+				// Verify sub is active
+				assert!(conn.active_subs.read().unwrap().contains("s1"));
+
+				// Close the sub (sync, no await)
+				let result = conn.close_sub("s1");
+				assert!(result, "close_sub should return true for active sub");
+
+				// Let drainer process the CLOSE frame
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+
+				// Verify sub removed
+				assert!(!conn.active_subs.read().unwrap().contains("s1"));
+
+				// Verify a Send call with CLOSE was made
+				let calls = transport.calls();
+				let close_sent = calls.iter().any(|c| {
+					matches!(c, Call::Send(url, f) if url == "wss://r" && f == r#"["CLOSE","s1"]"#)
+				});
+				assert!(close_sent, "expected CLOSE frame to be sent to relay");
+
+				// Verify synthetic CLOSED notification
+				let closed = out.lock().unwrap().iter().any(|(_, sub_id, raw)| {
+					sub_id == "s1" && raw == r#"["OK","s1","CLOSED"]"#
+				});
+				assert!(closed, "expected synthetic CLOSED notification");
 			})
 			.await;
 	}
