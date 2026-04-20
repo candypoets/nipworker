@@ -10,27 +10,42 @@
 //! Data format: [4-byte len (little endian)][WorkerMessage][4-byte len][WorkerMessage]...
 //! (Same format as SharedArrayBuffer for compatibility with ArrayBufferReader)
 
+#[cfg(target_arch = "wasm32")]
 use js_sys::{Array, Object, Reflect, Uint8Array};
 use std::cell::RefCell;
 use std::rc::Rc;
+#[cfg(target_arch = "wasm32")]
 use tracing::{debug, warn};
+#[cfg(target_arch = "wasm32")]
 use wasm_bindgen::JsValue;
+#[cfg(target_arch = "wasm32")]
 use web_sys::MessagePort;
 
+#[cfg(target_arch = "wasm32")]
 // Thread-local storage for the global BatchBufferManager instance
 thread_local! {
     static GLOBAL_BATCH_MANAGER: RefCell<Option<BatchBufferManager>> = RefCell::new(None);
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+thread_local! {
+    static GLOBAL_BATCH_MANAGER: RefCell<Option<()>> = RefCell::new(None);
+}
+
 /// Initialize the global BatchBufferManager singleton.
 /// This should be called once during NetworkManager initialization.
+#[cfg(target_arch = "wasm32")]
 pub fn init_global_batch_manager(port: MessagePort) {
     GLOBAL_BATCH_MANAGER.with(|manager| {
         *manager.borrow_mut() = Some(BatchBufferManager::new(port));
     });
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+pub fn init_global_batch_manager(_port: ()) {}
+
 /// Get a reference to the global BatchBufferManager if initialized.
+#[cfg(target_arch = "wasm32")]
 fn with_global_batch_manager<F, R>(f: F) -> Option<R>
 where
     F: FnOnce(&BatchBufferManager) -> R,
@@ -39,6 +54,7 @@ where
 }
 
 /// Get a mutable reference to the global BatchBufferManager if initialized.
+#[cfg(target_arch = "wasm32")]
 fn with_global_batch_manager_mut<F, R>(f: F) -> Option<R>
 where
     F: FnOnce(&mut BatchBufferManager) -> R,
@@ -48,46 +64,69 @@ where
 
 /// Add a message to a subscription's batch buffer via the global manager.
 /// This is a convenience function that can be called from anywhere.
+#[cfg(target_arch = "wasm32")]
 pub fn add_message_to_batch(sub_id: &str, data: &[u8]) {
     with_global_batch_manager_mut(|manager| {
         manager.add_message(sub_id, data);
     });
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+pub fn add_message_to_batch(_sub_id: &str, _data: &[u8]) {}
+
 /// Flush all pending batches via the global manager.
+#[cfg(target_arch = "wasm32")]
 pub fn flush_all_batches() {
     with_global_batch_manager_mut(|manager| {
         manager.flush_all();
     });
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+pub fn flush_all_batches() {}
+
 /// Create a batch buffer for a subscription via the global manager.
+#[cfg(target_arch = "wasm32")]
 pub fn create_batch_buffer(sub_id: &str) {
     with_global_batch_manager_mut(|manager| {
         manager.create_buffer_for_sub(sub_id);
     });
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+pub fn create_batch_buffer(_sub_id: &str) {}
+
 /// Remove a subscription's batch buffer via the global manager.
+#[cfg(target_arch = "wasm32")]
 pub fn remove_batch_buffer(sub_id: &str) {
     with_global_batch_manager_mut(|manager| {
         manager.remove(sub_id);
     });
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+pub fn remove_batch_buffer(_sub_id: &str) {}
+
 /// Flush a specific subscription's batch buffer via the global manager.
+#[cfg(target_arch = "wasm32")]
 pub fn flush_batch(sub_id: &str) {
     with_global_batch_manager_mut(|manager| {
         manager.flush_sub(sub_id);
     });
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+pub fn flush_batch(_sub_id: &str) {}
+
 /// Default batch size threshold: 16KB
+#[cfg(target_arch = "wasm32")]
 const BATCH_SIZE_THRESHOLD: usize = 16 * 1024;
 /// Default timeout threshold: 50ms
+#[cfg(target_arch = "wasm32")]
 const BATCH_TIMEOUT_MS: u32 = 50;
 
 /// BatchBuffer accumulates events and sends them via MessagePort when thresholds are reached.
+#[cfg(target_arch = "wasm32")]
 pub struct BatchBuffer {
     /// The subscription ID this buffer belongs to
     sub_id: String,
@@ -99,6 +138,7 @@ pub struct BatchBuffer {
     port: MessagePort,
 }
 
+#[cfg(target_arch = "wasm32")]
 impl BatchBuffer {
     /// Create a new BatchBuffer for a subscription
     pub fn new(sub_id: String, port: MessagePort) -> Self {
@@ -244,11 +284,13 @@ impl BatchBuffer {
 
 /// BatchBufferManager manages BatchBuffers for multiple subscriptions.
 /// It handles periodic timeout checking and flushing.
+#[cfg(target_arch = "wasm32")]
 pub struct BatchBufferManager {
     buffers: RefCell<std::collections::HashMap<String, Rc<RefCell<BatchBuffer>>>>,
     port: MessagePort,
 }
 
+#[cfg(target_arch = "wasm32")]
 impl BatchBufferManager {
     /// Create a new BatchBufferManager with a MessagePort
     pub fn new(port: MessagePort) -> Self {

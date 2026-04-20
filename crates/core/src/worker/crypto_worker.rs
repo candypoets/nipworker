@@ -19,8 +19,10 @@ impl CryptoWorker {
 		self,
 		mut from_engine: Box<dyn WorkerChannel>,
 		mut from_parser: Box<dyn WorkerChannel>,
+		mut from_connections: Box<dyn WorkerChannel>,
 		to_main: Box<dyn WorkerChannelSender>,
 		to_parser: Box<dyn WorkerChannelSender>,
+		to_connections: Box<dyn WorkerChannelSender>,
 	) {
 		let signer_engine = self.signer.clone();
 		spawn_worker(async move {
@@ -98,7 +100,7 @@ impl CryptoWorker {
 			info!("[CryptoWorker] engine listener exiting");
 		});
 
-		let signer_parser = self.signer;
+		let signer_parser = self.signer.clone();
 		spawn_worker(async move {
 			info!("[CryptoWorker] parser listener started");
 			loop {
@@ -184,6 +186,69 @@ impl CryptoWorker {
 			}
 			info!("[CryptoWorker] parser listener exiting");
 		});
+
+		let signer_connections = self.signer;
+		spawn_worker(async move {
+			info!("[CryptoWorker] connections listener started");
+			loop {
+				match from_connections.recv().await {
+					Ok(bytes) => {
+						let req = match flatbuffers::root::<fb::SignerRequest>(&bytes) {
+							Ok(r) => r,
+							Err(e) => {
+								warn!(
+									"[CryptoWorker] failed to decode SignerRequest from connections: {}",
+									e
+								);
+								let resp = serialize_signer_response(
+									0,
+									Err(format!("decode failed: {}", e)),
+								);
+								let _ = to_connections.send(&resp);
+								continue;
+							}
+						};
+
+						let request_id = req.request_id();
+						let payload = req.payload().unwrap_or("");
+
+						let result: Result<String, String> = match req.op() {
+							fb::SignerOp::AuthEvent => {
+								match signer_connections.sign_event(payload).await {
+									Ok(signed) => {
+										if let Ok(parsed) =
+											serde_json::from_str::<serde_json::Value>(payload)
+										{
+											let relay_url =
+												parsed["relay"].as_str().unwrap_or("").to_string();
+											Ok(serde_json::json!({"event": signed, "relay": relay_url})
+												.to_string())
+										} else {
+											Ok(signed)
+										}
+									}
+									Err(e) => Err(e.to_string()),
+								}
+							}
+							_ => Err(format!(
+								"unsupported SignerOp from connections: {:?}",
+								req.op()
+							)),
+						};
+
+						let resp = serialize_signer_response(request_id, result);
+						if let Err(e) = to_connections.send(&resp) {
+							warn!(
+								"[CryptoWorker] failed to send response to connections: {}",
+								e
+							);
+						}
+					}
+					Err(_) => break,
+				}
+			}
+			info!("[CryptoWorker] connections listener exiting");
+		});
 	}
 }
 
@@ -226,7 +291,7 @@ fn serialize_signer_response(request_id: u64, result: Result<String, String>) ->
 	builder.finished_data().to_vec()
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod new_tests {
 	use super::*;
 	use crate::channel::TokioWorkerChannel;
@@ -350,14 +415,18 @@ mod new_tests {
 				let (worker_parser, _test_parser) = TokioWorkerChannel::new_pair();
 				let (mut test_main, worker_main) = TokioWorkerChannel::new_pair();
 				let (_test_parser_rx, worker_parser_tx) = TokioWorkerChannel::new_pair();
+				let (worker_connections, _test_connections) = TokioWorkerChannel::new_pair();
+				let (_test_connections_rx, worker_connections_tx) = TokioWorkerChannel::new_pair();
 
 				let signer = Arc::new(FailingJsonSigner);
 				let worker = CryptoWorker::new(signer);
 				worker.run(
 					Box::new(worker_engine),
 					Box::new(worker_parser),
+					Box::new(worker_connections),
 					worker_main.clone_sender(),
 					worker_parser_tx.clone_sender(),
+					worker_connections_tx.clone_sender(),
 				);
 
 				let template = Template {
@@ -436,14 +505,18 @@ mod new_tests {
 				let (worker_parser, mut test_parser) = TokioWorkerChannel::new_pair();
 				let (_test_main, worker_main) = TokioWorkerChannel::new_pair();
 				let (mut test_parser_rx, worker_parser_tx) = TokioWorkerChannel::new_pair();
+				let (worker_connections, _test_connections) = TokioWorkerChannel::new_pair();
+				let (_test_connections_rx, worker_connections_tx) = TokioWorkerChannel::new_pair();
 
 				let signer = Arc::new(FailingDecryptSigner);
 				let worker = CryptoWorker::new(signer);
 				worker.run(
 					Box::new(worker_engine),
 					Box::new(worker_parser),
+					Box::new(worker_connections),
 					worker_main.clone_sender(),
 					worker_parser_tx.clone_sender(),
+					worker_connections_tx.clone_sender(),
 				);
 
 				let req = build_signer_request(fb::SignerOp::Nip04Decrypt, 42, "bad_ciphertext", "pk", "", "");
@@ -515,14 +588,18 @@ mod new_tests {
 				let (worker_parser, _test_parser) = TokioWorkerChannel::new_pair();
 				let (mut test_main, worker_main) = TokioWorkerChannel::new_pair();
 				let (_test_parser_rx, worker_parser_tx) = TokioWorkerChannel::new_pair();
+				let (worker_connections, _test_connections) = TokioWorkerChannel::new_pair();
+				let (_test_connections_rx, worker_connections_tx) = TokioWorkerChannel::new_pair();
 
 				let signer = Arc::new(UnavailableSigner);
 				let worker = CryptoWorker::new(signer);
 				worker.run(
 					Box::new(worker_engine),
 					Box::new(worker_parser),
+					Box::new(worker_connections),
 					worker_main.clone_sender(),
 					worker_parser_tx.clone_sender(),
+					worker_connections_tx.clone_sender(),
 				);
 
 				let msg = build_get_public_key_main_msg();
@@ -596,14 +673,18 @@ mod new_tests {
 				let (worker_parser, mut test_parser) = TokioWorkerChannel::new_pair();
 				let (_test_main, worker_main) = TokioWorkerChannel::new_pair();
 				let (mut test_parser_rx, worker_parser_tx) = TokioWorkerChannel::new_pair();
+				let (worker_connections, _test_connections) = TokioWorkerChannel::new_pair();
+				let (_test_connections_rx, worker_connections_tx) = TokioWorkerChannel::new_pair();
 
 				let signer = Arc::new(SimpleSigner);
 				let worker = CryptoWorker::new(signer);
 				worker.run(
 					Box::new(worker_engine),
 					Box::new(worker_parser),
+					Box::new(worker_connections),
 					worker_main.clone_sender(),
 					worker_parser_tx.clone_sender(),
+					worker_connections_tx.clone_sender(),
 				);
 
 				let mut sent_ids = Vec::new();

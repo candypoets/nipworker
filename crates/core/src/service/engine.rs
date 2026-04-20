@@ -54,6 +54,7 @@ impl NostrEngine {
 		let (parser_crypto_ch, crypto_parser_ch) = TokioWorkerChannel::new_pair();
 		let (engine_crypto_ch, crypto_engine_ch) = TokioWorkerChannel::new_pair();
 		let (cache_conn_ch, conn_cache_ch) = TokioWorkerChannel::new_pair();
+		let (conn_crypto_ch, crypto_conn_ch) = TokioWorkerChannel::new_pair();
 
 		let engine_parser_tx = engine_parser_ch.clone_sender();
 		let engine_crypto_tx = engine_crypto_ch.clone_sender();
@@ -61,6 +62,8 @@ impl NostrEngine {
 		let cache_parser_tx = cache_parser_ch.clone_sender();
 		let crypto_engine_tx = crypto_engine_ch.clone_sender();
 		let crypto_parser_tx = crypto_parser_ch.clone_sender();
+		let conn_crypto_tx = conn_crypto_ch.clone_sender();
+		let crypto_conn_tx = crypto_conn_ch.clone_sender();
 
 		let (parser_main_tx, mut parser_main_rx) =
 			tokio::sync::mpsc::unbounded_channel::<(String, Vec<u8>)>();
@@ -86,6 +89,8 @@ impl NostrEngine {
 			Box::new(parser_conn_ch),
 			conn_parser_tx,
 			Box::new(conn_cache_ch),
+			Box::new(conn_crypto_ch),
+			conn_crypto_tx,
 		);
 
 		let cache_worker = CacheWorker::new(storage);
@@ -99,8 +104,10 @@ impl NostrEngine {
 		crypto_worker.run(
 			Box::new(crypto_engine_ch),
 			Box::new(crypto_parser_ch),
+			Box::new(crypto_conn_ch),
 			crypto_engine_tx,
 			crypto_parser_tx,
+			crypto_conn_tx,
 		);
 
 		let event_sink_crypto = event_sink.clone();

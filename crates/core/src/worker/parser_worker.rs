@@ -1030,7 +1030,7 @@ fn serialize_eoce() -> Vec<u8> {
     builder.finished_data().to_vec()
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use crate::channel::{ChannelPort, TokioWorkerChannel};

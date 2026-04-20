@@ -272,7 +272,7 @@ fn fb_request_to_json(fb_req: &fb::Request<'_>) -> Value {
 	Value::Object(filter)
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
 	use super::*;
 	use crate::channel::TokioWorkerChannel;
