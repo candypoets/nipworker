@@ -1,44 +1,38 @@
 use std::sync::Arc;
 use futures::channel::mpsc;
+use futures::StreamExt;
 use tracing::info;
 
-use crate::channel::{ChannelPort, WorkerChannel, WorkerChannelSender};
-#[cfg(not(target_arch = "wasm32"))]
-use crate::channel::TokioWorkerChannel;
-#[cfg(target_arch = "wasm32")]
-use crate::channel::WasmWorkerChannel;
+use crate::channel::{ChannelPort, FuturesWorkerChannel, WorkerChannel, WorkerChannelSender};
 use crate::generated::nostr::fb;
 use crate::nostr_error::{NostrError, NostrResult};
 use crate::parser::Parser;
+use crate::signer_swap::SwappableSigner;
 use crate::spawn::spawn_worker;
 use crate::traits::{RelayTransport, Signer, Storage};
 use crate::types::network::Request;
 use crate::types::nostr::Template;
-#[cfg(not(target_arch = "wasm32"))]
 use crate::worker::cache_worker::CacheWorker;
-#[cfg(not(target_arch = "wasm32"))]
 use crate::worker::connections_worker::ConnectionsWorker;
-#[cfg(not(target_arch = "wasm32"))]
 use crate::worker::crypto_worker::CryptoWorker;
-#[cfg(not(target_arch = "wasm32"))]
 use crate::worker::parser_worker::ParserWorker;
 
 /// NostrEngine is the Rust equivalent of the TypeScript NostrManager / Orchestrator.
 ///
-/// On native: it creates internal WorkerChannel pairs, spawns the 4 workers,
+/// It creates internal WorkerChannel pairs, spawns the 4 workers,
 /// and runs a main loop that forwards events to `event_sink`.
 ///
-/// On WASM (browser): it runs on the main thread and communicates with the
-/// externally-spawned Web Workers via WorkerChannels backed by MessagePorts.
+/// Works on both native (tokio) and WASM (browser) targets.
 pub struct NostrEngine {
 	parser_tx: Box<dyn WorkerChannelSender>,
 	crypto_tx: Box<dyn WorkerChannelSender>,
 	event_sink: mpsc::Sender<(String, Vec<u8>)>,
+	swappable_signer: Arc<SwappableSigner>,
 }
 
 impl NostrEngine {
-	/// Native constructor: NostrEngine is the orchestrator and spawns all workers internally.
-	#[cfg(not(target_arch = "wasm32"))]
+	/// Unified constructor: works on both native and WASM targets.
+	/// NostrEngine is the orchestrator and spawns all workers internally.
 	pub fn new(
 		transport: Arc<dyn RelayTransport>,
 		storage: Arc<dyn Storage>,
@@ -47,41 +41,40 @@ impl NostrEngine {
 	) -> Self {
 		info!("[NostrEngine] Initializing...");
 
+		let swappable_signer = Arc::new(SwappableSigner::new(signer));
+
 		// Bidirectional pairs: one end stays in the engine, the other goes to the worker.
-		let (engine_parser_ch, parser_engine_ch) = TokioWorkerChannel::new_pair();
-		let (parser_conn_ch, conn_parser_ch) = TokioWorkerChannel::new_pair();
-		let (parser_cache_ch, cache_parser_ch) = TokioWorkerChannel::new_pair();
-		let (parser_crypto_ch, crypto_parser_ch) = TokioWorkerChannel::new_pair();
-		let (engine_crypto_ch, crypto_engine_ch) = TokioWorkerChannel::new_pair();
-		let (cache_conn_ch, conn_cache_ch) = TokioWorkerChannel::new_pair();
-		let (conn_crypto_ch, crypto_conn_ch) = TokioWorkerChannel::new_pair();
+		let (engine_parser_ch, parser_engine_ch) = FuturesWorkerChannel::new_pair();
+		let (parser_conn_ch, conn_parser_ch) = FuturesWorkerChannel::new_pair();
+		let (parser_cache_ch, cache_parser_ch) = FuturesWorkerChannel::new_pair();
+		let (parser_crypto_ch, crypto_parser_ch) = FuturesWorkerChannel::new_pair();
+		let (engine_crypto_ch, crypto_engine_ch) = FuturesWorkerChannel::new_pair();
+		let (cache_conn_ch, conn_cache_ch) = FuturesWorkerChannel::new_pair();
+		let (conn_crypto_ch, crypto_conn_ch) = FuturesWorkerChannel::new_pair();
 
 		let engine_parser_tx = engine_parser_ch.clone_sender();
 		let engine_crypto_tx = engine_crypto_ch.clone_sender();
-		let conn_parser_tx = conn_parser_ch.clone_sender();
+		let conn_parser_tx = parser_conn_ch.clone_sender();
 		let cache_parser_tx = cache_parser_ch.clone_sender();
 		let crypto_engine_tx = crypto_engine_ch.clone_sender();
 		let crypto_parser_tx = crypto_parser_ch.clone_sender();
 		let conn_crypto_tx = conn_crypto_ch.clone_sender();
 		let crypto_conn_tx = crypto_conn_ch.clone_sender();
 
-		let (parser_main_tx, mut parser_main_rx) =
-			tokio::sync::mpsc::unbounded_channel::<(String, Vec<u8>)>();
+		let (mut to_main_ch, from_parser_ch) = FuturesWorkerChannel::new_pair();
 
 		let crypto_client = crate::crypto_client::CryptoClient::new(Box::new(parser_crypto_ch));
 		let parser = Arc::new(Parser::new(Some(Arc::new(crypto_client))));
 
-
-
 		let parser_worker = ParserWorker::new(
 			parser.clone(),
 			Arc::new(ChannelPort::new(parser_cache_ch.clone_sender())),
-			parser_main_tx,
+			from_parser_ch.clone_sender(),
 		);
 		parser_worker.run(
 			Box::new(parser_engine_ch),
 			Box::new(conn_parser_ch),
-			Box::new(cache_parser_ch),
+			Box::new(parser_cache_ch),
 		);
 
 		let connections_worker = ConnectionsWorker::new(transport);
@@ -95,12 +88,12 @@ impl NostrEngine {
 
 		let cache_worker = CacheWorker::new(storage);
 		cache_worker.run(
-			Box::new(parser_cache_ch),
+			Box::new(cache_parser_ch),
 			cache_parser_tx,
 			cache_conn_ch.clone_sender(),
 		);
 
-		let crypto_worker = CryptoWorker::new(signer);
+		let crypto_worker = CryptoWorker::new(swappable_signer.clone());
 		crypto_worker.run(
 			Box::new(crypto_engine_ch),
 			Box::new(crypto_parser_ch),
@@ -128,18 +121,22 @@ impl NostrEngine {
 
 		let event_sink_clone = event_sink.clone();
 		spawn_worker(async move {
+			let mut ch = to_main_ch;
 			loop {
-				tokio::select! {
-					some = parser_main_rx.recv() => {
-						match some {
-							Some((sub_id, bytes)) => {
-								if let Err(e) = event_sink_clone.clone().try_send((sub_id, bytes)) {
+				match ch.recv().await {
+					Ok(bytes) => {
+						match crate::worker::parser_worker::decode_tagged(&bytes) {
+							Some((sub_id, data)) => {
+								if let Err(e) = event_sink_clone.clone().try_send((sub_id, data)) {
 									tracing::warn!("Failed to forward parser event to sink: {}", e);
 								}
 							}
-							None => break,
+							None => {
+								tracing::warn!("Failed to decode tagged message from parser");
+							}
 						}
 					}
+					Err(_) => break,
 				}
 			}
 			info!("[NostrEngine] main loop exiting");
@@ -149,84 +146,13 @@ impl NostrEngine {
 			parser_tx: engine_parser_tx,
 			crypto_tx: engine_crypto_tx,
 			event_sink,
+			swappable_signer,
 		}
 	}
 
-	/// WASM constructor: NostrEngine runs on the main thread and receives
-	/// WorkerChannels (backed by MessagePorts) for each worker link.
-	#[cfg(target_arch = "wasm32")]
-	pub fn new(
-		mut parser_main: Box<dyn WorkerChannel>,
-		mut connections_main: Box<dyn WorkerChannel>,
-		mut crypto_main: Box<dyn WorkerChannel>,
-		event_sink: mpsc::Sender<(String, Vec<u8>)>,
-	) -> Self {
-		info!("[NostrEngine] Initializing (WASM)...");
-
-		let parser_tx = parser_main.clone_sender();
-		let crypto_tx = crypto_main.clone_sender();
-
-		let (tx, mut rx) = futures::channel::mpsc::unbounded::<(String, Vec<u8>)>();
-
-		let parser_tx_forward = tx.clone();
-		spawn_worker(async move {
-			loop {
-				match parser_main.recv().await {
-					Ok(bytes) => {
-						if parser_tx_forward.unbounded_send(("parser".to_string(), bytes)).is_err() {
-							break;
-						}
-					}
-					Err(_) => break,
-				}
-			}
-		});
-
-		let connections_tx_forward = tx.clone();
-		spawn_worker(async move {
-			loop {
-				match connections_main.recv().await {
-					Ok(bytes) => {
-						if connections_tx_forward.unbounded_send(("connections".to_string(), bytes)).is_err() {
-							break;
-						}
-					}
-					Err(_) => break,
-				}
-			}
-		});
-
-		let crypto_tx_forward = tx.clone();
-		spawn_worker(async move {
-			loop {
-				match crypto_main.recv().await {
-					Ok(bytes) => {
-						if crypto_tx_forward.unbounded_send(("crypto".to_string(), bytes)).is_err() {
-							break;
-						}
-					}
-					Err(_) => break,
-				}
-			}
-		});
-
-		drop(tx);
-
-		spawn_worker(async move {
-			use futures::StreamExt;
-			while let Some((origin, bytes)) = rx.next().await {
-				if let Err(e) = event_sink.clone().try_send((origin.to_string(), bytes)) {
-					tracing::warn!("Failed to forward {} event: {}", origin, e);
-				}
-			}
-			info!("[NostrEngine] WASM main loop exiting");
-		});
-
-		Self {
-			parser_tx,
-			crypto_tx,
-			event_sink: futures::channel::mpsc::channel(1).0,
-		}
+	/// Set a new signer at runtime.
+	pub async fn set_signer(&self, signer: Arc<dyn Signer>) {
+		self.swappable_signer.set(signer).await;
 	}
 
 	/// Deserialize a FlatBuffers MainMessage and dispatch to the appropriate worker.
@@ -364,7 +290,7 @@ impl NostrEngine {
 	}
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
 	use super::*;
 	use crate::traits::{RelayTransport, Storage, Signer, TransportError, TransportStatus, StorageError};
@@ -405,6 +331,20 @@ mod tests {
 
 		fn get_sent_frames(&self) -> Vec<(String, String)> {
 			self.sent_frames.lock().unwrap().clone()
+		}
+
+		fn invoke_message_callback(&self, url: &str, msg: String) {
+			let cbs = self.message_callbacks.read().unwrap();
+			if let Some(cb) = cbs.get(url) {
+				cb(msg);
+			}
+		}
+
+		fn invoke_status_callback(&self, url: &str, status: TransportStatus) {
+			let cbs = self.status_callbacks.read().unwrap();
+			if let Some(cb) = cbs.get(url) {
+				cb(status);
+			}
 		}
 	}
 
@@ -664,7 +604,96 @@ mod tests {
 	}
 
 	// ============================================================================
-	// Test 3: Publish Flow Engine to Connections
+	// Test 3: Cache Persist + Cache-Only Retrieval
+	// ============================================================================
+
+	#[tokio::test]
+	async fn test_cache_persist_and_cache_only_retrieval() {
+		let local = LocalSet::new();
+		local.run_until(async {
+			let transport = Arc::new(MockRelayTransport::new());
+			let storage = Arc::new(MockStorage::new());
+			let signer = Arc::new(MockSigner::new(
+				"0000000000000000000000000000000000000000000000000000000000000001",
+				"0000000000000000000000000000000000000000000000000000000000000002",
+			));
+
+			let (event_sink_tx, mut event_sink_rx) = futures::channel::mpsc::channel::<(String, Vec<u8>)>(100);
+
+			let engine = NostrEngine::new(
+				transport.clone(),
+				storage.clone(),
+				signer.clone(),
+				event_sink_tx,
+			);
+
+			// Subscribe (normal, network allowed)
+			let sub_id = "sub1";
+			let request = Request {
+				relays: vec!["wss://r".to_string()],
+				..Default::default()
+			};
+			let result = engine.subscribe(sub_id.to_string(), vec![request]).await;
+			assert!(result.is_ok(), "subscribe should succeed");
+
+			// Yield to let connections worker connect and register callback
+			for _ in 0..6 {
+				tokio::task::yield_now().await;
+			}
+
+			// Inject a valid kind-1 EVENT from the relay
+			let event_json = r#"["EVENT","sub1",{"id":"0000000000000000000000000000000000000000000000000000000000000001","pubkey":"0000000000000000000000000000000000000000000000000000000000000001","created_at":1234567890,"kind":1,"tags":[],"content":"hello","sig":"00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001"}]"#;
+			transport.invoke_message_callback("wss://r", event_json.to_string());
+
+			// Yield to let event flow through pipeline (parse -> save_to_db -> serialize -> main)
+			for _ in 0..10 {
+				tokio::task::yield_now().await;
+			}
+
+			// Events should have been persisted to cache
+			let persisted = storage.get_persisted();
+			assert!(
+				!persisted.is_empty(),
+				"Events should be persisted to cache, got {} events",
+				persisted.len()
+			);
+
+			// Drain event sink to clear sub1 events
+			while let Ok(Some(_)) = event_sink_rx.try_next() {}
+
+			// Now subscribe again with cache_only
+			let sub2_id = "sub2";
+			let request2 = Request {
+				relays: vec!["wss://r".to_string()],
+				cache_only: true,
+				..Default::default()
+			};
+			let result2 = engine.subscribe(sub2_id.to_string(), vec![request2]).await;
+			assert!(result2.is_ok(), "cache_only subscribe should succeed");
+
+			// Yield to let cache worker process the query
+			for _ in 0..10 {
+				tokio::task::yield_now().await;
+			}
+
+			// Collect events for sub2
+			let mut sub2_events = Vec::new();
+			while let Ok(Some((sid, bytes))) = event_sink_rx.try_next() {
+				if sid == sub2_id {
+					sub2_events.push(bytes);
+				}
+			}
+
+			assert!(
+				!sub2_events.is_empty(),
+				"cache_only subscription should receive cached events, got {} events",
+				sub2_events.len()
+			);
+		}).await;
+	}
+
+	// ============================================================================
+	// Test 4: Publish Flow Engine to Connections
 	// ============================================================================
 
 	#[tokio::test]

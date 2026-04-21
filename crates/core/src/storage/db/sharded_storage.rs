@@ -8,7 +8,7 @@ const SHARD_BITS: u32 = 8;
 const INNER_BITS: u32 = 64 - SHARD_BITS;
 const INNER_MASK: u64 = (1u64 << INNER_BITS) - 1;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ShardId {
     Default = 0,
     Kind0 = 1,
@@ -165,7 +165,7 @@ impl ShardedRingBufferStorage {
         Self::new(shards, ShardId::Default, router)
     }
 
-    fn shard_for_kind(&self, kind: u32) -> ShardId {
+    pub fn shard_for_kind(&self, kind: u32) -> ShardId {
         ShardId::from_kind(kind)
     }
 
@@ -190,6 +190,46 @@ impl ShardedRingBufferStorage {
         let storage = self.get_shard_storage(shard)?;
         let inner = storage.add_event_data(event_data).await?;
         Ok(pack_offset(shard, inner))
+    }
+}
+
+impl ShardedRingBufferStorage {
+    /// Save all shards' buffer contents to a HashMap.
+    /// Returns a map from ShardId to raw bytes for each shard.
+    pub fn save_all_shards(&self) -> std::collections::HashMap<ShardId, Vec<u8>> {
+        let mut result = std::collections::HashMap::new();
+        for (shard_id, storage) in &self.shards {
+            let bytes = storage.save_to_bytes();
+            if !bytes.is_empty() {
+                result.insert(*shard_id, bytes);
+            }
+        }
+        result
+    }
+
+    /// Load all shards from a HashMap of bytes.
+    /// The input should come from a previous `save_all_shards` call.
+    pub fn load_all_shards(
+        &self,
+        shard_bytes: &std::collections::HashMap<ShardId, Vec<u8>>,
+    ) -> Result<(), DatabaseError> {
+        for (shard_id, bytes) in shard_bytes {
+            let storage = self.get_shard_storage(*shard_id)?;
+            storage
+                .load_from_bytes(bytes)
+                .map_err(|e| DatabaseError::StorageError(format!("Shard {:?}: {}", shard_id, e)))?;
+        }
+        Ok(())
+    }
+
+    /// Get the db_name used by all shards (for IndexedDB persistence).
+    pub fn db_name(&self) -> &str {
+        // All shards share the same db_name, get from the first one
+        self.shards
+            .values()
+            .next()
+            .map(|s| s.db_name())
+            .unwrap_or("")
     }
 }
 

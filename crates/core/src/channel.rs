@@ -36,6 +36,81 @@ pub trait WorkerChannel {
 	fn clone_sender(&self) -> Box<dyn WorkerChannelSender>;
 }
 
+// ============== Cross-platform Implementation ==============
+
+pub struct FuturesWorkerChannel {
+	sender: futures::channel::mpsc::UnboundedSender<Vec<u8>>,
+	receiver: futures::channel::mpsc::UnboundedReceiver<Vec<u8>>,
+}
+
+impl FuturesWorkerChannel {
+	pub fn new_pair() -> (Self, Self) {
+		let (tx_a, rx_a) = futures::channel::mpsc::unbounded();
+		let (tx_b, rx_b) = futures::channel::mpsc::unbounded();
+		(
+			Self {
+				sender: tx_a,
+				receiver: rx_b,
+			},
+			Self {
+				sender: tx_b,
+				receiver: rx_a,
+			},
+		)
+	}
+}
+
+impl WorkerChannelSender for futures::channel::mpsc::UnboundedSender<Vec<u8>> {
+	fn send(&self, bytes: &[u8]) -> Result<(), ChannelError> {
+		self.unbounded_send(bytes.to_vec())
+			.map_err(|_| ChannelError::ChannelClosed)
+	}
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[async_trait::async_trait]
+impl WorkerChannel for FuturesWorkerChannel {
+	async fn recv(&mut self) -> Result<Vec<u8>, ChannelError> {
+		use futures::StreamExt;
+		self.receiver
+			.next()
+			.await
+			.ok_or(ChannelError::ChannelClosed)
+	}
+
+	async fn send(&self, bytes: &[u8]) -> Result<(), ChannelError> {
+		self.sender
+			.unbounded_send(bytes.to_vec())
+			.map_err(|_| ChannelError::ChannelClosed)
+	}
+
+	fn clone_sender(&self) -> Box<dyn WorkerChannelSender> {
+		Box::new(self.sender.clone())
+	}
+}
+
+#[cfg(target_arch = "wasm32")]
+#[async_trait::async_trait(?Send)]
+impl WorkerChannel for FuturesWorkerChannel {
+	async fn recv(&mut self) -> Result<Vec<u8>, ChannelError> {
+		use futures::StreamExt;
+		self.receiver
+			.next()
+			.await
+			.ok_or(ChannelError::ChannelClosed)
+	}
+
+	async fn send(&self, bytes: &[u8]) -> Result<(), ChannelError> {
+		self.sender
+			.unbounded_send(bytes.to_vec())
+			.map_err(|_| ChannelError::ChannelClosed)
+	}
+
+	fn clone_sender(&self) -> Box<dyn WorkerChannelSender> {
+		Box::new(self.sender.clone())
+	}
+}
+
 // ============== Native Implementation ==============
 
 #[cfg(not(target_arch = "wasm32"))]

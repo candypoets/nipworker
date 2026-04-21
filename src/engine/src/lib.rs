@@ -1,6 +1,7 @@
 use futures::channel::mpsc;
 use futures::StreamExt;
 use js_sys::{ArrayBuffer, Uint8Array};
+use nipworker_core::generated::nostr::fb;
 use nipworker_core::service::engine::NostrEngine;
 use nipworker_core::traits::Signer;
 use std::cell::RefCell;
@@ -11,12 +12,14 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 use web_sys::{MessageEvent, MessagePort};
 
+mod idb_utils;
+mod ring_buffer_persist;
 mod signer;
 mod storage;
 mod transport;
 
 use signer::{LocalSigner, ProxySigner};
-use storage::IndexedDbStorage;
+use storage::NostrDbStorage;
 use transport::WebSocketTransport;
 
 fn into_dyn_signer(signer: Arc<LocalSigner>) -> Arc<dyn Signer> {
@@ -41,10 +44,11 @@ impl NipworkerEngine {
 	#[wasm_bindgen(constructor)]
 	pub fn new(port: MessagePort) -> Self {
 		console_error_panic_hook::set_once();
+		tracing_wasm::set_as_global_default();
 		info!("[nipworker-engine] Initializing WASM engine...");
 
 		let transport = Arc::new(WebSocketTransport::new());
-		let storage = Arc::new(IndexedDbStorage::new());
+		let storage = Arc::new(NostrDbStorage::new(8 * 1024 * 1024)); // 8MB default ring buffer
 		let signer = Arc::new(LocalSigner::new());
 		let signer_for_engine = into_dyn_signer(Arc::clone(&signer));
 

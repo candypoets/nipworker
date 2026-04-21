@@ -113,6 +113,28 @@ impl Signer for LocalSigner {
 			"NIP-44 decrypt not implemented in engine signer".to_string(),
 		))
 	}
+
+	async fn nip04_decrypt_between(
+		&self,
+		_sender: &str,
+		_recipient: &str,
+		_ciphertext: &str,
+	) -> Result<String, SignerError> {
+		Err(SignerError::Other(
+			"NIP-04 decrypt_between not implemented in engine signer".to_string(),
+		))
+	}
+
+	async fn nip44_decrypt_between(
+		&self,
+		_sender: &str,
+		_recipient: &str,
+		_ciphertext: &str,
+	) -> Result<String, SignerError> {
+		Err(SignerError::Other(
+			"NIP-44 decrypt_between not implemented in engine signer".to_string(),
+		))
+	}
 }
 
 /// Proxy signer that forwards crypto operations to the main thread via MessagePort.
@@ -196,6 +218,32 @@ impl Signer for ProxySigner {
 		self.call(
 			"nip44_decrypt",
 			serde_json::json!({ "peer": peer, "ciphertext": ciphertext }),
+		)
+		.await
+	}
+
+	async fn nip04_decrypt_between(
+		&self,
+		sender: &str,
+		recipient: &str,
+		ciphertext: &str,
+	) -> Result<String, SignerError> {
+		self.call(
+			"nip04_decrypt_between",
+			serde_json::json!({ "sender": sender, "recipient": recipient, "ciphertext": ciphertext }),
+		)
+		.await
+	}
+
+	async fn nip44_decrypt_between(
+		&self,
+		sender: &str,
+		recipient: &str,
+		ciphertext: &str,
+	) -> Result<String, SignerError> {
+		self.call(
+			"nip44_decrypt_between",
+			serde_json::json!({ "sender": sender, "recipient": recipient, "ciphertext": ciphertext }),
 		)
 		.await
 	}

@@ -8224,6 +8224,7 @@ impl<'a> Request<'a> {
   pub const VT_CACHE_FIRST: flatbuffers::VOffsetT = 24;
   pub const VT_NO_CACHE: flatbuffers::VOffsetT = 26;
   pub const VT_MAX_RELAYS: flatbuffers::VOffsetT = 28;
+  pub const VT_CACHE_ONLY: flatbuffers::VOffsetT = 30;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -8245,6 +8246,7 @@ impl<'a> Request<'a> {
     if let Some(x) = args.authors { builder.add_authors(x); }
     if let Some(x) = args.ids { builder.add_ids(x); }
     builder.add_max_relays(args.max_relays);
+    builder.add_cache_only(args.cache_only);
     builder.add_no_cache(args.no_cache);
     builder.add_cache_first(args.cache_first);
     builder.add_close_on_eose(args.close_on_eose);
@@ -8277,6 +8279,7 @@ impl<'a> Request<'a> {
     let cache_first = self.cache_first();
     let no_cache = self.no_cache();
     let max_relays = self.max_relays();
+    let cache_only = self.cache_only();
     RequestT {
       ids,
       authors,
@@ -8291,6 +8294,7 @@ impl<'a> Request<'a> {
       cache_first,
       no_cache,
       max_relays,
+      cache_only,
     }
   }
 
@@ -8385,6 +8389,13 @@ impl<'a> Request<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<u16>(Request::VT_MAX_RELAYS, Some(0)).unwrap()}
   }
+  #[inline]
+  pub fn cache_only(&self) -> bool {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<bool>(Request::VT_CACHE_ONLY, Some(false)).unwrap()}
+  }
 }
 
 impl flatbuffers::Verifiable for Request<'_> {
@@ -8407,6 +8418,7 @@ impl flatbuffers::Verifiable for Request<'_> {
      .visit_field::<bool>("cache_first", Self::VT_CACHE_FIRST, false)?
      .visit_field::<bool>("no_cache", Self::VT_NO_CACHE, false)?
      .visit_field::<u16>("max_relays", Self::VT_MAX_RELAYS, false)?
+     .visit_field::<bool>("cache_only", Self::VT_CACHE_ONLY, false)?
      .finish();
     Ok(())
   }
@@ -8425,6 +8437,7 @@ pub struct RequestArgs<'a> {
     pub cache_first: bool,
     pub no_cache: bool,
     pub max_relays: u16,
+    pub cache_only: bool,
 }
 impl<'a> Default for RequestArgs<'a> {
   #[inline]
@@ -8443,6 +8456,7 @@ impl<'a> Default for RequestArgs<'a> {
       cache_first: false,
       no_cache: false,
       max_relays: 0,
+      cache_only: false,
     }
   }
 }
@@ -8505,6 +8519,10 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> RequestBuilder<'a, 'b, A> {
     self.fbb_.push_slot::<u16>(Request::VT_MAX_RELAYS, max_relays, 0);
   }
   #[inline]
+  pub fn add_cache_only(&mut self, cache_only: bool) {
+    self.fbb_.push_slot::<bool>(Request::VT_CACHE_ONLY, cache_only, false);
+  }
+  #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> RequestBuilder<'a, 'b, A> {
     let start = _fbb.start_table();
     RequestBuilder {
@@ -8535,6 +8553,7 @@ impl core::fmt::Debug for Request<'_> {
       ds.field("cache_first", &self.cache_first());
       ds.field("no_cache", &self.no_cache());
       ds.field("max_relays", &self.max_relays());
+      ds.field("cache_only", &self.cache_only());
       ds.finish()
   }
 }
@@ -8554,6 +8573,7 @@ pub struct RequestT {
   pub cache_first: bool,
   pub no_cache: bool,
   pub max_relays: u16,
+  pub cache_only: bool,
 }
 impl Default for RequestT {
   fn default() -> Self {
@@ -8571,6 +8591,7 @@ impl Default for RequestT {
       cache_first: false,
       no_cache: false,
       max_relays: 0,
+      cache_only: false,
     }
   }
 }
@@ -8604,6 +8625,7 @@ impl RequestT {
     let cache_first = self.cache_first;
     let no_cache = self.no_cache;
     let max_relays = self.max_relays;
+    let cache_only = self.cache_only;
     Request::create(_fbb, &RequestArgs{
       ids,
       authors,
@@ -8618,6 +8640,7 @@ impl RequestT {
       cache_first,
       no_cache,
       max_relays,
+      cache_only,
     })
   }
 }
@@ -10936,6 +10959,7 @@ impl<'a> SubscriptionConfig<'a> {
   pub const VT_BYTES_PER_EVENT: flatbuffers::VOffsetT = 18;
   pub const VT_IS_SLOW: flatbuffers::VOffsetT = 20;
   pub const VT_PAGINATION: flatbuffers::VOffsetT = 22;
+  pub const VT_CACHE_ONLY: flatbuffers::VOffsetT = 24;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -10952,6 +10976,7 @@ impl<'a> SubscriptionConfig<'a> {
     builder.add_bytes_per_event(args.bytes_per_event);
     builder.add_max_events(args.max_events);
     if let Some(x) = args.pipeline { builder.add_pipeline(x); }
+    builder.add_cache_only(args.cache_only);
     builder.add_is_slow(args.is_slow);
     builder.add_force(args.force);
     builder.add_skip_cache(args.skip_cache);
@@ -10975,6 +11000,7 @@ impl<'a> SubscriptionConfig<'a> {
     let pagination = self.pagination().map(|x| {
       x.to_string()
     });
+    let cache_only = self.cache_only();
     SubscriptionConfigT {
       pipeline,
       close_on_eose,
@@ -10986,6 +11012,7 @@ impl<'a> SubscriptionConfig<'a> {
       bytes_per_event,
       is_slow,
       pagination,
+      cache_only,
     }
   }
 
@@ -11059,6 +11086,13 @@ impl<'a> SubscriptionConfig<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(SubscriptionConfig::VT_PAGINATION, None)}
   }
+  #[inline]
+  pub fn cache_only(&self) -> bool {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<bool>(SubscriptionConfig::VT_CACHE_ONLY, Some(false)).unwrap()}
+  }
 }
 
 impl flatbuffers::Verifiable for SubscriptionConfig<'_> {
@@ -11078,6 +11112,7 @@ impl flatbuffers::Verifiable for SubscriptionConfig<'_> {
      .visit_field::<u32>("bytes_per_event", Self::VT_BYTES_PER_EVENT, false)?
      .visit_field::<bool>("is_slow", Self::VT_IS_SLOW, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("pagination", Self::VT_PAGINATION, false)?
+     .visit_field::<bool>("cache_only", Self::VT_CACHE_ONLY, false)?
      .finish();
     Ok(())
   }
@@ -11093,6 +11128,7 @@ pub struct SubscriptionConfigArgs<'a> {
     pub bytes_per_event: u32,
     pub is_slow: bool,
     pub pagination: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub cache_only: bool,
 }
 impl<'a> Default for SubscriptionConfigArgs<'a> {
   #[inline]
@@ -11108,6 +11144,7 @@ impl<'a> Default for SubscriptionConfigArgs<'a> {
       bytes_per_event: 0,
       is_slow: false,
       pagination: None,
+      cache_only: false,
     }
   }
 }
@@ -11158,6 +11195,10 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> SubscriptionConfigBuilder<'a, '
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(SubscriptionConfig::VT_PAGINATION, pagination);
   }
   #[inline]
+  pub fn add_cache_only(&mut self, cache_only: bool) {
+    self.fbb_.push_slot::<bool>(SubscriptionConfig::VT_CACHE_ONLY, cache_only, false);
+  }
+  #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> SubscriptionConfigBuilder<'a, 'b, A> {
     let start = _fbb.start_table();
     SubscriptionConfigBuilder {
@@ -11185,6 +11226,7 @@ impl core::fmt::Debug for SubscriptionConfig<'_> {
       ds.field("bytes_per_event", &self.bytes_per_event());
       ds.field("is_slow", &self.is_slow());
       ds.field("pagination", &self.pagination());
+      ds.field("cache_only", &self.cache_only());
       ds.finish()
   }
 }
@@ -11201,6 +11243,7 @@ pub struct SubscriptionConfigT {
   pub bytes_per_event: u32,
   pub is_slow: bool,
   pub pagination: Option<String>,
+  pub cache_only: bool,
 }
 impl Default for SubscriptionConfigT {
   fn default() -> Self {
@@ -11215,6 +11258,7 @@ impl Default for SubscriptionConfigT {
       bytes_per_event: 0,
       is_slow: false,
       pagination: None,
+      cache_only: false,
     }
   }
 }
@@ -11237,6 +11281,7 @@ impl SubscriptionConfigT {
     let pagination = self.pagination.as_ref().map(|x|{
       _fbb.create_string(x)
     });
+    let cache_only = self.cache_only;
     SubscriptionConfig::create(_fbb, &SubscriptionConfigArgs{
       pipeline,
       close_on_eose,
@@ -11248,6 +11293,7 @@ impl SubscriptionConfigT {
       bytes_per_event,
       is_slow,
       pagination,
+      cache_only,
     })
   }
 }

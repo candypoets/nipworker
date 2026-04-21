@@ -264,7 +264,8 @@ export class EngineManager {
 			options.force,
 			options.bytesPerEvent,
 			options.isSlow,
-			options.pagination ? this.textEncoder.encode(options.pagination) : null
+			options.pagination ? this.textEncoder.encode(options.pagination) : null,
+			options.cacheOnly
 		);
 
 		const subscribeT = new SubscribeT(
@@ -285,7 +286,9 @@ export class EngineManager {
 						r.relays,
 						r.closeOnEOSE,
 						r.cacheFirst,
-						r.noCache
+						r.noCache,
+						undefined,
+						options.cacheOnly
 					)
 			),
 			optionsT

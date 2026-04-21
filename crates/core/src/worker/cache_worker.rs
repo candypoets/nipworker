@@ -127,6 +127,9 @@ impl CacheWorker {
 								if request.cache_first && !events.is_empty() {
 									skip_req_indices.insert(i);
 								}
+								if request.cache_only {
+									skip_req_indices.insert(i);
+								}
 								all_cached_events.extend(events);
 							}
 							Err(e) => warn!("[CacheWorker] query failed: {}", e),

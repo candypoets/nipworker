@@ -31,6 +31,8 @@ pub struct Request {
     pub no_cache: bool,
 
     pub max_relays: u32,
+
+    pub cache_only: bool,
 }
 
 impl Request {
@@ -92,6 +94,7 @@ impl Request {
             cache_first: fb_req.cache_first(),
             no_cache: fb_req.no_cache(),
             max_relays: fb_req.max_relays() as u32,
+            cache_only: fb_req.cache_only(),
         }
     }
 
@@ -174,6 +177,7 @@ impl Request {
                 cache_first: self.cache_first,
                 no_cache: self.no_cache,
                 max_relays: self.max_relays as u16,
+                cache_only: self.cache_only,
             },
         )
     }

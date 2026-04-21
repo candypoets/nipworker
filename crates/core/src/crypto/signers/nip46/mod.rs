@@ -350,16 +350,10 @@ impl Nip46Signer {
     }
 
     fn unix_time() -> u32 {
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs() as u32
+        crate::platform::now_millis() as u32 / 1000
     }
 
     fn unix_time_ms() -> f64 {
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as f64
+        crate::platform::now_millis() as f64
     }
 }

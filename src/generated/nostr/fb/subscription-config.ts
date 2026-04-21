@@ -77,8 +77,13 @@ pagination(optionalEncoding?:any):string|Uint8Array|null {
   return offset ? this.bb!.__string(this.bb_pos + offset, optionalEncoding) : null;
 }
 
+cacheOnly():boolean {
+  const offset = this.bb!.__offset(this.bb_pos, 24);
+  return offset ? !!this.bb!.readInt8(this.bb_pos + offset) : false;
+}
+
 static startSubscriptionConfig(builder:flatbuffers.Builder) {
-  builder.startObject(10);
+  builder.startObject(11);
 }
 
 static addPipeline(builder:flatbuffers.Builder, pipelineOffset:flatbuffers.Offset) {
@@ -121,12 +126,16 @@ static addPagination(builder:flatbuffers.Builder, paginationOffset:flatbuffers.O
   builder.addFieldOffset(9, paginationOffset, 0);
 }
 
+static addCacheOnly(builder:flatbuffers.Builder, cacheOnly:boolean) {
+  builder.addFieldInt8(10, +cacheOnly, +false);
+}
+
 static endSubscriptionConfig(builder:flatbuffers.Builder):flatbuffers.Offset {
   const offset = builder.endObject();
   return offset;
 }
 
-static createSubscriptionConfig(builder:flatbuffers.Builder, pipelineOffset:flatbuffers.Offset, closeOnEose:boolean, cacheFirst:boolean, timeoutMs:bigint, maxEvents:number, skipCache:boolean, force:boolean, bytesPerEvent:number, isSlow:boolean, paginationOffset:flatbuffers.Offset):flatbuffers.Offset {
+static createSubscriptionConfig(builder:flatbuffers.Builder, pipelineOffset:flatbuffers.Offset, closeOnEose:boolean, cacheFirst:boolean, timeoutMs:bigint, maxEvents:number, skipCache:boolean, force:boolean, bytesPerEvent:number, isSlow:boolean, paginationOffset:flatbuffers.Offset, cacheOnly:boolean):flatbuffers.Offset {
   SubscriptionConfig.startSubscriptionConfig(builder);
   SubscriptionConfig.addPipeline(builder, pipelineOffset);
   SubscriptionConfig.addCloseOnEose(builder, closeOnEose);
@@ -138,6 +147,7 @@ static createSubscriptionConfig(builder:flatbuffers.Builder, pipelineOffset:flat
   SubscriptionConfig.addBytesPerEvent(builder, bytesPerEvent);
   SubscriptionConfig.addIsSlow(builder, isSlow);
   SubscriptionConfig.addPagination(builder, paginationOffset);
+  SubscriptionConfig.addCacheOnly(builder, cacheOnly);
   return SubscriptionConfig.endSubscriptionConfig(builder);
 }
 
@@ -152,7 +162,8 @@ unpack(): SubscriptionConfigT {
     this.force(),
     this.bytesPerEvent(),
     this.isSlow(),
-    this.pagination()
+    this.pagination(),
+    this.cacheOnly()
   );
 }
 
@@ -168,6 +179,7 @@ unpackTo(_o: SubscriptionConfigT): void {
   _o.bytesPerEvent = this.bytesPerEvent();
   _o.isSlow = this.isSlow();
   _o.pagination = this.pagination();
+  _o.cacheOnly = this.cacheOnly();
 }
 }
 
@@ -182,7 +194,8 @@ constructor(
   public force: boolean = false,
   public bytesPerEvent: number = 0,
   public isSlow: boolean = false,
-  public pagination: string|Uint8Array|null = null
+  public pagination: string|Uint8Array|null = null,
+  public cacheOnly: boolean = false
 ){}
 
 
@@ -200,7 +213,8 @@ pack(builder:flatbuffers.Builder): flatbuffers.Offset {
     this.force,
     this.bytesPerEvent,
     this.isSlow,
-    pagination
+    pagination,
+    this.cacheOnly
   );
 }
 }

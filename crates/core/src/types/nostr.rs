@@ -905,11 +905,7 @@ pub const DELETION: Kind = EVENT_DELETION;
 
 // Timestamp helper
 pub fn timestamp_now() -> Timestamp {
-	use std::time::{SystemTime, UNIX_EPOCH};
-	SystemTime::now()
-		.duration_since(UNIX_EPOCH)
-		.unwrap_or_default()
-		.as_secs()
+	(crate::platform::now_millis() / 1000) as Timestamp
 }
 
 // ============================================================================

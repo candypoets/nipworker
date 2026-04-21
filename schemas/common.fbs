@@ -189,6 +189,7 @@ table Request {
   cache_first: bool;
   no_cache: bool;
   max_relays: ushort;
+  cache_only: bool;
 }
 
 table NostrEvent {

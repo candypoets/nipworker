@@ -1,3 +1,4 @@
+use crate::platform::now_millis;
 use crate::storage::db::sharded_storage::ShardedRingBufferStorage;
 use crate::storage::db::types::{
     intersect_event_sets, DatabaseConfig, DatabaseError, DatabaseIndexes, EventStorage,
@@ -98,8 +99,73 @@ impl<S: EventStorage> NostrDB<S> {
             .unwrap_or_else(|_| panic!("Lock poisoned"))
     }
 
+    /// Get a reference to the underlying storage
+    pub fn storage(&self) -> &S {
+        &self.storage
+    }
+
     pub async fn add_worker_message_bytes(&self, bytes: &[u8]) -> Result<()> {
-        // Try ParsedEvent first
+        // Try WorkerMessage first (SaveToDbPipe sends this format)
+        if let Ok(worker_msg) = flatbuffers::root::<WorkerMessage>(bytes) {
+            let msg_type = worker_msg.type_();
+            
+            // Log shard routing for verification
+            if let Some(sharded) = self.storage.as_any().downcast_ref::<ShardedRingBufferStorage>() {
+                if let Some(parsed) = worker_msg.content_as_parsed_event() {
+                    let kind = parsed.kind() as u32;
+                    let shard = sharded.shard_for_kind(kind);
+                    info!("[NostrDB] Storing kind={} -> shard={:?}", kind, shard);
+                } else if let Some(nostr) = worker_msg.content_as_nostr_event() {
+                    let kind = nostr.kind() as u32;
+                    let shard = sharded.shard_for_kind(kind);
+                    info!("[NostrDB] Storing kind={} -> shard={:?}", kind, shard);
+                }
+            }
+            
+            // Check if it's a ParsedEvent
+            if let Some(parsed) = worker_msg.content_as_parsed_event() {
+                let offset = if let Some(sharded) = self
+                    .storage
+                    .as_any()
+                    .downcast_ref::<ShardedRingBufferStorage>()
+                {
+                    sharded
+                        .add_event_for_kind(parsed.kind() as u32, bytes)
+                        .await?
+                } else {
+                    self.storage.add_event_data(bytes).await?
+                };
+
+                self.index_parsed_event(parsed, offset);
+                return Ok(());
+            }
+            
+            // Check if it's a NostrEvent
+            if let Some(nostr) = worker_msg.content_as_nostr_event() {
+                info!("[NostrDB] Storing NostrEvent, kind={}, id={}", nostr.kind(), nostr.id());
+                let offset = if let Some(sharded) = self
+                    .storage
+                    .as_any()
+                    .downcast_ref::<ShardedRingBufferStorage>()
+                {
+                    sharded
+                        .add_event_for_kind(nostr.kind() as u32, bytes)
+                        .await?
+                } else {
+                    self.storage.add_event_data(bytes).await?
+                };
+
+                self.index_nostr_event(nostr, offset);
+                info!("[NostrDB] NostrEvent stored successfully");
+                return Ok(());
+            }
+            
+            // Other message types - skip
+            info!("[NostrDB] WorkerMessage type not storable: {:?}", worker_msg.type_());
+            return Ok(());
+        }
+
+        // Try raw ParsedEvent (backward compat)
         if let Ok(parsed) = flatbuffers::root::<ParsedEvent>(bytes) {
             let offset = if let Some(sharded) = self
                 .storage
@@ -117,7 +183,7 @@ impl<S: EventStorage> NostrDB<S> {
             return Ok(());
         }
 
-        // Fallback: NostrEvent
+        // Fallback: raw NostrEvent
         if let Ok(nostr) = flatbuffers::root::<NostrEvent>(bytes) {
             let offset = if let Some(sharded) = self
                 .storage
@@ -131,13 +197,12 @@ impl<S: EventStorage> NostrDB<S> {
                 self.storage.add_event_data(bytes).await?
             };
 
-            // Index minimal fields
             self.index_nostr_event(nostr, offset);
             return Ok(());
         }
 
         Err(DatabaseError::StorageError(
-            "FB decode error: expected ParsedEvent or NostrEvent".to_string(),
+            "FB decode error: expected WorkerMessage, ParsedEvent or NostrEvent".to_string(),
         ))
     }
 
@@ -751,7 +816,17 @@ impl<S: EventStorage> NostrDB<S> {
 
     #[allow(non_snake_case)]
     pub fn query_events_with_filter(&self, filter: QueryFilter) -> Result<QueryResult> {
-        let start_time = std::time::Instant::now();
+        let start_time = now_millis();
+        
+        // Build a log-friendly filter summary for debugging
+        let filter_summary = format!(
+            "ids={}, kinds={}, authors={}, since={:?}, until={:?}, limit={:?}",
+            filter.ids.as_ref().map(|v| v.len()).unwrap_or(0),
+            filter.kinds.as_ref().map(|v| v.len()).unwrap_or(0),
+            filter.authors.as_ref().map(|v| v.len()).unwrap_or(0),
+            filter.since, filter.until, filter.limit
+        );
+        
         // Start with candidate sets from indexed fields
         let mut candidate_sets = Vec::new();
         let mut use_full_scan = true;
@@ -774,6 +849,13 @@ impl<S: EventStorage> NostrDB<S> {
             for kind in kinds {
                 if let Some(event_ids) = self.indexes.events_by_kind.borrow().get(kind) {
                     kind_events.extend(event_ids.iter().cloned());
+                }
+            }
+            // Log shard info for verification
+            if let Some(sharded) = self.storage.as_any().downcast_ref::<ShardedRingBufferStorage>() {
+                for kind in kinds {
+                    let shard = sharded.shard_for_kind(*kind as u32);
+                    info!("[NostrDB] Query kind={} -> shard={:?} (found {} events)", kind, shard, kind_events.len());
                 }
             }
             candidate_sets.push(kind_events);
@@ -967,7 +1049,15 @@ impl<S: EventStorage> NostrDB<S> {
             false
         };
 
-        let query_time = start_time.elapsed().as_millis() as u64;
+        let query_time = now_millis() - start_time;
+
+        // Log slow queries (>1ms) for debugging
+        if query_time > 1 {
+            info!(
+                "[NostrDB] Slow query detected: {}ms | filter=[{}] | total_found={}",
+                query_time, filter_summary, total_found
+            );
+        }
 
         Ok(QueryResult {
             events: results,
@@ -1015,9 +1105,12 @@ impl<S: EventStorage> NostrDB<S> {
                 // accumulate cached events
                 all_events.extend(result.events);
 
-                // If cache_first is false -> always forward
-                // If cache_first is true -> forward only when result is empty
-                if !req.cache_first() || result.total_found == 0 {
+                // If cache_only is true -> never forward (skip network REQ)
+                // If cache_first is true and we have results -> skip network REQ
+                // Otherwise -> forward to network
+                if req.cache_only() {
+                    // skip network REQ entirely
+                } else if !req.cache_first() || result.total_found == 0 {
                     remaining_indices.push(i);
                 }
             }

@@ -6,6 +6,7 @@ pub mod utils;
 pub mod traits;
 pub mod service;
 pub mod spawn;
+pub mod signer_swap;
 pub mod nostr_error;
 pub mod port;
 
@@ -15,6 +16,7 @@ pub mod pipeline;
 pub mod network;
 pub mod parser_types;
 pub mod parser_utils;
+pub mod storage;
 pub mod transport;
 pub mod worker;
 

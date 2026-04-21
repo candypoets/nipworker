@@ -66,6 +66,8 @@ export type SubscriptionConfig = {
 	 * The pipeline state (including deduplication) will be cloned from the original subscription.
 	 */
 	pagination?: string;
+	/** If true, only return events from cache without hitting the network. */
+	cacheOnly?: boolean;
 };
 
 export type ProxyConfig = {

@@ -1,19 +1,46 @@
 import init, { NipworkerEngine } from './pkg/nipworker_engine.js';
 
-async function boot() {
-	await init();
+let pendingMessages: MessageEvent[] = [];
+let wasmReady = false;
 
-	self.onmessage = (event: MessageEvent) => {
-		const { type, payload } = event.data;
-		if (type === 'init' && payload?.port) {
-			const engine = new NipworkerEngine(payload.port);
-			// Keep engine alive by storing it on self
-			(self as any).__engine = engine;
-			self.postMessage({ type: 'ready' });
-		} else if (type === 'wake') {
-			(self as any).__engine?.wake();
-		}
-	};
+function handleMessage(event: MessageEvent) {
+	const { type, payload } = event.data;
+	if (type === 'init' && payload?.port) {
+		console.log('[engine worker] creating NipworkerEngine');
+		const engine = new NipworkerEngine(payload.port);
+		(self as any).__engine = engine;
+		self.postMessage({ type: 'ready' });
+		console.log('[engine worker] posted ready');
+	} else if (type === 'wake') {
+		(self as any).__engine?.wake();
+	}
+}
+
+self.onmessage = (event: MessageEvent) => {
+	console.log('[engine worker] received message:', event.data.type);
+	if (!wasmReady) {
+		pendingMessages.push(event);
+	} else {
+		handleMessage(event);
+	}
+};
+
+async function boot() {
+	console.log('[engine worker] boot starting');
+	try {
+		await init();
+		console.log('[engine worker] wasm init complete');
+	} catch (e) {
+		console.error('[engine worker] wasm init failed:', e);
+		throw e;
+	}
+	wasmReady = true;
+
+	// Process any messages that arrived before init completed
+	for (const event of pendingMessages) {
+		handleMessage(event);
+	}
+	pendingMessages = [];
 }
 
 boot();

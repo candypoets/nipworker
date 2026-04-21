@@ -43,6 +43,16 @@ impl RingBufferStorage {
         }
     }
 
+    /// Get the database name
+    pub fn db_name(&self) -> &str {
+        &self.db_name
+    }
+
+    /// Get the buffer key
+    pub fn buffer_key(&self) -> &str {
+        &self.buffer_key
+    }
+
     /// Initialize by loading existing buffer from persistent storage
     pub async fn initialize(&self) -> Result<(), DatabaseError> {
         if self.initialized.get() {
@@ -230,6 +240,62 @@ impl RingBufferStorage {
         }
 
         offsets
+    }
+
+    /// Save the current buffer contents to a byte vector.
+    /// Returns a copy of the raw buffer bytes (length-prefixed events).
+    pub fn save_to_bytes(&self) -> Vec<u8> {
+        self.buffer.borrow().clone()
+    }
+
+    /// Load the buffer from a byte vector, replacing all current contents.
+    /// The bytes should be length-prefixed events in the same format.
+    pub fn load_from_bytes(&self, bytes: &[u8]) -> Result<(), String> {
+        // Validate the bytes contain valid length-prefixed events
+        let mut p = 0usize;
+        while p + 4 <= bytes.len() {
+            let size = u32::from_le_bytes([bytes[p], bytes[p + 1], bytes[p + 2], bytes[p + 3]])
+                as usize;
+            if size == 0 {
+                return Err(format!("Invalid event size 0 at position {}", p));
+            }
+            if p + 4 + size > bytes.len() {
+                return Err(format!(
+                    "Incomplete event at position {}: expected {} bytes, got {}",
+                    p,
+                    4 + size,
+                    bytes.len() - p
+                ));
+            }
+            p += 4 + size;
+        }
+
+        if p != bytes.len() {
+            return Err(format!(
+                "Trailing bytes at position {}: {} bytes remaining",
+                p,
+                bytes.len() - p
+            ));
+        }
+
+        // Replace buffer contents
+        {
+            let mut buffer = self.buffer.borrow_mut();
+            buffer.clear();
+            buffer.extend_from_slice(bytes);
+        }
+
+        // Reset head offset (this is a full replacement, not an append)
+        self.head_offset.set(0);
+
+        info!(
+            "Loaded {} bytes into ring buffer '{}' ({} events)",
+            bytes.len(),
+            self.buffer_key,
+            self.extract_events_from_buffer().len()
+        );
+
+        Ok(())
     }
 }
 

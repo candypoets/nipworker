@@ -55,6 +55,7 @@ impl RequestDeduplicator {
                     cache_first: request.cache_first,
                     no_cache: request.no_cache,
                     max_relays: request.max_relays,
+                    cache_only: request.cache_only,
                     relays: {
                         let mut relays: Vec<String> = relay_set.into_iter().collect();
                         relays.sort();

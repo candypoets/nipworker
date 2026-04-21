@@ -56,7 +56,8 @@
     "prepublishOnly": "npm run build",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:ui": "vitest --ui"
+    "test:ui": "vitest --ui",
+    "test:e2e": "playwright test"
   },
   "keywords": [
     "nostr",
@@ -90,6 +91,7 @@
     }
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "@types/node": "^20.19.17",
     "@types/ws": "^8.5.12",
     "@vitest/ui": "^4.0.18",

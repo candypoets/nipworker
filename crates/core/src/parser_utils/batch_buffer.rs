@@ -3,6 +3,7 @@
 //! In the WASM wrapper, this uses MessagePort.postMessage with transferable
 //! ArrayBuffers. In core it is a no-op.
 
+use crate::platform::now_millis;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -76,8 +77,7 @@ impl BatchBuffer {
 
     pub fn add_message(&mut self, data: &[u8]) -> bool {
         if self.buffer.is_empty() {
-            *self.first_event_time.borrow_mut() =
-                Some(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis());
+            *self.first_event_time.borrow_mut() = Some(now_millis() as u128);
         }
 
         let required_space = 4 + data.len();
@@ -86,8 +86,7 @@ impl BatchBuffer {
 
         if should_flush_before {
             self.flush();
-            *self.first_event_time.borrow_mut() =
-                Some(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis());
+            *self.first_event_time.borrow_mut() = Some(now_millis() as u128);
         }
 
         let len = data.len() as u32;
@@ -107,11 +106,7 @@ impl BatchBuffer {
             return false;
         }
         if let Some(first_time) = *self.first_event_time.borrow() {
-            let elapsed = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_millis()
-                - first_time;
+            let elapsed = (now_millis() as u128) - first_time;
             if elapsed >= BATCH_TIMEOUT_MS as u128 {
                 return true;
             }

@@ -16,12 +16,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
 use tracing::{info, info_span, warn, Span};
 
-#[cfg(target_arch = "wasm32")]
-use crate::worker::batch_buffer;
-#[cfg(target_arch = "wasm32")]
-use web_sys::MessagePort;
-#[cfg(not(target_arch = "wasm32"))]
-use tokio::sync::mpsc::UnboundedSender;
+use crate::channel::WorkerChannelSender;
 
 // Tunables
 const MAX_INFLIGHT: usize = 24;
@@ -52,10 +47,7 @@ type DispatchTask = (usize, ShardTask);
 pub struct ParserWorker {
     parser: Arc<Parser>,
     to_cache: Arc<dyn Port>,
-    #[cfg(not(target_arch = "wasm32"))]
-    to_main: UnboundedSender<(String, Vec<u8>)>,
-    #[cfg(target_arch = "wasm32")]
-    to_main: MessagePort,
+    to_main: Box<dyn WorkerChannelSender>,
     publish_manager: PublishManager,
     subscription_manager: SubscriptionManager,
     subscriptions: Arc<RwLock<FxHashMap<String, Sub>>>,
@@ -63,34 +55,13 @@ pub struct ParserWorker {
 }
 
 impl ParserWorker {
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn new(
         parser: Arc<Parser>,
         to_cache: Arc<dyn Port>,
-        to_main: UnboundedSender<(String, Vec<u8>)>,
+        to_main: Box<dyn WorkerChannelSender>,
     ) -> Self {
         let publish_manager = PublishManager::new(parser.clone());
         let subscription_manager = SubscriptionManager::new(parser.clone());
-        Self {
-            parser,
-            to_cache,
-            to_main,
-            publish_manager,
-            subscription_manager,
-            subscriptions: Arc::new(RwLock::new(FxHashMap::default())),
-            slow_rr: AtomicUsize::new(0),
-        }
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    pub fn new(
-        parser: Arc<Parser>,
-        to_cache: Arc<dyn Port>,
-        to_main: MessagePort,
-    ) -> Self {
-        let publish_manager = PublishManager::new(parser.clone());
-        let subscription_manager = SubscriptionManager::new(parser.clone());
-        batch_buffer::init_global_batch_manager(to_main.clone());
         Self {
             parser,
             to_cache,
@@ -693,9 +664,6 @@ impl ParserWorker {
             return Ok(());
         }
 
-        #[cfg(target_arch = "wasm32")]
-        batch_buffer::create_batch_buffer(&subscription_id);
-
         {
             let mut builder = FlatBufferBuilder::new();
             let sid = builder.create_string(&subscription_id);
@@ -732,9 +700,6 @@ impl ParserWorker {
         if let Ok(mut w) = self.subscriptions.write() {
             w.remove(&subscription_id);
         }
-
-        #[cfg(target_arch = "wasm32")]
-        batch_buffer::remove_batch_buffer(&subscription_id);
 
         Ok(())
     }
@@ -844,9 +809,6 @@ impl ParserWorker {
             );
         }
 
-        #[cfg(target_arch = "wasm32")]
-        batch_buffer::create_batch_buffer(&publish_id);
-
         {
             let mut builder = FlatBufferBuilder::new();
             let sid = builder.create_string(&event_id);
@@ -923,23 +885,38 @@ impl ParserWorker {
         messages
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
     fn send_output_to_main(&self, sub_id: &str, data: &[u8]) {
-        let _ = self.to_main.send((sub_id.to_string(), data.to_vec()));
+        let encoded = encode_tagged(sub_id, data);
+        let _ = self.to_main.send(&encoded);
     }
 
-    #[cfg(target_arch = "wasm32")]
-    fn send_output_to_main(&self, sub_id: &str, data: &[u8]) {
-        batch_buffer::add_message_to_batch(sub_id, data);
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
     fn flush_main(&self, _sub_id: &str) {}
+}
 
-    #[cfg(target_arch = "wasm32")]
-    fn flush_main(&self, sub_id: &str) {
-        batch_buffer::flush_batch(sub_id);
+/// Encode a (sub_id, data) pair into a single Vec<u8> using a simple length-prefix format:
+/// [4 bytes: sub_id_len LE][sub_id_bytes][data_bytes]
+pub fn encode_tagged(sub_id: &str, data: &[u8]) -> Vec<u8> {
+    let sub_bytes = sub_id.as_bytes();
+    let mut buf = Vec::with_capacity(4 + sub_bytes.len() + data.len());
+    buf.extend_from_slice(&(sub_bytes.len() as u32).to_le_bytes());
+    buf.extend_from_slice(sub_bytes);
+    buf.extend_from_slice(data);
+    buf
+}
+
+/// Decode a tagged byte stream back into (sub_id, data).
+/// Returns None if the buffer is too short or malformed.
+pub fn decode_tagged(bytes: &[u8]) -> Option<(String, Vec<u8>)> {
+    if bytes.len() < 4 {
+        return None;
     }
+    let sub_len = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as usize;
+    if bytes.len() < 4 + sub_len {
+        return None;
+    }
+    let sub_id = String::from_utf8_lossy(&bytes[4..4 + sub_len]).to_string();
+    let data = bytes[4 + sub_len..].to_vec();
+    Some((sub_id, data))
 }
 
 fn request_from_t(rt: &fb::RequestT) -> Request {
@@ -969,6 +946,7 @@ fn request_from_t(rt: &fb::RequestT) -> Request {
         cache_first: rt.cache_first,
         no_cache: rt.no_cache,
         max_relays: rt.max_relays as u32,
+        cache_only: rt.cache_only,
     }
 }
 
@@ -1033,7 +1011,7 @@ fn serialize_eoce() -> Vec<u8> {
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
-    use crate::channel::{ChannelPort, TokioWorkerChannel};
+    use crate::channel::{ChannelPort, FuturesWorkerChannel, TokioWorkerChannel};
     use crate::parser::Parser;
 
     // Helper: Build a Subscribe MainMessage
@@ -1155,7 +1133,7 @@ mod tests {
     async fn test_eose_from_multiple_relays() {
         let local = tokio::task::LocalSet::new();
         local.run_until(async {
-            let (to_main_tx, mut to_main_rx) = tokio::sync::mpsc::unbounded_channel::<(String, Vec<u8>)>();
+            let (mut to_main_ch, from_parser_ch) = FuturesWorkerChannel::new_pair();
             let (to_cache_a, _to_cache_b) = TokioWorkerChannel::new_pair();
             
             let (cache_capture_tx, mut cache_capture_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
@@ -1166,7 +1144,7 @@ mod tests {
             });
 
             let parser = Arc::new(Parser::new(None));
-            let worker = ParserWorker::new(parser, capture_port, to_main_tx);
+            let worker = ParserWorker::new(parser, capture_port, from_parser_ch.clone_sender());
 
             let (from_engine_tx, from_engine_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
             let from_engine = Box::new(MockWorkerChannel {
@@ -1207,9 +1185,10 @@ mod tests {
             for _ in 0..3 {
                 let result = tokio::time::timeout(
                     tokio::time::Duration::from_secs(2),
-                    to_main_rx.recv()
+                    to_main_ch.recv()
                 ).await;
-                let (sub_id, data) = result.expect("Timeout waiting for EOSE message").expect("to_main channel closed");
+                let bytes = result.expect("Timeout waiting for EOSE message").expect("to_main channel closed");
+                let (sub_id, data) = decode_tagged(&bytes).expect("decode failed");
                 assert_eq!(sub_id, "multi_eose_sub");
                 let wm = flatbuffers::root::<fb::WorkerMessage>(&data).unwrap();
                 assert_eq!(wm.type_(), fb::MessageType::ConnectionStatus);
@@ -1230,7 +1209,7 @@ mod tests {
     async fn test_partial_eose_some_relays_slow() {
         let local = tokio::task::LocalSet::new();
         local.run_until(async {
-            let (to_main_tx, mut to_main_rx) = tokio::sync::mpsc::unbounded_channel::<(String, Vec<u8>)>();
+            let (mut to_main_ch, from_parser_ch) = FuturesWorkerChannel::new_pair();
             let (to_cache_a, _to_cache_b) = TokioWorkerChannel::new_pair();
             
             let (cache_capture_tx, mut cache_capture_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
@@ -1241,7 +1220,7 @@ mod tests {
             });
 
             let parser = Arc::new(Parser::new(None));
-            let worker = ParserWorker::new(parser, capture_port, to_main_tx);
+            let worker = ParserWorker::new(parser, capture_port, from_parser_ch.clone_sender());
 
             let subscriptions = worker.subscriptions.clone();
 
@@ -1288,7 +1267,8 @@ mod tests {
             conn_tx.send(eose_msg).unwrap();
 
             // Collect EOSE status
-            let (sub_id, data) = to_main_rx.recv().await.expect("to_main channel closed");
+            let bytes = to_main_ch.recv().await.expect("to_main channel closed");
+            let (sub_id, data) = decode_tagged(&bytes).expect("decode failed");
             assert_eq!(sub_id, "partial_eose_sub");
             let wm = flatbuffers::root::<fb::WorkerMessage>(&data).unwrap();
             assert_eq!(wm.type_(), fb::MessageType::ConnectionStatus);
@@ -1308,7 +1288,7 @@ mod tests {
     async fn test_eose_after_events_flushes_buffered() {
         let local = tokio::task::LocalSet::new();
         local.run_until(async {
-            let (to_main_tx, mut to_main_rx) = tokio::sync::mpsc::unbounded_channel::<(String, Vec<u8>)>();
+            let (mut to_main_ch, from_parser_ch) = FuturesWorkerChannel::new_pair();
             let (to_cache_a, _to_cache_b) = TokioWorkerChannel::new_pair();
             
             let (cache_capture_tx, mut cache_capture_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
@@ -1319,7 +1299,7 @@ mod tests {
             });
 
             let parser = Arc::new(Parser::new(None));
-            let worker = ParserWorker::new(parser, capture_port, to_main_tx);
+            let worker = ParserWorker::new(parser, capture_port, from_parser_ch.clone_sender());
 
             let (from_engine_tx, from_engine_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
             let from_engine = Box::new(MockWorkerChannel {
@@ -1366,7 +1346,8 @@ mod tests {
             conn_tx.send(eose_msg).unwrap();
 
             // Receive EOSE status message (pipeline flush output + EOSE status)
-            let (sub_id, data) = to_main_rx.recv().await.expect("to_main channel closed");
+            let bytes = to_main_ch.recv().await.expect("to_main channel closed");
+            let (sub_id, data) = decode_tagged(&bytes).expect("decode failed");
             assert_eq!(sub_id, "flush_eose_sub");
             
             // Verify it's a valid WorkerMessage (could be flushed output or EOSE status)
@@ -1382,7 +1363,7 @@ mod tests {
     async fn test_eose_with_empty_pipeline() {
         let local = tokio::task::LocalSet::new();
         local.run_until(async {
-            let (to_main_tx, mut to_main_rx) = tokio::sync::mpsc::unbounded_channel::<(String, Vec<u8>)>();
+            let (mut to_main_ch, from_parser_ch) = FuturesWorkerChannel::new_pair();
             let (to_cache_a, _to_cache_b) = TokioWorkerChannel::new_pair();
             
             let (cache_capture_tx, mut cache_capture_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
@@ -1393,7 +1374,7 @@ mod tests {
             });
 
             let parser = Arc::new(Parser::new(None));
-            let worker = ParserWorker::new(parser, capture_port, to_main_tx);
+            let worker = ParserWorker::new(parser, capture_port, from_parser_ch.clone_sender());
 
             let subscriptions = worker.subscriptions.clone();
 
@@ -1429,7 +1410,8 @@ mod tests {
             conn_tx.send(eose_msg).unwrap();
 
             // Should receive EOSE status without crashing
-            let (sub_id, data) = to_main_rx.recv().await.expect("to_main channel closed");
+            let bytes = to_main_ch.recv().await.expect("to_main channel closed");
+            let (sub_id, data) = decode_tagged(&bytes).expect("decode failed");
             assert_eq!(sub_id, "empty_eose_sub");
             let wm = flatbuffers::root::<fb::WorkerMessage>(&data).unwrap();
             assert_eq!(wm.type_(), fb::MessageType::ConnectionStatus);
@@ -1448,7 +1430,7 @@ mod tests {
     async fn test_pipeline_flush_idempotent() {
         let local = tokio::task::LocalSet::new();
         local.run_until(async {
-            let (to_main_tx, mut to_main_rx) = tokio::sync::mpsc::unbounded_channel::<(String, Vec<u8>)>();
+            let (mut to_main_ch, from_parser_ch) = FuturesWorkerChannel::new_pair();
             let (to_cache_a, _to_cache_b) = TokioWorkerChannel::new_pair();
             
             let (cache_capture_tx, mut cache_capture_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
@@ -1459,7 +1441,7 @@ mod tests {
             });
 
             let parser = Arc::new(Parser::new(None));
-            let worker = ParserWorker::new(parser, capture_port, to_main_tx);
+            let worker = ParserWorker::new(parser, capture_port, from_parser_ch.clone_sender());
 
             let subscriptions = worker.subscriptions.clone();
 
@@ -1508,7 +1490,8 @@ mod tests {
             conn_tx.send(eose_msg1).unwrap();
 
             // Collect first EOSE status
-            let (sub_id, data) = to_main_rx.recv().await.expect("to_main channel closed for first EOSE");
+            let bytes = to_main_ch.recv().await.expect("to_main channel closed for first EOSE");
+            let (sub_id, data) = decode_tagged(&bytes).expect("decode failed");
             assert_eq!(sub_id, "idempotent_eose_sub");
             let wm = flatbuffers::root::<fb::WorkerMessage>(&data).unwrap();
             assert_eq!(wm.type_(), fb::MessageType::ConnectionStatus);
@@ -1536,7 +1519,8 @@ mod tests {
             conn_tx.send(eose_msg2).unwrap();
 
             // Collect second EOSE status
-            let (sub_id, data) = to_main_rx.recv().await.expect("to_main channel closed for second EOSE");
+            let bytes = to_main_ch.recv().await.expect("to_main channel closed for second EOSE");
+            let (sub_id, data) = decode_tagged(&bytes).expect("decode failed");
             assert_eq!(sub_id, "idempotent_eose_sub");
             let wm = flatbuffers::root::<fb::WorkerMessage>(&data).unwrap();
             assert_eq!(wm.type_(), fb::MessageType::ConnectionStatus);

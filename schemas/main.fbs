@@ -96,6 +96,8 @@ table SubscriptionConfig {
   // If set, this subscription is a pagination of the given subscription ID.
   // The pipeline state (including deduplication) will be cloned from the original subscription.
   pagination: string;
+  // If true, only return events from cache without hitting the network.
+  cache_only: bool = false;
 }
 
 table Subscribe {
