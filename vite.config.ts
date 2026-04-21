@@ -93,7 +93,8 @@ export default defineConfig({
 				// proxy.ts is handled by selfContainedEntries
 				cache: resolve(__dirname, 'src/cache/index.ts'),
 				parser: resolve(__dirname, 'src/parser/index.ts'),
-				crypto: resolve(__dirname, 'src/crypto/index.ts')
+				crypto: resolve(__dirname, 'src/crypto/index.ts'),
+				engine: resolve(__dirname, 'src/engine/index.ts')
 			},
 			output: {
 				entryFileNames: (chunkInfo: any) => {
@@ -107,7 +108,8 @@ export default defineConfig({
 						connections: 'connections/index.js',
 						cache: 'cache/index.js',
 						parser: 'parser/index.js',
-						crypto: 'crypto/index.js'
+						crypto: 'crypto/index.js',
+						engine: 'engine/index.js'
 					};
 					return entryNameMap[chunkInfo.name as string] || '[name].js';
 				},

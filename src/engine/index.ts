@@ -1,4 +1,5 @@
 import init, { NipworkerEngine } from './pkg/nipworker_engine.js';
+import wasmUrl from './pkg/nipworker_engine_bg.wasm?url';
 
 let pendingMessages: MessageEvent[] = [];
 let wasmReady = false;
@@ -28,7 +29,9 @@ self.onmessage = (event: MessageEvent) => {
 async function boot() {
 	console.log('[engine worker] boot starting');
 	try {
-		await init();
+		// Using ?url ensures Vite emits the .wasm asset to dist and returns its final URL,
+		// which works even when this worker is running from a blob: URL.
+		await init(wasmUrl);
 		console.log('[engine worker] wasm init complete');
 	} catch (e) {
 		console.error('[engine worker] wasm init failed:', e);
