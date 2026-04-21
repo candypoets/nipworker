@@ -99,6 +99,57 @@ jobs:
         if: ${{ steps.check_publish.outputs.should_publish == 'true' }}
         run: npm run build
 
+      # ──────────────────────────────────────────
+      # Wait for native builds and bundle artifacts
+      # ──────────────────────────────────────────
+      - name: Wait for native build workflow
+        if: ${{ steps.check_publish.outputs.should_publish == 'true' }}
+        run: |
+          for i in {1..60}; do
+            RUN_JSON=$(gh run list --workflow=native-build.yml --json databaseId,headSha,conclusion,status --jq ".[] | select(.headSha == \"${GITHUB_SHA}\") | {conclusion,status}" | head -1)
+            CONCLUSION=$(echo "$RUN_JSON" | jq -r '.conclusion // empty')
+            STATUS=$(echo "$RUN_JSON" | jq -r '.status // empty')
+
+            if [ "$CONCLUSION" == "success" ]; then
+              echo "Native build succeeded"
+              exit 0
+            elif [ "$CONCLUSION" == "failure" ] || [ "$CONCLUSION" == "cancelled" ]; then
+              echo "Native build failed: $CONCLUSION"
+              exit 1
+            fi
+            echo "Waiting for native build... status=$STATUS ($i/60)"
+            sleep 10
+          done
+          echo "Timed out waiting for native build"
+          exit 1
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download native artifacts
+        if: ${{ steps.check_publish.outputs.should_publish == 'true' }}
+        uses: dawidd6/action-download-artifact@v3
+        with:
+          workflow: native-build.yml
+          commit: ${{ github.sha }}
+          path: ./prebuilt-temp
+
+      - name: Organize native artifacts
+        if: ${{ steps.check_publish.outputs.should_publish == 'true' }}
+        run: |
+          mkdir -p prebuilt/android prebuilt/ios prebuilt/linux
+          if [ -d "prebuilt-temp/android-jniLibs" ]; then
+            mv prebuilt-temp/android-jniLibs/jniLibs prebuilt/android/
+          fi
+          if [ -d "prebuilt-temp/ios-xcframework" ]; then
+            mv prebuilt-temp/ios-xcframework/NipworkerNativeFFI.xcframework prebuilt/ios/
+          fi
+          if [ -d "prebuilt-temp/linux-host" ]; then
+            mv prebuilt-temp/linux-host/* prebuilt/linux/
+          fi
+          rm -rf prebuilt-temp
+          echo "=== Prebuilt artifacts ==="
+          find prebuilt -type f | sort
+
       # Publish package to npm
       - name: Publish package to npm
         if: ${{ steps.check_publish.outputs.should_publish == 'true' }}
@@ -107,18 +158,11 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{secrets.NPM_TOKEN}}
 
-      # Create GitHub Release (only if publish succeeded)
-      - name: Create GitHub Release
+      # Update GitHub Release with npm info (native-build.yml creates the release)
+      - name: Update GitHub Release body
         if: ${{ steps.publish.outcome == 'success' }}
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ github.ref_name }}
-          name: Release ${{ github.ref_name }}
-          generate_release_notes: true
-          body: |
-            🚀 **Release ${{ github.ref_name }}**
-
-            ## 📦 Published Package
-            - **[@candypoets/nipworker](https://www.npmjs.com/package/@candypoets/nipworker)** - `${{ github.ref_name }}`
+        run: |
+          gh release edit "${GITHUB_REF_NAME}" \
+            --notes "🚀 **Release ${{ github.ref_name }}**\n\n## 📦 Published Package\n- **[@candypoets/nipworker](https://www.npmjs.com/package/@candypoets/nipworker)** - ${{ github.ref_name }}\n\n$(gh release view "${GITHUB_REF_NAME}" --json body -q '.body')"
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

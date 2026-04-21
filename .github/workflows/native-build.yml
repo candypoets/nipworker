@@ -1,0 +1,217 @@
+name: Native Mobile Builds
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # ──────────────────────────────────────────
+  # Android — build .so for all 4 ABIs
+  # ──────────────────────────────────────────
+  build-android:
+    runs-on: ubuntu-latest
+    env:
+      NDK_VERSION: '27.0.12077973'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk
+
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r27c
+          add-to-path: true
+          link-to-sdk: true
+
+      - name: Add Android Rust targets
+        run: |
+          rustup target add \
+            aarch64-linux-android \
+            armv7-linux-androideabi \
+            x86_64-linux-android \
+            i686-linux-android
+
+      - name: Build Android libraries
+        working-directory: crates/native-ffi
+        run: |
+          cargo ndk \
+            -t armeabi-v7a \
+            -t arm64-v8a \
+            -t x86 \
+            -t x86_64 \
+            -o ./jniLibs \
+            build --release
+
+      - name: Upload Android artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-jniLibs
+          path: crates/native-ffi/jniLibs/
+
+  # ──────────────────────────────────────────
+  # iOS — build .a for device + simulator
+  # ──────────────────────────────────────────
+  build-ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Add iOS Rust targets
+        run: |
+          rustup target add aarch64-apple-ios
+          rustup target add aarch64-apple-ios-sim
+          rustup target add x86_64-apple-ios
+
+      - name: Build iOS device library
+        working-directory: crates/native-ffi
+        run: |
+          cargo build --release --target aarch64-apple-ios
+
+      - name: Build iOS simulator library (arm64)
+        working-directory: crates/native-ffi
+        run: |
+          cargo build --release --target aarch64-apple-ios-sim
+
+      - name: Build iOS simulator library (x86_64)
+        working-directory: crates/native-ffi
+        run: |
+          cargo build --release --target x86_64-apple-ios
+
+      - name: Create XCFramework
+        working-directory: crates/native-ffi
+        run: |
+          mkdir -p ios/Frameworks
+
+          # Simulator fat binary (arm64 + x86_64)
+          lipo -create \
+            target/aarch64-apple-ios-sim/release/libnipworker_native_ffi.a \
+            target/x86_64-apple-ios/release/libnipworker_native_ffi.a \
+            -output ios/Frameworks/libnipworker_native_ffi_sim.a
+
+          # Device binary
+          cp target/aarch64-apple-ios/release/libnipworker_native_ffi.a \
+            ios/Frameworks/libnipworker_native_ffi_device.a
+
+          # Create XCFramework
+          xcodebuild -create-xcframework \
+            -library ios/Frameworks/libnipworker_native_ffi_device.a \
+            -library ios/Frameworks/libnipworker_native_ffi_sim.a \
+            -output ios/NipworkerNativeFFI.xcframework
+
+      - name: Upload iOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-xcframework
+          path: crates/native-ffi/ios/NipworkerNativeFFI.xcframework/
+
+  # ──────────────────────────────────────────
+  # Linux host — build .so for local testing
+  # ──────────────────────────────────────────
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build Linux library
+        working-directory: crates/native-ffi
+        run: cargo build --release
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-host
+          path: |
+            crates/native-ffi/target/release/libnipworker_native_ffi.so
+            crates/native-ffi/target/release/libnipworker_native_ffi.a
+
+  # ──────────────────────────────────────────
+  # Release — attach all native artifacts
+  # ──────────────────────────────────────────
+  release-native:
+    needs: [build-android, build-ios, build-linux]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./native-artifacts
+          merge-multiple: false
+
+      - name: Package Android
+        run: |
+          cd native-artifacts/android-jniLibs
+          zip -r ../nipworker-native-android.zip .
+
+      - name: Package iOS
+        run: |
+          cd native-artifacts/ios-xcframework
+          zip -r ../nipworker-native-ios.zip .
+
+      - name: Package Linux
+        run: |
+          cd native-artifacts/linux-host
+          zip -r ../nipworker-native-linux.zip .
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            native-artifacts/nipworker-native-android.zip
+            native-artifacts/nipworker-native-ios.zip
+            native-artifacts/nipworker-native-linux.zip
+          append_body: true
+          body: |
+            ## 📱 Native Mobile Libraries
+
+            Pre-built native libraries for LynxJS integrators:
+
+            | Platform | Download | Integration |
+            |----------|----------|-------------|
+            | **Android** | `nipworker-native-android.zip` | Unzip to `android/app/src/main/jniLibs/` |
+            | **iOS** | `nipworker-native-ios.zip` | Drag `NipworkerNativeFFI.xcframework` into Xcode |
+            | **Linux** | `nipworker-native-linux.zip` | For local FFI testing only |
+
+            ### Android
+            ```bash
+            # In your app build.gradle
+            android {
+              sourceSets {
+                main {
+                  jniLibs.srcDirs = ['src/main/jniLibs']
+                }
+              }
+            }
+            ```
+
+            ### iOS
+            In Xcode, add `NipworkerNativeFFI.xcframework` to **Frameworks, Libraries, and Embedded Content** (set to "Embed & Sign").
+
+            ### LynxJS TypeScript
+            ```typescript
+            import { createNostrManager, setManager } from '@candypoets/nipworker';
+            const backend = createNostrManager();
+            setManager(backend);
+            ```
+            `createNostrManager()` auto-detects the Lynx native module at runtime.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

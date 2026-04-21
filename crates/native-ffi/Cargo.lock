@@ -793,6 +793,7 @@ name = "nipworker-native-ffi"
 version = "0.96.0"
 dependencies = [
  "async-trait",
+ "cc",
  "flatbuffers",
  "futures",
  "hex",

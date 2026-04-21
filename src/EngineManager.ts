@@ -13,6 +13,7 @@ import {
 	PrivateKeyT,
 	PublishT,
 	Pubkey,
+	Raw,
 	RequestT,
 	SetSignerT,
 	SignEventT,
@@ -82,6 +83,10 @@ export class EngineManager {
 			const { subId, data, type, status, url } = event.data;
 
 			if (subId && data) {
+				if (subId === 'crypto') {
+					this.handleCryptoMessage(data);
+					return;
+				}
 				const subscription = this.subscriptions.get(subId);
 				if (subscription) {
 					const written = ArrayBufferReader.writeBatchedData(subscription.buffer, data, subId);
@@ -224,6 +229,43 @@ export class EngineManager {
 			const secretKey =
 				this._pendingSession?.type === 'privkey' ? this._pendingSession.payload : undefined;
 			this.dispatch('auth', { pubkey: this.activePubkey, hasSigner: msg.ok, secretKey });
+		}
+	}
+
+	private handleCryptoMessage(data: ArrayBuffer): void {
+		const uint8Data = new Uint8Array(data);
+		if (uint8Data.length < 4) return;
+		const view = new DataView(uint8Data.buffer, uint8Data.byteOffset, uint8Data.byteLength);
+		const payloadLen = view.getUint32(0, true);
+		if (uint8Data.length < 4 + payloadLen) return;
+		const bb = new flatbuffers.ByteBuffer(uint8Data.subarray(4, 4 + payloadLen));
+		const workerMsg = WorkerMessage.getRootAsWorkerMessage(bb);
+		const msgType = workerMsg.type();
+		if (msgType !== MessageType.Raw) return;
+		const rawObj = workerMsg.content(new Raw());
+		const rawStr = rawObj ? rawObj.raw() : null;
+		if (!rawStr) return;
+		try {
+			const msg = JSON.parse(rawStr);
+			if (msg.op === 'get_public_key' || msg.op === 'set_signer') {
+				const secretKey =
+					this._pendingSession?.type === 'privkey' ? this._pendingSession.payload : undefined;
+				if (msg.result) {
+					this.activePubkey = msg.result;
+					if (this._pendingSession) {
+						this.saveSession(this.activePubkey!, this._pendingSession.type, this._pendingSession.payload);
+						this._pendingSession = null;
+					}
+				}
+				this.dispatch('auth', { pubkey: this.activePubkey, hasSigner: !!msg.result, secretKey });
+			} else if (msg.op === 'sign_event' && msg.result) {
+				const parsed = JSON.parse(msg.result);
+				this._signCB(parsed);
+			} else if (msg.error) {
+				console.warn('[EngineManager] Crypto error:', msg.error);
+			}
+		} catch (e) {
+			console.warn('[EngineManager] Failed to parse crypto raw message:', e);
 		}
 	}
 

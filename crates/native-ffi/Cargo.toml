@@ -22,5 +22,8 @@ tungstenite = "0.24"
 url = "2.5"
 hex = "0.4.3"
 
+[build-dependencies]
+cc = "1"
+
 [dependencies.async-trait]
 version = "0.1"

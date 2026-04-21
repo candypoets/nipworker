@@ -1,7 +1,7 @@
 # NIPWorker Native FFI
 
-> **Status: untested skeletons.**  
-> The iOS, Android, and HarmonyOS wrappers below have not been compiled or run in a real Lynx host app. They are provided as a starting point for mobile integrators.
+> **Status: Android and iOS builds verified. HarmonyOS is a skeleton.**
+> The TypeScript `createNostrManager()` auto-detects LynxJS and returns `NativeBackend` automatically.
 
 ## Overview
 
@@ -17,34 +17,97 @@ void nipworker_free_bytes(uint8_t* ptr, size_t len);
 
 The TypeScript side provides `NativeBackend` (`src/NativeBackend.ts`) which implements the same public interface as `EngineManager` / `NostrManager` and communicates with the native code through a Lynx module named `NipworkerLynxModule`.
 
-## Platform wrappers
+## Quick Start for LynxJS Developers
 
-### iOS (`ios/LynxNipworkerModule.mm`)
+```typescript
+import { createNostrManager, setManager } from '@candypoets/nipworker';
 
-* **Language:** Objective-C++
-* **Registration:** `[globalConfig registerModule:NipworkerLynxModule.class];`
-* **Linking:** Link `libnipworker_native_ffi.a` (static library) built from this crate.
-* **Build steps (typical):**
-  1. `cargo build --release --target aarch64-apple-ios` (and `x86_64-apple-ios` for simulators)
-  2. `lipo` or `xcframework` the resulting static library.
-  3. Add the `.a` and the `.mm` file to the host Xcode project.
+// Auto-detects Lynx native module, WASM engine, or legacy 4-worker
+const backend = createNostrManager();
+setManager(backend);
+```
 
-### Android (`android/LynxNipworkerModule.kt`)
+`createNostrManager()` detects the runtime in this order:
+1. `globalThis.lynx.getNativeModules().NipworkerLynxModule` exists → `NativeBackend`
+2. `config.engine === true` → `EngineManager` (single WASM worker)
+3. Otherwise → `NostrManager` (legacy 4-worker WASM)
 
-* **Language:** Kotlin
-* **Registration:** via `LynxViewBuilder.setModule(NipworkerLynxModule::class.java)` or your `LynxModuleAdapter`.
-* **Linking:** Bundle `libnipworker_native_ffi.so` for each target ABI.
-* **JNI Bridge:** The Kotlin `external` declarations expect a thin JNI C layer that translates between JNI types and the Rust C API above, and forwards callbacks back to Kotlin via `onNativeData()`.
-* **Build steps (typical):**
-  1. Use `cargo-ndk` or a custom CMake/ndk-build step:
-     ```bash
-     cargo ndk -t armeabi-v7a -t arm64-v8a -t x86 -t x86_64 build --release
-     ```
-  2. Copy the resulting `.so` files into `jniLibs/<abi>/`.
-  3. Write a JNI C bridge (e.g. `nipworker_jni.c`) that wraps the 5 C functions and manages global references for callbacks.
-  4. Include `LynxNipworkerModule.kt` in the app module sources.
+## Pre-built Binaries
 
-### HarmonyOS (`harmony/LynxNipworkerModule.ets`)
+Every git tag `v*` triggers a [GitHub Actions workflow](../../.github/workflows/native-build.yml) that builds and attaches native libraries to the release:
+
+| Platform | Artifact | Download |
+|----------|----------|----------|
+| **Android** | `nipworker-native-android.zip` | GitHub Release attachments |
+| **iOS** | `nipworker-native-ios.zip` (XCFramework) | GitHub Release attachments |
+| **Linux** | `nipworker-native-linux.zip` | GitHub Release attachments |
+
+## Platform Integration
+
+### Android
+
+**Files you need:**
+- `android/LynxNipworkerModule.kt` — Kotlin Lynx module
+- `libnipworker_native_ffi.so` — built from this crate (all 4 ABIs)
+
+**Integration steps:**
+1. Download `nipworker-native-android.zip` from the GitHub Release (or build locally with `cargo-ndk`).
+2. Unzip to `android/app/src/main/jniLibs/`:
+   ```
+   jniLibs/
+   ├── arm64-v8a/libnipworker_native_ffi.so
+   ├── armeabi-v7a/libnipworker_native_ffi.so
+   ├── x86/libnipworker_native_ffi.so
+   └── x86_64/libnipworker_native_ffi.so
+   ```
+3. Copy `crates/native-ffi/android/LynxNipworkerModule.kt` into your app module sources.
+4. Register the module in your Lynx setup:
+   ```kotlin
+   LynxViewBuilder.setModule(NipworkerLynxModule::class.java)
+   ```
+
+**Local build (requires Android NDK):**
+```bash
+cd crates/native-ffi
+cargo ndk -t armeabi-v7a -t arm64-v8a -t x86 -t x86_64 build --release
+```
+
+### iOS
+
+**Files you need:**
+- `ios/LynxNipworkerModule.mm` — Objective-C++ Lynx module
+- `NipworkerNativeFFI.xcframework` — built from this crate
+
+**Integration steps:**
+1. Download `nipworker-native-ios.zip` from the GitHub Release (or build locally on macOS).
+2. Drag `NipworkerNativeFFI.xcframework` into your Xcode project.
+3. In **Frameworks, Libraries, and Embedded Content**, set it to **Embed & Sign**.
+4. Copy `crates/native-ffi/ios/LynxNipworkerModule.mm` into your Xcode project.
+5. Register the module:
+   ```objc
+   [globalConfig registerModule:NipworkerLynxModule.class];
+   ```
+
+**Local build (requires macOS + Xcode):**
+```bash
+cd crates/native-ffi
+cargo build --release --target aarch64-apple-ios
+cargo build --release --target aarch64-apple-ios-sim
+cargo build --release --target x86_64-apple-ios
+
+# Create XCFramework
+lipo -create \
+  target/aarch64-apple-ios-sim/release/libnipworker_native_ffi.a \
+  target/x86_64-apple-ios/release/libnipworker_native_ffi.a \
+  -output libnipworker_native_ffi_sim.a
+
+xcodebuild -create-xcframework \
+  -library target/aarch64-apple-ios/release/libnipworker_native_ffi.a \
+  -library libnipworker_native_ffi_sim.a \
+  -output NipworkerNativeFFI.xcframework
+```
+
+### HarmonyOS
 
 * **Language:** ArkTS
 * **Registration:** `this.modules.set('NipworkerLynxModule', { moduleClass: NipworkerLynxModule })`
@@ -54,19 +117,33 @@ The TypeScript side provides `NativeBackend` (`src/NativeBackend.ts`) which impl
   2. Build the addon into an `.so` shipped with the HarmonyOS app.
   3. Replace the `TODO` stubs in `LynxNipworkerModule.ets` with actual NAPI calls.
 
-## TypeScript usage
+## Architecture
 
-```ts
-import { NativeBackend, setManager } from '@candypoets/nipworker';
-
-const backend = new NativeBackend();
-setManager(backend);
 ```
-
-`NativeBackend` automatically looks for the Lynx native module under:
-
-* `globalThis.lynx.getNativeModules().NipworkerLynxModule`
-* `globalThis.NativeModules.NipworkerLynxModule`
+┌─────────────────────────────────────────────────────────────┐
+│  TypeScript App (LynxJS)                                    │
+│  createNostrManager() → NativeBackend                       │
+│         │                                                   │
+│         ▼                                                   │
+│  ┌─────────────────────────────────────┐                   │
+│  │ NativeBackend.ts                    │                   │
+│  │  calls lynx.getNativeModules()...   │                   │
+│  └─────────────────────────────────────┘                   │
+│         │                                                   │
+│         ▼                                                   │
+│  ┌─────────────────────────────────────┐                   │
+│  │ Platform wrapper                    │                   │
+│  │  Android: Kotlin + JNI C bridge     │                   │
+│  │  iOS:     Objective-C++             │                   │
+│  └─────────────────────────────────────┘                   │
+│         │                                                   │
+│         ▼                                                   │
+│  ┌─────────────────────────────────────┐                   │
+│  │ Rust: libnipworker_native_ffi.so/.a │                   │
+│  │  C ABI → NostrEngine orchestrator   │                   │
+│  └─────────────────────────────────────┘                   │
+└─────────────────────────────────────────────────────────────┘
+```
 
 ## Known limitations
 

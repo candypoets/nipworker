@@ -386,6 +386,7 @@ dependencies = [
  "async-trait",
  "flatbuffers",
  "futures",
+ "gloo-net",
  "gloo-timers 0.3.0",
  "hex",
  "js-sys",

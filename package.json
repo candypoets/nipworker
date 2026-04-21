@@ -39,6 +39,7 @@
   },
   "files": [
     "dist",
+    "prebuilt",
     "README.md"
   ],
   "scripts": {
@@ -91,11 +92,15 @@
     }
   },
   "devDependencies": {
+    "@lynx-js/react": "^0.119.0",
+    "@lynx-js/types": "^3.7.0",
     "@playwright/test": "^1.59.1",
     "@types/node": "^20.19.17",
     "@types/ws": "^8.5.12",
     "@vitest/ui": "^4.0.18",
     "esbuild": "^0.27.4",
+    "jsdom": "^29.0.2",
+    "koffi": "^2.16.1",
     "npm-run-all": "^4.1.5",
     "prettier": "^3.6.2",
     "typescript": "^5.0.0",

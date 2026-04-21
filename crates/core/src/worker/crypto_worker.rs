@@ -1,5 +1,8 @@
 use crate::channel::{WorkerChannel, WorkerChannelSender};
+#[cfg(feature = "crypto")]
+use crate::crypto::signers::PrivateKeySigner;
 use crate::generated::nostr::fb;
+use crate::signer_swap::SwappableSigner;
 use crate::spawn::spawn_worker;
 use crate::traits::Signer;
 use crate::types::nostr::Template;
@@ -7,11 +10,11 @@ use std::sync::Arc;
 use tracing::{info, warn};
 
 pub struct CryptoWorker {
-	signer: Arc<dyn Signer>,
+	signer: Arc<SwappableSigner>,
 }
 
 impl CryptoWorker {
-	pub fn new(signer: Arc<dyn Signer>) -> Self {
+	pub fn new(signer: Arc<SwappableSigner>) -> Self {
 		Self { signer }
 	}
 
@@ -61,8 +64,25 @@ impl CryptoWorker {
 								.await
 								.map_err(|e| e.to_string()),
 							fb::MainContent::SetSigner => {
-								warn!("[CryptoWorker] SetSigner not yet supported");
-								Err("not supported".to_string())
+								if let Some(set_signer) = msg.content_as_set_signer() {
+									let set_signer_t = set_signer.unpack();
+									match set_signer_t.signer_type {
+										#[cfg(feature = "crypto")]
+										fb::SignerTypeT::PrivateKey(pk) => {
+											match PrivateKeySigner::new(&pk.private_key) {
+												Ok(new_signer) => {
+													let pubkey_hex = PrivateKeySigner::get_public_key(&new_signer).unwrap();
+													signer_engine.set(Arc::new(new_signer)).await;
+													Ok(pubkey_hex)
+												}
+												Err(e) => Err(format!("invalid private key: {}", e)),
+											}
+										}
+										_ => Err("unsupported signer type".to_string()),
+									}
+								} else {
+									Err("missing set_signer content".to_string())
+								}
 							}
 							_ => {
 								warn!(
@@ -418,7 +438,7 @@ mod new_tests {
 				let (worker_connections, _test_connections) = TokioWorkerChannel::new_pair();
 				let (_test_connections_rx, worker_connections_tx) = TokioWorkerChannel::new_pair();
 
-				let signer = Arc::new(FailingJsonSigner);
+				let signer = Arc::new(SwappableSigner::new(Arc::new(FailingJsonSigner)));
 				let worker = CryptoWorker::new(signer);
 				worker.run(
 					Box::new(worker_engine),
@@ -508,7 +528,7 @@ mod new_tests {
 				let (worker_connections, _test_connections) = TokioWorkerChannel::new_pair();
 				let (_test_connections_rx, worker_connections_tx) = TokioWorkerChannel::new_pair();
 
-				let signer = Arc::new(FailingDecryptSigner);
+				let signer = Arc::new(SwappableSigner::new(Arc::new(FailingDecryptSigner)));
 				let worker = CryptoWorker::new(signer);
 				worker.run(
 					Box::new(worker_engine),
@@ -591,7 +611,7 @@ mod new_tests {
 				let (worker_connections, _test_connections) = TokioWorkerChannel::new_pair();
 				let (_test_connections_rx, worker_connections_tx) = TokioWorkerChannel::new_pair();
 
-				let signer = Arc::new(UnavailableSigner);
+				let signer = Arc::new(SwappableSigner::new(Arc::new(UnavailableSigner)));
 				let worker = CryptoWorker::new(signer);
 				worker.run(
 					Box::new(worker_engine),
@@ -676,7 +696,7 @@ mod new_tests {
 				let (worker_connections, _test_connections) = TokioWorkerChannel::new_pair();
 				let (_test_connections_rx, worker_connections_tx) = TokioWorkerChannel::new_pair();
 
-				let signer = Arc::new(SimpleSigner);
+				let signer = Arc::new(SwappableSigner::new(Arc::new(SimpleSigner)));
 				let worker = CryptoWorker::new(signer);
 				worker.run(
 					Box::new(worker_engine),

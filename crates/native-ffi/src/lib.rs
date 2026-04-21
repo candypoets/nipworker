@@ -1,3 +1,6 @@
+#[cfg(target_os = "android")]
+mod jni;
+
 use std::ffi::{c_char, c_void, CStr};
 use std::slice;
 use std::sync::{Arc, Mutex};

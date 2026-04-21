@@ -10,6 +10,7 @@ import {
 	PipelineConfigT,
 	Pubkey,
 	PublishT,
+	Raw,
 	RequestT,
 	SignEventT,
 	SignedEvent,
@@ -25,8 +26,36 @@ import {
 declare const globalThis: {
 	lynx?: {
 		getNativeModules?: () => Record<string, any>;
+		getStorageSync?: (opts: { key: string }) => { data: string } | undefined;
+		setStorageSync?: (opts: { key: string; data: string }) => void;
+		removeStorageSync?: (opts: { key: string }) => void;
 	};
 	NativeModules?: Record<string, any>;
+};
+
+/** Platform-aware storage: tries localStorage first, then Lynx storage. */
+const storage = {
+	getItem(key: string): string | null {
+		if (typeof localStorage !== 'undefined') {
+			return localStorage.getItem(key);
+		}
+		const result = globalThis.lynx?.getStorageSync?.({ key });
+		return result?.data ?? null;
+	},
+	setItem(key: string, value: string): void {
+		if (typeof localStorage !== 'undefined') {
+			localStorage.setItem(key, value);
+			return;
+		}
+		globalThis.lynx?.setStorageSync?.({ key, data: value });
+	},
+	removeItem(key: string): void {
+		if (typeof localStorage !== 'undefined') {
+			localStorage.removeItem(key);
+			return;
+		}
+		globalThis.lynx?.removeStorageSync?.({ key });
+	},
 };
 
 function getNipworkerModule(): any {
@@ -109,6 +138,10 @@ export class NativeBackend {
 		if (offset + payloadLen > data.byteLength) return;
 		const payload = data.subarray(offset, offset + payloadLen);
 
+		if (subId === 'crypto') {
+			this.handleCryptoMessage(payload);
+			return;
+		}
 		if (subId === '') {
 			this.handleDirectResponse(payload);
 			return;
@@ -182,6 +215,38 @@ export class NativeBackend {
 				}
 				this._signCB(signedEvent);
 			}
+		}
+	}
+
+	private handleCryptoMessage(payload: Uint8Array): void {
+		const bb = new flatbuffers.ByteBuffer(payload);
+		const workerMsg = WorkerMessage.getRootAsWorkerMessage(bb);
+		const msgType = workerMsg.type();
+		if (msgType !== MessageType.Raw) return;
+		const rawObj = workerMsg.content(new Raw());
+		const rawStr = rawObj ? rawObj.raw() : null;
+		if (!rawStr) return;
+		try {
+			const msg = JSON.parse(rawStr);
+			if (msg.op === 'get_public_key' || msg.op === 'set_signer') {
+				const secretKey =
+					this._pendingSession?.type === 'privkey' ? this._pendingSession.payload : undefined;
+				if (msg.result) {
+					this.activePubkey = msg.result;
+					if (this._pendingSession) {
+						this.saveSession(this.activePubkey!, this._pendingSession.type, this._pendingSession.payload);
+						this._pendingSession = null;
+					}
+				}
+				this.dispatch('auth', { pubkey: this.activePubkey, hasSigner: !!msg.result, secretKey });
+			} else if (msg.op === 'sign_event' && msg.result) {
+				const parsed = JSON.parse(msg.result);
+				this._signCB(parsed);
+			} else if (msg.error) {
+				console.warn('[NativeBackend] Crypto error:', msg.error);
+			}
+		} catch (e) {
+			console.warn('[NativeBackend] Failed to parse crypto raw message:', e);
 		}
 	}
 
@@ -424,8 +489,7 @@ export class NativeBackend {
 	}
 
 	getAccounts(): Record<string, { type: string; payload: any }> {
-		if (typeof localStorage === 'undefined') return {};
-		const accountsJson = localStorage.getItem('nostr_signer_accounts') || '{}';
+		const accountsJson = storage.getItem('nostr_signer_accounts') || '{}';
 		try {
 			return JSON.parse(accountsJson);
 		} catch (e) {
@@ -442,19 +506,14 @@ export class NativeBackend {
 	}
 
 	private saveSession(pubkey: string, type: string, payload: any) {
-		if (typeof localStorage === 'undefined') return;
 		const accounts = this.getAccounts();
 		accounts[pubkey] = { type, payload };
-		localStorage.setItem('nostr_signer_accounts', JSON.stringify(accounts));
-		localStorage.setItem('nostr_active_pubkey', pubkey);
+		storage.setItem('nostr_signer_accounts', JSON.stringify(accounts));
+		storage.setItem('nostr_active_pubkey', pubkey);
 	}
 
 	private restoreSession() {
-		if (typeof localStorage === 'undefined') {
-			this.dispatch('auth', { pubkey: null, hasSigner: false });
-			return;
-		}
-		const activePubkey = localStorage.getItem('nostr_active_pubkey');
+		const activePubkey = storage.getItem('nostr_active_pubkey');
 		if (activePubkey) {
 			this.switchAccount(activePubkey);
 		} else {
@@ -466,9 +525,7 @@ export class NativeBackend {
 		this._pendingSession = null;
 		this.activePubkey = null;
 		// TODO: send clear_signer to native engine once supported via FFI
-		if (typeof localStorage !== 'undefined') {
-			localStorage.removeItem('nostr_active_pubkey');
-		}
+		storage.removeItem('nostr_active_pubkey');
 		this.dispatch('logout');
 	}
 
@@ -477,9 +534,7 @@ export class NativeBackend {
 		if (!currentPubkey) return;
 		const accounts = this.getAccounts();
 		delete accounts[currentPubkey];
-		if (typeof localStorage !== 'undefined') {
-			localStorage.setItem('nostr_signer_accounts', JSON.stringify(accounts));
-		}
+		storage.setItem('nostr_signer_accounts', JSON.stringify(accounts));
 		const remaining = Object.keys(accounts);
 		if (remaining.length > 0 && remaining[0]) {
 			this.switchAccount(remaining[0]);
