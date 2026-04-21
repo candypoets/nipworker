@@ -105,30 +105,13 @@ impl<S: EventStorage> NostrDB<S> {
     }
 
     pub async fn add_worker_message_bytes(&self, bytes: &[u8]) -> Result<()> {
+        let sharded = self.storage.as_any().downcast_ref::<ShardedRingBufferStorage>();
+
         // Try WorkerMessage first (SaveToDbPipe sends this format)
         if let Ok(worker_msg) = flatbuffers::root::<WorkerMessage>(bytes) {
-            let msg_type = worker_msg.type_();
-            
-            // Log shard routing for verification
-            if let Some(sharded) = self.storage.as_any().downcast_ref::<ShardedRingBufferStorage>() {
-                if let Some(parsed) = worker_msg.content_as_parsed_event() {
-                    let kind = parsed.kind() as u32;
-                    let shard = sharded.shard_for_kind(kind);
-                    info!("[NostrDB] Storing kind={} -> shard={:?}", kind, shard);
-                } else if let Some(nostr) = worker_msg.content_as_nostr_event() {
-                    let kind = nostr.kind() as u32;
-                    let shard = sharded.shard_for_kind(kind);
-                    info!("[NostrDB] Storing kind={} -> shard={:?}", kind, shard);
-                }
-            }
-            
             // Check if it's a ParsedEvent
             if let Some(parsed) = worker_msg.content_as_parsed_event() {
-                let offset = if let Some(sharded) = self
-                    .storage
-                    .as_any()
-                    .downcast_ref::<ShardedRingBufferStorage>()
-                {
+                let offset = if let Some(sharded) = sharded {
                     sharded
                         .add_event_for_kind(parsed.kind() as u32, bytes)
                         .await?
@@ -142,12 +125,7 @@ impl<S: EventStorage> NostrDB<S> {
             
             // Check if it's a NostrEvent
             if let Some(nostr) = worker_msg.content_as_nostr_event() {
-                info!("[NostrDB] Storing NostrEvent, kind={}, id={}", nostr.kind(), nostr.id());
-                let offset = if let Some(sharded) = self
-                    .storage
-                    .as_any()
-                    .downcast_ref::<ShardedRingBufferStorage>()
-                {
+                let offset = if let Some(sharded) = sharded {
                     sharded
                         .add_event_for_kind(nostr.kind() as u32, bytes)
                         .await?
@@ -156,22 +134,16 @@ impl<S: EventStorage> NostrDB<S> {
                 };
 
                 self.index_nostr_event(nostr, offset);
-                info!("[NostrDB] NostrEvent stored successfully");
                 return Ok(());
             }
             
             // Other message types - skip
-            info!("[NostrDB] WorkerMessage type not storable: {:?}", worker_msg.type_());
             return Ok(());
         }
 
         // Try raw ParsedEvent (backward compat)
         if let Ok(parsed) = flatbuffers::root::<ParsedEvent>(bytes) {
-            let offset = if let Some(sharded) = self
-                .storage
-                .as_any()
-                .downcast_ref::<ShardedRingBufferStorage>()
-            {
+            let offset = if let Some(sharded) = sharded {
                 sharded
                     .add_event_for_kind(parsed.kind() as u32, bytes)
                     .await?
@@ -185,11 +157,7 @@ impl<S: EventStorage> NostrDB<S> {
 
         // Fallback: raw NostrEvent
         if let Ok(nostr) = flatbuffers::root::<NostrEvent>(bytes) {
-            let offset = if let Some(sharded) = self
-                .storage
-                .as_any()
-                .downcast_ref::<ShardedRingBufferStorage>()
-            {
+            let offset = if let Some(sharded) = sharded {
                 sharded
                     .add_event_for_kind(nostr.kind() as u32, bytes)
                     .await?
@@ -557,7 +525,7 @@ impl<S: EventStorage> NostrDB<S> {
 
     /// Try to extract a ParsedEvent from raw bytes
     /// Handles both WorkerMessage wrapper (new format) and direct event (legacy)
-    fn extract_parsed_event(bytes: &Vec<u8>) -> Option<ParsedEvent<'_>> {
+    fn extract_parsed_event(bytes: &[u8]) -> Option<ParsedEvent<'_>> {
         // Try WorkerMessage first (new format)
         if let Ok(wm) = flatbuffers::root::<WorkerMessage>(bytes) {
             if wm.content_type() == fb::Message::ParsedEvent {
@@ -571,7 +539,7 @@ impl<S: EventStorage> NostrDB<S> {
 
     /// Try to extract a NostrEvent from raw bytes
     /// Handles both WorkerMessage wrapper (new format) and direct event (legacy)
-    fn extract_nostr_event(bytes: &Vec<u8>) -> Option<NostrEvent<'_>> {
+    fn extract_nostr_event(bytes: &[u8]) -> Option<NostrEvent<'_>> {
         // Try WorkerMessage first (new format)
         if let Ok(wm) = flatbuffers::root::<WorkerMessage>(bytes) {
             if wm.content_type() == fb::Message::NostrEvent {
@@ -585,7 +553,7 @@ impl<S: EventStorage> NostrDB<S> {
 
     /// Extract created_at regardless of format (ParsedEvent or NostrEvent)
     /// Handles both WorkerMessage wrapper (new format) and direct event (legacy)
-    fn extract_created_at(bytes: &Vec<u8>) -> Option<u32> {
+    fn extract_created_at(bytes: &[u8]) -> Option<u32> {
         // Try WorkerMessage first (new format)
         if let Ok(wm) = flatbuffers::root::<WorkerMessage>(bytes) {
             match wm.content_type() {
@@ -818,15 +786,6 @@ impl<S: EventStorage> NostrDB<S> {
     pub fn query_events_with_filter(&self, filter: QueryFilter) -> Result<QueryResult> {
         let start_time = now_millis();
         
-        // Build a log-friendly filter summary for debugging
-        let filter_summary = format!(
-            "ids={}, kinds={}, authors={}, since={:?}, until={:?}, limit={:?}",
-            filter.ids.as_ref().map(|v| v.len()).unwrap_or(0),
-            filter.kinds.as_ref().map(|v| v.len()).unwrap_or(0),
-            filter.authors.as_ref().map(|v| v.len()).unwrap_or(0),
-            filter.since, filter.until, filter.limit
-        );
-        
         // Start with candidate sets from indexed fields
         let mut candidate_sets = Vec::new();
         let mut use_full_scan = true;
@@ -849,13 +808,6 @@ impl<S: EventStorage> NostrDB<S> {
             for kind in kinds {
                 if let Some(event_ids) = self.indexes.events_by_kind.borrow().get(kind) {
                     kind_events.extend(event_ids.iter().cloned());
-                }
-            }
-            // Log shard info for verification
-            if let Some(sharded) = self.storage.as_any().downcast_ref::<ShardedRingBufferStorage>() {
-                for kind in kinds {
-                    let shard = sharded.shard_for_kind(*kind as u32);
-                    info!("[NostrDB] Query kind={} -> shard={:?} (found {} events)", kind, shard, kind_events.len());
                 }
             }
             candidate_sets.push(kind_events);
@@ -972,8 +924,6 @@ impl<S: EventStorage> NostrDB<S> {
 
         // Apply non-indexed filters and collect results
         let mut results = Vec::new();
-        let search_lower = filter.search.as_ref().map(|s| s.to_lowercase());
-
         for event_id in candidate_ids {
             // Clone the event to avoid holding the borrow
             if let Some(offset) = self.indexes.events_by_id.borrow().get(&event_id).cloned() {
@@ -1031,12 +981,13 @@ impl<S: EventStorage> NostrDB<S> {
 
         let total_found = results.len();
 
-        // Sort by created_at (newest first)
-        results.sort_by(|a, b| {
-            let ca = Self::extract_created_at(a).unwrap_or_default();
-            let cb = Self::extract_created_at(b).unwrap_or_default();
-            cb.cmp(&ca)
-        });
+        // Sort by created_at (newest first) — pre-extract to avoid O(n log n) flatbuffer parses
+        let mut with_time: Vec<(u32, Vec<u8>)> = results
+            .into_iter()
+            .map(|b| (Self::extract_created_at(&b).unwrap_or_default(), b))
+            .collect();
+        with_time.sort_by(|a, b| b.0.cmp(&a.0));
+        let mut results: Vec<Vec<u8>> = with_time.into_iter().map(|(_, b)| b).collect();
 
         // Apply limit
         let has_more = if let Some(limit) = filter.limit {
@@ -1054,8 +1005,13 @@ impl<S: EventStorage> NostrDB<S> {
         // Log slow queries (>1ms) for debugging
         if query_time > 1 {
             info!(
-                "[NostrDB] Slow query detected: {}ms | filter=[{}] | total_found={}",
-                query_time, filter_summary, total_found
+                "[NostrDB] Slow query detected: {}ms | filter=[ids={}, kinds={}, authors={}, since={:?}, until={:?}, limit={:?}] | total_found={}",
+                query_time,
+                filter.ids.as_ref().map(|v| v.len()).unwrap_or(0),
+                filter.kinds.as_ref().map(|v| v.len()).unwrap_or(0),
+                filter.authors.as_ref().map(|v| v.len()).unwrap_or(0),
+                filter.since, filter.until, filter.limit,
+                total_found
             );
         }
 
@@ -1116,12 +1072,13 @@ impl<S: EventStorage> NostrDB<S> {
             }
         }
 
-        // Sort newest-first (same as other paths)
-        all_events.sort_by(|a, b| {
-            let ca = Self::extract_created_at(a).unwrap_or_default();
-            let cb = Self::extract_created_at(b).unwrap_or_default();
-            cb.cmp(&ca)
-        });
+        // Sort newest-first (same as other paths) — pre-extract to avoid O(n log n) flatbuffer parses
+        let mut with_time: Vec<(u32, Vec<u8>)> = all_events
+            .into_iter()
+            .map(|b| (Self::extract_created_at(&b).unwrap_or_default(), b))
+            .collect();
+        with_time.sort_by(|a, b| b.0.cmp(&a.0));
+        all_events = with_time.into_iter().map(|(_, b)| b).collect();
 
         Ok((remaining_indices, all_events))
     }

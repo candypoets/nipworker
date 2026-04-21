@@ -92,8 +92,6 @@ impl RingBufferStorage {
         // Add event data
         buffer.extend_from_slice(event_data);
 
-        drop(buffer); // release borrow before await
-
         // Persistence is stubbed in the platform-agnostic core.
         Ok(new_event_offset)
     }
@@ -253,6 +251,7 @@ impl RingBufferStorage {
     pub fn load_from_bytes(&self, bytes: &[u8]) -> Result<(), String> {
         // Validate the bytes contain valid length-prefixed events
         let mut p = 0usize;
+        let mut event_count = 0usize;
         while p + 4 <= bytes.len() {
             let size = u32::from_le_bytes([bytes[p], bytes[p + 1], bytes[p + 2], bytes[p + 3]])
                 as usize;
@@ -268,6 +267,7 @@ impl RingBufferStorage {
                 ));
             }
             p += 4 + size;
+            event_count += 1;
         }
 
         if p != bytes.len() {
@@ -292,7 +292,7 @@ impl RingBufferStorage {
             "Loaded {} bytes into ring buffer '{}' ({} events)",
             bytes.len(),
             self.buffer_key,
-            self.extract_events_from_buffer().len()
+            event_count
         );
 
         Ok(())

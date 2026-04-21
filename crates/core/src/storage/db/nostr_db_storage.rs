@@ -231,7 +231,7 @@ impl Storage for NostrDbStorage {
 impl NostrDbStorage {
     /// Try to extract created_at from event bytes (handles both WorkerMessage and direct events)
     fn extract_created_at(bytes: &[u8]) -> Option<u32> {
-        use crate::generated::nostr::fb::{self, WorkerMessage};
+        use crate::generated::nostr::fb::{self, WorkerMessage, ParsedEvent, NostrEvent};
         
         // Try WorkerMessage first
         if let Ok(wm) = flatbuffers::root::<WorkerMessage>(bytes) {
@@ -251,7 +251,16 @@ impl NostrDbStorage {
             return None;
         }
         
-        // Legacy format
+        // Legacy format: direct ParsedEvent
+        if let Ok(p) = flatbuffers::root::<ParsedEvent>(bytes) {
+            return Some(p.created_at());
+        }
+        
+        // Legacy format: direct NostrEvent
+        if let Ok(n) = flatbuffers::root::<NostrEvent>(bytes) {
+            return Some(n.created_at().max(0) as u32);
+        }
+        
         None
     }
 }
