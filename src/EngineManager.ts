@@ -9,6 +9,8 @@ import {
 	MainContent,
 	MainMessageT,
 	MessageType,
+	Nip46BunkerT,
+	Nip46QRT,
 	PipelineConfigT,
 	PrivateKeyT,
 	PublishT,
@@ -421,43 +423,29 @@ export class EngineManager {
 				this.getPublicKey();
 				break;
 			case 'nip46': {
-				this.postMessage({ type: 'set_proxy_signer', signerType: 'nip46' });
 				this.nip46Signer = null;
 				this.nip46SignerGeneration = -1;
 				const nip46Payload = payload as { url: string; clientSecret: string } | undefined;
 				if (nip46Payload?.url) {
-					(async () => {
-						try {
-							if (nip46Payload.url.startsWith('bunker://')) {
-								const bp = await parseBunkerInput(nip46Payload.url);
-								if (!bp) throw new Error('Failed to parse bunker URL');
-								const secretKey = hexToBytes(nip46Payload.clientSecret);
-								const signer = BunkerSigner.fromBunker(secretKey, bp);
-								this.nip46Signer = signer;
-								this.nip46SignerGeneration = currentGeneration;
-								await signer.connect();
-								if (this._signerGeneration !== currentGeneration) return;
-								this.getPublicKey();
-							} else if (nip46Payload.url.startsWith('nostrconnect://')) {
-								const signer = await this.initNip46URISigner(nip46Payload.url, nip46Payload.clientSecret);
-								if (this._signerGeneration !== currentGeneration) return;
-								this.nip46Signer = signer;
-								this.nip46SignerGeneration = currentGeneration;
-								const bunkerUrl = toBunkerURL(signer.bp);
-								this._pendingSession!.payload = { url: bunkerUrl, clientSecret: nip46Payload.clientSecret };
-								this.getPublicKey();
-							}
-						} catch (err: any) {
-							console.error('[EngineManager] Failed to initialize NIP-46 signer:', err.message || String(err));
-							if (this._signerGeneration !== currentGeneration) return;
-							this.nip46Signer = null;
-							this.nip46SignerGeneration = -1;
-							this.dispatch('auth', { pubkey: null, hasSigner: false });
-						}
-					})();
-				} else {
-					this.getPublicKey();
+					if (nip46Payload.url.startsWith('bunker://')) {
+						const bunkerT = new Nip46BunkerT(nip46Payload.clientSecret, nip46Payload.url);
+						const setSignerT = new SetSignerT(SignerType.Nip46Bunker, bunkerT);
+						const mainT = new MainMessageT(MainContent.SetSigner, setSignerT);
+						const builder = new flatbuffers.Builder(2048);
+						builder.finish(mainT.pack(builder));
+						const uint8Array = builder.asUint8Array();
+						this.postMessage({ serializedMessage: uint8Array }, [uint8Array.buffer]);
+					} else if (nip46Payload.url.startsWith('nostrconnect://')) {
+						const qrT = new Nip46QRT(nip46Payload.clientSecret, nip46Payload.url);
+						const setSignerT = new SetSignerT(SignerType.Nip46QR, qrT);
+						const mainT = new MainMessageT(MainContent.SetSigner, setSignerT);
+						const builder = new flatbuffers.Builder(2048);
+						builder.finish(mainT.pack(builder));
+						const uint8Array = builder.asUint8Array();
+						this.postMessage({ serializedMessage: uint8Array }, [uint8Array.buffer]);
+					}
 				}
+				this.getPublicKey();
 				break;
 			}
 		}

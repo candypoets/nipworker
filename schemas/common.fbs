@@ -204,12 +204,29 @@ table NostrEvent {
 
 // Signers
 
-
 table PrivateKey {
     private_key: string (required);
 }
 
+// NIP-07 browser extension signer — no parameters
+table Nip07 {
+}
+
+// NIP-46 bunker URL signer
+table Nip46Bunker {
+    bunker_url: string (required);
+    client_secret: string;
+}
+
+// NIP-46 QR / nostrconnect URL signer
+table Nip46QR {
+    nostrconnect_url: string (required);
+    client_secret: string;
+}
 
 union SignerType {
-    PrivateKey
+    PrivateKey,
+    Nip07,
+    Nip46Bunker,
+    Nip46QR
 }

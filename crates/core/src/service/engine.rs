@@ -93,7 +93,8 @@ impl NostrEngine {
 			cache_conn_ch.clone_sender(),
 		);
 
-		let crypto_worker = CryptoWorker::new(swappable_signer.clone());
+		let crypto_worker = CryptoWorker::new();
+		crypto_worker.set_dyn_signer(Arc::new(swappable_signer.clone()));
 		crypto_worker.run(
 			Box::new(crypto_engine_ch),
 			Box::new(crypto_parser_ch),

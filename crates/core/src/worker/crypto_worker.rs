@@ -1,21 +1,336 @@
 use crate::channel::{WorkerChannel, WorkerChannelSender};
 #[cfg(feature = "crypto")]
 use crate::crypto::signers::PrivateKeySigner;
+#[cfg(feature = "crypto")]
+use crate::crypto::signers::nip46::{Nip46Config, Nip46Signer};
 use crate::generated::nostr::fb;
-use crate::signer_swap::SwappableSigner;
+use crate::port::Port;
 use crate::spawn::spawn_worker;
 use crate::traits::Signer;
 use crate::types::nostr::Template;
+use futures::channel::mpsc;
 use std::sync::Arc;
 use tracing::{info, warn};
 
+// ---------------------------------------------------------------------------
+// SharedPort: bridges a WorkerChannelSender to the Port trait so NIP-46
+// transport can send frames into the connections worker.
+// ---------------------------------------------------------------------------
+struct SharedPort {
+	sender: std::rc::Rc<std::cell::RefCell<Box<dyn WorkerChannelSender>>>,
+}
+
+impl Port for SharedPort {
+	fn send(&self, bytes: &[u8]) -> Result<(), String> {
+		self.sender
+			.borrow()
+			.send(bytes)
+			.map_err(|e| e.to_string())
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ActiveSigner: enum that holds whichever signer is currently active.
+// Cloning the enum clones the *reference* (Rc/Arc) so the borrow on the
+// RefCell can be released before an await point.
+// ---------------------------------------------------------------------------
+#[derive(Clone)]
+enum ActiveSigner {
+	Unset,
+	DynSigner(Arc<dyn Signer>),
+	#[cfg(feature = "crypto")]
+	Pk(std::rc::Rc<PrivateKeySigner>),
+	#[cfg(feature = "crypto")]
+	Nip46(std::rc::Rc<Nip46Signer>),
+}
+
+impl ActiveSigner {
+	async fn get_public_key(&self) -> Result<String, String> {
+		match self {
+			ActiveSigner::Unset => Err("no signer configured".to_string()),
+			ActiveSigner::DynSigner(s) => s.get_public_key().await.map_err(|e| e.to_string()),
+			#[cfg(feature = "crypto")]
+			ActiveSigner::Pk(s) => s.get_public_key().map_err(|e| e.to_string()),
+			#[cfg(feature = "crypto")]
+			ActiveSigner::Nip46(s) => s.get_public_key().await.map_err(|e| e.to_string()),
+		}
+	}
+
+	async fn sign_event(&self, event_json: &str) -> Result<String, String> {
+		match self {
+			ActiveSigner::Unset => Err("no signer configured".to_string()),
+			ActiveSigner::DynSigner(s) => s.sign_event(event_json).await.map_err(|e| e.to_string()),
+			#[cfg(feature = "crypto")]
+			ActiveSigner::Pk(s) => s.sign_event(event_json).await.map_err(|e| e.to_string()),
+			#[cfg(feature = "crypto")]
+			ActiveSigner::Nip46(s) => {
+				let val = s.sign_event(event_json).await.map_err(|e| e.to_string())?;
+				serde_json::to_string(&val).map_err(|e| e.to_string())
+			}
+		}
+	}
+
+	async fn nip04_encrypt(&self, peer: &str, plaintext: &str) -> Result<String, String> {
+		match self {
+			ActiveSigner::Unset => Err("no signer configured".to_string()),
+			ActiveSigner::DynSigner(s) => {
+				s.nip04_encrypt(peer, plaintext).await.map_err(|e| e.to_string())
+			}
+			#[cfg(feature = "crypto")]
+			ActiveSigner::Pk(s) => s.nip04_encrypt(peer, plaintext).map_err(|e| e.to_string()),
+			#[cfg(feature = "crypto")]
+			ActiveSigner::Nip46(s) => {
+				s.nip04_encrypt(peer, plaintext).await.map_err(|e| e.to_string())
+			}
+		}
+	}
+
+	async fn nip04_decrypt(&self, peer: &str, ciphertext: &str) -> Result<String, String> {
+		match self {
+			ActiveSigner::Unset => Err("no signer configured".to_string()),
+			ActiveSigner::DynSigner(s) => {
+				s.nip04_decrypt(peer, ciphertext).await.map_err(|e| e.to_string())
+			}
+			#[cfg(feature = "crypto")]
+			ActiveSigner::Pk(s) => s.nip04_decrypt(peer, ciphertext).map_err(|e| e.to_string()),
+			#[cfg(feature = "crypto")]
+			ActiveSigner::Nip46(s) => {
+				s.nip04_decrypt(peer, ciphertext).await.map_err(|e| e.to_string())
+			}
+		}
+	}
+
+	async fn nip44_encrypt(&self, peer: &str, plaintext: &str) -> Result<String, String> {
+		match self {
+			ActiveSigner::Unset => Err("no signer configured".to_string()),
+			ActiveSigner::DynSigner(s) => {
+				s.nip44_encrypt(peer, plaintext).await.map_err(|e| e.to_string())
+			}
+			#[cfg(feature = "crypto")]
+			ActiveSigner::Pk(s) => s.nip44_encrypt(peer, plaintext).map_err(|e| e.to_string()),
+			#[cfg(feature = "crypto")]
+			ActiveSigner::Nip46(s) => {
+				s.nip44_encrypt(peer, plaintext).await.map_err(|e| e.to_string())
+			}
+		}
+	}
+
+	async fn nip44_decrypt(&self, peer: &str, ciphertext: &str) -> Result<String, String> {
+		match self {
+			ActiveSigner::Unset => Err("no signer configured".to_string()),
+			ActiveSigner::DynSigner(s) => {
+				s.nip44_decrypt(peer, ciphertext).await.map_err(|e| e.to_string())
+			}
+			#[cfg(feature = "crypto")]
+			ActiveSigner::Pk(s) => s.nip44_decrypt(peer, ciphertext).map_err(|e| e.to_string()),
+			#[cfg(feature = "crypto")]
+			ActiveSigner::Nip46(s) => {
+				s.nip44_decrypt(peer, ciphertext).await.map_err(|e| e.to_string())
+			}
+		}
+	}
+
+	async fn nip04_decrypt_between(
+		&self,
+		sender: &str,
+		recipient: &str,
+		ciphertext: &str,
+	) -> Result<String, String> {
+		match self {
+			ActiveSigner::Unset => Err("no signer configured".to_string()),
+			ActiveSigner::DynSigner(s) => s
+				.nip04_decrypt_between(sender, recipient, ciphertext)
+				.await
+				.map_err(|e| e.to_string()),
+			#[cfg(feature = "crypto")]
+			ActiveSigner::Pk(s) => s
+				.nip04_decrypt_between(sender, recipient, ciphertext)
+				.map_err(|e| e.to_string()),
+			#[cfg(feature = "crypto")]
+			ActiveSigner::Nip46(s) => s
+				.nip04_decrypt_between(sender, recipient, ciphertext)
+				.await
+				.map_err(|e| e.to_string()),
+		}
+	}
+
+	async fn nip44_decrypt_between(
+		&self,
+		sender: &str,
+		recipient: &str,
+		ciphertext: &str,
+	) -> Result<String, String> {
+		match self {
+			ActiveSigner::Unset => Err("no signer configured".to_string()),
+			ActiveSigner::DynSigner(s) => s
+				.nip44_decrypt_between(sender, recipient, ciphertext)
+				.await
+				.map_err(|e| e.to_string()),
+			#[cfg(feature = "crypto")]
+			ActiveSigner::Pk(s) => s
+				.nip44_decrypt_between(sender, recipient, ciphertext)
+				.map_err(|e| e.to_string()),
+			#[cfg(feature = "crypto")]
+			ActiveSigner::Nip46(s) => s
+				.nip44_decrypt_between(sender, recipient, ciphertext)
+				.await
+				.map_err(|e| e.to_string()),
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// URL parsing helpers (used by NIP-46 SetSigner)
+// ---------------------------------------------------------------------------
+#[cfg(feature = "crypto")]
+#[derive(Debug)]
+struct BunkerUrl {
+	remote_pubkey: String,
+	relays: Vec<String>,
+	secret: Option<String>,
+}
+
+#[cfg(feature = "crypto")]
+#[derive(Debug)]
+struct NostrconnectUrl {
+	client_pubkey: String,
+	relays: Vec<String>,
+	secret: String,
+	app_name: Option<String>,
+}
+
+#[cfg(feature = "crypto")]
+fn parse_bunker_url(url: &str) -> Result<BunkerUrl, String> {
+	if !url.starts_with("bunker://") {
+		return Err("Invalid bunker URL: must start with bunker://".to_string());
+	}
+
+	let url_part = &url[9..];
+	let parts: Vec<&str> = url_part.split('?').collect();
+
+	if parts.len() != 2 {
+		return Err("Invalid bunker URL: missing query parameters".to_string());
+	}
+
+	let remote_pubkey = parts[0];
+	if !remote_pubkey.chars().all(|c| c.is_ascii_hexdigit()) || remote_pubkey.len() != 64 {
+		return Err("Invalid remote signer pubkey in bunker URL".to_string());
+	}
+
+	let query = parts[1];
+	let mut relays = Vec::new();
+	let mut secret = None;
+
+	for pair in query.split('&') {
+		let mut kv = pair.splitn(2, '=');
+		let key = kv.next().unwrap_or("");
+		let value = kv.next().unwrap_or("");
+		let decoded = url::form_urlencoded::byte_serialize(value.as_bytes()).collect::<String>();
+		// Actually form_urlencoded::byte_serialize encodes; we need decode.
+		// Let's use percent_decode instead.
+	}
+
+	// Re-parse with proper decoding
+	let params = url::Url::parse(&format!("http://localhost/?{}", query))
+		.map_err(|e| format!("Invalid URL parameters: {}", e))?;
+
+	for relay in params
+		.query_pairs()
+		.filter_map(|(k, v)| if k == "relay" { Some(v) } else { None })
+	{
+		relays.push(relay.to_string());
+	}
+
+	if relays.is_empty() {
+		return Err("No relays specified in bunker URL".to_string());
+	}
+
+	secret = params.query_pairs().find_map(|(k, v)| {
+		if k == "secret" {
+			Some(v.to_string())
+		} else {
+			None
+		}
+	});
+
+	Ok(BunkerUrl {
+		remote_pubkey: remote_pubkey.to_string(),
+		relays,
+		secret,
+	})
+}
+
+#[cfg(feature = "crypto")]
+fn parse_nostrconnect_url(url: &str) -> Result<NostrconnectUrl, String> {
+	if !url.starts_with("nostrconnect://") {
+		return Err("Invalid nostrconnect URL: must start with nostrconnect://".to_string());
+	}
+
+	let url_part = &url[15..];
+	let parts: Vec<&str> = url_part.split('?').collect();
+
+	if parts.len() != 2 {
+		return Err("Invalid nostrconnect URL: missing query parameters".to_string());
+	}
+
+	let client_pubkey = parts[0];
+	if !client_pubkey.chars().all(|c| c.is_ascii_hexdigit()) || client_pubkey.len() != 64 {
+		return Err("Invalid client pubkey in nostrconnect URL".to_string());
+	}
+
+	let query = parts[1];
+	let params = url::Url::parse(&format!("http://localhost/?{}", query))
+		.map_err(|e| format!("Invalid URL parameters: {}", e))?;
+
+	let mut relays = Vec::new();
+	for relay in params
+		.query_pairs()
+		.filter_map(|(k, v)| if k == "relay" { Some(v) } else { None })
+	{
+		relays.push(relay.to_string());
+	}
+
+	if relays.is_empty() {
+		return Err("No relays specified in nostrconnect URL".to_string());
+	}
+
+	let secret = params
+		.query_pairs()
+		.find_map(|(k, v)| if k == "secret" { Some(v.to_string()) } else { None })
+		.ok_or_else(|| "Secret is required in nostrconnect URL".to_string())?;
+
+	let app_name = params
+		.query_pairs()
+		.find_map(|(k, v)| if k == "name" { Some(v.to_string()) } else { None });
+
+	Ok(NostrconnectUrl {
+		client_pubkey: client_pubkey.to_string(),
+		relays,
+		secret,
+		app_name,
+	})
+}
+
+// ---------------------------------------------------------------------------
+// CryptoWorker
+// ---------------------------------------------------------------------------
 pub struct CryptoWorker {
-	signer: Arc<SwappableSigner>,
+	active: std::rc::Rc<std::cell::RefCell<ActiveSigner>>,
+	nip46_tx: std::cell::RefCell<Option<mpsc::Sender<Vec<u8>>>>,
 }
 
 impl CryptoWorker {
-	pub fn new(signer: Arc<SwappableSigner>) -> Self {
-		Self { signer }
+	pub fn new() -> Self {
+		Self {
+			active: std::rc::Rc::new(std::cell::RefCell::new(ActiveSigner::Unset)),
+			nip46_tx: std::cell::RefCell::new(None),
+		}
+	}
+
+	/// For backwards compatibility: inject an initial `Arc<dyn Signer>`
+	/// (typically a `SwappableSigner`) so existing engine bootstrap keeps working.
+	pub fn set_dyn_signer(&self, signer: Arc<dyn Signer>) {
+		*self.active.borrow_mut() = ActiveSigner::DynSigner(signer);
 	}
 
 	pub fn run(
@@ -27,7 +342,16 @@ impl CryptoWorker {
 		to_parser: Box<dyn WorkerChannelSender>,
 		to_connections: Box<dyn WorkerChannelSender>,
 	) {
-		let signer_engine = self.signer.clone();
+		let to_connections_rc =
+			std::rc::Rc::new(std::cell::RefCell::new(to_connections));
+
+		// -------------------------------------------------------------------
+		// Engine listener
+		// -------------------------------------------------------------------
+		let active_engine = self.active.clone();
+		let to_main_engine = to_main;
+		let nip46_tx_engine = self.nip46_tx.clone();
+		let to_connections_rc_engine = to_connections_rc.clone();
 		spawn_worker(async move {
 			info!("[CryptoWorker] engine listener started");
 			loop {
@@ -41,7 +365,7 @@ impl CryptoWorker {
 									"{{\"op\":\"error\",\"error\":\"decode failed: {}\"}}",
 									e
 								));
-								let _ = to_main.send(&resp);
+								let _ = to_main_engine.send(&resp);
 								continue;
 							}
 						};
@@ -49,20 +373,19 @@ impl CryptoWorker {
 						let result: Result<String, String> = match msg.content_type() {
 							fb::MainContent::SignEvent => {
 								if let Some(sign_event) = msg.content_as_sign_event() {
-									let template = Template::from_flatbuffer(&sign_event.template());
+									let template =
+										Template::from_flatbuffer(&sign_event.template());
 									let event_json = template.to_json();
-									signer_engine
-										.sign_event(&event_json)
-										.await
-										.map_err(|e| e.to_string())
+									let signer = active_engine.borrow().clone();
+									signer.sign_event(&event_json).await
 								} else {
 									Err("missing sign_event content".to_string())
 								}
 							}
-							fb::MainContent::GetPublicKey => signer_engine
-								.get_public_key()
-								.await
-								.map_err(|e| e.to_string()),
+							fb::MainContent::GetPublicKey => {
+								let signer = active_engine.borrow().clone();
+								signer.get_public_key().await
+							}
 							fb::MainContent::SetSigner => {
 								if let Some(set_signer) = msg.content_as_set_signer() {
 									let set_signer_t = set_signer.unpack();
@@ -71,12 +394,126 @@ impl CryptoWorker {
 										fb::SignerTypeT::PrivateKey(pk) => {
 											match PrivateKeySigner::new(&pk.private_key) {
 												Ok(new_signer) => {
-													let pubkey_hex = PrivateKeySigner::get_public_key(&new_signer).unwrap();
-													signer_engine.set(Arc::new(new_signer)).await;
+													let pubkey_hex = new_signer
+														.get_public_key()
+														.unwrap_or_default();
+													*active_engine.borrow_mut() =
+														ActiveSigner::Pk(
+															std::rc::Rc::new(new_signer),
+														);
 													Ok(pubkey_hex)
 												}
-												Err(e) => Err(format!("invalid private key: {}", e)),
+												Err(e) => Err(format!(
+													"invalid private key: {}",
+													e
+												)),
 											}
+										}
+										#[cfg(feature = "crypto")]
+										fb::SignerTypeT::Nip46Bunker(bunker) => {
+											let parsed = parse_bunker_url(&bunker.bunker_url)
+												.map_err(|e| format!("parse bunker: {}", e))?;
+
+											let client_keys = bunker
+												.client_secret
+												.as_deref()
+												.and_then(|s| crate::types::Keys::parse(s).ok());
+
+											let cfg = Nip46Config {
+												remote_signer_pubkey: parsed.remote_pubkey,
+												relays: parsed.relays,
+												use_nip44: true,
+												app_name: None,
+												expected_secret: parsed.secret,
+											};
+
+											let (tx, rx) = mpsc::channel::<Vec<u8>>(256);
+											*nip46_tx_engine.borrow_mut() = Some(tx);
+
+											let port = SharedPort {
+												sender: to_connections_rc_engine.clone(),
+											};
+											let nip46 = std::rc::Rc::new(Nip46Signer::new(
+												cfg,
+												std::rc::Rc::new(std::cell::RefCell::new(
+													port,
+												)),
+												rx,
+												client_keys,
+											));
+
+											nip46.start(spawn_worker, None);
+											*active_engine.borrow_mut() =
+												ActiveSigner::Nip46(nip46.clone());
+
+											let nip46_conn = nip46.clone();
+											spawn_worker(async move {
+												match nip46_conn.connect().await {
+													Ok(_) => {
+														match nip46_conn.get_public_key().await {
+															Ok(pk) => {
+																info!(
+																	"[CryptoWorker] NIP-46 bunker connected, pubkey: {}",
+																	&pk[..16.min(pk.len())]
+																);
+															}
+															Err(e) => {
+																warn!(
+																	"[CryptoWorker] NIP-46 bunker get_public_key failed: {}",
+																	e
+																);
+															}
+														}
+													}
+													Err(e) => {
+														warn!(
+															"[CryptoWorker] NIP-46 bunker connect failed: {}",
+															e
+														);
+													}
+												}
+											});
+
+											Ok("NIP-46 bunker signer initialized".to_string())
+										}
+										#[cfg(feature = "crypto")]
+										fb::SignerTypeT::Nip46QR(qr) => {
+											let parsed = parse_nostrconnect_url(&qr.qr_string)
+												.map_err(|e| format!("parse nostrconnect: {}", e))?;
+
+											let client_keys = qr
+												.client_secret
+												.as_deref()
+												.and_then(|s| crate::types::Keys::parse(s).ok());
+
+											let cfg = Nip46Config {
+												remote_signer_pubkey: String::new(),
+												relays: parsed.relays,
+												use_nip44: true,
+												app_name: parsed.app_name,
+												expected_secret: Some(parsed.secret),
+											};
+
+											let (tx, rx) = mpsc::channel::<Vec<u8>>(256);
+											*nip46_tx_engine.borrow_mut() = Some(tx);
+
+											let port = SharedPort {
+												sender: to_connections_rc_engine.clone(),
+											};
+											let nip46 = std::rc::Rc::new(Nip46Signer::new(
+												cfg,
+												std::rc::Rc::new(std::cell::RefCell::new(
+													port,
+												)),
+												rx,
+												client_keys,
+											));
+
+											nip46.start(spawn_worker, None);
+											*active_engine.borrow_mut() =
+												ActiveSigner::Nip46(nip46.clone());
+
+											Ok("NIP-46 QR signer initialized, awaiting discovery".to_string())
 										}
 										_ => Err("unsupported signer type".to_string()),
 									}
@@ -110,7 +547,7 @@ impl CryptoWorker {
 							}
 						};
 						let resp = serialize_raw_message(&raw_json);
-						if let Err(e) = to_main.send(&resp) {
+						if let Err(e) = to_main_engine.send(&resp) {
 							warn!("[CryptoWorker] failed to send response to main: {}", e);
 						}
 					}
@@ -120,7 +557,11 @@ impl CryptoWorker {
 			info!("[CryptoWorker] engine listener exiting");
 		});
 
-		let signer_parser = self.signer.clone();
+		// -------------------------------------------------------------------
+		// Parser listener
+		// -------------------------------------------------------------------
+		let active_parser = self.active.clone();
+		let to_parser_parser = to_parser;
 		spawn_worker(async move {
 			info!("[CryptoWorker] parser listener started");
 			loop {
@@ -134,7 +575,7 @@ impl CryptoWorker {
 									0,
 									Err(format!("decode failed: {}", e)),
 								);
-								let _ = to_parser.send(&resp);
+								let _ = to_parser_parser.send(&resp);
 								continue;
 							}
 						};
@@ -142,42 +583,34 @@ impl CryptoWorker {
 						let request_id = req.request_id();
 						let payload = req.payload().unwrap_or("");
 						let pubkey = req.pubkey().unwrap_or("");
+						let signer = active_parser.borrow().clone();
 
 						let result: Result<String, String> = match req.op() {
-							fb::SignerOp::GetPubkey => signer_parser
-								.get_public_key()
-								.await
-								.map_err(|e| e.to_string()),
-							fb::SignerOp::SignEvent | fb::SignerOp::AuthEvent => signer_parser
-								.sign_event(payload)
-								.await
-								.map_err(|e| e.to_string()),
-							fb::SignerOp::Nip04Encrypt => signer_parser
-								.nip04_encrypt(pubkey, payload)
-								.await
-								.map_err(|e| e.to_string()),
-							fb::SignerOp::Nip04Decrypt => signer_parser
-								.nip04_decrypt(pubkey, payload)
-								.await
-								.map_err(|e| e.to_string()),
-							fb::SignerOp::Nip44Encrypt => signer_parser
-								.nip44_encrypt(pubkey, payload)
-								.await
-								.map_err(|e| e.to_string()),
-							fb::SignerOp::Nip44Decrypt => signer_parser
-								.nip44_decrypt(pubkey, payload)
-								.await
-								.map_err(|e| e.to_string()),
+							fb::SignerOp::GetPubkey => signer.get_public_key().await,
+							fb::SignerOp::SignEvent | fb::SignerOp::AuthEvent => {
+								signer.sign_event(payload).await
+							}
+							fb::SignerOp::Nip04Encrypt => {
+								signer.nip04_encrypt(pubkey, payload).await
+							}
+							fb::SignerOp::Nip04Decrypt => {
+								signer.nip04_decrypt(pubkey, payload).await
+							}
+							fb::SignerOp::Nip44Encrypt => {
+								signer.nip44_encrypt(pubkey, payload).await
+							}
+							fb::SignerOp::Nip44Decrypt => {
+								signer.nip44_decrypt(pubkey, payload).await
+							}
 							fb::SignerOp::Nip04DecryptBetween => {
 								let sender = req.sender_pubkey().unwrap_or("");
 								let recipient = req.recipient_pubkey().unwrap_or("");
 								if sender.is_empty() || recipient.is_empty() {
 									Err("missing sender or recipient pubkey".to_string())
 								} else {
-									signer_parser
+									signer
 										.nip04_decrypt_between(sender, recipient, payload)
 										.await
-										.map_err(|e| e.to_string())
 								}
 							}
 							fb::SignerOp::Nip44DecryptBetween => {
@@ -186,10 +619,9 @@ impl CryptoWorker {
 								if sender.is_empty() || recipient.is_empty() {
 									Err("missing sender or recipient pubkey".to_string())
 								} else {
-									signer_parser
+									signer
 										.nip44_decrypt_between(sender, recipient, payload)
 										.await
-										.map_err(|e| e.to_string())
 								}
 							}
 							fb::SignerOp::VerifyProof => Ok(String::new()),
@@ -197,7 +629,7 @@ impl CryptoWorker {
 						};
 
 						let resp = serialize_signer_response(request_id, result);
-						if let Err(e) = to_parser.send(&resp) {
+						if let Err(e) = to_parser_parser.send(&resp) {
 							warn!("[CryptoWorker] failed to send response to parser: {}", e);
 						}
 					}
@@ -207,7 +639,12 @@ impl CryptoWorker {
 			info!("[CryptoWorker] parser listener exiting");
 		});
 
-		let signer_connections = self.signer;
+		// -------------------------------------------------------------------
+		// Connections listener
+		// -------------------------------------------------------------------
+		let active_connections = self.active.clone();
+		let nip46_tx_connections = self.nip46_tx.clone();
+		let to_connections_rc_connections = to_connections_rc.clone();
 		spawn_worker(async move {
 			info!("[CryptoWorker] connections listener started");
 			loop {
@@ -216,6 +653,11 @@ impl CryptoWorker {
 						let req = match flatbuffers::root::<fb::SignerRequest>(&bytes) {
 							Ok(r) => r,
 							Err(e) => {
+								// Try NIP-46 pump first
+								if let Some(tx) = nip46_tx_connections.borrow().as_ref() {
+									let _ = tx.try_send(bytes);
+									continue;
+								}
 								warn!(
 									"[CryptoWorker] failed to decode SignerRequest from connections: {}",
 									e
@@ -224,23 +666,26 @@ impl CryptoWorker {
 									0,
 									Err(format!("decode failed: {}", e)),
 								);
-								let _ = to_connections.send(&resp);
+								let _ = to_connections_rc_connections.borrow().send(&resp);
 								continue;
 							}
 						};
 
 						let request_id = req.request_id();
 						let payload = req.payload().unwrap_or("");
+						let signer = active_connections.borrow().clone();
 
 						let result: Result<String, String> = match req.op() {
 							fb::SignerOp::AuthEvent => {
-								match signer_connections.sign_event(payload).await {
+								match signer.sign_event(payload).await {
 									Ok(signed) => {
 										if let Ok(parsed) =
 											serde_json::from_str::<serde_json::Value>(payload)
 										{
-											let relay_url =
-												parsed["relay"].as_str().unwrap_or("").to_string();
+											let relay_url = parsed["relay"]
+												.as_str()
+												.unwrap_or("")
+												.to_string();
 											Ok(serde_json::json!({"event": signed, "relay": relay_url})
 												.to_string())
 										} else {
@@ -257,7 +702,7 @@ impl CryptoWorker {
 						};
 
 						let resp = serialize_signer_response(request_id, result);
-						if let Err(e) = to_connections.send(&resp) {
+						if let Err(e) = to_connections_rc_connections.borrow().send(&resp) {
 							warn!(
 								"[CryptoWorker] failed to send response to connections: {}",
 								e
@@ -438,8 +883,8 @@ mod new_tests {
 				let (worker_connections, _test_connections) = TokioWorkerChannel::new_pair();
 				let (_test_connections_rx, worker_connections_tx) = TokioWorkerChannel::new_pair();
 
-				let signer = Arc::new(SwappableSigner::new(Arc::new(FailingJsonSigner)));
-				let worker = CryptoWorker::new(signer);
+				let worker = CryptoWorker::new();
+				worker.set_dyn_signer(Arc::new(FailingJsonSigner));
 				worker.run(
 					Box::new(worker_engine),
 					Box::new(worker_parser),
@@ -528,8 +973,8 @@ mod new_tests {
 				let (worker_connections, _test_connections) = TokioWorkerChannel::new_pair();
 				let (_test_connections_rx, worker_connections_tx) = TokioWorkerChannel::new_pair();
 
-				let signer = Arc::new(SwappableSigner::new(Arc::new(FailingDecryptSigner)));
-				let worker = CryptoWorker::new(signer);
+				let worker = CryptoWorker::new();
+				worker.set_dyn_signer(Arc::new(FailingDecryptSigner));
 				worker.run(
 					Box::new(worker_engine),
 					Box::new(worker_parser),
@@ -611,8 +1056,8 @@ mod new_tests {
 				let (worker_connections, _test_connections) = TokioWorkerChannel::new_pair();
 				let (_test_connections_rx, worker_connections_tx) = TokioWorkerChannel::new_pair();
 
-				let signer = Arc::new(SwappableSigner::new(Arc::new(UnavailableSigner)));
-				let worker = CryptoWorker::new(signer);
+				let worker = CryptoWorker::new();
+				worker.set_dyn_signer(Arc::new(UnavailableSigner));
 				worker.run(
 					Box::new(worker_engine),
 					Box::new(worker_parser),
@@ -696,8 +1141,8 @@ mod new_tests {
 				let (worker_connections, _test_connections) = TokioWorkerChannel::new_pair();
 				let (_test_connections_rx, worker_connections_tx) = TokioWorkerChannel::new_pair();
 
-				let signer = Arc::new(SwappableSigner::new(Arc::new(SimpleSigner)));
-				let worker = CryptoWorker::new(signer);
+				let worker = CryptoWorker::new();
+				worker.set_dyn_signer(Arc::new(SimpleSigner));
 				worker.run(
 					Box::new(worker_engine),
 					Box::new(worker_parser),

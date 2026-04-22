@@ -3,7 +3,7 @@ import { useSubscription } from '../../src/hooks';
 import { WorkerMessage, MessageType, ParsedEvent } from '../../src/generated/nostr/fb';
 import { ByteBuffer } from 'flatbuffers';
 
-const RELAY = 'wss://relay.damus.io';
+const RELAY = 'wss://nos.lol';
 const FILTER = { kinds: [1], limit: 10, relays: [RELAY] };
 
 interface MsgRecord {

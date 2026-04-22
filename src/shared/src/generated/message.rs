@@ -771,12 +771,15 @@ impl WitnessT {
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_SIGNER_TYPE: u8 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MAX_SIGNER_TYPE: u8 = 1;
+pub const ENUM_MAX_SIGNER_TYPE: u8 = 4;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_SIGNER_TYPE: [SignerType; 2] = [
+pub const ENUM_VALUES_SIGNER_TYPE: [SignerType; 5] = [
   SignerType::NONE,
   SignerType::PrivateKey,
+  SignerType::Nip07,
+  SignerType::Nip46Bunker,
+  SignerType::Nip46QR,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -786,18 +789,27 @@ pub struct SignerType(pub u8);
 impl SignerType {
   pub const NONE: Self = Self(0);
   pub const PrivateKey: Self = Self(1);
+  pub const Nip07: Self = Self(2);
+  pub const Nip46Bunker: Self = Self(3);
+  pub const Nip46QR: Self = Self(4);
 
   pub const ENUM_MIN: u8 = 0;
-  pub const ENUM_MAX: u8 = 1;
+  pub const ENUM_MAX: u8 = 4;
   pub const ENUM_VALUES: &'static [Self] = &[
     Self::NONE,
     Self::PrivateKey,
+    Self::Nip07,
+    Self::Nip46Bunker,
+    Self::Nip46QR,
   ];
   /// Returns the variant's name or "" if unknown.
   pub fn variant_name(self) -> Option<&'static str> {
     match self {
       Self::NONE => Some("NONE"),
       Self::PrivateKey => Some("PrivateKey"),
+      Self::Nip07 => Some("Nip07"),
+      Self::Nip46Bunker => Some("Nip46Bunker"),
+      Self::Nip46QR => Some("Nip46QR"),
       _ => None,
     }
   }
@@ -861,6 +873,9 @@ pub struct SignerTypeUnionTableOffset {}
 pub enum SignerTypeT {
   NONE,
   PrivateKey(Box<PrivateKeyT>),
+  Nip07(Box<Nip07T>),
+  Nip46Bunker(Box<Nip46BunkerT>),
+  Nip46QR(Box<Nip46QRT>),
 }
 impl Default for SignerTypeT {
   fn default() -> Self {
@@ -872,12 +887,18 @@ impl SignerTypeT {
     match self {
       Self::NONE => SignerType::NONE,
       Self::PrivateKey(_) => SignerType::PrivateKey,
+      Self::Nip07(_) => SignerType::Nip07,
+      Self::Nip46Bunker(_) => SignerType::Nip46Bunker,
+      Self::Nip46QR(_) => SignerType::Nip46QR,
     }
   }
   pub fn pack<'b, A: flatbuffers::Allocator + 'b>(&self, fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>) -> Option<flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>> {
     match self {
       Self::NONE => None,
       Self::PrivateKey(v) => Some(v.pack(fbb).as_union_value()),
+      Self::Nip07(v) => Some(v.pack(fbb).as_union_value()),
+      Self::Nip46Bunker(v) => Some(v.pack(fbb).as_union_value()),
+      Self::Nip46QR(v) => Some(v.pack(fbb).as_union_value()),
     }
   }
   /// If the union variant matches, return the owned PrivateKeyT, setting the union to NONE.
@@ -900,6 +921,69 @@ impl SignerTypeT {
   /// If the union variant matches, return a mutable reference to the PrivateKeyT.
   pub fn as_private_key_mut(&mut self) -> Option<&mut PrivateKeyT> {
     if let Self::PrivateKey(v) = self { Some(v.as_mut()) } else { None }
+  }
+  /// If the union variant matches, return the owned Nip07T, setting the union to NONE.
+  pub fn take_nip_07(&mut self) -> Option<Box<Nip07T>> {
+    if let Self::Nip07(_) = self {
+      let v = core::mem::replace(self, Self::NONE);
+      if let Self::Nip07(w) = v {
+        Some(w)
+      } else {
+        unreachable!()
+      }
+    } else {
+      None
+    }
+  }
+  /// If the union variant matches, return a reference to the Nip07T.
+  pub fn as_nip_07(&self) -> Option<&Nip07T> {
+    if let Self::Nip07(v) = self { Some(v.as_ref()) } else { None }
+  }
+  /// If the union variant matches, return a mutable reference to the Nip07T.
+  pub fn as_nip_07_mut(&mut self) -> Option<&mut Nip07T> {
+    if let Self::Nip07(v) = self { Some(v.as_mut()) } else { None }
+  }
+  /// If the union variant matches, return the owned Nip46BunkerT, setting the union to NONE.
+  pub fn take_nip_46_bunker(&mut self) -> Option<Box<Nip46BunkerT>> {
+    if let Self::Nip46Bunker(_) = self {
+      let v = core::mem::replace(self, Self::NONE);
+      if let Self::Nip46Bunker(w) = v {
+        Some(w)
+      } else {
+        unreachable!()
+      }
+    } else {
+      None
+    }
+  }
+  /// If the union variant matches, return a reference to the Nip46BunkerT.
+  pub fn as_nip_46_bunker(&self) -> Option<&Nip46BunkerT> {
+    if let Self::Nip46Bunker(v) = self { Some(v.as_ref()) } else { None }
+  }
+  /// If the union variant matches, return a mutable reference to the Nip46BunkerT.
+  pub fn as_nip_46_bunker_mut(&mut self) -> Option<&mut Nip46BunkerT> {
+    if let Self::Nip46Bunker(v) = self { Some(v.as_mut()) } else { None }
+  }
+  /// If the union variant matches, return the owned Nip46QRT, setting the union to NONE.
+  pub fn take_nip_46_qr(&mut self) -> Option<Box<Nip46QRT>> {
+    if let Self::Nip46QR(_) = self {
+      let v = core::mem::replace(self, Self::NONE);
+      if let Self::Nip46QR(w) = v {
+        Some(w)
+      } else {
+        unreachable!()
+      }
+    } else {
+      None
+    }
+  }
+  /// If the union variant matches, return a reference to the Nip46QRT.
+  pub fn as_nip_46_qr(&self) -> Option<&Nip46QRT> {
+    if let Self::Nip46QR(v) = self { Some(v.as_ref()) } else { None }
+  }
+  /// If the union variant matches, return a mutable reference to the Nip46QRT.
+  pub fn as_nip_46_qr_mut(&mut self) -> Option<&mut Nip46QRT> {
+    if let Self::Nip46QR(v) = self { Some(v.as_mut()) } else { None }
   }
 }
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
@@ -9076,6 +9160,428 @@ impl PrivateKeyT {
     })
   }
 }
+pub enum Nip07Offset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct Nip07<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for Nip07<'a> {
+  type Inner = Nip07<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> Nip07<'a> {
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    Nip07 { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    _args: &'args Nip07Args
+  ) -> flatbuffers::WIPOffset<Nip07<'bldr>> {
+    let mut builder = Nip07Builder::new(_fbb);
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> Nip07T {
+    Nip07T {
+    }
+  }
+}
+
+impl flatbuffers::Verifiable for Nip07<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct Nip07Args {
+}
+impl<'a> Default for Nip07Args {
+  #[inline]
+  fn default() -> Self {
+    Nip07Args {
+    }
+  }
+}
+
+pub struct Nip07Builder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> Nip07Builder<'a, 'b, A> {
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> Nip07Builder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    Nip07Builder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<Nip07<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for Nip07<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("Nip07");
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct Nip07T {
+}
+impl Default for Nip07T {
+  fn default() -> Self {
+    Self {
+    }
+  }
+}
+impl Nip07T {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<Nip07<'b>> {
+    Nip07::create(_fbb, &Nip07Args{
+    })
+  }
+}
+pub enum Nip46BunkerOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct Nip46Bunker<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for Nip46Bunker<'a> {
+  type Inner = Nip46Bunker<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> Nip46Bunker<'a> {
+  pub const VT_BUNKER_URL: flatbuffers::VOffsetT = 4;
+  pub const VT_CLIENT_SECRET: flatbuffers::VOffsetT = 6;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    Nip46Bunker { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args Nip46BunkerArgs<'args>
+  ) -> flatbuffers::WIPOffset<Nip46Bunker<'bldr>> {
+    let mut builder = Nip46BunkerBuilder::new(_fbb);
+    if let Some(x) = args.client_secret { builder.add_client_secret(x); }
+    if let Some(x) = args.bunker_url { builder.add_bunker_url(x); }
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> Nip46BunkerT {
+    let bunker_url = {
+      let x = self.bunker_url();
+      x.to_string()
+    };
+    let client_secret = self.client_secret().map(|x| {
+      x.to_string()
+    });
+    Nip46BunkerT {
+      bunker_url,
+      client_secret,
+    }
+  }
+
+  #[inline]
+  pub fn bunker_url(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Nip46Bunker::VT_BUNKER_URL, None).unwrap()}
+  }
+  #[inline]
+  pub fn client_secret(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Nip46Bunker::VT_CLIENT_SECRET, None)}
+  }
+}
+
+impl flatbuffers::Verifiable for Nip46Bunker<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("bunker_url", Self::VT_BUNKER_URL, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("client_secret", Self::VT_CLIENT_SECRET, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct Nip46BunkerArgs<'a> {
+    pub bunker_url: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub client_secret: Option<flatbuffers::WIPOffset<&'a str>>,
+}
+impl<'a> Default for Nip46BunkerArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    Nip46BunkerArgs {
+      bunker_url: None, // required field
+      client_secret: None,
+    }
+  }
+}
+
+pub struct Nip46BunkerBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> Nip46BunkerBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_bunker_url(&mut self, bunker_url: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Nip46Bunker::VT_BUNKER_URL, bunker_url);
+  }
+  #[inline]
+  pub fn add_client_secret(&mut self, client_secret: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Nip46Bunker::VT_CLIENT_SECRET, client_secret);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> Nip46BunkerBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    Nip46BunkerBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<Nip46Bunker<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, Nip46Bunker::VT_BUNKER_URL,"bunker_url");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for Nip46Bunker<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("Nip46Bunker");
+      ds.field("bunker_url", &self.bunker_url());
+      ds.field("client_secret", &self.client_secret());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct Nip46BunkerT {
+  pub bunker_url: String,
+  pub client_secret: Option<String>,
+}
+impl Default for Nip46BunkerT {
+  fn default() -> Self {
+    Self {
+      bunker_url: "".to_string(),
+      client_secret: None,
+    }
+  }
+}
+impl Nip46BunkerT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<Nip46Bunker<'b>> {
+    let bunker_url = Some({
+      let x = &self.bunker_url;
+      _fbb.create_string(x)
+    });
+    let client_secret = self.client_secret.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    Nip46Bunker::create(_fbb, &Nip46BunkerArgs{
+      bunker_url,
+      client_secret,
+    })
+  }
+}
+pub enum Nip46QROffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct Nip46QR<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for Nip46QR<'a> {
+  type Inner = Nip46QR<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> Nip46QR<'a> {
+  pub const VT_NOSTRCONNECT_URL: flatbuffers::VOffsetT = 4;
+  pub const VT_CLIENT_SECRET: flatbuffers::VOffsetT = 6;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    Nip46QR { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args Nip46QRArgs<'args>
+  ) -> flatbuffers::WIPOffset<Nip46QR<'bldr>> {
+    let mut builder = Nip46QRBuilder::new(_fbb);
+    if let Some(x) = args.client_secret { builder.add_client_secret(x); }
+    if let Some(x) = args.nostrconnect_url { builder.add_nostrconnect_url(x); }
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> Nip46QRT {
+    let nostrconnect_url = {
+      let x = self.nostrconnect_url();
+      x.to_string()
+    };
+    let client_secret = self.client_secret().map(|x| {
+      x.to_string()
+    });
+    Nip46QRT {
+      nostrconnect_url,
+      client_secret,
+    }
+  }
+
+  #[inline]
+  pub fn nostrconnect_url(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Nip46QR::VT_NOSTRCONNECT_URL, None).unwrap()}
+  }
+  #[inline]
+  pub fn client_secret(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Nip46QR::VT_CLIENT_SECRET, None)}
+  }
+}
+
+impl flatbuffers::Verifiable for Nip46QR<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("nostrconnect_url", Self::VT_NOSTRCONNECT_URL, true)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("client_secret", Self::VT_CLIENT_SECRET, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct Nip46QRArgs<'a> {
+    pub nostrconnect_url: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub client_secret: Option<flatbuffers::WIPOffset<&'a str>>,
+}
+impl<'a> Default for Nip46QRArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    Nip46QRArgs {
+      nostrconnect_url: None, // required field
+      client_secret: None,
+    }
+  }
+}
+
+pub struct Nip46QRBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> Nip46QRBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_nostrconnect_url(&mut self, nostrconnect_url: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Nip46QR::VT_NOSTRCONNECT_URL, nostrconnect_url);
+  }
+  #[inline]
+  pub fn add_client_secret(&mut self, client_secret: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Nip46QR::VT_CLIENT_SECRET, client_secret);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> Nip46QRBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    Nip46QRBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<Nip46QR<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, Nip46QR::VT_NOSTRCONNECT_URL,"nostrconnect_url");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for Nip46QR<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("Nip46QR");
+      ds.field("nostrconnect_url", &self.nostrconnect_url());
+      ds.field("client_secret", &self.client_secret());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct Nip46QRT {
+  pub nostrconnect_url: String,
+  pub client_secret: Option<String>,
+}
+impl Default for Nip46QRT {
+  fn default() -> Self {
+    Self {
+      nostrconnect_url: "".to_string(),
+      client_secret: None,
+    }
+  }
+}
+impl Nip46QRT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<Nip46QR<'b>> {
+    let nostrconnect_url = Some({
+      let x = &self.nostrconnect_url;
+      _fbb.create_string(x)
+    });
+    let client_secret = self.client_secret.as_ref().map(|x|{
+      _fbb.create_string(x)
+    });
+    Nip46QR::create(_fbb, &Nip46QRArgs{
+      nostrconnect_url,
+      client_secret,
+    })
+  }
+}
 pub enum ParsePipeConfigOffset {}
 #[derive(Copy, Clone, PartialEq)]
 
@@ -12018,6 +12524,21 @@ impl<'a> SetSigner<'a> {
             .expect("Invalid union table, expected `SignerType::PrivateKey`.")
             .unpack()
       )),
+      SignerType::Nip07 => SignerTypeT::Nip07(Box::new(
+        self.signer_type_as_nip_07()
+            .expect("Invalid union table, expected `SignerType::Nip07`.")
+            .unpack()
+      )),
+      SignerType::Nip46Bunker => SignerTypeT::Nip46Bunker(Box::new(
+        self.signer_type_as_nip_46_bunker()
+            .expect("Invalid union table, expected `SignerType::Nip46Bunker`.")
+            .unpack()
+      )),
+      SignerType::Nip46QR => SignerTypeT::Nip46QR(Box::new(
+        self.signer_type_as_nip_46_qr()
+            .expect("Invalid union table, expected `SignerType::Nip46QR`.")
+            .unpack()
+      )),
       _ => SignerTypeT::NONE,
     };
     SetSignerT {
@@ -12053,6 +12574,48 @@ impl<'a> SetSigner<'a> {
     }
   }
 
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn signer_type_as_nip_07(&self) -> Option<Nip07<'a>> {
+    if self.signer_type_type() == SignerType::Nip07 {
+      let u = self.signer_type();
+      // Safety:
+      // Created from a valid Table for this object
+      // Which contains a valid union in this slot
+      Some(unsafe { Nip07::init_from_table(u) })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn signer_type_as_nip_46_bunker(&self) -> Option<Nip46Bunker<'a>> {
+    if self.signer_type_type() == SignerType::Nip46Bunker {
+      let u = self.signer_type();
+      // Safety:
+      // Created from a valid Table for this object
+      // Which contains a valid union in this slot
+      Some(unsafe { Nip46Bunker::init_from_table(u) })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn signer_type_as_nip_46_qr(&self) -> Option<Nip46QR<'a>> {
+    if self.signer_type_type() == SignerType::Nip46QR {
+      let u = self.signer_type();
+      // Safety:
+      // Created from a valid Table for this object
+      // Which contains a valid union in this slot
+      Some(unsafe { Nip46QR::init_from_table(u) })
+    } else {
+      None
+    }
+  }
+
 }
 
 impl flatbuffers::Verifiable for SetSigner<'_> {
@@ -12065,6 +12628,9 @@ impl flatbuffers::Verifiable for SetSigner<'_> {
      .visit_union::<SignerType, _>("signer_type_type", Self::VT_SIGNER_TYPE_TYPE, "signer_type", Self::VT_SIGNER_TYPE, true, |key, v, pos| {
         match key {
           SignerType::PrivateKey => v.verify_union_variant::<flatbuffers::ForwardsUOffset<PrivateKey>>("SignerType::PrivateKey", pos),
+          SignerType::Nip07 => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Nip07>>("SignerType::Nip07", pos),
+          SignerType::Nip46Bunker => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Nip46Bunker>>("SignerType::Nip46Bunker", pos),
+          SignerType::Nip46QR => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Nip46QR>>("SignerType::Nip46QR", pos),
           _ => Ok(()),
         }
      })?
@@ -12122,6 +12688,27 @@ impl core::fmt::Debug for SetSigner<'_> {
       match self.signer_type_type() {
         SignerType::PrivateKey => {
           if let Some(x) = self.signer_type_as_private_key() {
+            ds.field("signer_type", &x)
+          } else {
+            ds.field("signer_type", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        SignerType::Nip07 => {
+          if let Some(x) = self.signer_type_as_nip_07() {
+            ds.field("signer_type", &x)
+          } else {
+            ds.field("signer_type", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        SignerType::Nip46Bunker => {
+          if let Some(x) = self.signer_type_as_nip_46_bunker() {
+            ds.field("signer_type", &x)
+          } else {
+            ds.field("signer_type", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        SignerType::Nip46QR => {
+          if let Some(x) = self.signer_type_as_nip_46_qr() {
             ds.field("signer_type", &x)
           } else {
             ds.field("signer_type", &"InvalidFlatbuffer: Union discriminant does not match value.")
