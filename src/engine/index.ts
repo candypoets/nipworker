@@ -10,9 +10,16 @@ function forwardEvent(subId: string, data: Uint8Array): void {
 	port?.postMessage({ subId, data });
 }
 
-function forwardSignerRequest(id: number, op: string, payload: any): void {
-	port?.postMessage({ type: 'signer_request', id, op, payload });
-}
+const pendingExtensionRequests = new Map<number, { resolve: Function; reject: Function }>();
+let nextExtensionId = 0;
+
+(self as any).callExtension = (op: string, payload: any): Promise<any> => {
+	const id = nextExtensionId++;
+	return new Promise((resolve, reject) => {
+		pendingExtensionRequests.set(id, { resolve, reject });
+		port?.postMessage({ type: 'extension_request', id, op, payload });
+	});
+};
 
 function handlePortMessage(event: MessageEvent): void {
 	if (!engine) return;
@@ -28,17 +35,13 @@ function handlePortMessage(event: MessageEvent): void {
 		return;
 	}
 
-	if (type === 'signer_response') {
-		const { id, result, error } = event.data;
-		engine.handleSignerResponse(id, result || '', error || '').catch((e: any) => {
-			console.warn('[engine worker] signer response error:', e);
-		});
-		return;
-	}
-
-	if (type === 'set_proxy_signer') {
-		const { signerType } = event.data;
-		engine.setProxySigner(signerType);
+	if (type === 'extension_response') {
+		const { id, ok, result, error } = event.data;
+		const pending = pendingExtensionRequests.get(id);
+		if (pending) {
+			pendingExtensionRequests.delete(id);
+			ok ? pending.resolve(result) : pending.reject(new Error(error));
+		}
 		return;
 	}
 
@@ -55,7 +58,7 @@ function handleWorkerMessage(event: MessageEvent): void {
 		port = payload.port;
 		port.onmessage = handlePortMessage;
 
-		engine = new NipworkerEngine(forwardEvent, forwardSignerRequest);
+		engine = new NipworkerEngine(forwardEvent);
 		(self as any).__engine = engine;
 
 		self.postMessage({ type: 'ready' });

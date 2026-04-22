@@ -1,9 +1,9 @@
+use async_trait::async_trait;
 use futures::channel::mpsc;
 use futures::StreamExt;
 use js_sys::Uint8Array;
 use nipworker_core::service::engine::NostrEngine;
-use nipworker_core::traits::Signer;
-use std::cell::RefCell;
+use nipworker_core::traits::{Signer, SignerError};
 use std::rc::Rc;
 use std::sync::Arc;
 use tracing::info;
@@ -12,38 +12,82 @@ use wasm_bindgen_futures::spawn_local;
 
 mod idb_utils;
 mod ring_buffer_persist;
-mod signer;
 mod storage;
 mod transport;
 
-use signer::{LocalSigner, ProxySigner};
 use storage::NostrDbStorage;
 use transport::WebSocketTransport;
+
+/// Minimal dummy signer. The engine no longer manages signers directly;
+/// the core CryptoWorker handles all signer types via SetSigner FlatBuffers messages.
+struct DummySigner;
+
+#[async_trait(?Send)]
+impl Signer for DummySigner {
+	async fn get_public_key(&self) -> Result<String, SignerError> {
+		Err(SignerError::Other("DummySigner: not configured".into()))
+	}
+
+	async fn sign_event(&self, _event_json: &str) -> Result<String, SignerError> {
+		Err(SignerError::Other("DummySigner: not configured".into()))
+	}
+
+	async fn nip04_encrypt(&self, _peer: &str, _plaintext: &str) -> Result<String, SignerError> {
+		Err(SignerError::Other("DummySigner: not configured".into()))
+	}
+
+	async fn nip04_decrypt(&self, _peer: &str, _ciphertext: &str) -> Result<String, SignerError> {
+		Err(SignerError::Other("DummySigner: not configured".into()))
+	}
+
+	async fn nip44_encrypt(&self, _peer: &str, _plaintext: &str) -> Result<String, SignerError> {
+		Err(SignerError::Other("DummySigner: not configured".into()))
+	}
+
+	async fn nip44_decrypt(&self, _peer: &str, _ciphertext: &str) -> Result<String, SignerError> {
+		Err(SignerError::Other("DummySigner: not configured".into()))
+	}
+
+	async fn nip04_decrypt_between(
+		&self,
+		_sender: &str,
+		_recipient: &str,
+		_ciphertext: &str,
+	) -> Result<String, SignerError> {
+		Err(SignerError::Other("DummySigner: not configured".into()))
+	}
+
+	async fn nip44_decrypt_between(
+		&self,
+		_sender: &str,
+		_recipient: &str,
+		_ciphertext: &str,
+	) -> Result<String, SignerError> {
+		Err(SignerError::Other("DummySigner: not configured".into()))
+	}
+}
 
 /// WASM-facing engine worker that hosts the full NostrEngine in a single thread.
 /// Thin wrapper — all orchestration lives in the TypeScript worker.
 #[wasm_bindgen]
 pub struct NipworkerEngine {
 	engine: Rc<NostrEngine>,
-	proxy_signer: Rc<RefCell<Option<Arc<ProxySigner>>>>,
-	signer_req_tx: mpsc::UnboundedSender<(u64, String, serde_json::Value)>,
 }
 
 #[wasm_bindgen]
 impl NipworkerEngine {
-	/// new(on_event, on_signer_request)
+	/// new(on_event)
 	///
-	/// `on_event`      : (subId: string, data: Uint8Array) => void
-	/// `on_signer_request` : (id: number, op: string, payload: any) => void
+	/// `on_event`: (subId: string, data: Uint8Array) => void
 	#[wasm_bindgen(constructor)]
-	pub fn new(on_event: js_sys::Function, on_signer_request: js_sys::Function) -> Self {
+	pub fn new(on_event: js_sys::Function) -> Self {
 		console_error_panic_hook::set_once();
 		tracing_wasm::set_as_global_default();
 		info!("[nipworker-engine] Initializing WASM engine...");
 
 		let transport = Arc::new(WebSocketTransport::new());
 		let storage = Arc::new(NostrDbStorage::new(8 * 1024 * 1024));
-		let signer: Arc<dyn Signer> = Arc::new(LocalSigner::new());
+		let signer: Arc<dyn Signer> = Arc::new(DummySigner);
 
 		// ── Event sink: channel → JS callback ──
 		let (event_tx, mut event_rx) = mpsc::channel::<(String, Vec<u8>)>(256);
@@ -60,59 +104,9 @@ impl NipworkerEngine {
 			}
 		});
 
-		// ── Signer proxy: channel → JS callback ──
-		let (signer_req_tx, mut signer_req_rx) =
-			mpsc::unbounded::<(u64, String, serde_json::Value)>();
-		let cb = on_signer_request.clone();
-		spawn_local(async move {
-			while let Some((id, op, payload)) = signer_req_rx.next().await {
-				let payload_str =
-					serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string());
-				let payload_js = js_sys::JSON::parse(&payload_str)
-					.unwrap_or_else(|_| js_sys::Object::new().into());
-				let _ = cb.call3(
-					&JsValue::NULL,
-					&JsValue::from_f64(id as f64),
-					&op.into(),
-					&payload_js,
-				);
-			}
-		});
-
 		let engine = Rc::new(NostrEngine::new(transport, storage, signer, event_tx));
 
-		Self {
-			engine,
-			proxy_signer: Rc::new(RefCell::new(None)),
-			signer_req_tx,
-		}
-	}
-
-	/// Switch to a proxy signer (nip07 / nip46) that round-trips to JS.
-	#[wasm_bindgen(js_name = setProxySigner)]
-	pub fn set_proxy_signer(&self, signer_type: String) {
-		info!("[nipworker-engine] set_proxy_signer: {}", signer_type);
-
-		let ps = Arc::new(ProxySigner::new(self.signer_req_tx.clone()));
-		*self.proxy_signer.borrow_mut() = Some(Arc::clone(&ps));
-
-		let engine = self.engine.clone();
-		spawn_local(async move {
-			engine.set_signer(ps).await;
-		});
-	}
-
-	/// Forward a signer response from JS back to the pending ProxySigner request.
-	#[wasm_bindgen(js_name = handleSignerResponse)]
-	pub async fn handle_signer_response(&self, id: u64, result: String, error: String) {
-		if let Some(ps) = self.proxy_signer.borrow().as_ref() {
-			let res = if error.is_empty() {
-				Ok(result)
-			} else {
-				Err(error)
-			};
-			ps.handle_response(id, res).await;
-		}
+		Self { engine }
 	}
 
 	/// Dispatch a FlatBuffers MainMessage byte slice to the engine.

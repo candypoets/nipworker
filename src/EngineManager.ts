@@ -2,13 +2,12 @@ import * as flatbuffers from 'flatbuffers';
 import { ArrayBufferReader } from 'src/lib/ArrayBufferReader';
 import { NostrManagerConfig, RequestObject, SubscriptionConfig } from 'src/types';
 import type { EventTemplate, NostrEvent } from 'nostr-tools';
-import { BunkerSigner, parseBunkerInput, toBunkerURL } from 'nostr-tools/nip46';
-import { hexToBytes } from 'nostr-tools/utils';
 import {
 	GetPublicKeyT,
 	MainContent,
 	MainMessageT,
 	MessageType,
+	Nip07T,
 	Nip46BunkerT,
 	Nip46QRT,
 	PipelineConfigT,
@@ -58,15 +57,6 @@ export class EngineManager {
 		{ status: 'connected' | 'failed' | 'close'; timestamp: number }
 	>();
 
-	private proxyPending = new Map<
-		number,
-		{ resolve: (value: string) => void; reject: (err: Error) => void }
-	>();
-	private proxyNextId = 0;
-	private nip46Signer: BunkerSigner | null = null;
-	private nip46SignerGeneration = 0;
-	private _signerGeneration = 0;
-
 	public PERPETUAL_SUBSCRIPTIONS = ['notifications', 'starterpack'];
 
 	constructor(_config: NostrManagerConfig = {}) {
@@ -81,7 +71,7 @@ export class EngineManager {
 			[mainPort.port2]
 		);
 
-		this.enginePort.onmessage = (event) => {
+		this.enginePort.onmessage = async (event) => {
 			const { subId, data, type, status, url } = event.data;
 
 			if (subId && data) {
@@ -155,8 +145,39 @@ export class EngineManager {
 				return;
 			}
 
-			if (type === 'signer_request') {
-				this.handleSignerRequest(event.data);
+			if (type === 'extension_request') {
+				const { id, op, payload } = event.data;
+				try {
+					const nostr = (window as any).nostr;
+					if (!nostr) throw new Error('NIP-07 extension (window.nostr) not found');
+
+					let result;
+					switch (op) {
+						case 'getPublicKey':
+							result = await nostr.getPublicKey();
+							break;
+						case 'signEvent':
+							result = await nostr.signEvent(payload);
+							break;
+						case 'nip04Encrypt':
+							result = await nostr.nip04.encrypt(payload.pubkey, payload.plaintext);
+							break;
+						case 'nip04Decrypt':
+							result = await nostr.nip04.decrypt(payload.pubkey, payload.ciphertext);
+							break;
+						case 'nip44Encrypt':
+							result = await nostr.nip44.encrypt(payload.pubkey, payload.plaintext);
+							break;
+						case 'nip44Decrypt':
+							result = await nostr.nip44.decrypt(payload.pubkey, payload.ciphertext);
+							break;
+						default:
+							throw new Error(`Unknown extension operation: ${op}`);
+					}
+					this.postMessage({ type: 'extension_response', id, ok: true, result });
+				} catch (e: any) {
+					this.postMessage({ type: 'extension_response', id, ok: false, error: e.message || String(e) });
+				}
 				return;
 			}
 
@@ -394,13 +415,7 @@ export class EngineManager {
 	}
 
 	setSigner(name: string, payload?: string | { url: string; clientSecret: string }): void {
-		this._signerGeneration++;
-		const currentGeneration = this._signerGeneration;
 		this._pendingSession = { type: name, payload };
-		if (name !== 'nip46') {
-			this.nip46Signer = null;
-			this.nip46SignerGeneration = -1;
-		}
 		switch (name) {
 			case 'pubkey':
 				this.activePubkey = payload as string;
@@ -418,13 +433,17 @@ export class EngineManager {
 				this.postMessage({ serializedMessage: uint8Array }, [uint8Array.buffer]);
 				break;
 			}
-			case 'nip07':
-				this.postMessage({ type: 'set_proxy_signer', signerType: 'nip07' });
-				this.getPublicKey();
+			case 'nip07': {
+				const nip07T = new Nip07T();
+				const setSignerT = new SetSignerT(SignerType.Nip07, nip07T);
+				const mainT = new MainMessageT(MainContent.SetSigner, setSignerT);
+				const builder = new flatbuffers.Builder(2048);
+				builder.finish(mainT.pack(builder));
+				const uint8Array = builder.asUint8Array();
+				this.postMessage({ serializedMessage: uint8Array }, [uint8Array.buffer]);
 				break;
+			}
 			case 'nip46': {
-				this.nip46Signer = null;
-				this.nip46SignerGeneration = -1;
 				const nip46Payload = payload as { url: string; clientSecret: string } | undefined;
 				if (nip46Payload?.url) {
 					if (nip46Payload.url.startsWith('bunker://')) {
@@ -473,120 +492,6 @@ export class EngineManager {
 		this.setSigner('nip07', '');
 	}
 
-	private async initNip46URISigner(nostrconnectUrl: string, clientSecret: string): Promise<BunkerSigner> {
-		const secretKey = hexToBytes(clientSecret);
-		const signer = await BunkerSigner.fromURI(secretKey, nostrconnectUrl);
-		return signer;
-	}
-
-	private getActiveSessionType(): string | null {
-		if (this._pendingSession) return this._pendingSession.type;
-		const pubkey = this.activePubkey || localStorage.getItem('nostr_active_pubkey');
-		if (!pubkey) return null;
-		const accounts = this.getAccounts();
-		return accounts[pubkey]?.type || null;
-	}
-
-	private async handleSignerRequest(msg: any): Promise<void> {
-		const { id, op, payload } = msg;
-		// Maintain pending map structure as required by M12B
-		this.proxyNextId++;
-		this.proxyPending.set(id, {
-			resolve: () => {},
-			reject: () => {}
-		});
-		try {
-			const sessionType = this.getActiveSessionType();
-			let result: string;
-
-			if (sessionType === 'nip07') {
-				result = await this.executeNip07Op(op, payload);
-			} else if (sessionType === 'nip46') {
-				result = await this.executeNip46Op(op, payload);
-			} else {
-				throw new Error(`No active proxy signer session (type: ${sessionType})`);
-			}
-
-			this.postMessage({ type: 'signer_response', id, result });
-		} catch (err: any) {
-			this.postMessage({
-				type: 'signer_response',
-				id,
-				error: err.message || String(err)
-			});
-		} finally {
-			this.proxyPending.delete(id);
-		}
-	}
-
-	private async executeNip07Op(op: string, payload: any): Promise<string> {
-		const nostr = (window as any).nostr;
-		if (!nostr) throw new Error('NIP-07 extension (window.nostr) not found');
-
-		switch (op) {
-			case 'get_public_key':
-				if (typeof nostr.getPublicKey !== 'function') {
-					throw new Error('window.nostr.getPublicKey is not available');
-				}
-				return await nostr.getPublicKey();
-			case 'sign_event': {
-				if (typeof nostr.signEvent !== 'function') {
-					throw new Error('window.nostr.signEvent is not available');
-				}
-				const ev = JSON.parse(payload.event_json);
-				const signed = await nostr.signEvent(ev);
-				return JSON.stringify(signed);
-			}
-			case 'nip04_encrypt':
-				if (!nostr.nip04 || typeof nostr.nip04.encrypt !== 'function') {
-					throw new Error('window.nostr.nip04.encrypt is not available');
-				}
-				return await nostr.nip04.encrypt(payload.peer, payload.plaintext);
-			case 'nip04_decrypt':
-				if (!nostr.nip04 || typeof nostr.nip04.decrypt !== 'function') {
-					throw new Error('window.nostr.nip04.decrypt is not available');
-				}
-				return await nostr.nip04.decrypt(payload.peer, payload.ciphertext);
-			case 'nip44_encrypt':
-				if (!nostr.nip44 || typeof nostr.nip44.encrypt !== 'function') {
-					throw new Error('window.nostr.nip44.encrypt is not available');
-				}
-				return await nostr.nip44.encrypt(payload.peer, payload.plaintext);
-			case 'nip44_decrypt':
-				if (!nostr.nip44 || typeof nostr.nip44.decrypt !== 'function') {
-					throw new Error('window.nostr.nip44.decrypt is not available');
-				}
-				return await nostr.nip44.decrypt(payload.peer, payload.ciphertext);
-			default:
-				throw new Error(`Unknown signer operation: ${op}`);
-		}
-	}
-
-	private async executeNip46Op(op: string, payload: any): Promise<string> {
-		if (!this.nip46Signer || this.nip46SignerGeneration !== this._signerGeneration) {
-			throw new Error('NIP-46 signer not initialized');
-		}
-
-		switch (op) {
-			case 'get_public_key':
-				return await this.nip46Signer.getPublicKey();
-			case 'sign_event': {
-				const ev = JSON.parse(payload.event_json);
-				const signed = await this.nip46Signer.signEvent(ev);
-				return JSON.stringify(signed);
-			}
-			case 'nip04_encrypt':
-				return await this.nip46Signer.nip04Encrypt(payload.peer, payload.plaintext);
-			case 'nip04_decrypt':
-				return await this.nip46Signer.nip04Decrypt(payload.peer, payload.ciphertext);
-			case 'nip44_encrypt':
-				return await this.nip46Signer.nip44Encrypt(payload.peer, payload.plaintext);
-			case 'nip44_decrypt':
-				return await this.nip46Signer.nip44Decrypt(payload.peer, payload.ciphertext);
-			default:
-				throw new Error(`Unknown signer operation: ${op}`);
-		}
-	}
 
 	setPubkey(pubkey: string): void {
 		this.setSigner('pubkey', pubkey);
@@ -658,9 +563,6 @@ export class EngineManager {
 	}
 
 	public logout(): void {
-		this._signerGeneration++;
-		this.nip46Signer = null;
-		this.nip46SignerGeneration = -1;
 		this._pendingSession = null;
 		this.activePubkey = null;
 		this.postMessage({ type: 'clear_signer' });

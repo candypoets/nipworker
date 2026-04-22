@@ -1,6 +1,8 @@
 use crate::channel::{WorkerChannel, WorkerChannelSender};
 #[cfg(feature = "crypto")]
 use crate::crypto::signers::PrivateKeySigner;
+#[cfg(all(feature = "crypto", target_arch = "wasm32"))]
+use crate::crypto::signers::Nip07Signer;
 #[cfg(feature = "crypto")]
 use crate::crypto::signers::nip46::{Nip46Config, Nip46Signer};
 use crate::generated::nostr::fb;
@@ -42,6 +44,8 @@ enum ActiveSigner {
 	Pk(std::rc::Rc<PrivateKeySigner>),
 	#[cfg(feature = "crypto")]
 	Nip46(std::rc::Rc<Nip46Signer>),
+	#[cfg(all(feature = "crypto", target_arch = "wasm32"))]
+	Nip07(std::rc::Rc<Nip07Signer>),
 }
 
 impl ActiveSigner {
@@ -53,6 +57,8 @@ impl ActiveSigner {
 			ActiveSigner::Pk(s) => s.get_public_key().map_err(|e| e.to_string()),
 			#[cfg(feature = "crypto")]
 			ActiveSigner::Nip46(s) => s.get_public_key().await.map_err(|e| e.to_string()),
+			#[cfg(all(feature = "crypto", target_arch = "wasm32"))]
+			ActiveSigner::Nip07(s) => s.get_public_key().await.map_err(|e| format!("{:?}", e)),
 		}
 	}
 
@@ -66,6 +72,11 @@ impl ActiveSigner {
 			ActiveSigner::Nip46(s) => {
 				let val = s.sign_event(event_json).await.map_err(|e| e.to_string())?;
 				serde_json::to_string(&val).map_err(|e| e.to_string())
+			}
+			#[cfg(all(feature = "crypto", target_arch = "wasm32"))]
+			ActiveSigner::Nip07(s) => {
+				let signed = s.sign_event(event_json).await.map_err(|e| format!("{:?}", e))?;
+				serde_json::to_string(&signed).map_err(|e| e.to_string())
 			}
 		}
 	}
@@ -82,6 +93,10 @@ impl ActiveSigner {
 			ActiveSigner::Nip46(s) => {
 				s.nip04_encrypt(peer, plaintext).await.map_err(|e| e.to_string())
 			}
+			#[cfg(all(feature = "crypto", target_arch = "wasm32"))]
+			ActiveSigner::Nip07(s) => {
+				s.nip04_encrypt(peer, plaintext).await.map_err(|e| format!("{:?}", e))
+			}
 		}
 	}
 
@@ -96,6 +111,10 @@ impl ActiveSigner {
 			#[cfg(feature = "crypto")]
 			ActiveSigner::Nip46(s) => {
 				s.nip04_decrypt(peer, ciphertext).await.map_err(|e| e.to_string())
+			}
+			#[cfg(all(feature = "crypto", target_arch = "wasm32"))]
+			ActiveSigner::Nip07(s) => {
+				s.nip04_decrypt(peer, ciphertext).await.map_err(|e| format!("{:?}", e))
 			}
 		}
 	}
@@ -112,6 +131,10 @@ impl ActiveSigner {
 			ActiveSigner::Nip46(s) => {
 				s.nip44_encrypt(peer, plaintext).await.map_err(|e| e.to_string())
 			}
+			#[cfg(all(feature = "crypto", target_arch = "wasm32"))]
+			ActiveSigner::Nip07(s) => {
+				s.nip44_encrypt(peer, plaintext).await.map_err(|e| format!("{:?}", e))
+			}
 		}
 	}
 
@@ -126,6 +149,10 @@ impl ActiveSigner {
 			#[cfg(feature = "crypto")]
 			ActiveSigner::Nip46(s) => {
 				s.nip44_decrypt(peer, ciphertext).await.map_err(|e| e.to_string())
+			}
+			#[cfg(all(feature = "crypto", target_arch = "wasm32"))]
+			ActiveSigner::Nip07(s) => {
+				s.nip44_decrypt(peer, ciphertext).await.map_err(|e| format!("{:?}", e))
 			}
 		}
 	}
@@ -151,6 +178,11 @@ impl ActiveSigner {
 				.nip04_decrypt_between(sender, recipient, ciphertext)
 				.await
 				.map_err(|e| e.to_string()),
+			#[cfg(all(feature = "crypto", target_arch = "wasm32"))]
+			ActiveSigner::Nip07(s) => s
+				.nip04_decrypt_between(sender, recipient, ciphertext)
+				.await
+				.map_err(|e| format!("{:?}", e)),
 		}
 	}
 
@@ -175,6 +207,11 @@ impl ActiveSigner {
 				.nip44_decrypt_between(sender, recipient, ciphertext)
 				.await
 				.map_err(|e| e.to_string()),
+			#[cfg(all(feature = "crypto", target_arch = "wasm32"))]
+			ActiveSigner::Nip07(s) => s
+				.nip44_decrypt_between(sender, recipient, ciphertext)
+				.await
+				.map_err(|e| format!("{:?}", e)),
 		}
 	}
 }
@@ -411,111 +448,125 @@ impl CryptoWorker {
 										}
 										#[cfg(feature = "crypto")]
 										fb::SignerTypeT::Nip46Bunker(bunker) => {
-											let parsed = parse_bunker_url(&bunker.bunker_url)
-												.map_err(|e| format!("parse bunker: {}", e))?;
+											match parse_bunker_url(&bunker.bunker_url)
+												.map_err(|e| format!("parse bunker: {}", e))
+											{
+												Ok(parsed) => {
+													let client_keys = bunker
+														.client_secret
+														.as_deref()
+														.and_then(|s| crate::types::Keys::parse(s).ok());
 
-											let client_keys = bunker
-												.client_secret
-												.as_deref()
-												.and_then(|s| crate::types::Keys::parse(s).ok());
+													let cfg = Nip46Config {
+														remote_signer_pubkey: parsed.remote_pubkey,
+														relays: parsed.relays,
+														use_nip44: true,
+														app_name: None,
+														expected_secret: parsed.secret,
+													};
 
-											let cfg = Nip46Config {
-												remote_signer_pubkey: parsed.remote_pubkey,
-												relays: parsed.relays,
-												use_nip44: true,
-												app_name: None,
-												expected_secret: parsed.secret,
-											};
+													let (tx, rx) = mpsc::channel::<Vec<u8>>(256);
+													*nip46_tx_engine.borrow_mut() = Some(tx);
 
-											let (tx, rx) = mpsc::channel::<Vec<u8>>(256);
-											*nip46_tx_engine.borrow_mut() = Some(tx);
+													let port = SharedPort {
+														sender: to_connections_rc_engine.clone(),
+													};
+													let nip46 = std::rc::Rc::new(Nip46Signer::new(
+														cfg,
+														std::rc::Rc::new(std::cell::RefCell::new(
+															port,
+														)),
+														rx,
+														client_keys,
+													));
 
-											let port = SharedPort {
-												sender: to_connections_rc_engine.clone(),
-											};
-											let nip46 = std::rc::Rc::new(Nip46Signer::new(
-												cfg,
-												std::rc::Rc::new(std::cell::RefCell::new(
-													port,
-												)),
-												rx,
-												client_keys,
-											));
+													nip46.start(spawn_worker, None);
+													*active_engine.borrow_mut() =
+														ActiveSigner::Nip46(nip46.clone());
 
-											nip46.start(spawn_worker, None);
-											*active_engine.borrow_mut() =
-												ActiveSigner::Nip46(nip46.clone());
-
-											let nip46_conn = nip46.clone();
-											spawn_worker(async move {
-												match nip46_conn.connect().await {
-													Ok(_) => {
-														match nip46_conn.get_public_key().await {
-															Ok(pk) => {
-																info!(
-																	"[CryptoWorker] NIP-46 bunker connected, pubkey: {}",
-																	&pk[..16.min(pk.len())]
-																);
+													let nip46_conn = nip46.clone();
+													spawn_worker(async move {
+														match nip46_conn.connect().await {
+															Ok(_) => {
+																match nip46_conn.get_public_key().await {
+																	Ok(pk) => {
+																		info!(
+																			"[CryptoWorker] NIP-46 bunker connected, pubkey: {}",
+																			&pk[..16.min(pk.len())]
+																			);
+																	}
+																	Err(e) => {
+																		warn!(
+																			"[CryptoWorker] NIP-46 bunker get_public_key failed: {}",
+																			e
+																			);
+																	}
+																}
 															}
 															Err(e) => {
 																warn!(
-																	"[CryptoWorker] NIP-46 bunker get_public_key failed: {}",
+																	"[CryptoWorker] NIP-46 bunker connect failed: {}",
 																	e
 																);
 															}
-														}
 													}
-													Err(e) => {
-														warn!(
-															"[CryptoWorker] NIP-46 bunker connect failed: {}",
-															e
-														);
-													}
-												}
-											});
+													});
 
-											Ok("NIP-46 bunker signer initialized".to_string())
+													Ok("NIP-46 bunker signer initialized".to_string())
+												}
+												Err(e) => Err(e),
+											}
 										}
 										#[cfg(feature = "crypto")]
 										fb::SignerTypeT::Nip46QR(qr) => {
-											let parsed = parse_nostrconnect_url(&qr.qr_string)
-												.map_err(|e| format!("parse nostrconnect: {}", e))?;
+											match parse_nostrconnect_url(&qr.nostrconnect_url)
+												.map_err(|e| format!("parse nostrconnect: {}", e))
+											{
+												Ok(parsed) => {
+													let client_keys = qr
+														.client_secret
+														.as_deref()
+														.and_then(|s| crate::types::Keys::parse(s).ok());
 
-											let client_keys = qr
-												.client_secret
-												.as_deref()
-												.and_then(|s| crate::types::Keys::parse(s).ok());
+													let cfg = Nip46Config {
+														remote_signer_pubkey: String::new(),
+														relays: parsed.relays,
+														use_nip44: true,
+														app_name: parsed.app_name,
+														expected_secret: Some(parsed.secret),
+													};
 
-											let cfg = Nip46Config {
-												remote_signer_pubkey: String::new(),
-												relays: parsed.relays,
-												use_nip44: true,
-												app_name: parsed.app_name,
-												expected_secret: Some(parsed.secret),
-											};
+													let (tx, rx) = mpsc::channel::<Vec<u8>>(256);
+													*nip46_tx_engine.borrow_mut() = Some(tx);
 
-											let (tx, rx) = mpsc::channel::<Vec<u8>>(256);
-											*nip46_tx_engine.borrow_mut() = Some(tx);
+													let port = SharedPort {
+														sender: to_connections_rc_engine.clone(),
+													};
+													let nip46 = std::rc::Rc::new(Nip46Signer::new(
+														cfg,
+														std::rc::Rc::new(std::cell::RefCell::new(
+															port,
+														)),
+														rx,
+														client_keys,
+													));
 
-											let port = SharedPort {
-												sender: to_connections_rc_engine.clone(),
-											};
-											let nip46 = std::rc::Rc::new(Nip46Signer::new(
-												cfg,
-												std::rc::Rc::new(std::cell::RefCell::new(
-													port,
-												)),
-												rx,
-												client_keys,
-											));
+													nip46.start(spawn_worker, None);
+													*active_engine.borrow_mut() =
+														ActiveSigner::Nip46(nip46.clone());
 
-											nip46.start(spawn_worker, None);
-											*active_engine.borrow_mut() =
-												ActiveSigner::Nip46(nip46.clone());
-
-											Ok("NIP-46 QR signer initialized, awaiting discovery".to_string())
+													Ok("NIP-46 QR signer initialized, awaiting discovery".to_string())
+												}
+												Err(e) => Err(e),
+											}
 										}
-										_ => Err("unsupported signer type".to_string()),
+										#[cfg(all(feature = "crypto", target_arch = "wasm32"))]
+									fb::SignerTypeT::Nip07(_) => {
+										let nip07 = std::rc::Rc::new(Nip07Signer::new());
+										*active_engine.borrow_mut() = ActiveSigner::Nip07(nip07.clone());
+										Ok("NIP-07 signer initialized".to_string())
+									}
+									_ => Err("unsupported signer type".to_string()),
 									}
 								} else {
 									Err("missing set_signer content".to_string())
@@ -654,7 +705,7 @@ impl CryptoWorker {
 							Ok(r) => r,
 							Err(e) => {
 								// Try NIP-46 pump first
-								if let Some(tx) = nip46_tx_connections.borrow().as_ref() {
+								if let Some(tx) = nip46_tx_connections.borrow_mut().as_mut() {
 									let _ = tx.try_send(bytes);
 									continue;
 								}
