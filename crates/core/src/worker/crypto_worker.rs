@@ -564,7 +564,7 @@ impl CryptoWorker {
 									fb::SignerTypeT::Nip07(_) => {
 										let nip07 = std::rc::Rc::new(Nip07Signer::new());
 										*active_engine.borrow_mut() = ActiveSigner::Nip07(nip07.clone());
-										Ok("NIP-07 signer initialized".to_string())
+										nip07.get_public_key().await.map_err(|e| format!("{:?}", e))
 									}
 									_ => Err("unsupported signer type".to_string()),
 									}
