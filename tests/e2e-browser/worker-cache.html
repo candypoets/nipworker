@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>4-Worker WASM Cache E2E Test</title>
+  <style>
+    body { font-family: monospace; padding: 20px; background: #111; color: #0f0; }
+    #log { white-space: pre-wrap; margin-top: 20px; }
+    .error { color: #f44; }
+    .ok { color: #4f4; }
+  </style>
+</head>
+<body>
+  <h1>4-Worker WASM Cache E2E Test</h1>
+  <div id="status">Initializing...</div>
+  <div id="log"></div>
+  <script type="module" src="./worker-cache.ts"></script>
+</body>
+</html>

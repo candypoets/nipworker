@@ -11,14 +11,24 @@ pub mod nostr_error;
 pub mod port;
 
 pub mod crypto_client;
-pub mod parser;
-pub mod pipeline;
-pub mod network;
-pub mod parser_types;
-pub mod parser_utils;
-pub mod storage;
-pub mod transport;
 pub mod worker;
+
+#[cfg(feature = "parser")]
+pub mod parser;
+#[cfg(feature = "parser")]
+pub mod pipeline;
+#[cfg(feature = "parser")]
+pub mod network;
+#[cfg(feature = "parser")]
+pub mod parser_types;
+#[cfg(feature = "parser")]
+pub mod parser_utils;
+
+#[cfg(feature = "cache")]
+pub mod storage;
+
+#[cfg(feature = "connections")]
+pub mod transport;
 
 #[cfg(feature = "crypto")]
 pub mod crypto {

@@ -8,17 +8,28 @@ import { InitCacheMsg } from './cache/index';
 import type { InitConnectionsMsg } from './connections/types';
 import { InitCryptoMsg } from './crypto/index';
 import {
+	ConnectionStatus,
 	GetPublicKeyT,
 	MainContent,
 	MainMessageT,
+	MessageType,
+	Nip07T,
+	Nip46BunkerT,
+	Nip46QRT,
 	PipelineConfigT,
+	PrivateKeyT,
 	PublishT,
+	Raw,
 	RequestT,
+	SetSignerT,
+	SignEventT,
+	SignerType,
 	StringVecT,
 	SubscribeT,
 	SubscriptionConfigT,
 	TemplateT,
-	UnsubscribeT
+	UnsubscribeT,
+	WorkerMessage
 } from './generated/nostr/fb';
 import { InitParserMsg } from './parser/index';
 import { EngineManager } from './EngineManager';
@@ -55,6 +66,9 @@ export class NostrManager {
 
 	// MessageChannel for connections-main communication (relay status)
 	private connectionsMainPort: MessagePort;
+
+	// MessageChannel for crypto-main communication
+	private cryptoMainPort: MessagePort;
 
 	// Relay status cache: url -> {status, timestamp}
 	private relayStatuses = new Map<
@@ -131,21 +145,54 @@ export class NostrManager {
 		// Store parser_main port1 for receiving batched events from parser
 		this.parserMainPort = parser_main.port1;
 
-		// Set up message handler for incoming batched events from parser
+		// Set up message handler for incoming messages from parser
+		// Core parser sends tagged bytes: [4 bytes subIdLen LE][subId][data]
 		this.parserMainPort.onmessage = (event) => {
-			const { subId, data } = event.data;
-			// console.log('[main] parserMainPort received message:', { subId, dataSize: data?.byteLength });
-			if (!subId || !data) {
-				console.log('[main] ignoring message - missing subId or data');
+			const buffer = event.data as ArrayBuffer;
+			if (!buffer || !(buffer instanceof ArrayBuffer)) {
+				console.log('[main] ignoring message - not ArrayBuffer');
 				return;
 			}
+			const view = new DataView(buffer);
+			if (buffer.byteLength < 4) return;
+			const subIdLen = view.getUint32(0, true);
+			if (buffer.byteLength < 4 + subIdLen) return;
 
-			// Find subscription or publish buffer and write data
-			// Note: data is already batched with [4-byte len][payload] format
+			const subId = new TextDecoder().decode(new Uint8Array(buffer, 4, subIdLen));
+			const data = new Uint8Array(buffer, 4 + subIdLen);
+			if (data.length === 0) return;
+
+			// Try to parse as WorkerMessage to detect ConnectionStatus
+			try {
+				const bb = new flatbuffers.ByteBuffer(data);
+				const wm = WorkerMessage.getRootAsWorkerMessage(bb);
+				if (wm.type() === MessageType.ConnectionStatus) {
+					const cs = wm.content(new ConnectionStatus());
+					if (cs) {
+						const url = cs.relayUrl() || '';
+						const status = cs.status() || '';
+						if (url && status) {
+							this.relayStatuses.set(url, { status, timestamp: Date.now() });
+							this.dispatch('relay:status', { status, url });
+						}
+					}
+					return;
+				}
+			} catch (e) {
+				// Not a WorkerMessage, treat as batched event data
+			}
+
+			// Regular batched event data
+			// Parser worker sends raw FlatBuffer bytes; prepend 4-byte LE length
+			// so ArrayBufferReader.readMessages can parse them correctly.
+			const lengthPrefixed = new Uint8Array(4 + data.length);
+			const lpView = new DataView(lengthPrefixed.buffer);
+			lpView.setUint32(0, data.length, true);
+			lengthPrefixed.set(data, 4);
+
 			const subscription = this.subscriptions.get(subId);
 			if (subscription) {
-				// console.log('[main] found subscription for subId:', subId);
-				const written = ArrayBufferReader.writeBatchedData(subscription.buffer, data, subId);
+				const written = ArrayBufferReader.writeBatchedData(subscription.buffer, lengthPrefixed, subId);
 				if (written) {
 					this.dispatch(`subscription:${subId}`, subId);
 				}
@@ -154,8 +201,7 @@ export class NostrManager {
 
 			const publish = this.publishes.get(subId);
 			if (publish) {
-				// console.log('[main] found publish for subId:', subId);
-				const written = ArrayBufferReader.writeBatchedData(publish.buffer, data, subId);
+				const written = ArrayBufferReader.writeBatchedData(publish.buffer, lengthPrefixed, subId);
 				if (written) {
 					this.dispatch(`publish:${subId}`, subId);
 				}
@@ -165,16 +211,11 @@ export class NostrManager {
 			console.log('[main] no subscription or publish found for subId:', subId);
 		};
 
-		// Set up message handler for relay status from connections worker
+		// connectionsMainPort is no longer used for relay status in the new architecture
+		// (status comes through parserMainPort as ConnectionStatus WorkerMessages)
 		this.connectionsMainPort = connections_main.port1;
-		this.connectionsMainPort.onmessage = (event) => {
-			const { type, status, url } = JSON.parse(event.data);
-			if (type === 'relay:status' && url && status) {
-				this.relayStatuses.set(url, { status, timestamp: Date.now() });
-				this.dispatch('relay:status', { status, url });
-			} else {
-				console.log('[main] ignoring message - type:', type, 'url:', url, 'status:', status);
-			}
+		this.connectionsMainPort.onmessage = () => {
+			// no-op
 		};
 
 		// Transfer ports to parser worker
@@ -206,11 +247,28 @@ export class NostrManager {
 			[parser_crypto.port2, crypto_connections.port2, crypto_main.port1]
 		);
 
+		// Store crypto_main.port2 for sending commands to crypto worker
+		this.cryptoMainPort = crypto_main.port2;
+
 		// Listen on crypto_main.port2 for control responses
 		crypto_main.port2.onmessage = (event) => {
-			const msg = event.data;
-			if (msg.type === 'response') {
-				this.handleCryptoResponse(msg);
+			const data = event.data;
+			if (!(data instanceof ArrayBuffer)) return;
+			const bytes = new Uint8Array(data);
+			const bb = new flatbuffers.ByteBuffer(bytes);
+			const wm = WorkerMessage.getRootAsWorkerMessage(bb);
+			if (wm.type() !== MessageType.Raw) return;
+			const raw = wm.content(new Raw());
+			if (!raw) return;
+			const jsonStr = raw.raw();
+			if (!jsonStr) return;
+			try {
+				const msg = JSON.parse(jsonStr);
+				if (msg.op) {
+					this.handleCryptoResponse(msg);
+				}
+			} catch (e) {
+				console.warn('[main] Failed to parse crypto Raw message:', jsonStr);
 			}
 		};
 
@@ -253,120 +311,77 @@ export class NostrManager {
 	 * Called when returning from background to foreground.
 	 */
 	private wakeWorkers(): void {
-		console.log('[main] Waking workers for foreground reconnection');
-
-		// Send wake to connections worker (triggers reconnect with backoff reset)
-		this.connections.postMessage({ type: 'wake', source: 'visibility' });
-
-		// Send wake to other workers (they may need to re-initialize state)
-		this.parser.postMessage({ type: 'wake', source: 'visibility' });
-		this.cache.postMessage({ type: 'wake', source: 'visibility' });
-		this.crypto.postMessage({ type: 'wake', source: 'visibility' });
+		console.log('[main] Waking workers for foreground reconnection (no-op in new architecture)');
 	}
 
-	private postToWorker(message: any, transfer?: Transferable[]) {
-		if (transfer && transfer.length) {
-			this.parser.postMessage(message, transfer);
-		} else {
-			this.parser.postMessage(message);
+	private postToWorker(message: { serializedMessage?: Uint8Array }) {
+		const uint8Array = message?.serializedMessage;
+		if (uint8Array) {
+			this.parserMainPort.postMessage(uint8Array, [uint8Array.buffer]);
 		}
 	}
 
+	private sendCryptoMessage(contentType: MainContent, content: any) {
+		const mainT = new MainMessageT(contentType, content);
+		const builder = new flatbuffers.Builder(2048);
+		builder.finish(mainT.pack(builder));
+		const uint8Array = builder.asUint8Array();
+		this.cryptoMainPort.postMessage(uint8Array, [uint8Array.buffer]);
+	}
+
 	private handleCryptoResponse(msg: any) {
-		if (msg.op === 'get_pubkey') {
-			console.log('[main] get_pubkey:', msg.ok ? 'success' : 'failed', msg.result);
-			if (msg.ok) {
+		if (msg.op === 'get_public_key') {
+			console.log('[main] get_public_key:', msg.result ? 'success' : 'failed', msg.result);
+			if (msg.result) {
 				this.activePubkey = msg.result;
-				// Check if bunker was discovered (QR flow) - convert to bunker format
+			}
+			this.dispatch('auth', { pubkey: this.activePubkey, hasSigner: !!msg.result });
+		} else if (msg.op === 'set_signer') {
+			console.log('[main] set_signer:', msg.result ? 'success' : 'failed', msg.result);
+			if (msg.result) {
+				this.activePubkey = msg.result;
 				if (
-					this._discoveredBunkerUrl &&
-					this._pendingSession?.type === 'nip46_qr' &&
+					this._pendingSession?.type === 'nip46' &&
 					this._pendingSession?.payload?.clientSecret
 				) {
-					console.log('[main] Converting QR to bunker for pubkey:', this.activePubkey);
-					this.saveSession(this.activePubkey!, 'nip46_bunker', {
-						url: this._discoveredBunkerUrl,
+					console.log('[main] NIP-46 session saved for:', this.activePubkey);
+					this.saveSession(this.activePubkey!, 'nip46', {
+						url: this._pendingSession.payload.url,
 						clientSecret: this._pendingSession.payload.clientSecret
 					});
 					this._pendingSession = null;
-					this._discoveredBunkerUrl = null;
 				} else if (this._pendingSession) {
-					// Normal session save
+					const secretKey =
+						this._pendingSession?.type === 'privkey'
+							? this._pendingSession.payload
+							: undefined;
 					this.saveSession(
 						this.activePubkey!,
 						this._pendingSession.type,
 						this._pendingSession.payload
 					);
 					this._pendingSession = null;
+					this.dispatch('auth', {
+						pubkey: this.activePubkey,
+						hasSigner: true,
+						secretKey
+					});
+					return;
 				}
+				this.dispatch('auth', { pubkey: this.activePubkey, hasSigner: true });
 			}
-			const hasSigner = msg.ok && !!this._pendingSession;
-			// Include secret key for privkey signers so app can display nsec
-			const secretKey =
-				this._pendingSession?.type === 'privkey' ? this._pendingSession.payload : undefined;
-			this.dispatch('auth', { pubkey: this.activePubkey, hasSigner, secretKey });
-		} else if (msg.op === 'sign_event' && msg.ok) {
+		} else if (msg.op === 'sign_event' && msg.result) {
 			const parsed = JSON.parse(msg.result);
 			this.signCB(parsed);
 		}
 	}
 
 	private setupWorkerListener() {
-		this.parser.onmessage = async (event) => {
-			const id = typeof event.data === 'string' ? event.data : undefined;
-			if (!id) return;
-			if (this.subscriptions.has(id)) {
-				this.dispatch(`subscription:${id}`, id);
-				return;
-			}
-			if (this.publishes.has(id)) {
-				this.dispatch(`publish:${id}`, id);
-				return;
-			}
-		};
-
-		// NIP-07 extension requests are still handled via crypto worker postMessage
+		// NIP-07 extension requests are handled via crypto worker postMessage
 		// (these require main thread access to window.nostr)
 		this.crypto.onmessage = async (event) => {
 			const msg = event.data;
 			console.log('[main] crypto.onmessage:', msg?.type, msg);
-
-			// Handle signer ready event (ALL signers send this when connected and ready)
-			// Contains all info needed to reconstruct session: pubkey, signer_type, bunker_url (for nip46)
-			if (msg?.type === 'signer_ready') {
-				console.log('[main] signer_ready:', msg.signer_type, msg.pubkey);
-				this.activePubkey = msg.pubkey;
-
-				// For NIP-46, use the bunker_url from the message (covers both QR and bunker flows)
-				if (
-					msg.signer_type === 'nip46' &&
-					msg.bunker_url &&
-					this._pendingSession?.payload?.clientSecret
-				) {
-					console.log('[main] NIP-46 session saved for:', msg.pubkey);
-					this.saveSession(msg.pubkey, 'nip46', {
-						url: msg.bunker_url,
-						clientSecret: this._pendingSession.payload.clientSecret
-					});
-					this._pendingSession = null;
-				}
-				// Include secret key for privkey signers so app can display nsec
-				const secretKey =
-					this._pendingSession?.type === 'privkey' ? this._pendingSession.payload : undefined;
-				if (this._pendingSession) {
-					// Normal session save (privkey, nip07)
-					this.saveSession(msg.pubkey, msg.signer_type, this._pendingSession.payload);
-					this._pendingSession = null;
-				}
-				this.dispatch('auth', { pubkey: msg.pubkey, hasSigner: true, secretKey });
-				return;
-			}
-
-			// Handle control responses (get_pubkey, sign_event, etc.)
-			if (msg?.type === 'response') {
-				this.handleCryptoResponse(msg);
-				return;
-			}
 
 			// Handle NIP-07 extension requests from the worker
 			if (msg?.type === 'extension_request') {
@@ -508,7 +523,7 @@ export class NostrManager {
 		builder.finish(mainT.pack(builder));
 		const uint8Array = builder.asUint8Array();
 		// Transfer the underlying buffer for zero-copy
-		this.postToWorker({ serializedMessage: uint8Array }, [uint8Array.buffer]);
+		this.postToWorker({ serializedMessage: uint8Array });
 
 		return buffer;
 	}
@@ -564,7 +579,7 @@ export class NostrManager {
 		builder.finish(mainT.pack(builder));
 		const uint8Array = builder.asUint8Array();
 		// Transfer the underlying buffer for zero-copy
-		this.postToWorker({ serializedMessage: uint8Array }, [uint8Array.buffer]);
+		this.postToWorker({ serializedMessage: uint8Array });
 		this.publishes.set(publish_id, { buffer });
 		return buffer;
 	}
@@ -582,38 +597,52 @@ export class NostrManager {
 				this._pendingSession = null;
 				this.dispatch('auth', { pubkey: this.activePubkey, hasSigner: false });
 				break;
-			case 'privkey':
-				this.crypto.postMessage({ type: 'set_private_key', payload });
+			case 'privkey': {
+				const pkT = new PrivateKeyT(payload as string);
+				const setSignerT = new SetSignerT(SignerType.PrivateKey, pkT);
+				this.sendCryptoMessage(MainContent.SetSigner, setSignerT);
 				break;
-			case 'nip07':
-				this.crypto.postMessage({ type: 'set_nip07' });
+			}
+			case 'nip07': {
+				const nip07T = new Nip07T();
+				const setSignerT = new SetSignerT(SignerType.Nip07, nip07T);
+				this.sendCryptoMessage(MainContent.SetSigner, setSignerT);
 				break;
-			case 'nip46':
-				// Auto-detect bunker vs QR based on URL format
-				if (payload?.url?.startsWith('bunker://')) {
-					this.crypto.postMessage({ type: 'set_nip46_bunker', payload });
-				} else if (payload?.url?.startsWith('nostrconnect://')) {
-					this.crypto.postMessage({ type: 'set_nip46_qr', payload });
+			}
+			case 'nip46': {
+				const url = (payload as any)?.url || '';
+				const clientSecret = (payload as any)?.clientSecret;
+				if (url.startsWith('bunker://')) {
+					const bunkerT = new Nip46BunkerT(url, clientSecret);
+					const setSignerT = new SetSignerT(SignerType.Nip46Bunker, bunkerT);
+					this.sendCryptoMessage(MainContent.SetSigner, setSignerT);
+				} else if (url.startsWith('nostrconnect://')) {
+					const qrT = new Nip46QRT(url, clientSecret);
+					const setSignerT = new SetSignerT(SignerType.Nip46QR, qrT);
+					this.sendCryptoMessage(MainContent.SetSigner, setSignerT);
 				} else {
-					console.error('[main] Unknown NIP-46 URL format:', payload?.url);
+					console.error('[main] Unknown NIP-46 URL format:', url);
 				}
 				break;
+			}
 		}
 		// Note: crypto crate will automatically send pubkey after successful connection
 	}
 
 	signEvent(event: EventTemplate, cb: (event: NostrEvent) => void) {
 		this.signCB = cb;
-		this.crypto.postMessage({ type: 'sign_event', payload: JSON.stringify(event) });
+		const templateT = new TemplateT(
+			event.kind,
+			event.created_at,
+			this.textEncoder.encode(event.content),
+			event.tags.map((t) => new StringVecT(t)) || []
+		);
+		const signEventT = new SignEventT(templateT);
+		this.sendCryptoMessage(MainContent.SignEvent, signEventT);
 	}
 
 	getPublicKey() {
-		const mainT = new MainMessageT(MainContent.GetPublicKey, new GetPublicKeyT());
-		const builder = new flatbuffers.Builder(2048);
-		builder.finish(mainT.pack(builder));
-		const uint8Array = builder.asUint8Array();
-		// Transfer the underlying buffer for zero-copy
-		this.parser.postMessage({ serializedMessage: uint8Array }, [uint8Array.buffer]);
+		this.sendCryptoMessage(MainContent.GetPublicKey, new GetPublicKeyT());
 	}
 
 	/**
@@ -742,10 +771,9 @@ export class NostrManager {
 			builder.finish(mainT.pack(builder));
 			const uint8Array = builder.asUint8Array();
 			// Transfer the underlying buffer for zero-copy
-			this.postToWorker({ serializedMessage: uint8Array }, [uint8Array.buffer]);
+			this.postToWorker({ serializedMessage: uint8Array });
 
-			// Tell connections worker to close relay subscriptions
-			this.connections.postMessage(subId);
+				// Connections worker subscriptions are closed by parser via Unsubscribe
 
 			// Remove from local subscriptions map
 			this.subscriptions.delete(subId);

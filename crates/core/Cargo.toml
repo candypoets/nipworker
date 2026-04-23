@@ -49,6 +49,9 @@ rand = { version = "0.8", features = ["small_rng"] }
 
 [features]
 default = []
+parser = []
+cache = []
+connections = []
 crypto = [
     "k256",
     "sha2",

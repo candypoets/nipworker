@@ -19,13 +19,12 @@ use tracing::{info, warn};
 // transport can send frames into the connections worker.
 // ---------------------------------------------------------------------------
 struct SharedPort {
-	sender: std::rc::Rc<std::cell::RefCell<Box<dyn WorkerChannelSender>>>,
+	sender: Arc<Box<dyn WorkerChannelSender>>,
 }
 
 impl Port for SharedPort {
 	fn send(&self, bytes: &[u8]) -> Result<(), String> {
 		self.sender
-			.borrow()
 			.send(bytes)
 			.map_err(|e| e.to_string())
 	}
@@ -379,8 +378,8 @@ impl CryptoWorker {
 		to_parser: Box<dyn WorkerChannelSender>,
 		to_connections: Box<dyn WorkerChannelSender>,
 	) {
-		let to_connections_rc =
-			std::rc::Rc::new(std::cell::RefCell::new(to_connections));
+		let to_connections_arc =
+			Arc::new(to_connections);
 
 		// -------------------------------------------------------------------
 		// Engine listener
@@ -388,7 +387,7 @@ impl CryptoWorker {
 		let active_engine = self.active.clone();
 		let to_main_engine = to_main;
 		let nip46_tx_engine = self.nip46_tx.clone();
-		let to_connections_rc_engine = to_connections_rc.clone();
+		let to_connections_arc_engine = to_connections_arc.clone();
 		spawn_worker(async move {
 			info!("[CryptoWorker] engine listener started");
 			loop {
@@ -469,7 +468,7 @@ impl CryptoWorker {
 													*nip46_tx_engine.borrow_mut() = Some(tx);
 
 													let port = SharedPort {
-														sender: to_connections_rc_engine.clone(),
+														sender: to_connections_arc_engine.clone(),
 													};
 													let nip46 = std::rc::Rc::new(Nip46Signer::new(
 														cfg,
@@ -540,7 +539,7 @@ impl CryptoWorker {
 													*nip46_tx_engine.borrow_mut() = Some(tx);
 
 													let port = SharedPort {
-														sender: to_connections_rc_engine.clone(),
+														sender: to_connections_arc_engine.clone(),
 													};
 													let nip46 = std::rc::Rc::new(Nip46Signer::new(
 														cfg,
@@ -695,7 +694,7 @@ impl CryptoWorker {
 		// -------------------------------------------------------------------
 		let active_connections = self.active.clone();
 		let nip46_tx_connections = self.nip46_tx.clone();
-		let to_connections_rc_connections = to_connections_rc.clone();
+		let to_connections_arc_connections = to_connections_arc.clone();
 		spawn_worker(async move {
 			info!("[CryptoWorker] connections listener started");
 			loop {
@@ -717,7 +716,7 @@ impl CryptoWorker {
 									0,
 									Err(format!("decode failed: {}", e)),
 								);
-								let _ = to_connections_rc_connections.borrow().send(&resp);
+								let _ = to_connections_arc_connections.send(&resp);
 								continue;
 							}
 						};
@@ -753,7 +752,7 @@ impl CryptoWorker {
 						};
 
 						let resp = serialize_signer_response(request_id, result);
-						if let Err(e) = to_connections_rc_connections.borrow().send(&resp) {
+						if let Err(e) = to_connections_arc_connections.send(&resp) {
 							warn!(
 								"[CryptoWorker] failed to send response to connections: {}",
 								e

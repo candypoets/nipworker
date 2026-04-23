@@ -1,5 +1,9 @@
+#[cfg(feature = "parser")]
 pub mod parser_worker;
+#[cfg(feature = "connections")]
 pub mod connections_worker;
+#[cfg(feature = "cache")]
 pub mod cache_worker;
+#[cfg(feature = "crypto")]
 pub mod crypto_worker;
 pub mod batch_buffer;

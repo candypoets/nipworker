@@ -1,7 +1,7 @@
 /* WASM-based crypto worker runtime (dedicated Web Worker, module) */
 
-import initWasm, { Crypto } from './pkg/crypto.js';
-import wasmUrl from './pkg/crypto_bg.wasm?url';
+import init, { start_worker } from '../../crates/crypto/pkg/nipworker_crypto.js';
+import wasmUrl from '../../crates/crypto/pkg/nipworker_crypto_bg.wasm?url';
 
 export type InitCryptoMsg = {
 	type: 'init';
@@ -28,16 +28,10 @@ let nextRequestId = 0;
 };
 
 let wasmReady: Promise<any> | null = null;
-let resolveInstance: ((c: Crypto) => void) | null = null;
-const instanceReady: Promise<Crypto> = new Promise<Crypto>((resolve) => {
-	resolveInstance = resolve;
-});
 
 async function ensureWasm() {
 	if (!wasmReady) {
-		// Using ?url ensures Vite emits the .wasm asset to dist and returns its final URL,
-		// which works even when this worker is running from a blob: URL.
-		wasmReady = initWasm(wasmUrl);
+		wasmReady = init({ module_or_path: wasmUrl });
 	}
 	return wasmReady;
 }
@@ -62,160 +56,13 @@ self.addEventListener('message', async (evt: MessageEvent<any>) => {
 
 	if (msg?.type === 'init') {
 		await ensureWasm();
-
 		const { parserPort, connectionsPort, mainPort } = msg.payload;
-		console.log('Initializing Crypto');
-		console.log('[crypto] parserPort', parserPort);
-		console.log('[crypto] connectionsPort', connectionsPort);
-		console.log('[crypto] mainPort', mainPort);
-
-		// Create the Rust worker and start it with MessageChannel ports
-		// Parameters: toMain, fromParser, toConnections, fromConnections, toParser
-		// Each port is bidirectional, so we pass the same port for send and receive
-		const crypto = new Crypto(mainPort, parserPort, connectionsPort, connectionsPort, parserPort);
-		// Resolve to deferred so queued handlers can use the instance
-		resolveInstance?.(crypto);
-
+		start_worker(mainPort, parserPort, connectionsPort);
 		return;
 	}
 
-	// Optional: wake signal; Rust loops are self-driven, so this is a no-op.
+	// Wake is a no-op; Rust loops are self-driven.
 	if (msg?.type === 'wake') {
 		return;
 	}
-
-	// All non-init messages: await instance promise, then process
-	instanceReady.then(async (c) => {
-		try {
-			const m: any = msg;
-			switch (m?.type) {
-				case 'set_private_key': {
-					try {
-						c.setPrivateKey(m?.payload);
-					} catch (e: any) {
-						console.error('Error setting private key:', e);
-					}
-					break;
-				}
-				case 'set_nip07': {
-					c.setNip07();
-					break;
-				}
-				case 'set_nip46_bunker': {
-					try {
-						const bunkerUrl = m?.payload?.url || m?.payload || '';
-						const clientSecret = m?.payload?.clientSecret;
-						c.setNip46Bunker(bunkerUrl, clientSecret);
-					} catch (e: any) {
-						console.error('[nip46] Error setting NIP-46 with bunker URL:', e);
-						(self as any).postMessage({
-							id: m.id,
-							type: 'response',
-							op: 'set_nip46_bunker',
-							ok: false,
-							error: e.message
-						});
-					}
-					break;
-				}
-				case 'set_nip46_qr': {
-					try {
-						const nostrconnectUrl = m?.payload?.url || m?.payload || '';
-						const clientSecret = m?.payload?.clientSecret;
-						c.setNip46QR(nostrconnectUrl, clientSecret);
-					} catch (e: any) {
-						console.error('[nip46] Error setting NIP-46 with QR code:', e);
-						(self as any).postMessage({
-							id: m.id,
-							type: 'response',
-							op: 'set_nip46_qr',
-							ok: false,
-							error: e.message
-						});
-					}
-					break;
-				}
-
-				case 'connect': {
-					try {
-						const res = await c.connectDirect();
-						(self as any).postMessage({
-							id: m.id,
-							type: 'response',
-							op: 'connect',
-							ok: true,
-							result: res
-						});
-					} catch (e: any) {
-						console.error('Error connecting NIP-46:', e);
-						(self as any).postMessage({
-							id: m.id,
-							type: 'response',
-							op: 'connect',
-							ok: false,
-							error: e.message
-						});
-					}
-					break;
-				}
-
-				case 'get_pubkey': {
-					console.log('[crypto] get_pubkey handler');
-					try {
-						const pk = await c.getPublicKeyDirect();
-						console.log('[crypto] got pubkey:', pk);
-						const response = {
-							id: m.id,
-							type: 'response',
-							op: 'get_pubkey',
-							ok: true,
-							result: pk
-						};
-						console.log('[crypto] posting response:', response);
-						(self as any).postMessage(response);
-						console.log('[crypto] posted response');
-					} catch (e: any) {
-						console.error('[crypto] Error getting public key:', e);
-						(self as any).postMessage({
-							id: m.id,
-							type: 'response',
-							op: 'get_pubkey',
-							ok: false,
-							error: e.message || String(e)
-						});
-					}
-					break;
-				}
-
-				case 'sign_event': {
-					try {
-						const signed = await c.signEvent(m?.payload);
-						(self as any).postMessage({
-							id: m.id,
-							type: 'response',
-							op: 'sign_event',
-							ok: true,
-							result: signed
-						});
-					} catch (e: any) {
-						console.error('Error signing event:', e);
-					}
-					break;
-				}
-
-				case 'clear_signer': {
-					c.clearSigner();
-					break;
-				}
-
-				default: {
-					console.error('Unknown message type:', m.type);
-				}
-			}
-		} catch (e: any) {
-			if ((msg as any)?.id !== undefined) {
-				console.error('Error processing message:', e);
-			}
-		}
-	});
 });

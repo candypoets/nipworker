@@ -1,7 +1,7 @@
-/* WASM-based WS worker runtime (dedicated Web Worker, module) */
+/* WASM-based connections worker runtime (dedicated Web Worker, module) */
 
-import initWasm, { WSRust } from './pkg/connections.js';
-import wasmUrl from './pkg/connections_bg.wasm?url';
+import init, { start_worker } from '../../crates/connections/pkg/nipworker_connections.js';
+import wasmUrl from '../../crates/connections/pkg/nipworker_connections_bg.wasm?url';
 
 export type InitConnectionsMsg = {
 	type: 'init';
@@ -18,13 +18,10 @@ export type InitConnectionsMsg = {
 };
 
 let wasmReady: Promise<any> | null = null;
-let instance: WSRust | null = null;
 
 async function ensureWasm() {
 	if (!wasmReady) {
-		// Using ?url ensures Vite emits the .wasm asset to dist and returns its final URL,
-		// which works even when this worker is running from a blob: URL.
-		wasmReady = initWasm(wasmUrl);
+		wasmReady = init({ module_or_path: wasmUrl });
 	}
 	return wasmReady;
 }
@@ -34,26 +31,21 @@ self.addEventListener(
 	async (evt: MessageEvent<InitConnectionsMsg | { type: 'wake'; source?: string } | string>) => {
 		const msg = evt.data;
 
-		// Handle init message
 		if (typeof msg === 'object' && msg !== null && msg.type === 'init') {
-			const { mainPort, cachePort, parserPort, cryptoPort } = (msg as InitConnectionsMsg).payload;
+			const { parserPort, cachePort, cryptoPort } = (msg as InitConnectionsMsg).payload;
 			await ensureWasm();
-
-			// Create the Rust worker and start it
-			// Note: Rust expects (toMain, fromCache, toParser, fromCrypto, toCrypto)
-			instance = new WSRust(mainPort, cachePort, parserPort, cryptoPort, cryptoPort);
+			start_worker(parserPort, cachePort, cryptoPort);
 			return;
 		}
 
-		// Wake signal: app returning from background, trigger immediate reconnection
+		// Wake is a no-op in the new architecture.
 		if (typeof msg === 'object' && msg !== null && msg.type === 'wake') {
-			console.log('[connections] Wake signal received, waking Rust worker');
-			(instance as any)?.wake?.();
 			return;
 		}
 
+		// close(subId) is handled by the parser worker (Unsubscribe MainMessage).
 		if (typeof msg === 'string') {
-			instance?.close(msg);
+			return;
 		}
 	}
 );
