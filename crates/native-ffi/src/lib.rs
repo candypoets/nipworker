@@ -13,16 +13,13 @@ use tokio::sync::mpsc::UnboundedSender;
 
 pub mod transport;
 pub mod storage;
-pub mod signer;
 
 use transport::NativeTransport;
 use storage::InMemoryStorage;
-use signer::NativeSigner;
 
 /// Commands sent to the engine thread
 enum EngineCommand {
     HandleMessage(Vec<u8>),
-    SetPrivateKey(String),
 }
 
 struct NipworkerState {
@@ -33,6 +30,34 @@ struct NipworkerState {
 /// Opaque handle
 pub struct NipworkerHandle {
     state: Mutex<NipworkerState>,
+}
+
+/// Build a FlatBuffers MainMessage that contains a SetSigner(PrivateKey) payload.
+fn build_set_private_key_message(secret: &str) -> Vec<u8> {
+    use nipworker_core::generated::nostr::fb;
+    use flatbuffers::FlatBufferBuilder;
+
+    let mut builder = FlatBufferBuilder::new();
+    let mut pk = fb::PrivateKeyT::default();
+    pk.private_key = secret.to_string();
+    let signer_type = fb::SignerTypeT::PrivateKey(Box::new(pk));
+    let signer_offset = signer_type.pack(&mut builder);
+    let set_signer = fb::SetSigner::create(
+        &mut builder,
+        &fb::SetSignerArgs {
+            signer_type_type: fb::SignerType::PrivateKey,
+            signer_type: signer_offset,
+        },
+    );
+    let main_msg = fb::MainMessage::create(
+        &mut builder,
+        &fb::MainMessageArgs {
+            content_type: fb::MainContent::SetSigner,
+            content: Some(set_signer.as_union_value()),
+        },
+    );
+    builder.finish(main_msg, None);
+    builder.finished_data().to_vec()
 }
 
 #[no_mangle]
@@ -57,7 +82,6 @@ pub extern "C" fn nipworker_init(
         local.spawn_local(async move {
             let transport = Arc::new(NativeTransport::new());
             let storage = Arc::new(InMemoryStorage::new());
-            let signer = Arc::new(NativeSigner::new());
 
             let (async_event_tx, mut async_event_rx) =
                 futures::channel::mpsc::channel::<(String, Vec<u8>)>(256);
@@ -65,7 +89,6 @@ pub extern "C" fn nipworker_init(
             let engine = Arc::new(NostrEngine::new(
                 transport,
                 storage,
-                signer.clone(),
                 async_event_tx,
             ));
 
@@ -96,11 +119,6 @@ pub extern "C" fn nipworker_init(
                                 tracing::warn!("[nipworker-native] handle_message error: {}", e);
                             }
                         });
-                    }
-                    EngineCommand::SetPrivateKey(secret) => {
-                        if let Err(e) = signer.set_private_key(&secret) {
-                            tracing::warn!("[nipworker-native] set_private_key error: {}", e);
-                        }
                     }
                 }
             }
@@ -147,7 +165,8 @@ pub unsafe extern "C" fn nipworker_set_private_key(handle: *mut c_void, ptr: *co
             return;
         }
         if let Some(ref tx) = state.cmd_tx {
-            let _ = tx.send(EngineCommand::SetPrivateKey(secret));
+            let bytes = build_set_private_key_message(&secret);
+            let _ = tx.send(EngineCommand::HandleMessage(bytes));
         }
     }
 }

@@ -7,9 +7,8 @@ use crate::channel::{ChannelPort, FuturesWorkerChannel, WorkerChannel, WorkerCha
 use crate::generated::nostr::fb;
 use crate::nostr_error::{NostrError, NostrResult};
 use crate::parser::Parser;
-use crate::signer_swap::SwappableSigner;
 use crate::spawn::spawn_worker;
-use crate::traits::{RelayTransport, Signer, Storage};
+use crate::traits::{RelayTransport, Storage};
 use crate::types::network::Request;
 use crate::types::nostr::Template;
 use crate::worker::cache_worker::CacheWorker;
@@ -27,7 +26,6 @@ pub struct NostrEngine {
 	parser_tx: Box<dyn WorkerChannelSender>,
 	crypto_tx: Box<dyn WorkerChannelSender>,
 	event_sink: mpsc::Sender<(String, Vec<u8>)>,
-	swappable_signer: Arc<SwappableSigner>,
 }
 
 impl NostrEngine {
@@ -36,12 +34,9 @@ impl NostrEngine {
 	pub fn new(
 		transport: Arc<dyn RelayTransport>,
 		storage: Arc<dyn Storage>,
-		signer: Arc<dyn Signer>,
 		event_sink: mpsc::Sender<(String, Vec<u8>)>,
 	) -> Self {
 		info!("[NostrEngine] Initializing...");
-
-		let swappable_signer = Arc::new(SwappableSigner::new(signer));
 
 		// Bidirectional pairs: one end stays in the engine, the other goes to the worker.
 		let (engine_parser_ch, parser_engine_ch) = FuturesWorkerChannel::new_pair();
@@ -94,7 +89,6 @@ impl NostrEngine {
 		);
 
 		let crypto_worker = CryptoWorker::new();
-		crypto_worker.set_dyn_signer(swappable_signer.clone());
 		crypto_worker.run(
 			Box::new(crypto_engine_ch),
 			Box::new(crypto_parser_ch),
@@ -147,13 +141,7 @@ impl NostrEngine {
 			parser_tx: engine_parser_tx,
 			crypto_tx: engine_crypto_tx,
 			event_sink,
-			swappable_signer,
 		}
-	}
-
-	/// Set a new signer at runtime.
-	pub async fn set_signer(&self, signer: Arc<dyn Signer>) {
-		self.swappable_signer.set(signer).await;
 	}
 
 	/// Deserialize a FlatBuffers MainMessage and dispatch to the appropriate worker.
@@ -294,7 +282,7 @@ impl NostrEngine {
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
 	use super::*;
-	use crate::traits::{RelayTransport, Storage, Signer, TransportError, TransportStatus, StorageError};
+	use crate::traits::{RelayTransport, Storage, TransportError, TransportStatus, StorageError};
 	use crate::types::nostr::{Filter, Template};
 	use crate::types::network::Request;
 	use async_trait::async_trait;
@@ -432,75 +420,6 @@ mod tests {
 		}
 	}
 
-	#[derive(Debug, Clone)]
-	enum SignerCall {
-		GetPublicKey,
-		SignEvent(String),
-	}
-
-	struct MockSigner {
-		pubkey: String,
-		signature: String,
-		calls: Arc<Mutex<Vec<SignerCall>>>,
-	}
-
-	impl MockSigner {
-		fn new(pubkey: &str, signature: &str) -> Self {
-			Self {
-				pubkey: pubkey.to_string(),
-				signature: signature.to_string(),
-				calls: Arc::new(Mutex::new(Vec::new())),
-			}
-		}
-	}
-
-	#[async_trait(?Send)]
-	impl Signer for MockSigner {
-		async fn get_public_key(&self) -> Result<String, crate::traits::SignerError> {
-			self.calls.lock().unwrap().push(SignerCall::GetPublicKey);
-			Ok(self.pubkey.clone())
-		}
-
-		async fn sign_event(&self, event_json: &str) -> Result<String, crate::traits::SignerError> {
-			self.calls.lock().unwrap().push(SignerCall::SignEvent(event_json.to_string()));
-			Ok(self.signature.clone())
-		}
-
-		async fn nip04_encrypt(&self, _peer: &str, _plaintext: &str) -> Result<String, crate::traits::SignerError> {
-			Ok(String::new())
-		}
-
-		async fn nip04_decrypt(&self, _peer: &str, _ciphertext: &str) -> Result<String, crate::traits::SignerError> {
-			Ok(String::new())
-		}
-
-		async fn nip44_encrypt(&self, _peer: &str, _plaintext: &str) -> Result<String, crate::traits::SignerError> {
-			Ok(String::new())
-		}
-
-		async fn nip44_decrypt(&self, _peer: &str, _ciphertext: &str) -> Result<String, crate::traits::SignerError> {
-			Ok(String::new())
-		}
-
-		async fn nip04_decrypt_between(
-			&self,
-			_sender: &str,
-			_recipient: &str,
-			_ciphertext: &str,
-		) -> Result<String, crate::traits::SignerError> {
-			Ok(String::new())
-		}
-
-		async fn nip44_decrypt_between(
-			&self,
-			_sender: &str,
-			_recipient: &str,
-			_ciphertext: &str,
-		) -> Result<String, crate::traits::SignerError> {
-			Ok(String::new())
-		}
-	}
-
 	// ============================================================================
 	// Test 1: Engine Wiring Valid
 	// ============================================================================
@@ -512,10 +431,6 @@ mod tests {
 			// Create mocks
 			let transport = Arc::new(MockRelayTransport::new());
 			let storage = Arc::new(MockStorage::new());
-			let signer = Arc::new(MockSigner::new(
-				"0000000000000000000000000000000000000000000000000000000000000001",
-				"0000000000000000000000000000000000000000000000000000000000000002",
-			));
 
 			// Create event sink (futures channel)
 			let (event_sink_tx, _event_sink_rx) = futures::channel::mpsc::channel::<(String, Vec<u8>)>(100);
@@ -524,7 +439,6 @@ mod tests {
 			let engine = NostrEngine::new(
 				transport.clone(),
 				storage.clone(),
-				signer.clone(),
 				event_sink_tx,
 			);
 
@@ -566,10 +480,6 @@ mod tests {
 			let storage = Arc::new(MockStorage::with_query_results(vec![
 				vec![], // Empty query result for cache lookup
 			]));
-			let signer = Arc::new(MockSigner::new(
-				"0000000000000000000000000000000000000000000000000000000000000001",
-				"0000000000000000000000000000000000000000000000000000000000000002",
-			));
 
 			// Create event sink (futures channel)
 			let (event_sink_tx, _event_sink_rx) = futures::channel::mpsc::channel::<(String, Vec<u8>)>(100);
@@ -578,7 +488,6 @@ mod tests {
 			let engine = NostrEngine::new(
 				transport.clone(),
 				storage.clone(),
-				signer.clone(),
 				event_sink_tx,
 			);
 
@@ -614,17 +523,12 @@ mod tests {
 		local.run_until(async {
 			let transport = Arc::new(MockRelayTransport::new());
 			let storage = Arc::new(MockStorage::new());
-			let signer = Arc::new(MockSigner::new(
-				"0000000000000000000000000000000000000000000000000000000000000001",
-				"0000000000000000000000000000000000000000000000000000000000000002",
-			));
 
 			let (event_sink_tx, mut event_sink_rx) = futures::channel::mpsc::channel::<(String, Vec<u8>)>(100);
 
 			let engine = NostrEngine::new(
 				transport.clone(),
 				storage.clone(),
-				signer.clone(),
 				event_sink_tx,
 			);
 
@@ -704,10 +608,6 @@ mod tests {
 			// Create mocks
 			let transport = Arc::new(MockRelayTransport::new());
 			let storage = Arc::new(MockStorage::new());
-			let signer = Arc::new(MockSigner::new(
-				"0000000000000000000000000000000000000000000000000000000000000001",
-				"0000000000000000000000000000000000000000000000000000000000000002",
-			));
 
 			// Create event sink (futures channel)
 			let (event_sink_tx, _event_sink_rx) = futures::channel::mpsc::channel::<(String, Vec<u8>)>(100);
@@ -716,7 +616,6 @@ mod tests {
 			let engine = NostrEngine::new(
 				transport.clone(),
 				storage.clone(),
-				signer.clone(),
 				event_sink_tx,
 			);
 
@@ -855,17 +754,12 @@ mod tests {
 			let inner_transport = MockRelayTransport::new();
 			let transport = Arc::new(RandomFailingTransport::new(inner_transport, 0.10, 42));
 			let storage = Arc::new(MockStorage::new());
-			let signer = Arc::new(MockSigner::new(
-				"0000000000000000000000000000000000000000000000000000000000000001",
-				"0000000000000000000000000000000000000000000000000000000000000002",
-			));
 
 			let (event_sink_tx, _event_sink_rx) = futures::channel::mpsc::channel::<(String, Vec<u8>)>(100);
 
 			let engine = NostrEngine::new(
 				transport.clone(),
 				storage.clone(),
-				signer.clone(),
 				event_sink_tx,
 			);
 
@@ -903,17 +797,12 @@ mod tests {
 			let inner_storage = MockStorage::new();
 			let storage = Arc::new(SlowStorage::new(inner_storage, 100));
 			let transport = Arc::new(MockRelayTransport::new());
-			let signer = Arc::new(MockSigner::new(
-				"0000000000000000000000000000000000000000000000000000000000000001",
-				"0000000000000000000000000000000000000000000000000000000000000002",
-			));
 
 			let (event_sink_tx, mut event_sink_rx) = futures::channel::mpsc::channel::<(String, Vec<u8>)>(100);
 
 			let engine = NostrEngine::new(
 				transport.clone(),
 				storage.clone(),
-				signer.clone(),
 				event_sink_tx,
 			);
 
@@ -969,17 +858,12 @@ mod tests {
 		local.run_until(async {
 			let transport = Arc::new(MockRelayTransport::new());
 			let storage = Arc::new(MockStorage::new());
-			let signer = Arc::new(MockSigner::new(
-				"0000000000000000000000000000000000000000000000000000000000000001",
-				"0000000000000000000000000000000000000000000000000000000000000002",
-			));
 
 			let (event_sink_tx, _event_sink_rx) = futures::channel::mpsc::channel::<(String, Vec<u8>)>(100);
 
 			let engine = NostrEngine::new(
 				transport.clone(),
 				storage.clone(),
-				signer.clone(),
 				event_sink_tx,
 			);
 
@@ -1009,17 +893,12 @@ mod tests {
 		local.run_until(async {
 			let transport = Arc::new(MockRelayTransport::new());
 			let storage = Arc::new(MockStorage::new());
-			let signer = Arc::new(MockSigner::new(
-				"0000000000000000000000000000000000000000000000000000000000000001",
-				"0000000000000000000000000000000000000000000000000000000000000002",
-			));
 
 			let (event_sink_tx, _event_sink_rx) = futures::channel::mpsc::channel::<(String, Vec<u8>)>(100);
 
 			let engine = NostrEngine::new(
 				transport.clone(),
 				storage.clone(),
-				signer.clone(),
 				event_sink_tx,
 			);
 

@@ -1,6 +1,6 @@
 mod common;
-
 use std::sync::Arc;
+
 use std::time::Duration;
 use futures::StreamExt;
 use nipworker_core::generated::nostr::fb;
@@ -32,14 +32,13 @@ async fn test_cache_hit_then_network_event() {
             ]]));
 
             let transport = Arc::new(common::MockRelayTransport::new());
-            let signer = Arc::new(common::MockSigner::new(PUBKEY, SIGNATURE));
+            
             let (event_sink_tx, mut event_sink_rx) =
                 futures::channel::mpsc::channel::<(String, Vec<u8>)>(100);
 
             let engine = NostrEngine::new(
                 transport.clone(),
                 storage.clone(),
-                signer.clone(),
                 event_sink_tx,
             );
 

@@ -8,8 +8,31 @@ use nipworker_core::service::engine::NostrEngine;
 use nipworker_core::types::nostr::Template;
 use tokio::task::LocalSet;
 
-const PUBKEY: &str = "0000000000000000000000000000000000000000000000000000000000000001";
-const SIGNATURE: &str = "0000000000000000000000000000000000000000000000000000000000000002";
+const TEST_SECRET: &str = "f7e69dd87239da6a828fb9a2fbf481b5b9e147edb848497620e8dc6f5ec10a0a";
+
+fn build_set_private_key_message(secret: &str) -> Vec<u8> {
+	let mut builder = flatbuffers::FlatBufferBuilder::new();
+	let mut pk = fb::PrivateKeyT::default();
+	pk.private_key = secret.to_string();
+	let signer_type = fb::SignerTypeT::PrivateKey(Box::new(pk));
+	let signer_offset = signer_type.pack(&mut builder);
+	let set_signer = fb::SetSigner::create(
+		&mut builder,
+		&fb::SetSignerArgs {
+			signer_type_type: fb::SignerType::PrivateKey,
+			signer_type: signer_offset,
+		},
+	);
+	let main_msg = fb::MainMessage::create(
+		&mut builder,
+		&fb::MainMessageArgs {
+			content_type: fb::MainContent::SetSigner,
+			content: Some(set_signer.as_union_value()),
+		},
+	);
+	builder.finish(main_msg, None);
+	builder.finished_data().to_vec()
+}
 
 #[tokio::test]
 async fn test_publish_flow_reaches_relay() {
@@ -18,16 +41,23 @@ async fn test_publish_flow_reaches_relay() {
 		.run_until(async {
 			let transport = Arc::new(common::MockRelayTransport::new());
 			let storage = Arc::new(common::MockStorage::new());
-			let signer = Arc::new(common::MockSigner::new(PUBKEY, SIGNATURE));
 			let (event_sink_tx, mut event_sink_rx) =
 				futures::channel::mpsc::channel::<(String, Vec<u8>)>(100);
 
 			let engine = NostrEngine::new(
 				transport.clone(),
 				storage.clone(),
-				signer.clone(),
 				event_sink_tx,
 			);
+
+			// Configure a signer so publish can be signed.
+			engine
+				.handle_message(&build_set_private_key_message(TEST_SECRET))
+				.await
+				.unwrap();
+			for _ in 0..10 {
+				tokio::task::yield_now().await;
+			}
 
 			let template = Template {
 				kind: 1,
@@ -60,19 +90,6 @@ async fn test_publish_flow_reaches_relay() {
 				}
 			}
 			assert!(found_event_frame, "EVENT frame should reach relay");
-
-			// Verify the signer was asked to sign.
-			let sign_calls: Vec<_> = signer
-				.calls
-				.lock()
-				.unwrap()
-				.iter()
-				.filter_map(|c| match c {
-					common::SignerCall::SignEvent(json) => Some(json.clone()),
-					_ => None,
-				})
-				.collect();
-			assert!(!sign_calls.is_empty(), "Signer should have been invoked");
 
 			// Wait for synthetic SENT status to reach event sink.
 			let mut found_sent = false;

@@ -6,7 +6,7 @@ pub mod utils;
 pub mod traits;
 pub mod service;
 pub mod spawn;
-pub mod signer_swap;
+
 pub mod nostr_error;
 pub mod port;
 

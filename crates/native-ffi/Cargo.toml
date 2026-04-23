@@ -7,7 +7,7 @@ edition = "2021"
 crate-type = ["cdylib", "staticlib"]
 
 [dependencies]
-nipworker-core = { path = "../core", features = ["crypto"] }
+nipworker-core = { path = "../core", features = ["parser", "cache", "connections", "crypto"] }
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros"] }
 futures = { version = "0.3", default-features = false, features = ["std"] }
 tracing = "0.1"

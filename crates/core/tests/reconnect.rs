@@ -1,6 +1,6 @@
 mod common;
-
 use std::sync::Arc;
+
 use std::time::Duration;
 use nipworker_core::service::engine::NostrEngine;
 use nipworker_core::traits::TransportStatus;
@@ -17,14 +17,13 @@ async fn test_reconnect_after_transport_close() {
 		.run_until(async {
 			let transport = Arc::new(common::MockRelayTransport::new());
 			let storage = Arc::new(common::MockStorage::new());
-			let signer = Arc::new(common::MockSigner::new(PUBKEY, SIGNATURE));
+			
 			let (event_sink_tx, _event_sink_rx) =
 				futures::channel::mpsc::channel::<(String, Vec<u8>)>(100);
 
 			let engine = NostrEngine::new(
 				transport.clone(),
 				storage.clone(),
-				signer.clone(),
 				event_sink_tx,
 			);
 

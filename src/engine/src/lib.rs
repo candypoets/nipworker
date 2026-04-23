@@ -1,9 +1,7 @@
-use async_trait::async_trait;
 use futures::channel::mpsc;
 use futures::StreamExt;
 use js_sys::Uint8Array;
 use nipworker_core::service::engine::NostrEngine;
-use nipworker_core::traits::{Signer, SignerError};
 use std::rc::Rc;
 use std::sync::Arc;
 use tracing::info;
@@ -17,55 +15,6 @@ mod transport;
 
 use storage::NostrDbStorage;
 use transport::WebSocketTransport;
-
-/// Minimal dummy signer. The engine no longer manages signers directly;
-/// the core CryptoWorker handles all signer types via SetSigner FlatBuffers messages.
-struct DummySigner;
-
-#[async_trait(?Send)]
-impl Signer for DummySigner {
-	async fn get_public_key(&self) -> Result<String, SignerError> {
-		Err(SignerError::Other("DummySigner: not configured".into()))
-	}
-
-	async fn sign_event(&self, _event_json: &str) -> Result<String, SignerError> {
-		Err(SignerError::Other("DummySigner: not configured".into()))
-	}
-
-	async fn nip04_encrypt(&self, _peer: &str, _plaintext: &str) -> Result<String, SignerError> {
-		Err(SignerError::Other("DummySigner: not configured".into()))
-	}
-
-	async fn nip04_decrypt(&self, _peer: &str, _ciphertext: &str) -> Result<String, SignerError> {
-		Err(SignerError::Other("DummySigner: not configured".into()))
-	}
-
-	async fn nip44_encrypt(&self, _peer: &str, _plaintext: &str) -> Result<String, SignerError> {
-		Err(SignerError::Other("DummySigner: not configured".into()))
-	}
-
-	async fn nip44_decrypt(&self, _peer: &str, _ciphertext: &str) -> Result<String, SignerError> {
-		Err(SignerError::Other("DummySigner: not configured".into()))
-	}
-
-	async fn nip04_decrypt_between(
-		&self,
-		_sender: &str,
-		_recipient: &str,
-		_ciphertext: &str,
-	) -> Result<String, SignerError> {
-		Err(SignerError::Other("DummySigner: not configured".into()))
-	}
-
-	async fn nip44_decrypt_between(
-		&self,
-		_sender: &str,
-		_recipient: &str,
-		_ciphertext: &str,
-	) -> Result<String, SignerError> {
-		Err(SignerError::Other("DummySigner: not configured".into()))
-	}
-}
 
 /// WASM-facing engine worker that hosts the full NostrEngine in a single thread.
 /// Thin wrapper — all orchestration lives in the TypeScript worker.
@@ -87,7 +36,6 @@ impl NipworkerEngine {
 
 		let transport = Arc::new(WebSocketTransport::new());
 		let storage = Arc::new(NostrDbStorage::new(8 * 1024 * 1024));
-		let signer: Arc<dyn Signer> = Arc::new(DummySigner);
 
 		// ── Event sink: channel → JS callback ──
 		let (event_tx, mut event_rx) = mpsc::channel::<(String, Vec<u8>)>(256);
@@ -104,7 +52,7 @@ impl NipworkerEngine {
 			}
 		});
 
-		let engine = Rc::new(NostrEngine::new(transport, storage, signer, event_tx));
+		let engine = Rc::new(NostrEngine::new(transport, storage, event_tx));
 
 		Self { engine }
 	}

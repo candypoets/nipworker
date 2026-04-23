@@ -8,8 +8,8 @@ use crate::channel::{TokioWorkerChannel, WorkerChannel, ChannelError};
 use crate::generated::nostr::fb;
 use crate::service::engine::NostrEngine;
 use crate::traits::{
-    RelayTransport, Signer, Storage, TransportError, TransportStatus,
-    StorageError, SignerError,
+    RelayTransport, Storage, TransportError, TransportStatus,
+    StorageError,
 };
 use crate::types::network::Request;
 use crate::types::nostr::Template;
@@ -66,63 +66,6 @@ impl RelayTransport for HangingRelayTransport {
     }
 }
 
-/// MockSigner where sign_event() takes a long time
-struct SlowSigner {
-    delay_ms: u64,
-}
-
-impl SlowSigner {
-    fn with_delay(delay_ms: u64) -> Self {
-        Self { delay_ms }
-    }
-}
-
-#[async_trait(?Send)]
-impl Signer for SlowSigner {
-    async fn get_public_key(&self) -> Result<String, SignerError> {
-        Ok("0000000000000000000000000000000000000000000000000000000000000001".to_string())
-    }
-
-    async fn sign_event(&self, _event_json: &str) -> Result<String, SignerError> {
-        tokio::time::sleep(Duration::from_millis(self.delay_ms)).await;
-        Ok("0000000000000000000000000000000000000000000000000000000000000002".to_string())
-    }
-
-    async fn nip04_encrypt(&self, _peer: &str, _plaintext: &str) -> Result<String, SignerError> {
-        Ok(String::new())
-    }
-
-    async fn nip04_decrypt(&self, _peer: &str, _ciphertext: &str) -> Result<String, SignerError> {
-        Ok(String::new())
-    }
-
-    async fn nip44_encrypt(&self, _peer: &str, _plaintext: &str) -> Result<String, SignerError> {
-        Ok(String::new())
-    }
-
-    async fn nip44_decrypt(&self, _peer: &str, _ciphertext: &str) -> Result<String, SignerError> {
-        Ok(String::new())
-    }
-
-    async fn nip04_decrypt_between(
-        &self,
-        _sender: &str,
-        _recipient: &str,
-        _ciphertext: &str,
-    ) -> Result<String, SignerError> {
-        Ok(String::new())
-    }
-
-    async fn nip44_decrypt_between(
-        &self,
-        _sender: &str,
-        _recipient: &str,
-        _ciphertext: &str,
-    ) -> Result<String, SignerError> {
-        Ok(String::new())
-    }
-}
-
 // ============================================================================
 // Test 1: Storage Query Timeout
 // ============================================================================
@@ -134,7 +77,6 @@ async fn test_storage_query_timeout() {
         .run_until(async {
             let transport = Arc::new(HangingRelayTransport);
             let storage = Arc::new(HangingStorage);
-            let signer = Arc::new(SlowSigner::with_delay(1));
 
             let (event_sink_tx, _event_sink_rx) =
                 futures::channel::mpsc::channel::<(String, Vec<u8>)>(100);
@@ -143,7 +85,6 @@ async fn test_storage_query_timeout() {
             let engine = NostrEngine::new(
                 transport.clone(),
                 storage.clone(),
-                signer.clone(),
                 event_sink_tx,
             );
 
@@ -196,7 +137,6 @@ async fn test_transport_connect_timeout() {
         .run_until(async {
             let transport = Arc::new(HangingRelayTransport);
             let storage = Arc::new(HangingStorage);
-            let signer = Arc::new(SlowSigner::with_delay(1));
 
             let (event_sink_tx, _event_sink_rx) =
                 futures::channel::mpsc::channel::<(String, Vec<u8>)>(100);
@@ -204,7 +144,6 @@ async fn test_transport_connect_timeout() {
             let engine = NostrEngine::new(
                 transport.clone(),
                 storage.clone(),
-                signer.clone(),
                 event_sink_tx,
             );
 
@@ -262,7 +201,6 @@ async fn test_signer_slow_response() {
     local
         .run_until(async {
             // Create a signer that takes 5 seconds to sign
-            let slow_signer = Arc::new(SlowSigner::with_delay(5000));
             let transport = Arc::new(HangingRelayTransport);
             let storage = Arc::new(HangingStorage);
 
@@ -272,7 +210,6 @@ async fn test_signer_slow_response() {
             let engine = NostrEngine::new(
                 transport.clone(),
                 storage.clone(),
-                slow_signer.clone(),
                 event_sink_tx,
             );
 

@@ -13,7 +13,7 @@ use crate::pipeline::{Pipeline};
 use crate::service::engine::NostrEngine;
 use crate::traits::{
     RelayTransport, Signer, Storage, TransportError, TransportStatus,
-    StorageError, SignerError,
+    StorageError,
 };
 use crate::types::network::Request;
 
@@ -57,53 +57,6 @@ impl Storage for MockStorage {
     }
 }
 
-struct MockSigner;
-
-#[async_trait(?Send)]
-impl Signer for MockSigner {
-    async fn get_public_key(&self) -> Result<String, SignerError> {
-        Ok("0000000000000000000000000000000000000000000000000000000000000001".to_string())
-    }
-
-    async fn sign_event(&self, _event_json: &str) -> Result<String, SignerError> {
-        Ok("0000000000000000000000000000000000000000000000000000000000000002".to_string())
-    }
-
-    async fn nip04_encrypt(&self, _peer: &str, _plaintext: &str) -> Result<String, SignerError> {
-        Ok(String::new())
-    }
-
-    async fn nip04_decrypt(&self, _peer: &str, _ciphertext: &str) -> Result<String, SignerError> {
-        Ok(String::new())
-    }
-
-    async fn nip44_encrypt(&self, _peer: &str, _plaintext: &str) -> Result<String, SignerError> {
-        Ok(String::new())
-    }
-
-    async fn nip44_decrypt(&self, _peer: &str, _ciphertext: &str) -> Result<String, SignerError> {
-        Ok(String::new())
-    }
-
-    async fn nip04_decrypt_between(
-        &self,
-        _sender: &str,
-        _recipient: &str,
-        _ciphertext: &str,
-    ) -> Result<String, SignerError> {
-        Ok(String::new())
-    }
-
-    async fn nip44_decrypt_between(
-        &self,
-        _sender: &str,
-        _recipient: &str,
-        _ciphertext: &str,
-    ) -> Result<String, SignerError> {
-        Ok(String::new())
-    }
-}
-
 // ============================================================================
 // Test 1: Memory Leak - 1000 Subscriptions
 // ============================================================================
@@ -115,7 +68,6 @@ async fn test_no_memory_leak_1000_subscriptions() {
         .run_until(async {
             let transport = Arc::new(MockRelayTransport);
             let storage = Arc::new(MockStorage);
-            let signer = Arc::new(MockSigner);
 
             let (event_sink_tx, _event_sink_rx) =
                 futures::channel::mpsc::channel::<(String, Vec<u8>)>(100);
@@ -123,7 +75,6 @@ async fn test_no_memory_leak_1000_subscriptions() {
             let engine = NostrEngine::new(
                 transport.clone(),
                 storage.clone(),
-                signer.clone(),
                 event_sink_tx,
             );
 
@@ -406,7 +357,6 @@ async fn test_shard_channels_dropped_on_unsubscribe() {
         .run_until(async {
             let transport = Arc::new(MockRelayTransport);
             let storage = Arc::new(MockStorage);
-            let signer = Arc::new(MockSigner);
 
             let (event_sink_tx, _event_sink_rx) =
                 futures::channel::mpsc::channel::<(String, Vec<u8>)>(1000);
@@ -414,7 +364,6 @@ async fn test_shard_channels_dropped_on_unsubscribe() {
             let engine = NostrEngine::new(
                 transport.clone(),
                 storage.clone(),
-                signer.clone(),
                 event_sink_tx,
             );
 
