@@ -1,6 +1,6 @@
 /* WASM-based parser worker runtime (dedicated Web Worker, module) */
 
-import init, { start_worker } from '../../crates/parser/pkg/nipworker_parser.js';
+import init, { start_worker, init_tracing } from '../../crates/parser/pkg/nipworker_parser.js';
 import wasmUrl from '../../crates/parser/pkg/nipworker_parser_bg.wasm?url';
 
 export type InitParserMsg = {
@@ -14,6 +14,8 @@ export type InitParserMsg = {
 		cryptoPort: MessagePort;
 		/** Port to communicate with main thread (for commands & batched events) */
 		mainPort: MessagePort;
+		/** Log level for the Rust WASM worker */
+		logLevel?: string;
 	};
 };
 
@@ -31,7 +33,8 @@ self.addEventListener('message', async (evt: MessageEvent<InitParserMsg | { type
 
 	if (msg?.type === 'init') {
 		await ensureWasm();
-		const { connectionsPort, cachePort, cryptoPort, mainPort } = msg.payload;
+		const { connectionsPort, cachePort, cryptoPort, mainPort, logLevel } = msg.payload;
+		init_tracing(logLevel || 'warn');
 		start_worker(mainPort, connectionsPort, cachePort, cryptoPort);
 		return;
 	}

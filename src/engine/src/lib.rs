@@ -4,9 +4,30 @@ use js_sys::Uint8Array;
 use nipworker_core::service::engine::NostrEngine;
 use std::rc::Rc;
 use std::sync::Arc;
+use std::sync::Once;
 use tracing::info;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
+
+static INIT: Once = Once::new();
+
+#[wasm_bindgen]
+pub fn init_tracing(level: String) {
+	INIT.call_once(|| {
+		let max_level = match level.to_lowercase().as_str() {
+			"trace" => tracing::Level::TRACE,
+			"debug" => tracing::Level::DEBUG,
+			"info" => tracing::Level::INFO,
+			"warn" => tracing::Level::WARN,
+			"error" => tracing::Level::ERROR,
+			_ => tracing::Level::INFO,
+		};
+		let mut builder = tracing_wasm::WASMLayerConfigBuilder::new();
+		builder.set_max_level(max_level);
+		tracing_wasm::set_as_global_default_with_config(builder.build());
+		console_error_panic_hook::set_once();
+	});
+}
 
 mod idb_utils;
 mod ring_buffer_persist;
@@ -30,8 +51,6 @@ impl NipworkerEngine {
 	/// `on_event`: (subId: string, data: Uint8Array) => void
 	#[wasm_bindgen(constructor)]
 	pub fn new(on_event: js_sys::Function) -> Self {
-		console_error_panic_hook::set_once();
-		tracing_wasm::set_as_global_default();
 		info!("[nipworker-engine] Initializing WASM engine...");
 
 		let transport = Arc::new(WebSocketTransport::new());

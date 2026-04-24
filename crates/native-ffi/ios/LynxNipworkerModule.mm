@@ -9,8 +9,7 @@
 //    [globalConfig registerModule:NipworkerLynxModule.class];
 //
 
-#import <Foundation/Foundation.h>
-#import <Lynx/LynxModule.h>
+#import "LynxNipworkerModule.h"
 
 extern "C" {
 void* nipworker_init(void (*callback)(void* userdata, const uint8_t* ptr, size_t len), void* userdata);

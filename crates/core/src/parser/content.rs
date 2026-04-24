@@ -1,437 +1,1342 @@
 use crate::parser::Result;
+use crate::types::ParserError;
 use crate::types::nostr::nips::nip19::{self, Nip19};
+use regex::Regex;
 
 use crate::generated::nostr::fb;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MediaItem {
-    pub image: Option<Image>,
-    pub video: Option<Video>,
+	pub image: Option<Image>,
+	pub video: Option<Video>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Image {
-    pub url: String,
-    pub alt: Option<String>,
-    pub dim: Option<String>, // Dimensions in "widthxheight" format (e.g., "1920x1080")
+	pub url: String,
+	pub alt: Option<String>,
+	pub dim: Option<String>, // Dimensions in "widthxheight" format (e.g., "1920x1080")
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Video {
-    pub url: String,
-    pub thumbnail: Option<String>,
-    pub dim: Option<String>, // Dimensions in "widthxheight" format (e.g., "1920x1080")
+	pub url: String,
+	pub thumbnail: Option<String>,
+	pub dim: Option<String>, // Dimensions in "widthxheight" format (e.g., "1920x1080")
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ContentData {
-    Code {
-        language: Option<String>,
-        code: String,
-    },
-    Hashtag {
-        tag: String,
-    },
-    Link {
-        url: String,
-    },
-    Image {
-        url: String,
-        alt: Option<String>,
-        dim: Option<String>,
-    },
-    Video {
-        url: String,
-        thumbnail: Option<String>,
-        dim: Option<String>,
-    },
-    Nostr {
-        entity: String,
-        data: Option<String>,
-    },
-    Cashu {
-        token: String,
-    },
-    Emoji {
-        shortcode: String,
-        url: Option<String>,
-    },
-    Mention {
-        pubkey: String,
-        relays: Vec<String>,
-    },
-    Relay {
-        url: String,
-    },
-    MediaGrid {
-        items: Vec<MediaItem>,
-    },
-    Quote {
-        event_id: String,
-        relays: Vec<String>,
-        author: Option<String>,
-    },
-    LinkPreview {
-        url: String,
-        title: Option<String>,
-        description: Option<String>,
-        image: Option<String>,
-    },
+	Code {
+		language: Option<String>,
+		code: String,
+	},
+	Hashtag {
+		tag: String,
+	},
+	Link {
+		url: String,
+	},
+	Image {
+		url: String,
+		alt: Option<String>,
+		dim: Option<String>,
+	},
+	Video {
+		url: String,
+		thumbnail: Option<String>,
+		dim: Option<String>,
+	},
+	Nostr {
+		entity: String,
+		data: Option<String>,
+		relays: Vec<String>,
+		author: Option<String>,
+		kind: Option<u64>,
+	},
+	Cashu {
+		token: String,
+	},
+	Emoji {
+		shortcode: String,
+		url: Option<String>,
+	},
+	Mention {
+		pubkey: String,
+		relays: Vec<String>,
+	},
+	Relay {
+		url: String,
+	},
+	MediaGrid {
+		items: Vec<MediaItem>,
+	},
+	Quote {
+		event_id: String,
+		relays: Vec<String>,
+		author: Option<String>,
+	},
+	LinkPreview {
+		url: String,
+		title: Option<String>,
+		description: Option<String>,
+		image: Option<String>,
+	},
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContentBlock {
-    pub block_type: String,
-    pub text: String,
-    pub data: Option<ContentData>,
+	pub block_type: String,
+	pub text: String,
+	pub data: Option<ContentData>,
 }
 
 impl ContentBlock {
-    pub fn new(block_type: String, text: String) -> Self {
-        Self {
-            block_type,
-            text,
-            data: None,
-        }
-    }
+	pub fn new(block_type: String, text: String) -> Self {
+		Self {
+			block_type,
+			text,
+			data: None,
+		}
+	}
 
-    pub fn with_data(mut self, data: ContentData) -> Self {
-        self.data = Some(data);
-        self
-    }
+	pub fn with_data(mut self, data: ContentData) -> Self {
+		self.data = Some(data);
+		self
+	}
 }
 
 pub struct ContentParser {
-    emoji_map: std::collections::HashMap<String, (String, Option<String>)>,
+	patterns: Vec<Pattern>,
+	emoji_map: std::collections::HashMap<String, (String, Option<String>)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImetaData {
-    pub url: String,
-    pub alt: Option<String>,
-    pub dim: Option<String>, // Dimensions in "widthxheight" format (e.g., "1920x1080")
-    pub blurhash: Option<String>,
-    pub mime_type: Option<String>,
+	pub url: String,
+	pub alt: Option<String>,
+	pub dim: Option<String>, // Dimensions in "widthxheight" format (e.g., "1920x1080")
+	pub blurhash: Option<String>,
+	pub mime_type: Option<String>,
+}
+
+struct Pattern {
+	name: String,
+	regex: Regex,
+	processor: fn(&str, &regex::Captures) -> Result<ContentBlock>,
 }
 
 /// Safely truncate a string at the given byte length, ensuring we don't cut in the middle of a UTF-8 character
 fn safe_truncate(s: &str, max_bytes: usize) -> &str {
-    if max_bytes >= s.len() {
-        return s;
-    }
+	if max_bytes >= s.len() {
+		return s;
+	}
 
-    let mut end = max_bytes;
-    while end > 0 && !s.is_char_boundary(end) {
-        end -= 1;
-    }
-    &s[..end]
+	// Find the largest valid character boundary at or before max_bytes
+	let mut boundary = max_bytes;
+	while boundary > 0 && !s.is_char_boundary(boundary) {
+		boundary -= 1;
+	}
+
+	&s[..boundary]
+}
+
+fn normalize_escaped_whitespace(s: &str) -> String {
+	s.replace("\\\n", "\\n")
+		.replace("\\\r", "\\r")
+		.replace("\\\t", "\\t")
 }
 
 impl ContentParser {
-    pub fn new() -> Self {
-        Self {
-            emoji_map: std::collections::HashMap::new(),
-        }
-    }
+	pub fn new() -> Self {
+		Self::with_emojis(&[])
+	}
 
-    pub fn with_emojis(emoji_tags: &[Vec<String>]) -> Self {
-        let mut emoji_map = std::collections::HashMap::new();
-        for tag in emoji_tags {
-            if tag.len() >= 2 {
-                let shortcode = tag[1].clone();
-                let url = tag.get(2).cloned();
-                emoji_map.insert(shortcode, (String::new(), url));
-            }
-        }
-        Self { emoji_map }
-    }
+	/// Create parser with emoji tag resolution (NIP-30)
+	/// emoji_tags: Vec of emoji tags ["emoji", "shortcode", "url", optional "emoji-set-address"]
+	pub fn with_emojis(emoji_tags: &[Vec<String>]) -> Self {
+		// Build emoji lookup map from tags: shortcode -> (url, emoji_set)
+		let emoji_map: std::collections::HashMap<String, (String, Option<String>)> = emoji_tags
+			.iter()
+			.filter(|tag| tag.len() >= 3 && tag[0] == "emoji")
+			.map(|tag| {
+				let shortcode = tag[1].clone();
+				let url = tag[2].clone();
+				let emoji_set = tag.get(3).cloned();
+				(shortcode, (url, emoji_set))
+			})
+			.collect();
 
-    pub fn parse_content(&self, content: &str) -> Result<Vec<ContentBlock>> {
-        Ok(vec![ContentBlock::new("text".to_string(), content.to_string())])
-    }
+		let patterns = vec![
+			Pattern {
+				name: "code".to_string(),
+				regex: Regex::new(r"```([\s\S]*?)```").unwrap(),
+				processor: process_code,
+			},
+			Pattern {
+				name: "cashu".to_string(),
+				regex: Regex::new(r"(cashuA[A-Za-z0-9_-]+)").unwrap(),
+				processor: process_cashu,
+			},
+			Pattern {
+				name: "hashtag".to_string(),
+				regex: Regex::new(r"(^|[\s\x22\x27(\]])(#[a-zA-Z0-9_]+)").unwrap(),
+				processor: process_hashtag,
+			},
+			Pattern {
+				name: "image".to_string(),
+				regex: Regex::new(
+					r"(?i)(https?://[^\s\\]+\.(jpg|jpeg|png|gif|webp|svg|ico)(\?[^\s\\]*)?)",
+				)
+				.unwrap(),
+				processor: process_image,
+			},
+			Pattern {
+				name: "video".to_string(),
+				regex: Regex::new(
+					r"(?i)(https?://[^\s\\]+\.(mp4|mov|avi|mkv|webm|m4v)(\?[^\s\\]*)?)",
+				)
+				.unwrap(),
+				processor: process_video,
+			},
+			Pattern {
+				name: "link".to_string(),
+				regex: Regex::new(r"(?i)https?://[^\s\]\)\\]+").unwrap(),
+				processor: process_link,
+			},
+			Pattern {
+				name: "nostr".to_string(),
+				regex: Regex::new(
+					r"(?i)(nostr:([a-z0-9]+)|(nevent|nprofile|npub|naddr|note)1[a-z0-9]+)",
+				)
+				.unwrap(),
+				processor: process_nostr,
+			},
+			Pattern {
+				name: "emoji".to_string(),
+				// NIP-30 shortcode format: :shortcode: where shortcode is alphanumeric, hyphens, underscores
+				regex: Regex::new(r":([a-zA-Z0-9_-]+):").unwrap(),
+				processor: process_emoji_placeholder,
+			},
+		];
 
-    pub fn shorten_content(
-        &self,
-        blocks: Vec<ContentBlock>,
-        _max_length: usize,
-        _max_images: usize,
-        _max_lines: usize,
-    ) -> Vec<ContentBlock> {
-        blocks
-    }
+		Self {
+			patterns,
+			emoji_map,
+		}
+	}
+
+	pub fn parse_content(&self, content: &str) -> Result<Vec<ContentBlock>> {
+		let mut blocks = vec![ContentBlock::new("text".to_string(), content.to_string())];
+
+		// Process one pattern at a time to prioritize patterns
+		for pattern in &self.patterns {
+			let mut new_blocks = Vec::new();
+
+			for block in blocks {
+				// Only process text blocks
+				if block.block_type != "text" {
+					new_blocks.push(block);
+					continue;
+				}
+
+				// Skip empty text blocks
+				if block.text.is_empty() {
+					continue;
+				}
+
+				// Find matches in this text block
+				let matches: Vec<_> = pattern.regex.find_iter(&block.text).collect();
+				if matches.is_empty() {
+					// No matches, keep block as is
+					new_blocks.push(block);
+					continue;
+				}
+
+				// Process matches and split the text
+				let mut last_end = 0;
+
+				for m in matches {
+					// Add text before the match if any
+					if m.start() > last_end {
+						let text_before = block.text[last_end..m.start()].to_string();
+						if !text_before.is_empty() {
+							new_blocks.push(ContentBlock::new("text".to_string(), text_before));
+						}
+					}
+
+					// Process and add the match
+					if let Some(caps) = pattern.regex.captures(&block.text[m.start()..m.end()]) {
+						// For emoji pattern, resolve shortcode using emoji_map if available
+						if pattern.name == "emoji" && !self.emoji_map.is_empty() {
+							match process_emoji_with_map(m.as_str(), &caps, &self.emoji_map) {
+								Ok(match_block) => new_blocks.push(match_block),
+								Err(_) => {
+									// If we can't resolve the emoji, treat it as text
+									new_blocks.push(ContentBlock::new(
+										"text".to_string(),
+										m.as_str().to_string(),
+									));
+								}
+							}
+						} else {
+							match (pattern.processor)(m.as_str(), &caps) {
+								Ok(match_block) => new_blocks.push(match_block),
+								Err(_) => {
+									// If we can't process the match, treat it as text
+									new_blocks.push(ContentBlock::new(
+										"text".to_string(),
+										m.as_str().to_string(),
+									));
+								}
+							}
+						}
+					} else {
+						// Fallback to text if regex capture fails
+						new_blocks.push(ContentBlock::new(
+							"text".to_string(),
+							m.as_str().to_string(),
+						));
+					}
+
+					last_end = m.end();
+				}
+
+				// Add remaining text after last match
+				if last_end < block.text.len() {
+					let remaining_text = block.text[last_end..].to_string();
+					if !remaining_text.is_empty() {
+						new_blocks.push(ContentBlock::new("text".to_string(), remaining_text));
+					}
+				}
+			}
+
+			blocks = new_blocks;
+			if pattern.name == "code" {
+				for b in blocks.iter_mut() {
+					if b.block_type == "text" {
+						b.text = normalize_escaped_whitespace(&b.text);
+					}
+				}
+			}
+		}
+
+		// Combine adjacent text blocks
+		let mut combined_blocks: Vec<ContentBlock> = Vec::new();
+		for block in blocks {
+			if let Some(last_block) = combined_blocks.last_mut() {
+				if block.block_type == "text" && last_block.block_type == "text" {
+					// Combine with previous text block
+					last_block.text.push_str(&block.text);
+					continue;
+				}
+			}
+			combined_blocks.push(block);
+		}
+
+		// Post-processing: group consecutive media into grids
+		let processed_blocks = self.group_media(combined_blocks);
+
+		// Remove empty text blocks
+		let final_blocks: Vec<_> = processed_blocks
+			.into_iter()
+			.filter(|block| block.block_type != "text" || !block.text.is_empty())
+			.collect();
+
+		Ok(final_blocks)
+	}
+
+	fn group_media(&self, blocks: Vec<ContentBlock>) -> Vec<ContentBlock> {
+		let mut processed_blocks = Vec::new();
+		let mut media_group = Vec::new();
+
+		for (i, block) in blocks.iter().enumerate() {
+			// If this is an image or video
+			if block.block_type == "image" || block.block_type == "video" {
+				media_group.push(block.clone());
+				continue;
+			}
+
+			// If this is whitespace or newlines between media, check what follows
+			if block.block_type == "text" {
+				let is_whitespace = block.text.chars().all(|c| c.is_whitespace());
+
+				if is_whitespace && !media_group.is_empty() && i + 1 < blocks.len() {
+					let next_block = &blocks[i + 1];
+					if next_block.block_type == "image" || next_block.block_type == "video" {
+						continue;
+					}
+				}
+			}
+
+			// If we have collected media and the current block breaks the sequence
+			if !media_group.is_empty() {
+				// Add media group if it contains more than one item
+				if media_group.len() > 1 {
+					let media_texts: Vec<_> = media_group.iter().map(|m| m.text.clone()).collect();
+
+					processed_blocks.push(
+						ContentBlock::new("mediaGrid".to_string(), media_texts.join("\n"))
+							.with_data(ContentData::MediaGrid {
+								items: media_group
+									.iter()
+									.filter_map(|block| match &block.data {
+										Some(ContentData::Image { url, alt, dim }) => {
+											Some(MediaItem {
+												image: Some(Image {
+													url: url.clone(),
+													alt: alt.clone(),
+													dim: dim.clone(),
+												}),
+												video: None,
+											})
+										}
+										Some(ContentData::Video { url, thumbnail, dim }) => {
+											Some(MediaItem {
+												image: None,
+												video: Some(Video {
+													url: url.clone(),
+													thumbnail: thumbnail.clone(),
+													dim: dim.clone(),
+												}),
+											})
+										}
+										_ => None,
+									})
+									.collect(),
+							}),
+					);
+				} else {
+					// Just add the single media item
+					processed_blocks.push(media_group[0].clone());
+				}
+				media_group.clear();
+			}
+
+			// Add the current non-media block
+			processed_blocks.push(block.clone());
+		}
+
+		// Don't forget any remaining media
+		if !media_group.is_empty() {
+			if media_group.len() > 1 {
+				let media_texts: Vec<_> = media_group.iter().map(|m| m.text.clone()).collect();
+
+				processed_blocks.push(
+					ContentBlock::new("mediaGrid".to_string(), media_texts.join("\n")).with_data(
+						ContentData::MediaGrid {
+							items: media_group
+								.iter()
+								.filter_map(|block| match &block.data {
+									Some(ContentData::Image { url, alt, dim }) => Some(MediaItem {
+										image: Some(Image {
+											url: url.clone(),
+											alt: alt.clone(),
+											dim: dim.clone(),
+										}),
+										video: None,
+									}),
+									Some(ContentData::Video { url, thumbnail, dim }) => {
+										Some(MediaItem {
+											image: None,
+											video: Some(Video {
+												url: url.clone(),
+												thumbnail: thumbnail.clone(),
+												dim: dim.clone(),
+											}),
+										})
+									}
+									_ => None,
+								})
+								.collect(),
+						},
+					),
+				);
+			} else {
+				processed_blocks.push(media_group[0].clone());
+			}
+		}
+
+		processed_blocks
+	}
+
+	pub fn shorten_content(
+		&self,
+		blocks: Vec<ContentBlock>,
+		max_length: usize,
+		max_images: usize,
+		max_lines: usize,
+	) -> Vec<ContentBlock> {
+		// Reserve a small tail budget when we append media/quote.
+		// Using half of max_length was too aggressive for common posts.
+		let tail_text_reserve = max_length.saturating_div(5).clamp(48, 160);
+
+		// Helpers
+		let is_textish = |b: &ContentBlock| -> bool {
+			b.block_type == "text"
+				|| b.block_type == "hashtag"
+				|| matches!(b.data, Some(ContentData::Nostr { .. }))
+		};
+		let is_quote_block = |b: &ContentBlock| -> bool {
+			// Treat Nostr event references as quoted notes
+			(b.block_type == "note" || b.block_type == "nevent" || b.block_type == "naddr")
+				&& matches!(b.data, Some(ContentData::Nostr { .. }))
+		};
+
+		// Partition: collect textish, media (image+video), single quote (tail), and last link (tail)
+		let mut textish_blocks: Vec<ContentBlock> = Vec::new();
+		let mut media_items: Vec<MediaItem> = Vec::new();
+		let mut tail_quote: Option<ContentBlock> = None;
+		let mut tail_link: Option<ContentBlock> = None;
+
+		for b in &blocks {
+			match (&b.block_type[..], &b.data) {
+				("image", Some(ContentData::Image { url, alt, dim })) => {
+					media_items.push(MediaItem {
+						image: Some(Image {
+							url: url.clone(),
+							alt: alt.clone(),
+							dim: dim.clone(),
+						}),
+						video: None,
+					});
+				}
+				("video", Some(ContentData::Video { url, thumbnail, dim })) => {
+					media_items.push(MediaItem {
+						image: None,
+						video: Some(Video {
+							url: url.clone(),
+							thumbnail: thumbnail.clone(),
+							dim: dim.clone(),
+						}),
+					});
+				}
+				("mediaGrid", Some(ContentData::MediaGrid { items })) => {
+					for it in items {
+						if let Some(img) = &it.image {
+							media_items.push(MediaItem {
+								image: Some(Image {
+									url: img.url.clone(),
+									alt: img.alt.clone(),
+									dim: img.dim.clone(),
+								}),
+								video: None,
+							});
+						} else if let Some(v) = &it.video {
+							media_items.push(MediaItem {
+								image: None,
+								video: Some(Video {
+									url: v.url.clone(),
+									thumbnail: v.thumbnail.clone(),
+									dim: v.dim.clone(),
+								}),
+							});
+						}
+					}
+				}
+				("link", _) => {
+					// Keep the last link; it will be placed at the tail only if no media/quote tail exists
+					tail_link = Some(b.clone());
+				}
+				_ => {
+					if is_quote_block(b) {
+						// Keep only the first quote; ignore subsequent quotes
+						if tail_quote.is_none() {
+							tail_quote = Some(b.clone());
+						}
+						// Do NOT include quotes in the text budget
+					} else if is_textish(b) {
+						textish_blocks.push(b.clone());
+					}
+				}
+			}
+		}
+
+		// Budgets
+		let has_media = !media_items.is_empty();
+		let has_quote = tail_quote.is_some();
+		let text_budget = if has_media || has_quote || tail_link.is_some() {
+			max_length.saturating_sub(tail_text_reserve)
+		} else {
+			max_length
+		};
+
+		// Aggregate current text size
+		let mut total_chars = 0usize;
+		let mut total_lines = 0usize;
+		for b in &textish_blocks {
+			total_chars += b.text.len();
+			total_lines += b.text.lines().count();
+		}
+
+		// If text fits and no tail (media/quote/link), caller can use full content
+		if !has_media
+			&& !has_quote
+			&& tail_link.is_none()
+			&& total_chars <= text_budget
+			&& total_lines <= max_lines
+		{
+			return Vec::new();
+		}
+
+		// Build text preview up to budgets (truncate last included block if needed)
+		let mut out: Vec<ContentBlock> = Vec::new();
+		let mut used_chars = 0usize;
+		let mut used_lines = 0usize;
+
+		for b in textish_blocks.into_iter() {
+			if used_chars >= text_budget || used_lines >= max_lines {
+				break;
+			}
+
+			let mut text = b.text.clone();
+			let mut truncated = false;
+
+			// Trim by remaining line budget
+			let rem_lines = max_lines.saturating_sub(used_lines);
+			let lines = text.lines().count();
+			if lines > rem_lines {
+				text = text.lines().take(rem_lines).collect::<Vec<_>>().join("\n");
+				truncated = true;
+			}
+
+			// Trim by remaining char budget
+			let rem_chars = text_budget.saturating_sub(used_chars);
+			if text.len() > rem_chars {
+				let budget = rem_chars.saturating_sub(3);
+				let t = safe_truncate(&text, budget).to_string();
+				text = if t.is_empty() {
+					"...".to_string()
+				} else {
+					format!("{}...", t)
+				};
+				truncated = true;
+			} else if truncated && !text.ends_with("...") {
+				text.push_str("...");
+			}
+
+			let mut block = b.clone();
+			block.text = text;
+			out.push(block);
+
+			used_chars = used_chars.saturating_add(out.last().unwrap().text.len());
+			used_lines = used_lines.saturating_add(out.last().unwrap().text.lines().count());
+
+			if truncated {
+				break;
+			}
+		}
+
+		// Tail: prefer media; else one quote; else one link. Only one tail block is appended.
+		if has_media && max_images > 0 {
+			let take = media_items.len().min(max_images);
+			if take == 1 {
+				// Single item -> single image/video block
+				let it = media_items.into_iter().next().unwrap();
+				if let Some(img) = it.image {
+					out.push(
+						ContentBlock::new("image".to_string(), img.url.clone()).with_data(
+							ContentData::Image {
+								url: img.url,
+								alt: img.alt,
+								dim: img.dim,
+							},
+						),
+					);
+				} else if let Some(v) = it.video {
+					out.push(
+						ContentBlock::new("video".to_string(), v.url.clone()).with_data(
+							ContentData::Video {
+								url: v.url,
+								thumbnail: v.thumbnail,
+								dim: v.dim,
+							},
+						),
+					);
+				}
+			} else {
+				// More than one -> exactly one mediaGrid block
+				let items: Vec<MediaItem> = media_items.into_iter().take(take).collect();
+				let grid_text = items
+					.iter()
+					.map(|it| {
+						if let Some(img) = &it.image {
+							img.url.clone()
+						} else if let Some(v) = &it.video {
+							v.url.clone()
+						} else {
+							String::new()
+						}
+					})
+					.collect::<Vec<_>>()
+					.join("\n");
+
+				out.push(
+					ContentBlock::new("mediaGrid".to_string(), grid_text)
+						.with_data(ContentData::MediaGrid { items }),
+				);
+			}
+		} else if let Some(q) = tail_quote {
+			// Append exactly one quote
+			out.push(q);
+		} else if let Some(link) = tail_link {
+			// Only when there is no media or quote tail do we append a link
+			out.push(link);
+		}
+
+		out
+	}
 }
 
 impl Default for ContentParser {
-    fn default() -> Self {
-        Self::new()
-    }
+	fn default() -> Self {
+		Self::new()
+	}
 }
 
+// Pattern processors
+
+fn process_code(text: &str, caps: &regex::Captures) -> Result<ContentBlock> {
+	let code = caps.get(1).map_or("", |m| m.as_str());
+	Ok(
+		ContentBlock::new("code".to_string(), text.to_string()).with_data(ContentData::Code {
+			language: None,
+			code: code.to_string(),
+		}),
+	)
+}
+
+fn process_cashu(text: &str, _caps: &regex::Captures) -> Result<ContentBlock> {
+	Ok(
+		ContentBlock::new("cashu".to_string(), text.to_string()).with_data(ContentData::Cashu {
+			token: text.to_string(),
+		}),
+	)
+}
+
+fn process_hashtag(_text: &str, caps: &regex::Captures) -> Result<ContentBlock> {
+	// Now we have capture groups: full match, prefix, hashtag
+	let prefix = caps.get(1).map_or("", |m| m.as_str());
+	let hashtag = caps.get(2).map_or("", |m| m.as_str());
+	let tag = if hashtag.starts_with('#') {
+		&hashtag[1..]
+	} else {
+		hashtag
+	};
+
+	// Include the prefix in the text but only process the hashtag part
+	let full_text = format!("{}{}", prefix, hashtag);
+	Ok(
+		ContentBlock::new("hashtag".to_string(), full_text).with_data(ContentData::Hashtag {
+			tag: tag.to_string(),
+		}),
+	)
+}
+
+fn process_image(text: &str, _caps: &regex::Captures) -> Result<ContentBlock> {
+	Ok(
+		ContentBlock::new("image".to_string(), text.to_string()).with_data(ContentData::Image {
+			url: text.to_string(),
+			alt: None,
+			dim: None,
+		}),
+	)
+}
+
+fn process_video(text: &str, _caps: &regex::Captures) -> Result<ContentBlock> {
+	Ok(
+		ContentBlock::new("video".to_string(), text.to_string()).with_data(ContentData::Video {
+			url: text.to_string(),
+			thumbnail: None,
+			dim: None,
+		}),
+	)
+}
+
+fn process_nostr(text: &str, _caps: &regex::Captures) -> Result<ContentBlock> {
+	let entity_str = if text.to_lowercase().starts_with("nostr:") {
+		// Extract the identifier after nostr:
+		&text[6..]
+	} else {
+		text
+	};
+
+	// Try to decode the identifier
+	match nip19::FromBech32::from_bech32(entity_str) {
+		Ok(decoded) => {
+			let (prefix, id, relays, author, kind) = match decoded {
+				Nip19::Pubkey(pk) => (
+					"npub",
+					pk.to_string(),
+					Vec::new(),
+					Some(pk.to_string()),
+					None,
+				),
+				Nip19::EventId(note) => (
+					"note",
+					note.to_string(),
+					Vec::new(),
+					None,
+					None,
+				),
+				Nip19::Profile(profile) => (
+					"nprofile",
+					profile.public_key.to_string(),
+					profile.relays.into_iter().map(|r| r.to_string()).collect(),
+					Some(profile.public_key.to_string()),
+					None,
+				),
+				Nip19::Event(event) => (
+					"nevent",
+					event.event_id.to_string(),
+					event.relays.into_iter().map(|r| r.to_string()).collect(),
+					event.author.map(|pk| pk.to_string()),
+					None,
+				),
+				Nip19::Coordinate(coord) => (
+					"naddr",
+					format!("{}:{}:{}", coord.kind, coord.public_key.to_string(), coord.identifier),
+					coord.relays.into_iter().map(|r| r.to_string()).collect(),
+					Some(coord.public_key.to_string()),
+					Some(coord.kind as u64),
+				),
+			};
+
+			Ok(
+				ContentBlock::new(prefix.to_string(), text.to_string()).with_data(
+					ContentData::Nostr {
+						entity: entity_str.to_string(),
+						data: Some(id),
+						relays,
+						author,
+						kind,
+					},
+				),
+			)
+		}
+		Err(_) => {
+			// If we can't decode, treat as text
+			Ok(ContentBlock::new("text".to_string(), text.to_string()))
+		}
+	}
+}
+
+fn process_link(text: &str, _caps: &regex::Captures) -> Result<ContentBlock> {
+	let url = if text.to_lowercase().starts_with("http") {
+		text.to_string()
+	} else {
+		format!("https://{}", text)
+	};
+
+	// Create a placeholder preview
+	let preview = get_link_preview(&url);
+
+	Ok(
+		ContentBlock::new("link".to_string(), text.to_string()).with_data(ContentData::LinkPreview {
+			url,
+			title: preview.title,
+			description: preview.description,
+			image: preview.image,
+		}),
+	)
+}
+
+#[derive(Debug, Clone)]
 pub struct LinkPreview {
-    pub url: String,
-    pub title: Option<String>,
-    pub description: Option<String>,
-    pub image: Option<String>,
+	pub url: String,
+	pub title: Option<String>,
+	pub description: Option<String>,
+	pub image: Option<String>,
 }
 
 impl LinkPreview {
-    pub fn new(url: &str) -> Self {
-        Self {
-            url: url.to_string(),
-            title: None,
-            description: None,
-            image: None,
-        }
-    }
+	pub fn new(url: &str) -> Self {
+		Self {
+			url: format!("https://proxy.nuts.cash/?url={}", url),
+			title: Some("Link Preview".to_string()),
+			description: Some("Link preview not implemented".to_string()),
+			image: None,
+		}
+	}
+}
+
+fn process_emoji_placeholder(_text: &str, _caps: &regex::Captures) -> Result<ContentBlock> {
+	// Placeholder - actual processing happens in parse_content_with_emojis
+	// This should never be called directly
+	Err(ParserError::Other(
+		"emoji placeholder called without emoji map".to_string(),
+	))
+}
+
+/// Process emoji shortcode using emoji tag lookup map
+fn process_emoji_with_map(
+	text: &str,
+	caps: &regex::Captures,
+	emoji_map: &std::collections::HashMap<String, (String, Option<String>)>,
+) -> Result<ContentBlock> {
+	// Extract shortcode from capture group 1 (the content between colons)
+	let shortcode = caps.get(1).map_or("", |m| m.as_str());
+
+	if shortcode.is_empty() {
+		return Err(ParserError::Other("empty emoji shortcode".to_string()));
+	}
+
+	// Look up emoji in the map
+	if let Some((url, _emoji_set)) = emoji_map.get(shortcode) {
+		Ok(
+			ContentBlock::new("emoji".to_string(), text.to_string()).with_data(ContentData::Emoji {
+				shortcode: shortcode.to_string(),
+				url: Some(url.clone()),
+			}),
+		)
+	} else {
+		// Emoji shortcode not found in tags - return as plain text
+		Ok(ContentBlock::new("text".to_string(), text.to_string()))
+	}
 }
 
 fn get_link_preview(url: &str) -> LinkPreview {
-    LinkPreview::new(url)
+	LinkPreview::new(url)
 }
 
 // Public function to parse content with emoji support
 pub fn parse_content(content: &str, emoji_tags: &[Vec<String>]) -> Result<Vec<ContentBlock>> {
-    let parser = ContentParser::with_emojis(emoji_tags);
-    parser.parse_content(content)
+	let parser = ContentParser::with_emojis(emoji_tags);
+	parser.parse_content(content)
 }
 
 /// Enrich media (image/video) blocks with imeta data after parsing
 pub fn enrich_media_with_imeta(
-    blocks: &mut [ContentBlock],
-    imeta_map: &std::collections::HashMap<String, ImetaData>,
+	blocks: &mut [ContentBlock],
+	imeta_map: &std::collections::HashMap<String, ImetaData>,
 ) {
-    for block in blocks.iter_mut() {
-        if block.block_type == "image" {
-            if let Some(ContentData::Image { url, alt, dim }) = &mut block.data {
-                if let Some(imeta) = imeta_map.get(url) {
-                    if alt.is_none() && imeta.alt.is_some() {
-                        *alt = imeta.alt.clone();
-                    }
-                    if dim.is_none() && imeta.dim.is_some() {
-                        *dim = imeta.dim.clone();
-                    }
-                }
-            }
-        } else if block.block_type == "video" {
-            if let Some(ContentData::Video { url, thumbnail, dim }) = &mut block.data {
-                if let Some(imeta) = imeta_map.get(url) {
-                    if thumbnail.is_none() && imeta.alt.is_some() {
-                        *thumbnail = imeta.alt.clone();
-                    }
-                    if dim.is_none() && imeta.dim.is_some() {
-                        *dim = imeta.dim.clone();
-                    }
-                }
-            }
-        }
-    }
+	for block in blocks.iter_mut() {
+		if block.block_type == "image" {
+			if let Some(ContentData::Image { url, alt, dim }) = &mut block.data {
+				if let Some(imeta) = imeta_map.get(url) {
+					if alt.is_none() && imeta.alt.is_some() {
+						*alt = imeta.alt.clone();
+					}
+					if dim.is_none() && imeta.dim.is_some() {
+						*dim = imeta.dim.clone();
+					}
+				}
+			}
+		} else if block.block_type == "video" {
+			if let Some(ContentData::Video { url, thumbnail, dim }) = &mut block.data {
+				if let Some(imeta) = imeta_map.get(url) {
+					if thumbnail.is_none() && imeta.alt.is_some() {
+						*thumbnail = imeta.alt.clone();
+					}
+					if dim.is_none() && imeta.dim.is_some() {
+						*dim = imeta.dim.clone();
+					}
+				}
+			}
+		} else if block.block_type == "mediaGrid" {
+			if let Some(ContentData::MediaGrid { items }) = &mut block.data {
+				for item in items.iter_mut() {
+					if let Some(img) = &mut item.image {
+						if let Some(imeta) = imeta_map.get(&img.url) {
+							if img.alt.is_none() && imeta.alt.is_some() {
+								img.alt = imeta.alt.clone();
+							}
+							if img.dim.is_none() && imeta.dim.is_some() {
+								img.dim = imeta.dim.clone();
+							}
+						}
+					}
+					if let Some(vid) = &mut item.video {
+						if let Some(imeta) = imeta_map.get(&vid.url) {
+							if vid.dim.is_none() && imeta.dim.is_some() {
+								vid.dim = imeta.dim.clone();
+							}
+						}
+					}
+				}
+			}
+		}
+	}
 }
 
 pub fn serialize_content_data<'a, A: flatbuffers::Allocator + 'a>(
-    builder: &mut flatbuffers::FlatBufferBuilder<'a, A>,
-    data: &ContentData,
+	builder: &mut flatbuffers::FlatBufferBuilder<'a, A>,
+	data: &ContentData,
 ) -> (
-    fb::ContentData,
-    Option<flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>>,
+	fb::ContentData,
+	Option<flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>>,
 ) {
-    match data {
-        ContentData::Code { language, code } => {
-            let code_off = builder.create_string(code);
-            let lang_off = language.as_ref().map(|l| builder.create_string(l));
-            let code_fb = fb::CodeData::create(
-                builder,
-                &fb::CodeDataArgs {
-                    language: lang_off,
-                    code: Some(code_off),
-                },
-            );
-            (fb::ContentData::CodeData, Some(code_fb.as_union_value()))
-        }
-        ContentData::Hashtag { tag } => {
-            let tag_off = builder.create_string(tag);
-            let hashtag_fb =
-                fb::HashtagData::create(builder, &fb::HashtagDataArgs { tag: Some(tag_off) });
-            (
-                fb::ContentData::HashtagData,
-                Some(hashtag_fb.as_union_value()),
-            )
-        }
-        ContentData::Link { url } => {
-            let url_off = builder.create_string(url);
-            let link_fb = fb::LinkPreviewData::create(
-                builder,
-                &fb::LinkPreviewDataArgs {
-                    url: Some(url_off),
-                    title: None,
-                    description: None,
-                    image: None,
-                },
-            );
-            (fb::ContentData::LinkPreviewData, Some(link_fb.as_union_value()))
-        }
-        ContentData::Image { url, alt, dim } => {
-            let url_off = builder.create_string(url);
-            let alt_off = alt.as_ref().map(|a| builder.create_string(a));
-            let dim_off = dim.as_ref().map(|d| builder.create_string(d));
-            let image_fb = fb::ImageData::create(
-                builder,
-                &fb::ImageDataArgs {
-                    url: Some(url_off),
-                    alt: alt_off,
-                    dim: dim_off,
-                },
-            );
-            (fb::ContentData::ImageData, Some(image_fb.as_union_value()))
-        }
-        ContentData::Video { url, thumbnail, dim } => {
-            let url_off = builder.create_string(url);
-            let thumb_off = thumbnail.as_ref().map(|t| builder.create_string(t));
-            let dim_off = dim.as_ref().map(|d| builder.create_string(d));
-            let video_fb = fb::VideoData::create(
-                builder,
-                &fb::VideoDataArgs {
-                    url: Some(url_off),
-                    thumbnail: thumb_off,
-                    dim: dim_off,
-                },
-            );
-            (fb::ContentData::VideoData, Some(video_fb.as_union_value()))
-        }
-        ContentData::Nostr { entity, data } => {
-            let entity_off = builder.create_string(entity);
-            let data_off = data.as_ref().map(|d| builder.create_string(d));
-            let nostr_fb = fb::NostrData::create(
-                builder,
-                &fb::NostrDataArgs {
-                    id: data_off,
-                    entity: Some(entity_off),
-                    relays: None,
-                    author: None,
-                    kind: 0,
-                },
-            );
-            (fb::ContentData::NostrData, Some(nostr_fb.as_union_value()))
-        }
-        ContentData::Cashu { token } => {
-            let token_off = builder.create_string(token);
-            let cashu_fb =
-                fb::CashuData::create(builder, &fb::CashuDataArgs { token: Some(token_off) });
-            (fb::ContentData::CashuData, Some(cashu_fb.as_union_value()))
-        }
-        ContentData::Emoji { shortcode, url } => {
-            let shortcode_off = builder.create_string(shortcode);
-            let url_off = url.as_ref().map(|u| builder.create_string(u));
-            let emoji_fb = fb::EmojiData::create(
-                builder,
-                &fb::EmojiDataArgs {
-                    shortcode: Some(shortcode_off),
-                    url: url_off,
-                    emoji_set: None,
-                },
-            );
-            (fb::ContentData::EmojiData, Some(emoji_fb.as_union_value()))
-        }
-        ContentData::Mention { .. } => (fb::ContentData::NONE, None),
-        ContentData::Relay { .. } => (fb::ContentData::NONE, None),
-        ContentData::MediaGrid { items } => {
-            let mut item_offsets = Vec::new();
-            for item in items {
-                let image_off = item.image.as_ref().map(|img| {
-                    let url_off = builder.create_string(&img.url);
-                    let alt_off = img.alt.as_ref().map(|a| builder.create_string(a));
-                    let dim_off = img.dim.as_ref().map(|d| builder.create_string(d));
-                    fb::ImageData::create(
-                        builder,
-                        &fb::ImageDataArgs {
-                            url: Some(url_off),
-                            alt: alt_off,
-                            dim: dim_off,
-                        },
-                    )
-                });
-                let video_off = item.video.as_ref().map(|vid| {
-                    let url_off = builder.create_string(&vid.url);
-                    let thumb_off = vid.thumbnail.as_ref().map(|t| builder.create_string(t));
-                    let dim_off = vid.dim.as_ref().map(|d| builder.create_string(d));
-                    fb::VideoData::create(
-                        builder,
-                        &fb::VideoDataArgs {
-                            url: Some(url_off),
-                            thumbnail: thumb_off,
-                            dim: dim_off,
-                        },
-                    )
-                });
-                let media_item_fb = fb::MediaItem::create(
-                    builder,
-                    &fb::MediaItemArgs {
-                        image: image_off,
-                        video: video_off,
-                    },
-                );
-                item_offsets.push(media_item_fb);
-            }
-            let items_vec = builder.create_vector(&item_offsets);
-            let grid_fb =
-                fb::MediaGroupData::create(builder, &fb::MediaGroupDataArgs { items: Some(items_vec) });
-            (fb::ContentData::MediaGroupData, Some(grid_fb.as_union_value()))
-        }
-        ContentData::Quote { .. } => (fb::ContentData::NONE, None),
-        ContentData::LinkPreview { url, title, description, image } => {
-            let url_off = builder.create_string(url);
-            let title_off = title.as_ref().map(|t| builder.create_string(t));
-            let desc_off = description.as_ref().map(|d| builder.create_string(d));
-            let image_off = image.as_ref().map(|i| builder.create_string(i));
-            let preview_fb = fb::LinkPreviewData::create(
-                builder,
-                &fb::LinkPreviewDataArgs {
-                    url: Some(url_off),
-                    title: title_off,
-                    description: desc_off,
-                    image: image_off,
-                },
-            );
-            (
-                fb::ContentData::LinkPreviewData,
-                Some(preview_fb.as_union_value()),
-            )
-        }
-    }
+	match data {
+		ContentData::Code { language, code } => {
+			let code_off = builder.create_string(code);
+			let lang_off = language.as_ref().map(|l| builder.create_string(l));
+			let code_fb = fb::CodeData::create(
+				builder,
+				&fb::CodeDataArgs {
+					language: lang_off,
+					code: Some(code_off),
+				},
+			);
+			(fb::ContentData::CodeData, Some(code_fb.as_union_value()))
+		}
+		ContentData::Hashtag { tag } => {
+			let tag_off = builder.create_string(tag);
+			let hashtag_fb =
+				fb::HashtagData::create(builder, &fb::HashtagDataArgs { tag: Some(tag_off) });
+			(
+				fb::ContentData::HashtagData,
+				Some(hashtag_fb.as_union_value()),
+			)
+		}
+		ContentData::Link { url } => {
+			let url_off = builder.create_string(url);
+			let link_fb = fb::LinkPreviewData::create(
+				builder,
+				&fb::LinkPreviewDataArgs {
+					url: Some(url_off),
+					title: None,
+					description: None,
+					image: None,
+				},
+			);
+			(fb::ContentData::LinkPreviewData, Some(link_fb.as_union_value()))
+		}
+		ContentData::Image { url, alt, dim } => {
+			let url_off = builder.create_string(url);
+			let alt_off = alt.as_ref().map(|a| builder.create_string(a));
+			let dim_off = dim.as_ref().map(|d| builder.create_string(d));
+			let image_fb = fb::ImageData::create(
+				builder,
+				&fb::ImageDataArgs {
+					url: Some(url_off),
+					alt: alt_off,
+					dim: dim_off,
+				},
+			);
+			(fb::ContentData::ImageData, Some(image_fb.as_union_value()))
+		}
+		ContentData::Video { url, thumbnail, dim } => {
+			let url_off = builder.create_string(url);
+			let thumb_off = thumbnail.as_ref().map(|t| builder.create_string(t));
+			let dim_off = dim.as_ref().map(|d| builder.create_string(d));
+			let video_fb = fb::VideoData::create(
+				builder,
+				&fb::VideoDataArgs {
+					url: Some(url_off),
+					thumbnail: thumb_off,
+					dim: dim_off,
+				},
+			);
+			(fb::ContentData::VideoData, Some(video_fb.as_union_value()))
+		}
+		ContentData::Nostr { entity, data, relays, author, kind } => {
+			let entity_off = builder.create_string(entity);
+			let data_off = data.as_ref().map(|d| builder.create_string(d));
+			let relays_strs: Vec<_> = relays.iter().map(|r| builder.create_string(r)).collect();
+			let relays_off = if relays_strs.is_empty() { None } else { Some(builder.create_vector(&relays_strs)) };
+			let author_off = author.as_ref().map(|a| builder.create_string(a));
+			let nostr_fb = fb::NostrData::create(
+				builder,
+				&fb::NostrDataArgs {
+					id: data_off,
+					entity: Some(entity_off),
+					relays: relays_off,
+					author: author_off,
+					kind: kind.unwrap_or(0),
+				},
+			);
+			(fb::ContentData::NostrData, Some(nostr_fb.as_union_value()))
+		}
+		ContentData::Cashu { token } => {
+			let token_off = builder.create_string(token);
+			let cashu_fb =
+				fb::CashuData::create(builder, &fb::CashuDataArgs { token: Some(token_off) });
+			(fb::ContentData::CashuData, Some(cashu_fb.as_union_value()))
+		}
+		ContentData::Emoji { shortcode, url } => {
+			let shortcode_off = builder.create_string(shortcode);
+			let url_off = url.as_ref().map(|u| builder.create_string(u));
+			let emoji_fb = fb::EmojiData::create(
+				builder,
+				&fb::EmojiDataArgs {
+					shortcode: Some(shortcode_off),
+					url: url_off,
+					emoji_set: None,
+				},
+			);
+			(fb::ContentData::EmojiData, Some(emoji_fb.as_union_value()))
+		}
+		ContentData::Mention { .. } => (fb::ContentData::NONE, None),
+		ContentData::Relay { .. } => (fb::ContentData::NONE, None),
+		ContentData::MediaGrid { items } => {
+			let mut item_offsets = Vec::new();
+			for item in items {
+				let image_off = item.image.as_ref().map(|img| {
+					let url_off = builder.create_string(&img.url);
+					let alt_off = img.alt.as_ref().map(|a| builder.create_string(a));
+					let dim_off = img.dim.as_ref().map(|d| builder.create_string(d));
+					fb::ImageData::create(
+						builder,
+						&fb::ImageDataArgs {
+							url: Some(url_off),
+							alt: alt_off,
+							dim: dim_off,
+						},
+					)
+				});
+				let video_off = item.video.as_ref().map(|vid| {
+					let url_off = builder.create_string(&vid.url);
+					let thumb_off = vid.thumbnail.as_ref().map(|t| builder.create_string(t));
+					let dim_off = vid.dim.as_ref().map(|d| builder.create_string(d));
+					fb::VideoData::create(
+						builder,
+						&fb::VideoDataArgs {
+							url: Some(url_off),
+							thumbnail: thumb_off,
+							dim: dim_off,
+						},
+					)
+				});
+				let media_item_fb = fb::MediaItem::create(
+					builder,
+					&fb::MediaItemArgs {
+						image: image_off,
+						video: video_off,
+					},
+				);
+				item_offsets.push(media_item_fb);
+			}
+			let items_vec = builder.create_vector(&item_offsets);
+			let grid_fb =
+				fb::MediaGroupData::create(builder, &fb::MediaGroupDataArgs { items: Some(items_vec) });
+			(fb::ContentData::MediaGroupData, Some(grid_fb.as_union_value()))
+		}
+		ContentData::Quote { .. } => (fb::ContentData::NONE, None),
+		ContentData::LinkPreview { url, title, description, image } => {
+			let url_off = builder.create_string(url);
+			let title_off = title.as_ref().map(|t| builder.create_string(t));
+			let desc_off = description.as_ref().map(|d| builder.create_string(d));
+			let image_off = image.as_ref().map(|i| builder.create_string(i));
+			let preview_fb = fb::LinkPreviewData::create(
+				builder,
+				&fb::LinkPreviewDataArgs {
+					url: Some(url_off),
+					title: title_off,
+					description: desc_off,
+					image: image_off,
+				},
+			);
+			(
+				fb::ContentData::LinkPreviewData,
+				Some(preview_fb.as_union_value()),
+			)
+		}
+	}
 }
 
 pub fn serialize_content_block<'a, A: flatbuffers::Allocator + 'a>(
-    builder: &mut flatbuffers::FlatBufferBuilder<'a, A>,
-    block: &ContentBlock,
+	builder: &mut flatbuffers::FlatBufferBuilder<'a, A>,
+	block: &ContentBlock,
 ) -> flatbuffers::WIPOffset<fb::ContentBlock<'a>> {
-    let type_off = builder.create_string(&block.block_type);
-    let text_off = builder.create_string(&block.text);
+	let type_off = builder.create_string(&block.block_type);
+	let text_off = builder.create_string(&block.text);
 
-    let (data_type, data_off) = if let Some(ref data) = block.data {
-        serialize_content_data(builder, data)
-    } else {
-        (fb::ContentData::NONE, None)
-    };
+	let (data_type, data_off) = if let Some(ref data) = block.data {
+		serialize_content_data(builder, data)
+	} else {
+		(fb::ContentData::NONE, None)
+	};
 
-    fb::ContentBlock::create(
-        builder,
-        &fb::ContentBlockArgs {
-            type_: Some(type_off),
-            text: Some(text_off),
-            data_type,
-            data: data_off,
-        },
-    )
+	fb::ContentBlock::create(
+		builder,
+		&fb::ContentBlockArgs {
+			type_: Some(type_off),
+			text: Some(text_off),
+			data_type,
+			data: data_off,
+		},
+	)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+	use super::*;
 
-    #[test]
-    fn test_parse_content_basic() {
-        let result = parse_content("Hello world", &[]).unwrap();
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].block_type, "text");
-        assert_eq!(result[0].text, "Hello world");
-    }
+	#[test]
+	fn test_parse_plain_text() {
+		let content = "This is just plain text";
+		let result = parse_content(content, &[]).unwrap();
+		assert_eq!(result.len(), 1);
+		assert_eq!(result[0].block_type, "text");
+		assert_eq!(result[0].text, content);
+	}
+
+	#[test]
+	fn test_parse_code_block() {
+		let content = "Here is some code: ```var x = 10;``` and more text";
+		let result = parse_content(content, &[]).unwrap();
+		assert_eq!(result.len(), 3);
+		assert_eq!(result[0].block_type, "text");
+		assert_eq!(result[1].block_type, "code");
+		assert_eq!(result[2].block_type, "text");
+	}
+
+	#[test]
+	fn test_parse_hashtag() {
+		let content = "I love #bitcoin and #lightning";
+		let result = parse_content(content, &[]).unwrap();
+		assert_eq!(result.len(), 4);
+		assert_eq!(result[1].block_type, "hashtag");
+		assert_eq!(result[3].block_type, "hashtag");
+	}
+
+	#[test]
+	fn test_parse_image() {
+		let content = "Check this image: https://example.com/image.jpg";
+		let result = parse_content(content, &[]).unwrap();
+		assert_eq!(result.len(), 2);
+		assert_eq!(result[1].block_type, "image");
+	}
+
+	#[test]
+	fn test_parse_mixed_content() {
+		let content = "Hello #world!\nCheck out https://example.com";
+		let result = parse_content(content, &[]).unwrap();
+		assert!(result.len() >= 3);
+
+		let has_hashtag = result.iter().any(|b| b.block_type == "hashtag");
+		let has_link = result.iter().any(|b| b.block_type == "link");
+		assert!(has_hashtag);
+		assert!(has_link);
+	}
+
+	#[test]
+	fn test_images_separated_by_escaped_newline() {
+		let content = "https://example.com/a.jpg\\nhttps://example.com/b.png";
+		let result = parse_content(content, &[]).unwrap();
+		let image_count = result.iter().filter(|b| b.block_type == "image").count();
+		let has_grid = result.iter().any(|b| b.block_type == "mediaGrid");
+		assert!(image_count == 2 || has_grid);
+	}
+
+	#[test]
+	fn test_shorten_multiline_text_truncates_single_text_block() {
+		let parser = ContentParser::new();
+		let text = (0..20)
+			.map(|i| format!("line {}", i))
+			.collect::<Vec<_>>()
+			.join("\n");
+		let blocks = vec![ContentBlock::new("text".to_string(), text)];
+
+		let shortened = parser.shorten_content(blocks, 500, 3, 10);
+		assert_eq!(shortened.len(), 1);
+		assert_eq!(shortened[0].block_type, "text");
+		assert!(shortened[0].text.lines().count() <= 10);
+		assert!(shortened[0].text.ends_with("..."));
+	}
+
+	#[test]
+	fn test_shorten_with_media_keeps_reasonable_text_budget() {
+		let parser = ContentParser::new();
+		let text = "a".repeat(300);
+		let blocks = vec![
+			ContentBlock::new("text".to_string(), text.clone()),
+			ContentBlock::new(
+				"image".to_string(),
+				"https://example.com/pic.jpg".to_string(),
+			)
+			.with_data(ContentData::Image {
+				url: "https://example.com/pic.jpg".to_string(),
+				alt: None,
+				dim: None,
+			}),
+		];
+
+		let shortened = parser.shorten_content(blocks, 500, 3, 10);
+		assert!(!shortened.is_empty());
+		assert_eq!(shortened[0].block_type, "text");
+		assert_eq!(shortened[0].text, text);
+	}
+
+	#[test]
+	fn test_parse_emoji_with_tags() {
+		let content = "Do you see this emoji on your client :wisp_lazor:";
+		let emoji_tags = vec![vec![
+			"emoji".to_string(),
+			"wisp_lazor".to_string(),
+			"https://gleasonator.com/emoji/wisp_lazor.png".to_string(),
+		]];
+
+		let parser = ContentParser::with_emojis(&emoji_tags);
+		let result = parser.parse_content(content).unwrap();
+
+		// Should have text before emoji, emoji block, and text after
+		assert!(result.len() >= 2);
+
+		// Find the emoji block
+		let emoji_block = result.iter().find(|b| b.block_type == "emoji");
+		assert!(emoji_block.is_some(), "Should have an emoji block");
+
+		if let Some(block) = emoji_block {
+			assert_eq!(block.text, ":wisp_lazor:");
+			if let Some(ContentData::Emoji { shortcode, url }) = &block.data {
+				assert_eq!(shortcode, "wisp_lazor");
+				assert_eq!(
+					url,
+					&Some("https://gleasonator.com/emoji/wisp_lazor.png".to_string())
+				);
+			} else {
+				panic!("Expected Emoji data");
+			}
+		}
+	}
+
+	#[test]
+	fn test_parse_emoji_without_matching_tag() {
+		let content = "Do you see this emoji on your client :wisp_lazor:";
+		// No emoji tags provided
+
+		let parser = ContentParser::new();
+		let result = parser.parse_content(content).unwrap();
+
+		// Should have no emoji block - just text
+		let emoji_block = result.iter().find(|b| b.block_type == "emoji");
+		assert!(
+			emoji_block.is_none(),
+			"Should NOT have an emoji block without matching tag"
+		);
+
+		// The content should remain as text (with the colons)
+		let text_content: String = result
+			.iter()
+			.filter(|b| b.block_type == "text")
+			.map(|b| b.text.clone())
+			.collect();
+		assert!(text_content.contains(":wisp_lazor:"));
+	}
+
+	#[test]
+	fn test_parse_emoji_with_emoji_set() {
+		let content = "Hello :wisp_lazor: world!";
+		let emoji_tags = vec![vec![
+			"emoji".to_string(),
+			"wisp_lazor".to_string(),
+			"https://gleasonator.com/emoji/wisp_lazor.png".to_string(),
+			"30030:79c2cae114ea28a981e7559b4fe7854a473521a8d22a66bbab9fa248eb820ff6:emojis"
+				.to_string(),
+		]];
+
+		let parser = ContentParser::with_emojis(&emoji_tags);
+		let result = parser.parse_content(content).unwrap();
+
+		let emoji_block = result.iter().find(|b| b.block_type == "emoji").unwrap();
+		if let Some(ContentData::Emoji { url, .. }) = &emoji_block.data {
+			assert_eq!(
+				url,
+				&Some("https://gleasonator.com/emoji/wisp_lazor.png".to_string())
+			);
+		} else {
+			panic!("Expected Emoji data with url");
+		}
+	}
 }

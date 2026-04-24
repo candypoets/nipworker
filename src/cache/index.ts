@@ -1,6 +1,6 @@
 /* WASM-based cache worker runtime (dedicated Web Worker, module) */
 
-import init, { start_worker } from '../../crates/cache/pkg/nipworker_cache.js';
+import init, { start_worker, init_tracing } from '../../crates/cache/pkg/nipworker_cache.js';
 import wasmUrl from '../../crates/cache/pkg/nipworker_cache_bg.wasm?url';
 
 export type InitCacheMsg = {
@@ -10,6 +10,8 @@ export type InitCacheMsg = {
 		parserPort: MessagePort;
 		/** Port to communicate with connections worker */
 		connectionsPort: MessagePort;
+		/** Log level for the Rust WASM worker */
+		logLevel?: string;
 	};
 };
 
@@ -27,7 +29,8 @@ self.addEventListener('message', async (evt: MessageEvent<InitCacheMsg | { type:
 
 	if (msg?.type === 'init') {
 		await ensureWasm();
-		const { parserPort, connectionsPort } = msg.payload;
+		const { parserPort, connectionsPort, logLevel } = msg.payload;
+		init_tracing(logLevel || 'warn');
 		start_worker(parserPort, connectionsPort);
 		return;
 	}

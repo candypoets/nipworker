@@ -118,6 +118,7 @@ export class NostrManager {
 					cachePort: cache_connections.port1,
 					parserPort: parser_connections.port1,
 					cryptoPort: crypto_connections.port1,
+					logLevel: config.logLevel,
 					...(config.proxy ? { proxy: config.proxy } : {})
 				}
 			} as InitConnectionsMsg,
@@ -136,7 +137,8 @@ export class NostrManager {
 				type: 'init',
 				payload: {
 					parserPort: parser_cache.port1,
-					connectionsPort: cache_connections.port2
+					connectionsPort: cache_connections.port2,
+					logLevel: config.logLevel
 				}
 			} as InitCacheMsg,
 			[parser_cache.port1, cache_connections.port2]
@@ -171,12 +173,17 @@ export class NostrManager {
 					if (cs) {
 						const url = cs.relayUrl() || '';
 						const status = cs.status() || '';
+						console.log('[main] ConnectionStatus:', status, url);
 						if (url && status) {
 							this.relayStatuses.set(url, { status, timestamp: Date.now() });
 							this.dispatch('relay:status', { status, url });
 						}
 					}
-					return;
+					// Relay-level statuses have no subscription; subscription-tied
+					// statuses (EOSE, OK, etc.) should also flow to the sub buffer.
+					if (!subId) {
+						return;
+					}
 				}
 			} catch (e) {
 				// Not a WorkerMessage, treat as batched event data
@@ -227,7 +234,8 @@ export class NostrManager {
 					connectionsPort: parser_connections.port2,
 					cachePort: parser_cache.port2,
 					cryptoPort: parser_crypto.port1,
-					mainPort: parser_main.port2
+					mainPort: parser_main.port2,
+					logLevel: config.logLevel
 				}
 			} as InitParserMsg,
 			[parser_connections.port2, parser_cache.port2, parser_crypto.port1, parser_main.port2]
@@ -241,7 +249,8 @@ export class NostrManager {
 				payload: {
 					parserPort: parser_crypto.port2,
 					connectionsPort: crypto_connections.port2,
-					mainPort: crypto_main.port1
+					mainPort: crypto_main.port1,
+					logLevel: config.logLevel
 				}
 			} as InitCryptoMsg,
 			[parser_crypto.port2, crypto_connections.port2, crypto_main.port1]

@@ -7,10 +7,26 @@ use std::sync::Arc;
 use wasm_bindgen::prelude::*;
 use web_sys::MessagePort;
 
-#[wasm_bindgen(start)]
-pub fn start() {
-	tracing_wasm::set_as_global_default();
-	console_error_panic_hook::set_once();
+use std::sync::Once;
+
+static INIT: Once = Once::new();
+
+#[wasm_bindgen]
+pub fn init_tracing(level: String) {
+	INIT.call_once(|| {
+		let max_level = match level.to_lowercase().as_str() {
+			"trace" => tracing::Level::TRACE,
+			"debug" => tracing::Level::DEBUG,
+			"info" => tracing::Level::INFO,
+			"warn" => tracing::Level::WARN,
+			"error" => tracing::Level::ERROR,
+			_ => tracing::Level::INFO,
+		};
+		let mut builder = tracing_wasm::WASMLayerConfigBuilder::new();
+		builder.set_max_level(max_level);
+		tracing_wasm::set_as_global_default_with_config(builder.build());
+		console_error_panic_hook::set_once();
+	});
 }
 
 /// Start the connections worker with three MessageChannel ports:

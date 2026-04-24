@@ -1,4 +1,4 @@
-import init, { NipworkerEngine } from './pkg/nipworker_engine.js';
+import init, { NipworkerEngine, init_tracing } from './pkg/nipworker_engine.js';
 import wasmUrl from './pkg/nipworker_engine_bg.wasm?url';
 
 let engine: NipworkerEngine | null = null;
@@ -58,7 +58,8 @@ function handleWorkerMessage(event: MessageEvent): void {
 		port = payload.port;
 		port.onmessage = handlePortMessage;
 
-		engine = new NipworkerEngine(forwardEvent);
+		init_tracing(payload.logLevel || 'warn');
+			engine = new NipworkerEngine(forwardEvent);
 		(self as any).__engine = engine;
 
 		self.postMessage({ type: 'ready' });

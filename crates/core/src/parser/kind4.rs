@@ -72,37 +72,52 @@ impl Parser {
         };
 
         // Try to decrypt the message using NIP-04
-        // The sender is the event author, so we decrypt using their pubkey
-        let sender_pubkey = event.pubkey.to_string();
+        let sender_pubkey = event.pubkey.to_hex();
         info!(
             "Attempting to decrypt kind 4 message from {} to {}",
-            event.pubkey.to_hex(),
+            sender_pubkey,
             parsed.recipient
         );
-        let decrypted = event.content.clone();
-        parsed.decrypted_content = Some(decrypted.clone());
 
-        // Parse the decrypted content into structured blocks
-        // Emoji tags would be inside encrypted content, not visible in event tags
-        match parse_content(&decrypted, &[]) {
-            Ok(content_blocks) => {
-                parsed.parsed_content = content_blocks
-                    .into_iter()
-                    .map(|block| ContentBlock {
-                        block_type: block.block_type,
-                        text: block.text,
-                        data: block.data,
-                    })
-                    .collect();
+        if let Some(signer) = &self.signer {
+            match signer
+                .nip04_decrypt_between(&sender_pubkey, &parsed.recipient, &event.content)
+                .await
+            {
+                Ok(plaintext) => {
+                    parsed.decrypted_content = Some(plaintext.clone());
+
+                    // Parse the decrypted content into structured blocks
+                    // Emoji tags would be inside encrypted content, not visible in event tags
+                    match parse_content(&plaintext, &[]) {
+                        Ok(content_blocks) => {
+                            parsed.parsed_content = content_blocks
+                                .into_iter()
+                                .map(|block| ContentBlock {
+                                    block_type: block.block_type,
+                                    text: block.text,
+                                    data: block.data,
+                                })
+                                .collect();
+                        }
+                        Err(_) => {
+                            // If content parsing fails, create a single text block
+                            parsed.parsed_content = vec![ContentBlock {
+                                block_type: "text".to_string(),
+                                text: plaintext,
+                                data: None,
+                            }];
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!("Failed to decrypt kind 4 message: {}", e);
+                    parsed.decrypted_content = None;
+                }
             }
-            Err(_) => {
-                // If content parsing fails, create a single text block
-                parsed.parsed_content = vec![ContentBlock {
-                    block_type: "text".to_string(),
-                    text: decrypted,
-                    data: None,
-                }];
-            }
+        } else {
+            warn!("No signer configured; skipping kind 4 decryption");
+            parsed.decrypted_content = None;
         }
 
         // Deduplicate requests using the utility

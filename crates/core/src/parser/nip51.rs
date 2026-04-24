@@ -93,57 +93,74 @@ impl Parser {
         // Decrypt private content when specified by tags and merge entries parsed like tags
         if let Some(enc) = tag_value(&event.tags, "encryption").map(|s| s.to_ascii_lowercase()) {
             if !event.content.trim().is_empty() {
-                // Determine the correct counterparty like kind4 does
-                let decrypted = Some(event.content.clone());
+                let author = event.pubkey.to_hex();
+                let plaintext = if let Some(signer) = &self.signer {
+                    let result = match enc.as_str() {
+                        "nip04" | "nip-04" => {
+                            signer.nip04_decrypt_between(&author, &author, &event.content).await
+                        }
+                        "nip44" | "nip-44" => {
+                            signer.nip44_decrypt_between(&author, &author, &event.content).await
+                        }
+                        _ => Ok(event.content.clone()),
+                    };
+                    match result {
+                        Ok(pt) => pt,
+                        Err(e) => {
+                            warn!("Failed to decrypt NIP-51 content: {}, treating as plaintext", e);
+                            event.content.clone()
+                        }
+                    }
+                } else {
+                    event.content.clone()
+                };
 
-                if let Some(plaintext) = decrypted {
-                    if let Ok(decrypted_tags) = parse_tag_arrays_json(&plaintext) {
-                        for tag in decrypted_tags {
-                            if tag.is_empty() {
-                                continue;
+                if let Ok(decrypted_tags) = parse_tag_arrays_json(&plaintext) {
+                    for tag in decrypted_tags {
+                        if tag.is_empty() {
+                            continue;
+                        }
+                        match tag[0].as_str() {
+                            "p" if tag.len() >= 2 => {
+                                people.push(tag[1].clone());
                             }
-                            match tag[0].as_str() {
-                                "p" if tag.len() >= 2 => {
-                                    people.push(tag[1].clone());
-                                }
-                                "e" if tag.len() >= 2 => {
-                                    events_vec.push(tag[1].clone());
-                                }
-                                "a" if tag.len() >= 2 => {
-                                    if let Some(coord) = parse_coordinate(&tag[1], tag.get(2)) {
-                                        addresses.push(coord);
-                                    }
-                                }
-                                "t" if tag.len() >= 2 => {
-                                    topics.push(tag[1].clone());
-                                }
-                                "title" if tag.len() >= 2 => {
-                                    if title.is_none() {
-                                        title = Some(tag[1].clone());
-                                    }
-                                }
-                                "summary" if tag.len() >= 2 => {
-                                    if description.is_none() {
-                                        description = Some(tag[1].clone());
-                                    }
-                                }
-                                "description" if tag.len() >= 2 => {
-                                    if description.is_none() {
-                                        description = Some(tag[1].clone());
-                                    }
-                                }
-                                "image" if tag.len() >= 2 => {
-                                    if image.is_none() {
-                                        image = Some(tag[1].clone());
-                                    }
-                                }
-                                "d" if tag.len() >= 2 => {
-                                    if d.is_none() {
-                                        d = Some(tag[1].clone());
-                                    }
-                                }
-                                _ => {}
+                            "e" if tag.len() >= 2 => {
+                                events_vec.push(tag[1].clone());
                             }
+                            "a" if tag.len() >= 2 => {
+                                if let Some(coord) = parse_coordinate(&tag[1], tag.get(2)) {
+                                    addresses.push(coord);
+                                }
+                            }
+                            "t" if tag.len() >= 2 => {
+                                topics.push(tag[1].clone());
+                            }
+                            "title" if tag.len() >= 2 => {
+                                if title.is_none() {
+                                    title = Some(tag[1].clone());
+                                }
+                            }
+                            "summary" if tag.len() >= 2 => {
+                                if description.is_none() {
+                                    description = Some(tag[1].clone());
+                                }
+                            }
+                            "description" if tag.len() >= 2 => {
+                                if description.is_none() {
+                                    description = Some(tag[1].clone());
+                                }
+                            }
+                            "image" if tag.len() >= 2 => {
+                                if image.is_none() {
+                                    image = Some(tag[1].clone());
+                                }
+                            }
+                            "d" if tag.len() >= 2 => {
+                                if d.is_none() {
+                                    d = Some(tag[1].clone());
+                                }
+                            }
+                            _ => {}
                         }
                     }
                 }

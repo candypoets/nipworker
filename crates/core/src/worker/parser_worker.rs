@@ -209,6 +209,7 @@ impl ParserWorker {
         });
 
         // Ingress task
+        let this_ingress = this.clone();
         spawn_worker(async move {
             use futures::select;
             loop {
@@ -239,7 +240,13 @@ impl ParserWorker {
                                     "[network] Received from network: type={:?}, sub_id={}",
                                     msg_type, sid
                                 );
+                                // ConnectionStatus with empty sub_id is a relay status message
+                                // (not tied to a subscription). Forward directly to main.
                                 if sid.is_empty() {
+                                    if msg_type == fb::MessageType::ConnectionStatus {
+                                        this_ingress.send_output_to_main("", &bytes);
+                                        continue;
+                                    }
                                     warn!("Invalid message: Missing sub_id");
                                     continue;
                                 }

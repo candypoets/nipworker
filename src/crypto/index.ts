@@ -1,6 +1,6 @@
 /* WASM-based crypto worker runtime (dedicated Web Worker, module) */
 
-import init, { start_worker } from '../../crates/crypto/pkg/nipworker_crypto.js';
+import init, { start_worker, init_tracing } from '../../crates/crypto/pkg/nipworker_crypto.js';
 import wasmUrl from '../../crates/crypto/pkg/nipworker_crypto_bg.wasm?url';
 
 export type InitCryptoMsg = {
@@ -12,6 +12,8 @@ export type InitCryptoMsg = {
 		connectionsPort: MessagePort;
 		/** Port to communicate with main thread */
 		mainPort: MessagePort;
+		/** Log level for the Rust WASM worker */
+		logLevel?: string;
 	};
 };
 
@@ -56,7 +58,8 @@ self.addEventListener('message', async (evt: MessageEvent<any>) => {
 
 	if (msg?.type === 'init') {
 		await ensureWasm();
-		const { parserPort, connectionsPort, mainPort } = msg.payload;
+		const { parserPort, connectionsPort, mainPort, logLevel } = msg.payload;
+		init_tracing(logLevel || 'warn');
 		start_worker(mainPort, parserPort, connectionsPort);
 		return;
 	}

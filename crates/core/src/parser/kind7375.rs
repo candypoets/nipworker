@@ -4,6 +4,7 @@ use crate::{
     generated::nostr::*,
     types::{network::Request, nostr::{Template, EventId, PublicKey}, Event, Proof, TokenContent},
 };
+use tracing::warn;
 
 pub struct Kind7375Parsed {
     pub mint_url: String,
@@ -28,8 +29,22 @@ impl Parser {
             decrypted: false,
         };
 
-        // Pass-through decryption (stub removed)
-        let decrypted = event.content.clone();
+        // Attempt to decrypt the content using NIP-44 (self-encrypted wallet event)
+        let author = event.pubkey.to_hex();
+        let decrypted = if let Some(signer) = &self.signer {
+            match signer
+                .nip44_decrypt_between(&author, &author, &event.content)
+                .await
+            {
+                Ok(plaintext) => plaintext,
+                Err(e) => {
+                    warn!("Failed to decrypt kind 7375: {}, treating as plaintext", e);
+                    event.content.clone()
+                }
+            }
+        } else {
+            event.content.clone()
+        };
         if decrypted.is_empty() {
             return Err(ParserError::InvalidContent(
                 "Kind 7375 event has empty decrypted content".to_string(),

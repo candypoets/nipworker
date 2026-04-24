@@ -17,7 +17,7 @@ struct WsHandle {
 }
 
 pub struct GlooTransport {
-	connections: Rc<RefCell<HashMap<String, WsHandle>>>,
+	connections: Rc<RefCell<HashMap<String, Rc<WsHandle>>>>,
 	message_callbacks: Rc<RefCell<HashMap<String, Box<dyn Fn(String)>>>>,
 	status_callbacks: Rc<RefCell<HashMap<String, Box<dyn Fn(TransportStatus)>>>>,
 }
@@ -80,10 +80,10 @@ impl RelayTransport for GlooTransport {
 
 		self.connections.borrow_mut().insert(
 			url.to_string(),
-			WsHandle {
+			Rc::new(WsHandle {
 				write: Mutex::new(write),
 				abort: abort_handle,
-			},
+			}),
 		);
 
 		if let Some(cb) = self.status_callbacks.borrow().get(url) {
@@ -107,7 +107,11 @@ impl RelayTransport for GlooTransport {
 	}
 
 	async fn send(&self, url: &str, frame: String) -> Result<(), TransportError> {
-		if let Some(handle) = self.connections.borrow().get(url) {
+		let handle = {
+			let conns = self.connections.borrow();
+			conns.get(url).cloned()
+		};
+		if let Some(handle) = handle {
 			let mut sink = handle.write.lock().await;
 			sink.send(Message::Text(frame))
 				.await

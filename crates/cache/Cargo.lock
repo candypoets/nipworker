@@ -306,6 +306,7 @@ version = "0.1.0"
 dependencies = [
  "console_error_panic_hook",
  "nipworker-core",
+ "tracing",
  "tracing-wasm",
  "wasm-bindgen",
  "web-sys",

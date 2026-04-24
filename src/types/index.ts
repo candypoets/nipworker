@@ -80,4 +80,6 @@ export type NostrManagerConfig = {
 	proxy?: ProxyConfig;
 	/** Use the new single-worker WASM engine instead of the 4-worker architecture */
 	engine?: boolean;
+	/** Log level for Rust WASM workers (trace, debug, info, warn, error). Defaults to 'warn'. */
+	logLevel?: 'trace' | 'debug' | 'info' | 'warn' | 'error';
 };

@@ -150,7 +150,7 @@ fn extract_content_mentions(blocks: &[ContentBlock]) -> Vec<ProfilePointer> {
         }) = block.data.as_ref()
         {
             // Only include profile mentions (nprofile, npub)
-            if entity == "nprofile" || entity == "npub" {
+            if block.block_type == "nprofile" || block.block_type == "npub" {
                 if let Some(id) = data {
                     mentions.push(ProfilePointer {
                         pubkey: id.clone(),

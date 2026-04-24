@@ -67,7 +67,7 @@ export class EngineManager {
 		this.enginePort = mainPort.port1;
 
 		this.worker.postMessage(
-			{ type: 'init', payload: { port: mainPort.port2 } },
+			{ type: 'init', payload: { port: mainPort.port2, logLevel: _config.logLevel } },
 			[mainPort.port2]
 		);
 
