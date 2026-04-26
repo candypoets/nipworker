@@ -14,9 +14,15 @@ Pod::Spec.new do |s|
   s.source_files   = 'LynxNipworkerModule.{h,mm}'
   s.public_header_files = 'LynxNipworkerModule.h'
 
-  # Prebuilt Rust static library – must be built for iOS separately
-  # Place the universal (or device/simulator) .a here:
-  s.vendored_libraries = 'libnipworker_native_ffi.a'
+  # The Rust static library must be built before pod install.
+  # Run: ./build-ios.sh
+  # This produces libnipworker_native_ffi.a in this directory.
+  # s.vendored_libraries = 'libnipworker_native_ffi.a'
+
+  # Alternative: use the XCFramework (modern iOS standard).
+  # Uncomment the line below and comment out vendored_libraries
+  # after running ./build-ios.sh:
+  s.vendored_frameworks = 'NipworkerNativeFFI.xcframework'
 
   s.pod_target_xcconfig = {
     'OTHER_CPLUSPLUSFLAGS' => '$(inherited) -std=c++17',

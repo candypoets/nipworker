@@ -11,3 +11,5 @@ logs/
 *.so
 *.a
 *.dylib
+test-results/
+playwright-report/

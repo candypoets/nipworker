@@ -35,6 +35,21 @@
       "types": "./dist/proxy/vite.d.ts",
       "import": "./dist/proxy/vite.js",
       "default": "./dist/proxy/vite.js"
+    },
+    "./native": {
+      "types": "./dist/native.d.ts",
+      "import": "./dist/native.js",
+      "default": "./dist/native.js"
+    },
+    "./engine": {
+      "types": "./dist/engine.d.ts",
+      "import": "./dist/engine.js",
+      "default": "./dist/engine.js"
+    },
+    "./legacy": {
+      "types": "./dist/legacy.d.ts",
+      "import": "./dist/legacy.js",
+      "default": "./dist/legacy.js"
     }
   },
   "files": [

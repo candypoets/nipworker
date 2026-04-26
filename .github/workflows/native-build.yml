@@ -91,7 +91,7 @@ jobs:
         run: |
           cargo build --release --target x86_64-apple-ios
 
-      - name: Create XCFramework
+      - name: Create iOS binaries
         working-directory: crates/native-ffi
         run: |
           mkdir -p ios/Frameworks
@@ -106,17 +106,29 @@ jobs:
           cp target/aarch64-apple-ios/release/libnipworker_native_ffi.a \
             ios/Frameworks/libnipworker_native_ffi_device.a
 
+          # Universal static library (CocoaPods)
+          lipo -create \
+            ios/Frameworks/libnipworker_native_ffi_device.a \
+            ios/Frameworks/libnipworker_native_ffi_sim.a \
+            -output ios/libnipworker_native_ffi.a
+
           # Create XCFramework
           xcodebuild -create-xcframework \
             -library ios/Frameworks/libnipworker_native_ffi_device.a \
             -library ios/Frameworks/libnipworker_native_ffi_sim.a \
             -output ios/NipworkerNativeFFI.xcframework
 
-      - name: Upload iOS artifacts
+      - name: Upload iOS XCFramework
         uses: actions/upload-artifact@v4
         with:
           name: ios-xcframework
           path: crates/native-ffi/ios/NipworkerNativeFFI.xcframework/
+
+      - name: Upload iOS static library
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-staticlib
+          path: crates/native-ffi/ios/libnipworker_native_ffi.a
 
   # ──────────────────────────────────────────
   # Linux host — build .so for local testing
@@ -162,10 +174,15 @@ jobs:
           cd native-artifacts/android-jniLibs
           zip -r ../nipworker-native-android.zip .
 
-      - name: Package iOS
+      - name: Package iOS XCFramework
         run: |
           cd native-artifacts/ios-xcframework
           zip -r ../nipworker-native-ios.zip .
+
+      - name: Package iOS static library
+        run: |
+          cd native-artifacts/ios-staticlib
+          zip -r ../nipworker-native-ios-static.zip .
 
       - name: Package Linux
         run: |
@@ -178,6 +195,7 @@ jobs:
           files: |
             native-artifacts/nipworker-native-android.zip
             native-artifacts/nipworker-native-ios.zip
+            native-artifacts/nipworker-native-ios-static.zip
             native-artifacts/nipworker-native-linux.zip
           append_body: true
           body: |
@@ -188,7 +206,8 @@ jobs:
             | Platform | Download | Integration |
             |----------|----------|-------------|
             | **Android** | `nipworker-native-android.zip` | Unzip to `android/app/src/main/jniLibs/` |
-            | **iOS** | `nipworker-native-ios.zip` | Drag `NipworkerNativeFFI.xcframework` into Xcode |
+            | **iOS (XCFramework)** | `nipworker-native-ios.zip` | Drag `NipworkerNativeFFI.xcframework` into Xcode |
+            | **iOS (static lib)** | `nipworker-native-ios-static.zip` | Drop `libnipworker_native_ffi.a` into CocoaPods project |
             | **Linux** | `nipworker-native-linux.zip` | For local FFI testing only |
 
             ### Android

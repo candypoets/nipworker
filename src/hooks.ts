@@ -1,7 +1,7 @@
 import { Event, EventTemplate } from 'nostr-tools';
 import { ArrayBufferReader } from 'src/lib/ArrayBufferReader';
 import { WorkerMessage } from './generated/nostr/fb';
-import { RequestObject, getManager, type SubscriptionConfig } from '.';
+import { RequestObject, getManager, type SubscriptionConfig } from './manager';
 // Re-export type guard utilities for hooks users
 export {
 	isParsedEvent,

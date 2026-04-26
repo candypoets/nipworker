@@ -8,36 +8,23 @@
   rustup target add aarch64-apple-ios x86_64-apple-ios aarch64-apple-ios-sim
   ```
 
-## Build the Rust static library
+## Build
 
-From the `crates/native-ffi` directory:
-
-```bash
-# Device (arm64)
-cargo build --release --target aarch64-apple-ios
-
-# Simulator (Intel)
-cargo build --release --target x86_64-apple-ios
-
-# Simulator (Apple Silicon)
-cargo build --release --target aarch64-apple-ios-sim
-```
-
-## Create a universal binary
+From this directory, run the build script:
 
 ```bash
-lipo -create \
-  target/aarch64-apple-ios/release/libnipworker_native_ffi.a \
-  target/x86_64-apple-ios/release/libnipworker_native_ffi.a \
-  target/aarch64-apple-ios-sim/release/libnipworker_native_ffi.a \
-  -output ios/libnipworker_native_ffi.a
+./build-ios.sh
 ```
 
-> **Note:** If you only need device + Apple Silicon simulator, omit the `x86_64` slice.
+This script:
+1. Builds `libnipworker_native_ffi.a` for device (arm64) and simulator (arm64 + x86_64)
+2. Creates a universal fat binary with `lipo`
+3. Creates `NipworkerNativeFFI.xcframework`
 
 ## CocoaPods integration
 
-The `Nipworker.podspec` in this directory references `libnipworker_native_ffi.a` and `LynxNipworkerModule.mm`.
+The `Nipworker.podspec` in this directory references `libnipworker_native_ffi.a`.
+Make sure you ran `./build-ios.sh` first so the static library exists.
 
 In your app's `Podfile`:
 ```ruby
@@ -49,6 +36,16 @@ Then run:
 cd ios && pod install
 ```
 
+## Manual Xcode integration (no CocoaPods)
+
+Drag `NipworkerNativeFFI.xcframework` into your Xcode project.
+In **Frameworks, Libraries, and Embedded Content**, set it to **Embed & Sign**.
+Also add `LynxNipworkerModule.h` and `LynxNipworkerModule.mm` to your build target.
+
 ## Registration
 
 The module is automatically registered by CocoaPods via the `LynxModule` protocol. No manual `[LynxEnv registerModule:]` call is required unless you prefer to do it in your `AppDelegate`.
+
+```objc
+[globalConfig registerModule:NipworkerLynxModule.class];
+```

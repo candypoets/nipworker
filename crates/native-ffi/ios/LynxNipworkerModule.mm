@@ -11,6 +11,11 @@
 
 #import "LynxNipworkerModule.h"
 
+@interface NipworkerLynxModule ()
+@property (atomic, copy) void (^callbackBlock)(NSData*);
+@property (nonatomic, assign) void* engineHandle;
+@end
+
 extern "C" {
 void* nipworker_init(void (*callback)(void* userdata, const uint8_t* ptr, size_t len), void* userdata);
 void nipworker_handle_message(void* handle, const uint8_t* ptr, size_t len);
@@ -20,6 +25,7 @@ void nipworker_free_bytes(uint8_t* ptr, size_t len);
 }
 
 static void NipworkerCallbackForwarder(void* userdata, const uint8_t* ptr, size_t len) {
+	NSLog(@"[Nipworker] callback fired, len=%zu", len);
 	NipworkerLynxModule* module = (__bridge NipworkerLynxModule*)userdata;
 	NSData* data = [NSData dataWithBytes:ptr length:len];
 	nipworker_free_bytes((uint8_t*)ptr, len);
@@ -30,11 +36,6 @@ static void NipworkerCallbackForwarder(void* userdata, const uint8_t* ptr, size_
 		});
 	}
 }
-
-@interface NipworkerLynxModule : NSObject <LynxModule>
-@property (atomic, copy) void (^callbackBlock)(NSData*);
-@property (nonatomic, assign) void* engineHandle;
-@end
 
 @implementation NipworkerLynxModule
 
@@ -52,11 +53,14 @@ static void NipworkerCallbackForwarder(void* userdata, const uint8_t* ptr, size_
 }
 
 - (void)initEngine:(void (^)(NSData *))callback {
+	NSLog(@"[Nipworker] initEngine called");
 	self.callbackBlock = [callback copy];
 	self.engineHandle = nipworker_init(NipworkerCallbackForwarder, (__bridge void*)self);
+	NSLog(@"[Nipworker] initEngine engineHandle=%p", self.engineHandle);
 }
 
 - (void)handleMessage:(NSData *)data {
+	NSLog(@"[Nipworker] handleMessage called, engineHandle=%p, dataLength=%lu", self.engineHandle, (unsigned long)data.length);
 	if (self.engineHandle && data) {
 		nipworker_handle_message(self.engineHandle, (const uint8_t*)data.bytes, data.length);
 	}

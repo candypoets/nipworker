@@ -1,5 +1,6 @@
 import * as flatbuffers from 'flatbuffers';
 import { ArrayBufferReader } from 'src/lib/ArrayBufferReader';
+import { BaseBackend, type StorageAdapter } from 'src/lib/BaseBackend';
 import { NostrManagerConfig, RequestObject, SubscriptionConfig } from 'src/types';
 import type { EventTemplate, NostrEvent } from 'nostr-tools';
 import {
@@ -34,7 +35,7 @@ declare const globalThis: {
 };
 
 /** Platform-aware storage: tries localStorage first, then Lynx storage. */
-const storage = {
+const lynxStorageAdapter: StorageAdapter = {
 	getItem(key: string): string | null {
 		if (typeof localStorage !== 'undefined') {
 			return localStorage.getItem(key);
@@ -76,31 +77,12 @@ function getNipworkerModule(): any {
  *
  * This is a skeleton implementation for mobile (iOS / Android / HarmonyOS) consumption.
  */
-export class NativeBackend {
+export class NativeBackend extends BaseBackend {
 	private nativeModule: any;
-	private textEncoder = new TextEncoder();
-	private subscriptions = new Map<
-		string,
-		{
-			buffer: ArrayBuffer;
-			options: SubscriptionConfig;
-			refCount: number;
-		}
-	>();
-	private publishes = new Map<string, { buffer: ArrayBuffer }>();
-	private eventTarget = new EventTarget();
-	private activePubkey: string | null = null;
-	private _pendingSession: { type: string; payload: any } | null = null;
 	private _signCB = (_event: NostrEvent) => {};
 
-	private relayStatuses = new Map<
-		string,
-		{ status: 'connected' | 'failed' | 'close'; timestamp: number }
-	>();
-
-	public PERPETUAL_SUBSCRIPTIONS = ['notifications', 'starterpack'];
-
 	constructor(_config: NostrManagerConfig = {}) {
+		super(lynxStorageAdapter);
 		this.nativeModule = getNipworkerModule();
 		this.nativeModule.init((data: ArrayBuffer) => {
 			this.handleNativeMessage(new Uint8Array(data));
@@ -250,42 +232,10 @@ export class NativeBackend {
 		}
 	}
 
-	public addEventListener(
-		type: string,
-		listener: EventListenerOrEventListenerObject,
-		options?: AddEventListenerOptions
-	): void {
-		this.eventTarget.addEventListener(type, listener as EventListener, options);
-	}
-
-	public removeEventListener(
-		type: string,
-		listener: EventListenerOrEventListenerObject,
-		options?: EventListenerOptions
-	): void {
-		this.eventTarget.removeEventListener(type, listener as EventListener, options);
-	}
-
-	private dispatch(type: string, detail?: unknown): void {
-		this.eventTarget.dispatchEvent(new CustomEvent(type, { detail }));
-	}
-
 	private postMessage(bytes: Uint8Array): void {
 		// Builder.asUint8Array() returns a view on a potentially larger backing buffer.
 		// Copy to an exact-sized ArrayBuffer so the native bridge receives only valid bytes.
 		this.nativeModule.handleMessage(bytes.slice().buffer);
-	}
-
-	public createShortId(input: string): string {
-		if (input.length < 64) return input;
-		let hash = 0;
-		for (let i = 0; i < input.length; i++) {
-			const char = input.charCodeAt(i);
-			hash = (hash << 5) - hash + char;
-			hash = hash & hash;
-		}
-		const shortId = Math.abs(hash).toString(36);
-		return shortId.substring(0, 63);
 	}
 
 	subscribe(subscriptionId: string, requests: RequestObject[], options: SubscriptionConfig): ArrayBuffer {
@@ -349,27 +299,6 @@ export class NativeBackend {
 		return buffer;
 	}
 
-	getBuffer(subId: string): ArrayBuffer | undefined {
-		const existing = this.subscriptions.get(subId);
-		if (existing) {
-			existing.refCount++;
-			return existing.buffer;
-		}
-		return undefined;
-	}
-
-	getRelayStatuses(): Map<string, { status: 'connected' | 'failed' | 'close'; timestamp: number }> {
-		return new Map(this.relayStatuses);
-	}
-
-	unsubscribe(subscriptionId: string): void {
-		const subId = subscriptionId.length < 64 ? subscriptionId : this.createShortId(subscriptionId);
-		const subscription = this.subscriptions.get(subId);
-		if (subscription) {
-			subscription.refCount--;
-		}
-	}
-
 	publish(
 		publish_id: string,
 		event: NostrEvent,
@@ -427,35 +356,6 @@ export class NativeBackend {
 		}
 	}
 
-	private generateClientSecret(): string {
-		if (typeof crypto === 'undefined' || !crypto.getRandomValues) {
-			throw new Error('[NativeBackend] crypto.getRandomValues is not available in this environment');
-		}
-		const array = new Uint8Array(32);
-		crypto.getRandomValues(array);
-		return Array.from(array, (b) => b.toString(16).padStart(2, '0')).join('');
-	}
-
-	setNip46Bunker(bunkerUrl: string, clientSecret?: string): void {
-		const secret = clientSecret || this.generateClientSecret();
-		console.log('[NativeBackend] NIP-46 bunker:', bunkerUrl.slice(0, 50) + '...');
-		this.setSigner('nip46', { url: bunkerUrl, clientSecret: secret });
-	}
-
-	setNip46QR(nostrconnectUrl: string, clientSecret?: string): void {
-		const secret = clientSecret || this.generateClientSecret();
-		console.log('[NativeBackend] NIP-46 QR:', nostrconnectUrl.slice(0, 50) + '...');
-		this.setSigner('nip46', { url: nostrconnectUrl, clientSecret: secret });
-	}
-
-	setNip07(): void {
-		this.setSigner('nip07', '');
-	}
-
-	setPubkey(pubkey: string): void {
-		this.setSigner('pubkey', pubkey);
-	}
-
 	signEvent(event: EventTemplate, cb: (event: NostrEvent) => void) {
 		this._signCB = cb;
 		const templateT = new TemplateT(
@@ -480,67 +380,8 @@ export class NativeBackend {
 		this.postMessage(uint8Array);
 	}
 
-	getActivePubkey(): string | null {
-		return this.activePubkey;
-	}
-
-	getSubscriptionCount(): number {
-		return this.subscriptions.size;
-	}
-
-	getAccounts(): Record<string, { type: string; payload: any }> {
-		const accountsJson = storage.getItem('nostr_signer_accounts') || '{}';
-		try {
-			return JSON.parse(accountsJson);
-		} catch (e) {
-			return {};
-		}
-	}
-
-	switchAccount(pubkey: string) {
-		const accounts = this.getAccounts();
-		const session = accounts[pubkey];
-		if (session) {
-			this.setSigner(session.type, session.payload);
-		}
-	}
-
-	private saveSession(pubkey: string, type: string, payload: any) {
-		const accounts = this.getAccounts();
-		accounts[pubkey] = { type, payload };
-		storage.setItem('nostr_signer_accounts', JSON.stringify(accounts));
-		storage.setItem('nostr_active_pubkey', pubkey);
-	}
-
-	private restoreSession() {
-		const activePubkey = storage.getItem('nostr_active_pubkey');
-		if (activePubkey) {
-			this.switchAccount(activePubkey);
-		} else {
-			this.dispatch('auth', { pubkey: null, hasSigner: false });
-		}
-	}
-
-	public logout(): void {
-		this._pendingSession = null;
-		this.activePubkey = null;
+	protected onLogout(): void {
 		// TODO: send clear_signer to native engine once supported via FFI
-		storage.removeItem('nostr_active_pubkey');
-		this.dispatch('logout');
-	}
-
-	public removeAccount(): void {
-		const currentPubkey = this.activePubkey;
-		if (!currentPubkey) return;
-		const accounts = this.getAccounts();
-		delete accounts[currentPubkey];
-		storage.setItem('nostr_signer_accounts', JSON.stringify(accounts));
-		const remaining = Object.keys(accounts);
-		if (remaining.length > 0 && remaining[0]) {
-			this.switchAccount(remaining[0]);
-		} else {
-			this.logout();
-		}
 	}
 
 	cleanup(): void {

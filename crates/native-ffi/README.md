@@ -88,24 +88,15 @@ cargo ndk -t armeabi-v7a -t arm64-v8a -t x86 -t x86_64 build --release
    [globalConfig registerModule:NipworkerLynxModule.class];
    ```
 
-**Local build (requires macOS + Xcode):**
+**Local build (requires macOS + Xcode + Rust):**
 ```bash
-cd crates/native-ffi
-cargo build --release --target aarch64-apple-ios
-cargo build --release --target aarch64-apple-ios-sim
-cargo build --release --target x86_64-apple-ios
-
-# Create XCFramework
-lipo -create \
-  target/aarch64-apple-ios-sim/release/libnipworker_native_ffi.a \
-  target/x86_64-apple-ios/release/libnipworker_native_ffi.a \
-  -output libnipworker_native_ffi_sim.a
-
-xcodebuild -create-xcframework \
-  -library target/aarch64-apple-ios/release/libnipworker_native_ffi.a \
-  -library libnipworker_native_ffi_sim.a \
-  -output NipworkerNativeFFI.xcframework
+cd crates/native-ffi/ios
+./build-ios.sh
 ```
+
+This produces:
+- `ios/libnipworker_native_ffi.a` — universal static library for CocoaPods
+- `ios/NipworkerNativeFFI.xcframework` — modern XCFramework for manual Xcode integration
 
 ### HarmonyOS
 
