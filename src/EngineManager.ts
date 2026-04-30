@@ -29,6 +29,8 @@ import {
 	UnsubscribeT,
 	WorkerMessage
 } from './generated/nostr/fb';
+import { scheduleMicrotask } from './lib/scheduleMicrotask';
+import { setManager } from './manager';
 
 /**
  * EngineManager is a single-worker backend for nipworker-core.
@@ -182,7 +184,8 @@ export class EngineManager extends BaseBackend {
 		};
 
 		this.setupVisibilityTracking();
-		queueMicrotask(() => this.restoreSession());
+		scheduleMicrotask(() => this.restoreSession());
+		setManager(this);
 	}
 
 	private setupVisibilityTracking(): void {
@@ -301,7 +304,7 @@ export class EngineManager extends BaseBackend {
 						r.limit,
 						r.since,
 						r.until,
-						this.textEncoder.encode(r.search),
+						r.search ? this.textEncoder.encode(r.search) : null,
 						r.relays,
 						r.closeOnEOSE,
 						r.cacheFirst,

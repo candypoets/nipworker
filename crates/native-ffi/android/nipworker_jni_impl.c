@@ -1,15 +1,13 @@
 /*
  * JNI C bridge for NIPWorker Android (LynxJS).
  *
- * This file translates between JNI types and the Rust C ABI exposed by
- * libnipworker_native_ffi. It is compiled as a static library
- * (libnipworker_jni.a) and linked into the final Android binary.
- *
- * The Kotlin side (LynxNipworkerModule.kt) calls the `external` methods
- * declared below, which forward to the Rust functions.
- *
- * Callback path: Rust C callback -> native_callback() ->
- *   JNIEnv->CallStaticVoidMethod -> LynxNipworkerModule.onNativeData()
+ * CRITICAL FIXES applied:
+ * 1. JNI_OnLoad caches JavaVM* g_vm (previously never set, causing
+ *    native_callback to silently drop all Rust events).
+ * 2. RegisterNatives maps the Kotlin external methods to the impl_ functions
+ *    (avoids relying on dynamic symbol resolution for the impl_ prefix).
+ * 3. g_cls and g_mid are cached once in JNI_OnLoad instead of on first
+ *    nipworkerInit call.
  */
 
 #include <jni.h>
@@ -38,13 +36,96 @@ static void native_callback(void* userdata, const uint8_t* ptr, size_t len);
 /* Prevent the linker from garbage-collecting JNI entry points. */
 #define JNI_USED __attribute__((used, visibility("default")))
 
+/* ---------------------------------------------------------------------------
+ * JNI_OnLoad – called when the shared library is loaded.
+ * Caches the JavaVM* and registers all native methods explicitly.
+ * --------------------------------------------------------------------------- */
 JNI_USED
+JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
+    g_vm = vm;
 
-/*
- * Class:     com_candypoets_nipworker_lynx_NipworkerLynxModule
- * Method:    nipworkerInit
- * Signature: (J)J
- */
+    JNIEnv* env = NULL;
+    if ((*vm)->GetEnv(vm, (void**)&env, JNI_VERSION_1_6) != JNI_OK) {
+        return JNI_ERR;
+    }
+
+    jclass cls = (*env)->FindClass(
+        env,
+        "com/candypoets/nipworker/lynx/NipworkerLynxModule"
+    );
+    if (cls == NULL) {
+        return JNI_ERR;
+    }
+
+    /* Cache global class ref and onNativeData method ID for callbacks */
+    g_cls = (jclass)(*env)->NewGlobalRef(env, cls);
+    g_mid = (*env)->GetStaticMethodID(env, g_cls, "onNativeData", "(J[B)V");
+    (*env)->DeleteLocalRef(env, cls);
+
+    if (g_mid == NULL) {
+        return JNI_ERR;
+    }
+
+    static JNINativeMethod methods[] = {
+        {
+            "nipworkerInit",
+            "(J)J",
+            (void*)&impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerInit
+        },
+        {
+            "nipworkerHandleMessage",
+            "(J[B)V",
+            (void*)&impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerHandleMessage
+        },
+        {
+            "nipworkerSetPrivateKey",
+            "(JLjava/lang/String;)V",
+            (void*)&impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerSetPrivateKey
+        },
+        {
+            "nipworkerDeinit",
+            "(J)V",
+            (void*)&impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerDeinit
+        },
+        {
+            "nipworkerFreeBytes",
+            "(JJ)V",
+            (void*)&impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerFreeBytes
+        },
+    };
+
+    jint ret = (*env)->RegisterNatives(
+        env, g_cls, methods,
+        sizeof(methods) / sizeof(methods[0])
+    );
+    if (ret < 0) {
+        return JNI_ERR;
+    }
+
+    return JNI_VERSION_1_6;
+}
+
+/* ---------------------------------------------------------------------------
+ * JNI_OnUnload – clean up global refs.
+ * --------------------------------------------------------------------------- */
+JNI_USED
+JNIEXPORT void JNICALL JNI_OnUnload(JavaVM* vm, void* reserved) {
+    JNIEnv* env = NULL;
+    if ((*vm)->GetEnv(vm, (void**)&env, JNI_VERSION_1_6) == JNI_OK) {
+        if (g_cls != NULL) {
+            (*env)->DeleteGlobalRef(env, g_cls);
+            g_cls = NULL;
+        }
+    }
+    g_vm = NULL;
+    g_mid = NULL;
+}
+
+/* ---------------------------------------------------------------------------
+ * Native method implementations (impl_ prefix so we can register them
+ * explicitly via RegisterNatives instead of relying on JNI name mangling).
+ * --------------------------------------------------------------------------- */
+
 JNI_USED
 JNIEXPORT jlong JNICALL
 impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerInit(
@@ -52,28 +133,10 @@ impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerInit(
     jclass cls,
     jlong userdata
 ) {
-    /* Cache class reference and method ID on first call */
-    if (g_cls == NULL) {
-        g_cls = (*env)->NewGlobalRef(env, cls);
-        g_mid = (*env)->GetStaticMethodID(
-            env, cls,
-            "onNativeData",
-            "(J[B)V"
-        );
-        if (g_mid == NULL) {
-            return 0;
-        }
-    }
-
     void* handle = nipworker_init(native_callback, (void*)(uintptr_t)userdata);
     return (jlong)handle;
 }
 
-/*
- * Class:     com_candypoets_nipworker_lynx_NipworkerLynxModule
- * Method:    nipworkerHandleMessage
- * Signature: (J[B)V
- */
 JNI_USED
 JNIEXPORT void JNICALL
 impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerHandleMessage(
@@ -93,11 +156,6 @@ impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerHandleMessa
     (*env)->ReleaseByteArrayElements(env, bytes, ptr, JNI_ABORT);
 }
 
-/*
- * Class:     com_candypoets_nipworker_lynx_NipworkerLynxModule
- * Method:    nipworkerSetPrivateKey
- * Signature: (JLjava/lang/String;)V
- */
 JNI_USED
 JNIEXPORT void JNICALL
 impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerSetPrivateKey(
@@ -116,11 +174,6 @@ impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerSetPrivateK
     (*env)->ReleaseStringUTFChars(env, secret, cstr);
 }
 
-/*
- * Class:     com_candypoets_nipworker_lynx_NipworkerLynxModule
- * Method:    nipworkerDeinit
- * Signature: (J)V
- */
 JNI_USED
 JNIEXPORT void JNICALL
 impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerDeinit(
@@ -132,11 +185,6 @@ impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerDeinit(
     nipworker_deinit((void*)handle);
 }
 
-/*
- * Class:     com_candypoets_nipworker_lynx_NipworkerLynxModule
- * Method:    nipworkerFreeBytes
- * Signature: (JJ)V
- */
 JNI_USED
 JNIEXPORT void JNICALL
 impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerFreeBytes(
@@ -149,10 +197,10 @@ impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerFreeBytes(
     nipworker_free_bytes((uint8_t*)(uintptr_t)ptr, (size_t)len);
 }
 
-/*
+/* ---------------------------------------------------------------------------
  * Rust callback forwarder.
  * Copies data into a JVM byte[] and invokes Kotlin onNativeData().
- */
+ * --------------------------------------------------------------------------- */
 static void native_callback(void* userdata, const uint8_t* ptr, size_t len) {
     if (g_vm == NULL || g_cls == NULL || g_mid == NULL || ptr == NULL || len == 0) {
         nipworker_free_bytes((uint8_t*)ptr, len);

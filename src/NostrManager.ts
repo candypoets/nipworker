@@ -33,6 +33,8 @@ import {
 	WorkerMessage
 } from './generated/nostr/fb';
 import type { InitParserMsg } from './parser/index';
+import { scheduleMicrotask } from './lib/scheduleMicrotask';
+import { setManager } from './manager';
 
 /**
  * NostrManager handles worker orchestration and session persistence.
@@ -260,7 +262,8 @@ export class NostrManager extends BaseBackend {
 		this.setupWorkerListener();
 		this.setupVisibilityTracking();
 		// Defer session restore so callers have time to add auth listeners
-		queueMicrotask(() => this.restoreSession());
+		scheduleMicrotask(() => this.restoreSession());
+		setManager(this);
 	}
 
 	/**
@@ -459,7 +462,7 @@ export class NostrManager extends BaseBackend {
 						r.limit,
 						r.since,
 						r.until,
-						this.textEncoder.encode(r.search),
+						r.search ? this.textEncoder.encode(r.search) : null,
 						r.relays,
 						r.closeOnEOSE,
 						r.cacheFirst,

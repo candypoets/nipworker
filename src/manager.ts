@@ -1,6 +1,9 @@
 import type { EventTemplate, NostrEvent } from 'nostr-tools';
 import type { RequestObject, SubscriptionConfig } from './types';
 
+/** Lynx injects NativeModules as a bundle parameter, not on globalThis. */
+declare const NativeModules: Record<string, any> | undefined;
+
 /**
  * Common interface implemented by all backend variants:
  * - NostrManager   (legacy 4-worker WASM)
@@ -39,9 +42,20 @@ export interface NostrManagerLike {
  */
 export function hasLynxNativeModule(): boolean {
 	try {
-		const mod =
+		// In Sparkling/Lynx real builds, NativeModules is injected as a bundle
+		// parameter (IIFE argument), not mounted on globalThis.
+		let mod =
+			(typeof NativeModules !== 'undefined' && (NativeModules as any)?.NipworkerLynxModule) ||
 			(globalThis as any).lynx?.getNativeModules?.()?.NipworkerLynxModule ||
 			(globalThis as any).NativeModules?.NipworkerLynxModule;
+
+		if (!mod) {
+			const app = (globalThis as any).lynx?.getNativeApp?.();
+			if (app && app.NativeModules) {
+				mod = app.NativeModules.NipworkerLynxModule;
+			}
+		}
+
 		return !!mod;
 	} catch {
 		return false;
@@ -60,13 +74,19 @@ let globalManager: NostrManagerLike | null = null;
 
 /**
  * Get the global manager instance used by hooks.
- * Throws if no manager has been set.
+ * Auto-initialises with NativeBackend if none has been set.
  */
 export function getManager(): NostrManagerLike {
 	if (!globalManager) {
-		throw new Error(
-			'[nipworker] Global manager is not set. Call setManager(createNostrManager(...)) before using hooks.'
-		);
+		// Lazy auto-initialisation for LynxJS native environments
+		try {
+			const { createNostrManager } = require('./native');
+			globalManager = createNostrManager();
+		} catch {
+			throw new Error(
+				'[nipworker] Global manager is not set. Call setManager(createNostrManager(...)) before using hooks.'
+			);
+		}
 	}
 	return globalManager;
 }

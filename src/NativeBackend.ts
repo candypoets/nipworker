@@ -8,11 +8,17 @@ import {
 	MainContent,
 	MainMessageT,
 	MessageType,
+	MuteFilterPipeConfigT,
+	ParsePipeConfigT,
+	PipeConfig,
 	PipelineConfigT,
+	PipeT,
 	Pubkey,
 	PublishT,
 	Raw,
 	RequestT,
+	SaveToDbPipeConfigT,
+	SerializeEventsPipeConfigT,
 	SignEventT,
 	SignedEvent,
 	StringVec,
@@ -23,6 +29,8 @@ import {
 	UnsubscribeT,
 	WorkerMessage
 } from './generated/nostr/fb';
+import { setManager } from './manager';
+import { scheduleMicrotask } from './lib/scheduleMicrotask';
 
 declare const globalThis: {
 	lynx?: {
@@ -33,6 +41,9 @@ declare const globalThis: {
 	};
 	NativeModules?: Record<string, any>;
 };
+
+/** Lynx injects NativeModules as a bundle parameter, not on globalThis. */
+declare const NativeModules: Record<string, any> | undefined;
 
 /** Platform-aware storage: tries localStorage first, then Lynx storage. */
 const lynxStorageAdapter: StorageAdapter = {
@@ -60,9 +71,24 @@ const lynxStorageAdapter: StorageAdapter = {
 };
 
 function getNipworkerModule(): any {
-	const mod =
+	// In Sparkling/Lynx real builds, NativeModules is injected as a bundle
+	// parameter (IIFE argument), not mounted on globalThis.
+	let mod =
+		(typeof NativeModules !== 'undefined' && NativeModules?.NipworkerLynxModule) ||
 		globalThis.lynx?.getNativeModules?.()?.NipworkerLynxModule ||
 		globalThis.NativeModules?.NipworkerLynxModule;
+
+	if (!mod) {
+		try {
+			const app = globalThis.lynx?.getNativeApp?.();
+			if (app && app.NativeModules) {
+				mod = app.NativeModules.NipworkerLynxModule;
+			}
+		} catch {
+			// ignore
+		}
+	}
+
 	if (!mod) {
 		throw new Error(
 			'[NativeBackend] NipworkerLynxModule not found. Ensure the native module is registered.'
@@ -80,15 +106,58 @@ function getNipworkerModule(): any {
 export class NativeBackend extends BaseBackend {
 	private nativeModule: any;
 	private _signCB = (_event: NostrEvent) => {};
+	private instanceId: string;
 
 	constructor(_config: NostrManagerConfig = {}) {
 		super(lynxStorageAdapter);
+		this.instanceId = Math.random().toString(36).slice(2, 8);
 		this.nativeModule = getNipworkerModule();
-		this.nativeModule.init((data: ArrayBuffer) => {
-			this.handleNativeMessage(new Uint8Array(data));
-		});
+		console.log('[NativeBackend-diag] instanceId=' + this.instanceId + ', nativeModule found, init type=' + typeof this.nativeModule.init);
+		if (typeof globalThis !== 'undefined') {
+			(globalThis as any).__nipworker_native_diag = {
+				callbackCount: 0,
+				lastCallbackLen: 0,
+				lastCallbackTime: 0,
+				handleNativeMessageCount: 0,
+				handleNativeMessageErrors: 0,
+				subscriptionCount: 0,
+				publishCount: 0,
+			};
+		}
+		// Lynx native module callbacks are ONE-SHOT — after the first invocation,
+		// the callback is erased from Lynx's internal map. We re-register after
+		// each invocation, and the native module now queues events that arrive
+		// between invocations (see LynxNipworkerModule.mm).
+		const registerCallback = () => {
+			this.nativeModule.init((data: ArrayBuffer) => {
+				if (typeof globalThis !== 'undefined') {
+					const diag = (globalThis as any).__nipworker_native_diag;
+					if (diag) {
+						diag.callbackCount++;
+						diag.lastCallbackLen = data.byteLength;
+						diag.lastCallbackTime = Date.now();
+					}
+				}
+				console.log('[NativeBackend-diag] instanceId=' + this.instanceId + ' callback received, len=' + data.byteLength);
+				try {
+					this.handleNativeMessage(new Uint8Array(data));
+				} catch (e) {
+					console.error('[NativeBackend-diag] instanceId=' + this.instanceId + ' handleNativeMessage THREW:', e);
+					if (typeof globalThis !== 'undefined') {
+						const diag = (globalThis as any).__nipworker_native_diag;
+						if (diag) diag.handleNativeMessageErrors++;
+					}
+				}
+				// Re-register immediately so the next event can be received
+				console.log('[NativeBackend-diag] instanceId=' + this.instanceId + ' re-registering callback');
+				registerCallback();
+			});
+		};
+		registerCallback();
 		this.setupVisibilityTracking();
-		queueMicrotask(() => this.restoreSession());
+		scheduleMicrotask(() => this.restoreSession());
+		// Auto-register so hooks work without explicit setManager() call
+		setManager(this);
 	}
 
 	private setupVisibilityTracking(): void {
@@ -106,32 +175,67 @@ export class NativeBackend extends BaseBackend {
 	}
 
 	private handleNativeMessage(data: Uint8Array): void {
-		if (data.length < 8) return;
+		if (typeof globalThis !== 'undefined') {
+			const diag = (globalThis as any).__nipworker_native_diag;
+			if (diag) diag.handleNativeMessageCount++;
+		}
+		console.log('[NativeBackend] handleNativeMessage called, len=' + data.length + ', instance=' + this.instanceId);
+		if (data.length < 8) {
+			console.log('[NativeBackend] handleNativeMessage: data too short (<8), dropping');
+			return;
+		}
 		const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
 		let offset = 0;
 		const subIdLen = view.getUint32(offset, true);
 		offset += 4;
-		if (offset + subIdLen > data.byteLength) return;
+		if (offset + subIdLen > data.byteLength) {
+			console.log('[NativeBackend] handleNativeMessage: subId exceeds buffer, dropping');
+			return;
+		}
 		const subId = new TextDecoder().decode(data.subarray(offset, offset + subIdLen));
 		offset += subIdLen;
-		if (offset + 4 > data.byteLength) return;
+		if (offset + 4 > data.byteLength) {
+			console.log('[NativeBackend] handleNativeMessage: payloadLen exceeds buffer, dropping');
+			return;
+		}
 		const payloadLen = view.getUint32(offset, true);
 		offset += 4;
-		if (offset + payloadLen > data.byteLength) return;
+		if (offset + payloadLen > data.byteLength) {
+			console.log('[NativeBackend] handleNativeMessage: payload exceeds buffer, dropping');
+			return;
+		}
 		const payload = data.subarray(offset, offset + payloadLen);
 
 		if (subId === 'crypto') {
+			console.log('[NativeBackend] crypto message, len=' + payload.length);
 			this.handleCryptoMessage(payload);
 			return;
 		}
 		if (subId === '') {
+			console.log('[NativeBackend] direct response, len=' + payload.length);
 			this.handleDirectResponse(payload);
 			return;
 		}
+		console.log('[NativeBackend] subscription message, subId=' + subId + ', len=' + payload.length);
+		if (typeof globalThis !== 'undefined') {
+			const diag = (globalThis as any).__nipworker_native_diag;
+			if (diag) diag.subscriptionCount = this.subscriptions.size;
+		}
+
+		// Parser sends raw FlatBuffer bytes; prepend 4-byte LE length so
+		// ArrayBufferReader.readMessages can parse them correctly.
+		const lengthPrefixed = new Uint8Array(4 + payload.length);
+		const lpView = new DataView(lengthPrefixed.buffer);
+		lpView.setUint32(0, payload.length, true);
+		lengthPrefixed.set(payload, 4);
 
 		const subscription = this.subscriptions.get(subId);
 		if (subscription) {
-			const written = ArrayBufferReader.writeBatchedData(subscription.buffer, payload, subId);
+			const buf = subscription.buffer;
+			const writePos = new DataView(buf).getUint32(0, true);
+			console.log('[NativeBackend] subscription found, subId=' + subId + ', bufferLen=' + buf.byteLength + ', writePos=' + writePos);
+			const written = ArrayBufferReader.writeBatchedData(buf, lengthPrefixed, subId);
+			console.log('[NativeBackend] writeBatchedData result=' + written + ', subId=' + subId);
 			if (written) {
 				this.dispatch(`subscription:${subId}`, subId);
 			}
@@ -140,11 +244,18 @@ export class NativeBackend extends BaseBackend {
 
 		const publish = this.publishes.get(subId);
 		if (publish) {
-			const written = ArrayBufferReader.writeBatchedData(publish.buffer, payload, subId);
+			const written = ArrayBufferReader.writeBatchedData(publish.buffer, lengthPrefixed, subId);
+			console.log('[NativeBackend] writeBatchedData (publish) result=' + written + ', subId=' + subId);
 			if (written) {
 				this.dispatch(`publish:${subId}`, subId);
 			}
 			return;
+		}
+		
+		console.log('[NativeBackend] WARNING: no subscription or publish found for subId=' + subId + ', subscriptions=' + this.subscriptions.size + ', publishes=' + this.publishes.size);
+		if (typeof globalThis !== 'undefined') {
+			const diag = (globalThis as any).__nipworker_native_diag;
+			if (diag) diag.lastMissingSubId = subId;
 		}
 	}
 
@@ -253,8 +364,16 @@ export class NativeBackend extends BaseBackend {
 
 		this.subscriptions.set(subId, { buffer, options, refCount: 1 });
 
+		const pipeline = options.pipeline !== undefined
+			? new PipelineConfigT(options.pipeline)
+			: new PipelineConfigT([
+					new PipeT(PipeConfig.MuteFilterPipeConfig, new MuteFilterPipeConfigT()),
+					new PipeT(PipeConfig.ParsePipeConfig, new ParsePipeConfigT()),
+					new PipeT(PipeConfig.SaveToDbPipeConfig, new SaveToDbPipeConfigT()),
+					new PipeT(PipeConfig.SerializeEventsPipeConfig, new SerializeEventsPipeConfigT()),
+				]);
 		const optionsT = new SubscriptionConfigT(
-			new PipelineConfigT(options.pipeline || []),
+			pipeline,
 			options.closeOnEose,
 			options.cacheFirst,
 			options.timeoutMs ? BigInt(options.timeoutMs) : undefined,
@@ -280,7 +399,7 @@ export class NativeBackend extends BaseBackend {
 						r.limit,
 						r.since,
 						r.until,
-						this.textEncoder.encode(r.search),
+						r.search ? this.textEncoder.encode(r.search) : null,
 						r.relays,
 						r.closeOnEOSE,
 						r.cacheFirst,

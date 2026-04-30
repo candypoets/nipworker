@@ -66,36 +66,27 @@ build_target "x86_64-apple-ios"
 # ── Create simulator fat binary ─────────────────────────────────────
 echo ""
 echo "Creating simulator fat binary (arm64 + x86_64)..."
-mkdir -p "${IOS_DIR}/Frameworks"
+mkdir -p "${IOS_DIR}/Frameworks/ios-arm64"
+mkdir -p "${IOS_DIR}/Frameworks/ios-arm64_x86_64-simulator"
 
 lipo -create \
 	"${TARGET_DIR}/aarch64-apple-ios-sim/release/libnipworker_native_ffi.a" \
 	"${TARGET_DIR}/x86_64-apple-ios/release/libnipworker_native_ffi.a" \
-	-output "${IOS_DIR}/Frameworks/libnipworker_native_ffi_sim.a"
+	-output "${IOS_DIR}/Frameworks/ios-arm64_x86_64-simulator/libnipworker_native_ffi.a"
 
-echo "  -> ${IOS_DIR}/Frameworks/libnipworker_native_ffi_sim.a"
+echo "  -> ${IOS_DIR}/Frameworks/ios-arm64_x86_64-simulator/libnipworker_native_ffi.a"
 
 # ── Copy device binary ──────────────────────────────────────────────
 cp "${TARGET_DIR}/aarch64-apple-ios/release/libnipworker_native_ffi.a" \
-	"${IOS_DIR}/Frameworks/libnipworker_native_ffi_device.a"
-echo "  -> ${IOS_DIR}/Frameworks/libnipworker_native_ffi_device.a"
-
-# ── Create universal .a (device + sim) ──────────────────────────────
-echo ""
-echo "Creating universal static library..."
-lipo -create \
-	"${IOS_DIR}/Frameworks/libnipworker_native_ffi_device.a" \
-	"${IOS_DIR}/Frameworks/libnipworker_native_ffi_sim.a" \
-	-output "${IOS_DIR}/libnipworker_native_ffi.a"
-
-echo "  -> ${IOS_DIR}/libnipworker_native_ffi.a"
+	"${IOS_DIR}/Frameworks/ios-arm64/libnipworker_native_ffi.a"
+echo "  -> ${IOS_DIR}/Frameworks/ios-arm64/libnipworker_native_ffi.a"
 
 # ── Create XCFramework ──────────────────────────────────────────────
 echo ""
 echo "Creating XCFramework..."
 xcodebuild -create-xcframework \
-	-library "${IOS_DIR}/Frameworks/libnipworker_native_ffi_device.a" \
-	-library "${IOS_DIR}/Frameworks/libnipworker_native_ffi_sim.a" \
+	-library "${IOS_DIR}/Frameworks/ios-arm64/libnipworker_native_ffi.a" \
+	-library "${IOS_DIR}/Frameworks/ios-arm64_x86_64-simulator/libnipworker_native_ffi.a" \
 	-output "${IOS_DIR}/NipworkerNativeFFI.xcframework"
 
 echo "  -> ${IOS_DIR}/NipworkerNativeFFI.xcframework"
@@ -105,10 +96,7 @@ echo ""
 echo "=== Build Complete ==="
 echo ""
 echo "Artifacts:"
-echo "  Universal .a:     ${IOS_DIR}/libnipworker_native_ffi.a"
 echo "  XCFramework:      ${IOS_DIR}/NipworkerNativeFFI.xcframework"
 echo ""
-echo "Integration options:"
-echo "  1. CocoaPods (podspec): links libnipworker_native_ffi.a automatically"
-echo "  2. Manual Xcode: drag NipworkerNativeFFI.xcframework into your project"
-echo "     and set 'Embed & Sign'"
+echo "Integration: drag NipworkerNativeFFI.xcframework into your project"
+echo "  and set 'Embed & Sign' (or use CocoaPods with the provided podspec)"
