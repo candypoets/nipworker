@@ -30,18 +30,53 @@ static JavaVM* g_vm = NULL;
 static jclass g_cls = NULL;
 static jmethodID g_mid = NULL;
 
-/* Forward declaration */
-static void native_callback(void* userdata, const uint8_t* ptr, size_t len);
-
 /* Prevent the linker from garbage-collecting JNI entry points. */
 #define JNI_USED __attribute__((used, visibility("default")))
+
+/* Forward declarations */
+static void native_callback(void* userdata, const uint8_t* ptr, size_t len);
+
+/* Fallback init: JNI_OnLoad may be stripped by the linker, so we
+ * lazily initialise the cached JNI globals on the first nipworkerInit(). */
+static void ensure_jni_cache(JNIEnv* env, jclass cls) {
+    if (g_vm != NULL && g_cls != NULL && g_mid != NULL) return;
+
+    jint ret = (*env)->GetJavaVM(env, &g_vm);
+    if (ret != 0 || g_vm == NULL) return;
+
+    jclass local_cls = (*env)->FindClass(
+        env,
+        "com/candypoets/nipworker/lynx/NipworkerLynxModule"
+    );
+    if (local_cls == NULL) return;
+
+    g_cls = (jclass)(*env)->NewGlobalRef(env, local_cls);
+    g_mid = (*env)->GetStaticMethodID(env, g_cls, "onNativeData", "(J[B)V");
+    (*env)->DeleteLocalRef(env, local_cls);
+}
+
+JNIEXPORT jlong JNICALL
+impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerInit(
+    JNIEnv* env, jclass cls, jlong userdata);
+JNIEXPORT void JNICALL
+impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerHandleMessage(
+    JNIEnv* env, jclass cls, jlong handle, jbyteArray bytes);
+JNIEXPORT void JNICALL
+impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerSetPrivateKey(
+    JNIEnv* env, jclass cls, jlong handle, jstring secret);
+JNIEXPORT void JNICALL
+impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerDeinit(
+    JNIEnv* env, jclass cls, jlong handle);
+JNIEXPORT void JNICALL
+impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerFreeBytes(
+    JNIEnv* env, jclass cls, jlong ptr, jlong len);
 
 /* ---------------------------------------------------------------------------
  * JNI_OnLoad – called when the shared library is loaded.
  * Caches the JavaVM* and registers all native methods explicitly.
  * --------------------------------------------------------------------------- */
 JNI_USED
-JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
+JNIEXPORT jint JNICALL impl_JNI_OnLoad(JavaVM* vm, void* reserved) {
     g_vm = vm;
 
     JNIEnv* env = NULL;
@@ -109,7 +144,7 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
  * JNI_OnUnload – clean up global refs.
  * --------------------------------------------------------------------------- */
 JNI_USED
-JNIEXPORT void JNICALL JNI_OnUnload(JavaVM* vm, void* reserved) {
+JNIEXPORT void JNICALL impl_JNI_OnUnload(JavaVM* vm, void* reserved) {
     JNIEnv* env = NULL;
     if ((*vm)->GetEnv(vm, (void**)&env, JNI_VERSION_1_6) == JNI_OK) {
         if (g_cls != NULL) {
@@ -133,6 +168,7 @@ impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerInit(
     jclass cls,
     jlong userdata
 ) {
+    ensure_jni_cache(env, cls);
     void* handle = nipworker_init(native_callback, (void*)(uintptr_t)userdata);
     return (jlong)handle;
 }

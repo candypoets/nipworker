@@ -1,13 +1,15 @@
+use futures::channel::mpsc;
+use futures::{SinkExt, StreamExt};
 use nipworker_core::traits::{RelayTransport, TransportError, TransportStatus};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::rc::Rc;
-use futures::channel::mpsc;
-use futures::{SinkExt, StreamExt};
+use std::sync::Arc;
 use tokio::net::TcpStream;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
+use tokio_tungstenite::Connector;
 
 struct WsHandle {
     write: mpsc::UnboundedSender<String>,
@@ -18,14 +20,25 @@ pub struct NativeTransport {
     connections: Rc<RefCell<HashMap<String, WsHandle>>>,
     message_callbacks: Rc<RefCell<HashMap<String, Box<dyn Fn(String)>>>>,
     status_callbacks: Rc<RefCell<HashMap<String, Box<dyn Fn(TransportStatus)>>>>,
+    tls_config: Arc<rustls::ClientConfig>,
 }
 
 impl NativeTransport {
     pub fn new() -> Self {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        let mut root_store = rustls::RootCertStore::empty();
+        root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+        let tls_config = Arc::new(
+            rustls::ClientConfig::builder()
+                .with_root_certificates(root_store)
+                .with_no_client_auth(),
+        );
+
         Self {
             connections: Rc::new(RefCell::new(HashMap::new())),
             message_callbacks: Rc::new(RefCell::new(HashMap::new())),
             status_callbacks: Rc::new(RefCell::new(HashMap::new())),
+            tls_config,
         }
     }
 }
@@ -44,72 +57,51 @@ fn parse_host_port(url_str: &str) -> Result<(String, u16), TransportError> {
     Ok((host, port))
 }
 
-const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 const TCP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(8);
 const TLS_WS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(8);
 
 /// Establish a WebSocket connection with detailed per-step logging and timeouts.
 async fn open_websocket(
     url: &str,
+    tls_config: Arc<rustls::ClientConfig>,
 ) -> Result<
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<TcpStream>>,
     TransportError,
 > {
-    tracing::info!(url = %url, "=== STEP 1: attempting connect_async with {}s timeout ===", CONNECT_TIMEOUT.as_secs());
-
-    // 1. Try the standard path first, with a timeout.
-    match tokio::time::timeout(
-        CONNECT_TIMEOUT,
-        tokio_tungstenite::connect_async(url),
-    ).await
-    {
-        Ok(Ok((ws_stream, _))) => {
-            tracing::info!(url = %url, "=== STEP 1 SUCCESS: connect_async returned Ok ===");
-            return Ok(ws_stream);
-        }
-        Ok(Err(first_err)) => {
-            let io_kind = match &first_err {
-                tokio_tungstenite::tungstenite::Error::Io(io_err) => Some(io_err.kind()),
-                _ => None,
-            };
-            tracing::warn!(
-                url = %url,
-                error = %first_err,
-                io_kind = ?io_kind,
-                "=== STEP 1 FAILED: connect_async returned Err ==="
-            );
-        }
-        Err(_) => {
-            tracing::error!(url = %url, "=== STEP 1 FAILED: connect_async timed out after {}s ===", CONNECT_TIMEOUT.as_secs());
-        }
-    }
+    // Use manual path with pre-built TLS config to avoid blocking the LocalSet
+    // with repeated ClientConfig construction (expensive with webpki-roots).
+    log::info!(
+        "=== Using manual WS path with shared rustls config for {} ===",
+        url
+    );
 
     // 2. Parse host and port.
-    tracing::info!(url = %url, "=== STEP 2: parsing URL ===");
+    log::info!("=== STEP 2: parsing URL {} ===", url);
     let (host, port) = parse_host_port(url)?;
-    tracing::info!(url = %url, host = %host, port = port, "=== STEP 2 DONE ===");
+    log::info!("=== STEP 2 DONE: host={}, port={} ===", host, port);
 
     // 3. Resolve addresses.
-    tracing::info!(url = %url, "=== STEP 3: DNS lookup with timeout ===");
+    log::info!("=== STEP 3: DNS lookup for {} with timeout ===", url);
     let addrs: Vec<SocketAddr> = match tokio::time::timeout(
         std::time::Duration::from_secs(5),
         tokio::net::lookup_host((host.as_str(), port)),
-    ).await
+    )
+    .await
     {
         Ok(Ok(iter)) => {
             let addrs: Vec<_> = iter.collect();
-            tracing::info!(url = %url, ?addrs, "=== STEP 3 DONE: DNS resolved ===");
+            log::info!("=== STEP 3 DONE: DNS resolved {:?} ===", addrs);
             addrs
         }
         Ok(Err(e)) => {
-            tracing::error!(url = %url, error = %e, "=== STEP 3 FAILED: DNS lookup error ===");
+            log::error!("=== STEP 3 FAILED: DNS lookup error for {}: {} ===", url, e);
             return Err(TransportError::Other(format!(
                 "DNS lookup failed for {}: {}",
                 url, e
             )));
         }
         Err(_) => {
-            tracing::error!(url = %url, "=== STEP 3 FAILED: DNS lookup timed out ===");
+            log::error!("=== STEP 3 FAILED: DNS lookup timed out for {} ===", url);
             return Err(TransportError::Other(format!(
                 "DNS lookup timed out for {}",
                 url
@@ -118,7 +110,7 @@ async fn open_websocket(
     };
 
     if addrs.is_empty() {
-        tracing::error!(url = %url, "=== STEP 3 FAILED: no addresses resolved ===");
+        log::error!("=== STEP 3 FAILED: no addresses resolved for {} ===", url);
         return Err(TransportError::Other(format!(
             "No addresses resolved for {}",
             url
@@ -128,91 +120,89 @@ async fn open_websocket(
     // 4. Sort: IPv4 first, then IPv6.
     let mut ordered: Vec<SocketAddr> = addrs.clone();
     ordered.sort_by_key(|a| if a.is_ipv4() { 0 } else { 1 });
-    tracing::info!(url = %url, ?ordered, "=== STEP 4: address order ===");
+    log::info!("=== STEP 4: address order for {}: {:?} ===", url, ordered);
 
     // 5. Build the WebSocket request (hostname is preserved for TLS SNI).
-    tracing::info!(url = %url, "=== STEP 5: building WS request ===");
+    log::info!("=== STEP 5: building WS request for {} ===", url);
     let request = url
         .into_client_request()
         .map_err(|e| TransportError::Other(format!("Invalid WebSocket request: {}", e)))?;
-    tracing::info!(url = %url, "=== STEP 5 DONE ===");
+    log::info!("=== STEP 5 DONE for {} ===", url);
 
     // 6. Try each address: TCP connect → TLS + WS handshake.
     let mut last_err: Option<tokio_tungstenite::tungstenite::Error> = None;
     for (idx, addr) in ordered.iter().enumerate() {
-        tracing::info!(url = %url, %addr, idx, "=== STEP 6.{idx}: attempting TCP connect with {}s timeout ===", TCP_TIMEOUT.as_secs());
+        log::info!(
+            "=== STEP 6.{}: attempting TCP connect to {} with {}s timeout ===",
+            idx,
+            addr,
+            TCP_TIMEOUT.as_secs()
+        );
 
         let tcp_result = tokio::time::timeout(TCP_TIMEOUT, TcpStream::connect(*addr)).await;
         match tcp_result {
             Ok(Ok(stream)) => {
-                tracing::info!(url = %url, %addr, idx, "=== STEP 6.{idx} TCP SUCCESS: connected ===");
+                log::info!("=== STEP 6.{} TCP SUCCESS: connected to {} ===", idx, addr);
 
-                tracing::info!(url = %url, %addr, idx, "=== STEP 6.{idx}: attempting TLS+WS handshake with {}s timeout ===", TLS_WS_TIMEOUT.as_secs());
+                log::info!(
+                    "=== STEP 6.{}: attempting TLS+WS handshake to {} with {}s timeout ===",
+                    idx,
+                    addr,
+                    TLS_WS_TIMEOUT.as_secs()
+                );
                 let ws_result = tokio::time::timeout(
                     TLS_WS_TIMEOUT,
                     tokio_tungstenite::client_async_tls_with_config(
                         request.clone(),
                         stream,
                         None::<WebSocketConfig>,
-                        None,
+                        Some(Connector::Rustls(tls_config.clone())),
                     ),
-                ).await;
+                )
+                .await;
 
                 match ws_result {
                     Ok(Ok((ws_stream, _))) => {
-                        tracing::info!(url = %url, %addr, idx, "=== STEP 6.{idx} WS SUCCESS: WebSocket connected ===");
+                        log::info!(
+                            "=== STEP 6.{} WS SUCCESS: WebSocket connected to {} ===",
+                            idx,
+                            addr
+                        );
                         return Ok(ws_stream);
                     }
                     Ok(Err(e)) => {
-                        tracing::warn!(
-                            url = %url,
-                            %addr,
+                        log::warn!(
+                            "=== STEP 6.{} WS FAILED: TLS/WebSocket handshake error to {}: {} ===",
                             idx,
-                            error = %e,
-                            "=== STEP 6.{idx} WS FAILED: TLS/WebSocket handshake error ==="
+                            addr,
+                            e
                         );
                         last_err = Some(e);
                     }
                     Err(_) => {
-                        tracing::warn!(
-                            url = %url,
-                            %addr,
-                            idx,
-                            "=== STEP 6.{idx} WS TIMEOUT: TLS/WebSocket handshake timed out after {}s ===",
-                            TLS_WS_TIMEOUT.as_secs()
-                        );
+                        log::warn!("=== STEP 6.{} WS TIMEOUT: TLS/WebSocket handshake to {} timed out after {}s ===", idx, addr, TLS_WS_TIMEOUT.as_secs());
                         last_err = Some(tokio_tungstenite::tungstenite::Error::Io(
                             std::io::Error::new(
                                 std::io::ErrorKind::TimedOut,
                                 "TLS/WebSocket handshake timeout",
-                            )
+                            ),
                         ));
                     }
                 }
             }
             Ok(Err(e)) => {
-                tracing::warn!(
-                    url = %url,
-                    %addr,
-                    idx,
-                    error = %e,
-                    "=== STEP 6.{idx} TCP FAILED ==="
-                );
+                log::warn!("=== STEP 6.{} TCP FAILED to {}: {} ===", idx, addr, e);
                 last_err = Some(tokio_tungstenite::tungstenite::Error::Io(e));
             }
             Err(_) => {
-                tracing::warn!(
-                    url = %url,
-                    %addr,
+                log::warn!(
+                    "=== STEP 6.{} TCP TIMEOUT: connection to {} timed out after {}s ===",
                     idx,
-                    "=== STEP 6.{idx} TCP TIMEOUT: connection timed out after {}s ===",
+                    addr,
                     TCP_TIMEOUT.as_secs()
                 );
                 last_err = Some(tokio_tungstenite::tungstenite::Error::Io(
-                    std::io::Error::new(
-                        std::io::ErrorKind::TimedOut,
-                        "TCP connection timeout",
-                    )
+                    std::io::Error::new(std::io::ErrorKind::TimedOut, "TCP connection timeout"),
                 ));
             }
         }
@@ -229,7 +219,7 @@ impl RelayTransport for NativeTransport {
     async fn connect(&self, url: &str) -> Result<(), TransportError> {
         use tokio_tungstenite::tungstenite::Message;
 
-        let ws_stream = open_websocket(url).await?;
+        let ws_stream = open_websocket(url, self.tls_config.clone()).await?;
 
         let (mut write, mut read) = ws_stream.split();
         let (tx, mut rx) = mpsc::unbounded::<String>();
@@ -283,9 +273,13 @@ impl RelayTransport for NativeTransport {
             }
         });
 
-        self.connections
-            .borrow_mut()
-            .insert(url.to_string(), WsHandle { write: tx, close_tx });
+        self.connections.borrow_mut().insert(
+            url.to_string(),
+            WsHandle {
+                write: tx,
+                close_tx,
+            },
+        );
         if let Some(cb) = self.status_callbacks.borrow().get(url) {
             cb(TransportStatus::Connected {
                 url: url.to_string(),

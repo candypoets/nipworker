@@ -28,6 +28,8 @@ fn main() {
 
         // Pass the object file directly to the linker.
         println!("cargo:rustc-link-arg={}", obj_file.display());
+        println!("cargo:rustc-link-arg=-Wl,-u,JNI_OnLoad");
+        println!("cargo:rustc-link-arg=-Wl,-u,JNI_OnUnload");
 
         // Link against the Android log library.
         println!("cargo:rustc-link-lib=log");

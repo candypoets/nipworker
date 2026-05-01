@@ -1,21 +1,21 @@
 #[cfg(target_os = "android")]
 mod jni;
 
+use futures::StreamExt;
+use nipworker_core::service::engine::NostrEngine;
 use std::ffi::{c_char, c_void, CStr};
 use std::slice;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use tokio::runtime::Builder;
-use tokio::task::LocalSet;
-use nipworker_core::service::engine::NostrEngine;
-use futures::StreamExt;
 use tokio::sync::mpsc::UnboundedSender;
+use tokio::task::LocalSet;
 
-pub mod transport;
 pub mod storage;
+pub mod transport;
 
-use transport::NativeTransport;
 use storage::InMemoryStorage;
+use transport::NativeTransport;
 
 /// Commands sent to the engine thread
 enum EngineCommand {
@@ -34,8 +34,8 @@ pub struct NipworkerHandle {
 
 /// Build a FlatBuffers MainMessage that contains a SetSigner(PrivateKey) payload.
 fn build_set_private_key_message(secret: &str) -> Vec<u8> {
-    use nipworker_core::generated::nostr::fb;
     use flatbuffers::FlatBufferBuilder;
+    use nipworker_core::generated::nostr::fb;
 
     let mut builder = FlatBufferBuilder::new();
     let mut pk = fb::PrivateKeyT::default();
@@ -69,14 +69,26 @@ pub extern "C" fn nipworker_init(
     #[cfg(target_vendor = "apple")]
     {
         use tracing_subscriber::prelude::*;
+        let _ = tracing_log::LogTracer::init();
         let _ = tracing_subscriber::registry()
-            .with(tracing_oslog::OsLogger::new("com.nutscash.sparkling", "nipworker"))
+            .with(tracing_oslog::OsLogger::new(
+                "com.nutscash.sparkling",
+                "nipworker",
+            ))
             .try_init();
     }
-    #[cfg(not(target_vendor = "apple"))]
+    #[cfg(target_os = "android")]
     {
+        android_logger::init_once(
+            android_logger::Config::default().with_max_level(log::LevelFilter::Debug),
+        );
+        log::info!("android_logger initialized");
+    }
+    #[cfg(all(not(target_vendor = "apple"), not(target_os = "android")))]
+    {
+        let _ = tracing_log::LogTracer::init();
         let _ = tracing_subscriber::fmt()
-            .with_max_level(tracing::Level::TRACE)
+            .with_max_level(tracing::Level::DEBUG)
             .with_ansi(false)
             .try_init();
     }
@@ -95,10 +107,7 @@ pub extern "C" fn nipworker_init(
 
     // Spawn engine thread
     thread::spawn(move || {
-        let rt = Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap();
+        let rt = Builder::new_current_thread().enable_all().build().unwrap();
 
         let local = LocalSet::new();
 
@@ -109,17 +118,11 @@ pub extern "C" fn nipworker_init(
             let (async_event_tx, mut async_event_rx) =
                 futures::channel::mpsc::channel::<(String, Vec<u8>)>(256);
 
-            let engine = Arc::new(NostrEngine::new(
-                transport,
-                storage,
-                async_event_tx,
-            ));
+            let engine = Arc::new(NostrEngine::new(transport, storage, async_event_tx));
 
             // Bridge async events to sync callback thread.
             // The callback receives an owned buffer; the host must call
             // nipworker_free_bytes() after copying to avoid leaking memory.
-            let callback_ping = callback;
-            let userdata_ping = userdata;
             tokio::task::spawn_local(async move {
                 while let Some((sub_id, bytes)) = async_event_rx.next().await {
                     let sub_id_bytes = sub_id.as_bytes();
@@ -134,105 +137,6 @@ pub extern "C" fn nipworker_init(
                 }
             });
 
-            // Diagnostic: periodic ping to verify callback path
-            tokio::task::spawn_local(async move {
-                let mut counter = 0u32;
-                loop {
-                    tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
-                    counter += 1;
-                    let test_msg = format!("ping_{}", counter);
-                    let sub_id = "diag";
-                    let sub_bytes = sub_id.as_bytes();
-                    let msg_bytes = test_msg.as_bytes();
-                    let mut payload = Vec::with_capacity(8 + sub_bytes.len() + msg_bytes.len());
-                    payload.extend_from_slice(&(sub_bytes.len() as u32).to_le_bytes());
-                    payload.extend_from_slice(sub_bytes);
-                    payload.extend_from_slice(&(msg_bytes.len() as u32).to_le_bytes());
-                    payload.extend_from_slice(msg_bytes);
-                    let len = payload.len();
-                    let ptr = Box::into_raw(payload.into_boxed_slice()) as *const u8;
-                    callback_ping(userdata_ping as *mut c_void, ptr, len);
-                }
-            });
-
-            // Temporary network diagnostic (Apple platforms only)
-            #[cfg(target_vendor = "apple")]
-            {
-                tokio::task::spawn_local(async {
-                    use std::io::Write;
-                    let mut log = std::fs::OpenOptions::new()
-                        .create(true)
-                        .append(true)
-                        .open("/tmp/nipworker_diag.log")
-                        .unwrap();
-                    let _ = writeln!(log, "=== DIAG START ===");
-
-                    // Give the engine a moment to start up
-                    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-                    let _ = writeln!(log, "Slept 2s");
-
-                    // Test 1: DNS resolution
-                    match tokio::net::lookup_host("relay.damus.io:443").await {
-                        Ok(addrs) => {
-                            let addrs: Vec<_> = addrs.collect();
-                            let _ = writeln!(log, "DNS OK: {:?}", addrs);
-                            tracing::info!("DNS diagnostic: relay.damus.io:443 = {:?}", addrs);
-                        }
-                        Err(e) => {
-                            let _ = writeln!(log, "DNS FAIL: {}", e);
-                            tracing::error!("DNS diagnostic failed: {}", e);
-                        }
-                    }
-
-                    // Test 2: Raw TCP to known IPv4 address
-                    match tokio::net::TcpStream::connect("104.21.61.55:443").await {
-                        Ok(_) => {
-                            let _ = writeln!(log, "TCP IPv4 OK");
-                            tracing::info!("TCP diagnostic: IPv4 connection OK");
-                        }
-                        Err(e) => {
-                            let _ = writeln!(log, "TCP IPv4 FAIL: {}", e);
-                            tracing::error!("TCP diagnostic IPv4 failed: {}", e);
-                        }
-                    }
-
-                    // Test 3: Raw TCP to hostname
-                    match tokio::net::TcpStream::connect("relay.damus.io:443").await {
-                        Ok(_) => {
-                            let _ = writeln!(log, "TCP HOST OK");
-                            tracing::info!("TCP diagnostic: hostname connection OK");
-                        }
-                        Err(e) => {
-                            let _ = writeln!(log, "TCP HOST FAIL: {}", e);
-                            tracing::error!("TCP diagnostic hostname failed: {}", e);
-                        }
-                    }
-
-                    // Test 4: Direct WebSocket connect
-                    let _ = writeln!(log, "WS about to connect");
-                    tracing::info!("WS diagnostic: about to call connect_async to wss://relay.damus.io");
-                    match tokio::time::timeout(
-                        tokio::time::Duration::from_secs(10),
-                        tokio_tungstenite::connect_async("wss://relay.damus.io"),
-                    ).await
-                    {
-                        Ok(Ok(_)) => {
-                            let _ = writeln!(log, "WS OK");
-                            tracing::info!("WS diagnostic: connect_async SUCCESS");
-                        }
-                        Ok(Err(e)) => {
-                            let _ = writeln!(log, "WS ERROR: {}", e);
-                            tracing::error!("WS diagnostic: connect_async ERROR: {}", e);
-                        }
-                        Err(_) => {
-                            let _ = writeln!(log, "WS TIMEOUT");
-                            tracing::error!("WS diagnostic: connect_async TIMEOUT");
-                        }
-                    }
-                    let _ = writeln!(log, "=== DIAG END ===");
-                });
-            }
-
             // Process commands asynchronously so the LocalSet isn't blocked
             while let Some(cmd) = cmd_rx.recv().await {
                 match cmd {
@@ -240,7 +144,7 @@ pub extern "C" fn nipworker_init(
                         let engine = engine.clone();
                         tokio::task::spawn_local(async move {
                             if let Err(e) = engine.handle_message(&bytes).await {
-                                tracing::warn!("[nipworker-native] handle_message error: {}", e);
+                                log::warn!("[nipworker-native] handle_message error: {}", e);
                             }
                         });
                     }

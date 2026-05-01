@@ -13,15 +13,19 @@ futures = { version = "0.3", default-features = false, features = ["std"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-oslog = "0.3"
+android_logger = "0.14"
+log = "0.4"
+tracing-log = "0.2"
 flatbuffers = "25.2.10"
 serde_json = "1"
 
 # Native WebSocket client
-tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
 tungstenite = "0.24"
-
 url = "2.5"
 hex = "0.4.3"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+webpki-roots = "0.26"
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
 
 [build-dependencies]
 cc = "1"
