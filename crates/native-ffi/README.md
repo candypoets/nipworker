@@ -38,7 +38,7 @@ Every git tag `v*` triggers a [GitHub Actions workflow](../../.github/workflows/
 
 | Platform | Artifact | Download |
 |----------|----------|----------|
-| **Android** | `nipworker-native-android.zip` | GitHub Release attachments |
+| **Android** | `nipworker-native-ffi-android-release.aar` | GitHub Release attachments |
 | **iOS** | `nipworker-native-ios.zip` (XCFramework) | GitHub Release attachments |
 | **Linux** | `nipworker-native-linux.zip` | GitHub Release attachments |
 
@@ -46,31 +46,46 @@ Every git tag `v*` triggers a [GitHub Actions workflow](../../.github/workflows/
 
 ### Android
 
-**Files you need:**
-- `android/LynxNipworkerModule.kt` — Kotlin Lynx module
-- `libnipworker_native_ffi.so` — built from this crate (all 4 ABIs)
+The Android artifact is a first-class AAR that contains:
+- `com.candypoets.nipworker.lynx.NipworkerLynxModule`
+- `libnipworker_native_ffi.so` for `arm64-v8a`, `armeabi-v7a`, `x86`, and `x86_64`
+- consumer ProGuard/R8 keep rules for the native module and JNI methods
 
-**Integration steps:**
-1. Download `nipworker-native-android.zip` from the GitHub Release (or build locally with `cargo-ndk`).
-2. Unzip to `android/app/src/main/jniLibs/`:
-   ```
-   jniLibs/
-   ├── arm64-v8a/libnipworker_native_ffi.so
-   ├── armeabi-v7a/libnipworker_native_ffi.so
-   ├── x86/libnipworker_native_ffi.so
-   └── x86_64/libnipworker_native_ffi.so
-   ```
-3. Copy `crates/native-ffi/android/LynxNipworkerModule.kt` into your app module sources.
-4. Register the module in your Lynx setup:
-   ```kotlin
-   LynxViewBuilder.setModule(NipworkerLynxModule::class.java)
-   ```
+**Maven integration:**
+```kotlin
+implementation("com.candypoets:nipworker-native-ffi-android:0.96.0")
+```
+
+Register the module in your Sparkling/Lynx setup:
+```kotlin
+"NipworkerLynxModule" to SparklingLynxModuleWrapper(
+    NipworkerLynxModule::class.java,
+    null
+)
+```
+
+The AAR declares Lynx/Sparkling APIs as compile-only. The host app is expected to provide the real Lynx runtime.
+
+**Local monorepo / `node_modules` fallback:**
+```kotlin
+include(":nipworker-native-ffi-android")
+project(":nipworker-native-ffi-android").projectDir =
+    file("../node_modules/@candypoets/nipworker/crates/native-ffi/android")
+```
+
+Then depend on it from the app:
+```kotlin
+implementation(project(":nipworker-native-ffi-android"))
+```
 
 **Local build (requires Android NDK):**
 ```bash
-cd crates/native-ffi
-cargo ndk -t armeabi-v7a -t arm64-v8a -t x86 -t x86_64 build --release
+cd crates/native-ffi/android
+./build-android-aar.sh
+./validate-aar.sh
 ```
+
+`build-android-aar.sh` builds Rust with `cargo-ndk --release`, copies all four ABI outputs into `src/main/jniLibs`, strips release symbols when `llvm-strip` is available, and runs `assembleRelease`.
 
 ### iOS
 

@@ -55,6 +55,7 @@
   "files": [
     "dist",
     "prebuilt",
+    "crates/native-ffi/android",
     "README.md"
   ],
   "scripts": {

@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   # ──────────────────────────────────────────
-  # Android — build .so for all 4 ABIs
+  # Android — build AAR with .so for all 4 ABIs
   # ──────────────────────────────────────────
   build-android:
     runs-on: ubuntu-latest
@@ -22,6 +22,17 @@ jobs:
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.10.2
 
       - name: Install cargo-ndk
         run: cargo install cargo-ndk
@@ -42,22 +53,19 @@ jobs:
             x86_64-linux-android \
             i686-linux-android
 
-      - name: Build Android libraries
-        working-directory: crates/native-ffi
-        run: |
-          cargo ndk \
-            -t armeabi-v7a \
-            -t arm64-v8a \
-            -t x86 \
-            -t x86_64 \
-            -o ./jniLibs \
-            build --release
+      - name: Build Android AAR
+        working-directory: crates/native-ffi/android
+        run: ./build-android-aar.sh
 
-      - name: Upload Android artifacts
+      - name: Validate Android AAR
+        working-directory: crates/native-ffi/android
+        run: ./validate-aar.sh
+
+      - name: Upload Android AAR
         uses: actions/upload-artifact@v4
         with:
-          name: android-jniLibs
-          path: crates/native-ffi/jniLibs/
+          name: android-aar
+          path: crates/native-ffi/android/build/outputs/aar/*-release.aar
 
   # ──────────────────────────────────────────
   # iOS — build .a for device + simulator
@@ -169,11 +177,6 @@ jobs:
           path: ./native-artifacts
           merge-multiple: false
 
-      - name: Package Android
-        run: |
-          cd native-artifacts/android-jniLibs
-          zip -r ../nipworker-native-android.zip .
-
       - name: Package iOS XCFramework
         run: |
           cd native-artifacts/ios-xcframework
@@ -193,7 +196,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            native-artifacts/nipworker-native-android.zip
+            native-artifacts/android-aar/nipworker-native-ffi-android-release.aar
             native-artifacts/nipworker-native-ios.zip
             native-artifacts/nipworker-native-ios-static.zip
             native-artifacts/nipworker-native-linux.zip
@@ -205,21 +208,22 @@ jobs:
 
             | Platform | Download | Integration |
             |----------|----------|-------------|
-            | **Android** | `nipworker-native-android.zip` | Unzip to `android/app/src/main/jniLibs/` |
+            | **Android** | `nipworker-native-ffi-android-release.aar` | Add `com.candypoets:nipworker-native-ffi-android:<version>` or include the local Gradle project |
             | **iOS (XCFramework)** | `nipworker-native-ios.zip` | Drag `NipworkerNativeFFI.xcframework` into Xcode |
             | **iOS (static lib)** | `nipworker-native-ios-static.zip` | Drop `libnipworker_native_ffi.a` into CocoaPods project |
             | **Linux** | `nipworker-native-linux.zip` | For local FFI testing only |
 
             ### Android
-            ```bash
-            # In your app build.gradle
-            android {
-              sourceSets {
-                main {
-                  jniLibs.srcDirs = ['src/main/jniLibs']
-                }
-              }
-            }
+            ```kotlin
+            implementation("com.candypoets:nipworker-native-ffi-android:<version>")
+            ```
+
+            Register the module:
+            ```kotlin
+            "NipworkerLynxModule" to SparklingLynxModuleWrapper(
+              NipworkerLynxModule::class.java,
+              null
+            )
             ```
 
             ### iOS
