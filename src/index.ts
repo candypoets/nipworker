@@ -1,47 +1,22 @@
 import type { NostrManagerConfig } from 'src/types';
 import { EngineManager } from './EngineManager';
 import { NostrManager } from './NostrManager';
-import { NativeBackend } from './NativeBackend';
-import {
-	getManager,
-	setManager,
-	setGlobalManager,
-	NostrManagerLike,
-	hasLynxNativeModule,
-	hasNativeModule
-} from './manager';
+import { getManager, setManager, setGlobalManager, NostrManagerLike } from './manager';
 
 export * from './lib/NostrUtils';
 export * from './types';
-export {
-	getManager,
-	setManager,
-	setGlobalManager,
-	hasLynxNativeModule,
-	hasNativeModule
-} from './manager';
+export { getManager, setManager, setGlobalManager } from './manager';
 export type { NostrManagerLike } from './manager';
 
 export { EngineManager } from './EngineManager';
-export { NativeBackend } from './NativeBackend';
 export { NostrManager } from './NostrManager';
 
 /**
- * Create the appropriate backend for the current runtime environment.
+ * Create the appropriate web backend.
  *
- * Detection order:
- * 1. LynxJS native module available -> NativeBackend (iOS/Android/HarmonyOS)
- * 2. config.engine === true         -> EngineManager (single WASM worker)
- * 3. Otherwise                      -> NostrManager (legacy 4-worker WASM)
- *
- * For native-only builds that must avoid WASM glue entirely, use the
- * dedicated subpath import instead:
- *   import { createNostrManager } from '@candypoets/nipworker/native';
+ * Native/Lynx builds should import from `@candypoets/nipworker/native`.
  */
 export function createNostrManager(config?: NostrManagerConfig): NostrManagerLike {
-	if (hasLynxNativeModule()) {
-		return new NativeBackend(config);
-	}
 	if (config?.engine) {
 		return new EngineManager(config);
 	}

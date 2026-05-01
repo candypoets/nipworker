@@ -12,14 +12,31 @@ declare const NativeModules: Record<string, any> | undefined;
  */
 export interface NostrManagerLike {
 	readonly PERPETUAL_SUBSCRIPTIONS: string[];
-	addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: AddEventListenerOptions): void;
-	removeEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: EventListenerOptions): void;
+	addEventListener(
+		type: string,
+		listener: EventListenerOrEventListenerObject,
+		options?: AddEventListenerOptions
+	): void;
+	removeEventListener(
+		type: string,
+		listener: EventListenerOrEventListenerObject,
+		options?: EventListenerOptions
+	): void;
 	createShortId(input: string): string;
-	subscribe(subscriptionId: string, requests: RequestObject[], options: SubscriptionConfig): ArrayBuffer;
+	subscribe(
+		subscriptionId: string,
+		requests: RequestObject[],
+		options: SubscriptionConfig
+	): ArrayBuffer;
 	getBuffer(subId: string): ArrayBuffer | undefined;
 	getRelayStatuses(): Map<string, { status: 'connected' | 'failed' | 'close'; timestamp: number }>;
 	unsubscribe(subscriptionId: string): void;
-	publish(publish_id: string, event: any, defaultRelays?: string[], optimisticSubIds?: string[]): ArrayBuffer;
+	publish(
+		publish_id: string,
+		event: any,
+		defaultRelays?: string[],
+		optimisticSubIds?: string[]
+	): ArrayBuffer;
 	setSigner(name: string, payload?: string | { url: string; clientSecret: string }): void;
 	setNip46Bunker(bunkerUrl: string, clientSecret?: string): void;
 	setNip46QR(nostrconnectUrl: string, clientSecret?: string): void;
@@ -74,19 +91,12 @@ let globalManager: NostrManagerLike | null = null;
 
 /**
  * Get the global manager instance used by hooks.
- * Auto-initialises with NativeBackend if none has been set.
  */
 export function getManager(): NostrManagerLike {
 	if (!globalManager) {
-		// Lazy auto-initialisation for LynxJS native environments
-		try {
-			const { createNostrManager } = require('./native');
-			globalManager = createNostrManager();
-		} catch {
-			throw new Error(
-				'[nipworker] Global manager is not set. Call setManager(createNostrManager(...)) before using hooks.'
-			);
-		}
+		throw new Error(
+			'[nipworker] Global manager is not set. Call setManager(createNostrManager(...)) before using hooks.'
+		);
 	}
 	return globalManager;
 }

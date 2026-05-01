@@ -4,7 +4,10 @@
 //
 
 #import <Foundation/Foundation.h>
-#import <Lynx/LynxModule.h>
+#import <Lynx/LynxContextModule.h>
 
-@interface NipworkerLynxModule : NSObject <LynxModule>
+@interface NipworkerLynxModule : NSObject <LynxContextModule>
+
+- (instancetype)initWithLynxContext:(LynxContext *)context;
+
 @end

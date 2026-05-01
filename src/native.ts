@@ -13,7 +13,7 @@
  * setManager(backend);
  */
 
-export { NativeBackend } from './NativeBackend';
+export { NativeBackend, getOrCreateNativeBackend } from './NativeBackend';
 export {
 	getManager,
 	setManager,
@@ -25,7 +25,7 @@ export type { NostrManagerLike } from './manager';
 export * from './lib/NostrUtils';
 export * from './types';
 
-import { NativeBackend } from './NativeBackend';
+import { getOrCreateNativeBackend } from './NativeBackend';
 import type { NostrManagerConfig } from './types';
 import type { NostrManagerLike } from './manager';
 
@@ -36,5 +36,5 @@ import type { NostrManagerLike } from './manager';
  * backends, import from `@candypoets/nipworker` instead.
  */
 export function createNostrManager(config?: NostrManagerConfig): NostrManagerLike {
-	return new NativeBackend(config);
+	return getOrCreateNativeBackend(config);
 }

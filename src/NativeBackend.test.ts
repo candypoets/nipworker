@@ -4,22 +4,32 @@ import * as flatbuffers from 'flatbuffers';
 import { WorkerMessage, MessageType, Raw, Message } from './generated/nostr/fb';
 
 const mockNativeModule = {
-	init: vi.fn((cb: any) => {
-		// store callback for later use if needed
-	}),
+	init: vi.fn(),
 	handleMessage: vi.fn(),
 	setPrivateKey: vi.fn(),
 	deinit: vi.fn(),
+};
+
+const mockEmitter = {
+	addListener: vi.fn(),
+	removeListener: vi.fn(),
 };
 
 beforeAll(() => {
 	(globalThis as any).NativeModules = {
 		NipworkerLynxModule: mockNativeModule,
 	};
+	(globalThis as any).lynx = {
+		getJSModule: vi.fn((name: string) => {
+			if (name === 'GlobalEventEmitter') return mockEmitter;
+			return undefined;
+		}),
+	};
 });
 
 afterAll(() => {
 	delete (globalThis as any).NativeModules;
+	delete (globalThis as any).lynx;
 });
 
 function buildCryptoRawMessage(json: string): Uint8Array {
@@ -38,7 +48,96 @@ function buildCryptoRawMessage(json: string): Uint8Array {
 	return builder.asUint8Array();
 }
 
+function buildNativeFrame(subId: string, payload: Uint8Array): Uint8Array {
+	const subIdBytes = new TextEncoder().encode(subId);
+	const frame = new Uint8Array(4 + subIdBytes.length + 4 + payload.length);
+	const view = new DataView(frame.buffer);
+	let offset = 0;
+	view.setUint32(offset, subIdBytes.length, true);
+	offset += 4;
+	frame.set(subIdBytes, offset);
+	offset += subIdBytes.length;
+	view.setUint32(offset, payload.length, true);
+	offset += 4;
+	frame.set(payload, offset);
+	return frame;
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+	if (typeof btoa === 'function') {
+		const binary = String.fromCharCode(...bytes);
+		return btoa(binary);
+	}
+	// Node.js test environment fallback
+	return Buffer.from(bytes).toString('base64');
+}
+
 describe('NativeBackend', () => {
+	describe('GlobalEventEmitter listener', () => {
+		it('should receive a base64 event, decode it, and route to handleCryptoMessage', () => {
+			const backend = new NativeBackend();
+			const authHandler = vi.fn();
+			backend.addEventListener('auth', authHandler);
+
+			// Capture the listener registered with GlobalEventEmitter
+			expect(mockEmitter.addListener).toHaveBeenCalledWith('NipworkerEvent', expect.any(Function));
+			const listener = mockEmitter.addListener.mock.calls[0][1];
+
+			// Build a native frame: [subIdLen]["crypto"][payloadLen][cryptoPayload]
+			const cryptoPayload = buildCryptoRawMessage(
+				JSON.stringify({ op: 'get_public_key', result: 'deadbeef12345678deadbeef12345678deadbeef12345678deadbeef12345678' })
+			);
+			const frame = buildNativeFrame('crypto', cryptoPayload);
+			const base64 = bytesToBase64(frame);
+
+			// Simulate a Lynx global event arriving as an object envelope
+			listener({ v: 1, encoding: 'base64', data: base64 });
+
+			expect(authHandler).toHaveBeenCalledTimes(1);
+			const detail = authHandler.mock.calls[0][0].detail;
+			expect(detail.pubkey).toBe('deadbeef12345678deadbeef12345678deadbeef12345678deadbeef12345678');
+			expect(detail.hasSigner).toBe(true);
+		});
+
+		it('should accept events wrapped in an array', () => {
+			const backend = new NativeBackend();
+			const authHandler = vi.fn();
+			backend.addEventListener('auth', authHandler);
+
+			const listener = mockEmitter.addListener.mock.calls[mockEmitter.addListener.mock.calls.length - 1][1];
+
+			const cryptoPayload = buildCryptoRawMessage(
+				JSON.stringify({ op: 'get_public_key', result: 'arraywrapped12345678arraywrapped12345678arraywrapped12345678arraywrapped12345678' })
+			);
+			const frame = buildNativeFrame('crypto', cryptoPayload);
+			const base64 = bytesToBase64(frame);
+
+			// Lynx sometimes passes params as an array
+			listener([{ v: 1, encoding: 'base64', data: base64 }]);
+
+			expect(authHandler).toHaveBeenCalledTimes(1);
+			const detail = authHandler.mock.calls[0][0].detail;
+			expect(detail.pubkey).toBe('arraywrapped12345678arraywrapped12345678arraywrapped12345678arraywrapped12345678');
+		});
+
+		it('should drop malformed envelopes', () => {
+			const backend = new NativeBackend();
+			const authHandler = vi.fn();
+			backend.addEventListener('auth', authHandler);
+
+			const listener = mockEmitter.addListener.mock.calls[mockEmitter.addListener.mock.calls.length - 1][1];
+
+			// Wrong version
+			listener({ v: 2, encoding: 'base64', data: 'abc' });
+			// Wrong encoding
+			listener({ v: 1, encoding: 'hex', data: 'abc' });
+			// Missing data
+			listener({ v: 1, encoding: 'base64' });
+
+			expect(authHandler).not.toHaveBeenCalled();
+		});
+	});
+
 	describe('handleCryptoMessage', () => {
 		it('should dispatch auth event on set_signer success', () => {
 			const backend = new NativeBackend();
