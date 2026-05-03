@@ -3,7 +3,7 @@ use futures::channel::mpsc;
 use futures::StreamExt;
 use tracing::info;
 
-use crate::channel::{ChannelPort, FuturesWorkerChannel, WorkerChannel, WorkerChannelSender};
+use crate::channel::{FuturesWorkerChannel, MessageSender, WorkerChannel};
 use crate::generated::nostr::fb;
 use crate::nostr_error::{NostrError, NostrResult};
 use crate::parser::Parser;
@@ -23,8 +23,8 @@ use crate::worker::parser_worker::ParserWorker;
 ///
 /// Works on both native (tokio) and WASM (browser) targets.
 pub struct NostrEngine {
-	parser_tx: Box<dyn WorkerChannelSender>,
-	crypto_tx: Box<dyn WorkerChannelSender>,
+	parser_tx: Box<dyn MessageSender>,
+	crypto_tx: Box<dyn MessageSender>,
 	event_sink: mpsc::Sender<(String, Vec<u8>)>,
 }
 
@@ -63,7 +63,7 @@ impl NostrEngine {
 
 		let parser_worker = ParserWorker::new(
 			parser.clone(),
-			Arc::new(ChannelPort::new(parser_cache_ch.clone_sender())),
+			Arc::from(parser_cache_ch.clone_sender()),
 			from_parser_ch.clone_sender(),
 		);
 		parser_worker.run(

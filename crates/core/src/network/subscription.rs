@@ -3,7 +3,7 @@ use crate::pipeline::pipes::*;
 use crate::pipeline::{PipeType, Pipeline};
 use crate::generated::nostr::fb;
 use crate::types::network::Request;
-use crate::port::Port;
+use crate::channel::MessageSender;
 use crate::nostr_error::NostrError;
 
 use rustc_hash::FxHashMap;
@@ -40,7 +40,7 @@ impl SubscriptionManager {
     pub async fn process_subscription(
         &self,
         subscription_id: &String,
-        to_cache: Arc<dyn Port>,
+        to_cache: Arc<dyn MessageSender>,
         _requests: Vec<Request>,
         config: &fb::SubscriptionConfig<'_>,
     ) -> Result<Pipeline> {
@@ -175,7 +175,7 @@ impl SubscriptionManager {
     fn build_pipeline(
         &self,
         pipeline_config: Option<fb::PipelineConfig<'_>>,
-        to_cache: Arc<dyn Port>,
+        to_cache: Arc<dyn MessageSender>,
         subscription_id: String,
     ) -> Result<Pipeline> {
         match pipeline_config {

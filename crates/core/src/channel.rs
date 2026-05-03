@@ -11,12 +11,12 @@ pub enum ChannelError {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub trait WorkerChannelSender: Send + Sync {
+pub trait MessageSender: Send + Sync {
 	fn send(&self, bytes: &[u8]) -> Result<(), ChannelError>;
 }
 
 #[cfg(target_arch = "wasm32")]
-pub trait WorkerChannelSender {
+pub trait MessageSender {
 	fn send(&self, bytes: &[u8]) -> Result<(), ChannelError>;
 }
 
@@ -25,7 +25,7 @@ pub trait WorkerChannelSender {
 pub trait WorkerChannel: Send {
 	async fn recv(&mut self) -> Result<Vec<u8>, ChannelError>;
 	async fn send(&self, bytes: &[u8]) -> Result<(), ChannelError>;
-	fn clone_sender(&self) -> Box<dyn WorkerChannelSender>;
+	fn clone_sender(&self) -> Box<dyn MessageSender>;
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -33,7 +33,7 @@ pub trait WorkerChannel: Send {
 pub trait WorkerChannel {
 	async fn recv(&mut self) -> Result<Vec<u8>, ChannelError>;
 	async fn send(&self, bytes: &[u8]) -> Result<(), ChannelError>;
-	fn clone_sender(&self) -> Box<dyn WorkerChannelSender>;
+	fn clone_sender(&self) -> Box<dyn MessageSender>;
 }
 
 // ============== Cross-platform Implementation ==============
@@ -60,7 +60,7 @@ impl FuturesWorkerChannel {
 	}
 }
 
-impl WorkerChannelSender for futures::channel::mpsc::UnboundedSender<Vec<u8>> {
+impl MessageSender for futures::channel::mpsc::UnboundedSender<Vec<u8>> {
 	fn send(&self, bytes: &[u8]) -> Result<(), ChannelError> {
 		self.unbounded_send(bytes.to_vec())
 			.map_err(|_| ChannelError::ChannelClosed)
@@ -84,7 +84,7 @@ impl WorkerChannel for FuturesWorkerChannel {
 			.map_err(|_| ChannelError::ChannelClosed)
 	}
 
-	fn clone_sender(&self) -> Box<dyn WorkerChannelSender> {
+	fn clone_sender(&self) -> Box<dyn MessageSender> {
 		Box::new(self.sender.clone())
 	}
 }
@@ -106,7 +106,7 @@ impl WorkerChannel for FuturesWorkerChannel {
 			.map_err(|_| ChannelError::ChannelClosed)
 	}
 
-	fn clone_sender(&self) -> Box<dyn WorkerChannelSender> {
+	fn clone_sender(&self) -> Box<dyn MessageSender> {
 		Box::new(self.sender.clone())
 	}
 }
@@ -138,7 +138,7 @@ impl TokioWorkerChannel {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-impl WorkerChannelSender for tokio::sync::mpsc::UnboundedSender<Vec<u8>> {
+impl MessageSender for tokio::sync::mpsc::UnboundedSender<Vec<u8>> {
 	fn send(&self, bytes: &[u8]) -> Result<(), ChannelError> {
 		self.send(bytes.to_vec())
 			.map_err(|_| ChannelError::ChannelClosed)
@@ -161,7 +161,7 @@ impl WorkerChannel for TokioWorkerChannel {
 			.map_err(|_| ChannelError::ChannelClosed)
 	}
 
-	fn clone_sender(&self) -> Box<dyn WorkerChannelSender> {
+	fn clone_sender(&self) -> Box<dyn MessageSender> {
 		Box::new(self.sender.clone())
 	}
 }
@@ -208,12 +208,12 @@ impl WasmWorkerChannel {
 }
 
 #[cfg(target_arch = "wasm32")]
-struct WasmWorkerChannelSender {
+struct WasmMessageSender {
 	port: web_sys::MessagePort,
 }
 
 #[cfg(target_arch = "wasm32")]
-impl WorkerChannelSender for WasmWorkerChannelSender {
+impl MessageSender for WasmMessageSender {
 	fn send(&self, bytes: &[u8]) -> Result<(), ChannelError> {
 		let buffer = js_sys::ArrayBuffer::new(bytes.len() as u32);
 		let array = js_sys::Uint8Array::new(&buffer);
@@ -252,31 +252,12 @@ impl WorkerChannel for WasmWorkerChannel {
 			.map_err(|e| ChannelError::SendFailed(format!("{:?}", e)))
 	}
 
-	fn clone_sender(&self) -> Box<dyn WorkerChannelSender> {
-		Box::new(WasmWorkerChannelSender {
+	fn clone_sender(&self) -> Box<dyn MessageSender> {
+		Box::new(WasmMessageSender {
 			port: self.port.clone(),
 		})
 	}
 }
-
-// ============== Port Adapter ==============
-
-pub struct ChannelPort {
-	sender: Box<dyn WorkerChannelSender>,
-}
-
-impl ChannelPort {
-	pub fn new(sender: Box<dyn WorkerChannelSender>) -> Self {
-		Self { sender }
-	}
-}
-
-impl crate::port::Port for ChannelPort {
-	fn send(&self, bytes: &[u8]) -> Result<(), String> {
-		self.sender.send(bytes).map_err(|e| e.to_string())
-	}
-}
-
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {

@@ -1,4 +1,4 @@
-	use crate::channel::{WorkerChannel, WorkerChannelSender};
+	use crate::channel::{WorkerChannel, MessageSender};
 	use crate::generated::nostr::fb;
 	use crate::spawn::spawn_worker;
 	use crate::traits::RelayTransport;
@@ -28,12 +28,12 @@ use futures::{SinkExt, StreamExt};
 		pub fn run(
 			self,
 			mut from_parser: Box<dyn WorkerChannel>,
-			to_parser: Box<dyn WorkerChannelSender>,
+			to_parser: Box<dyn MessageSender>,
 			mut from_cache: Box<dyn WorkerChannel>,
 			mut from_crypto: Box<dyn WorkerChannel>,
-			to_crypto: Box<dyn WorkerChannelSender>,
+			to_crypto: Box<dyn MessageSender>,
 		) {
-			// Bridge multiple callback clones into the single WorkerChannelSender
+			// Bridge multiple callback clones into the single MessageSender
 			let (parser_tx, mut parser_rx) = futures::channel::mpsc::unbounded::<Vec<u8>>();
 			spawn_worker(async move {
 				while let Some(bytes) = parser_rx.next().await {

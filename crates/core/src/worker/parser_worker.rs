@@ -1,9 +1,8 @@
-use crate::channel::WorkerChannel;
+use crate::channel::{MessageSender, WorkerChannel};
 use crate::generated::nostr::fb;
 use crate::network::{publish::PublishManager, subscription::SubscriptionManager};
 use crate::parser::Parser;
 use crate::pipeline::Pipeline;
-use crate::port::Port;
 use crate::spawn::spawn_worker;
 use crate::types::{network::Request, nostr::Template};
 use crate::nostr_error::{NostrError, NostrResult};
@@ -15,8 +14,6 @@ use rustc_hash::FxHashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
 use tracing::{info, info_span, warn, Span};
-
-use crate::channel::WorkerChannelSender;
 
 // Tunables
 const MAX_INFLIGHT: usize = 24;
@@ -46,8 +43,8 @@ type DispatchTask = (usize, ShardTask);
 
 pub struct ParserWorker {
     parser: Arc<Parser>,
-    to_cache: Arc<dyn Port>,
-    to_main: Box<dyn WorkerChannelSender>,
+    to_cache: Arc<dyn MessageSender>,
+    to_main: Box<dyn MessageSender>,
     publish_manager: PublishManager,
     subscription_manager: SubscriptionManager,
     subscriptions: Arc<RwLock<FxHashMap<String, Sub>>>,
@@ -57,8 +54,8 @@ pub struct ParserWorker {
 impl ParserWorker {
     pub fn new(
         parser: Arc<Parser>,
-        to_cache: Arc<dyn Port>,
-        to_main: Box<dyn WorkerChannelSender>,
+        to_cache: Arc<dyn MessageSender>,
+        to_main: Box<dyn MessageSender>,
     ) -> Self {
         let publish_manager = PublishManager::new(parser.clone());
         let subscription_manager = SubscriptionManager::new(parser.clone());
@@ -1018,7 +1015,7 @@ fn serialize_eoce() -> Vec<u8> {
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
-    use crate::channel::{ChannelPort, FuturesWorkerChannel, TokioWorkerChannel};
+    use crate::channel::{ChannelError, FuturesWorkerChannel, TokioWorkerChannel};
     use crate::parser::Parser;
 
     // Helper: Build a Subscribe MainMessage
@@ -1118,19 +1115,19 @@ mod tests {
             self.sender.send(bytes.to_vec()).map_err(|_| crate::channel::ChannelError::ChannelClosed)
         }
 
-        fn clone_sender(&self) -> Box<dyn crate::channel::WorkerChannelSender> {
+        fn clone_sender(&self) -> Box<dyn crate::channel::MessageSender> {
             Box::new(self.sender.clone())
         }
     }
 
-    // CapturePort is a Port implementation that captures sent messages
-    struct CapturePort {
-        inner: Arc<dyn Port>,
+    // CaptureMessageSender is a MessageSender implementation that captures sent messages
+    struct CaptureMessageSender {
+        inner: Arc<dyn MessageSender>,
         capture: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
     }
 
-    impl Port for CapturePort {
-        fn send(&self, bytes: &[u8]) -> Result<(), String> {
+    impl MessageSender for CaptureMessageSender {
+        fn send(&self, bytes: &[u8]) -> Result<(), ChannelError> {
             let _ = self.capture.send(bytes.to_vec());
             self.inner.send(bytes)
         }
@@ -1145,8 +1142,8 @@ mod tests {
             
             let (cache_capture_tx, mut cache_capture_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
             
-            let capture_port: Arc<dyn Port> = Arc::new(CapturePort {
-                inner: Arc::new(ChannelPort::new(to_cache_a.clone_sender())),
+            let capture_port: Arc<dyn MessageSender> = Arc::new(CaptureMessageSender {
+                inner: Arc::from(to_cache_a.clone_sender()),
                 capture: cache_capture_tx,
             });
 
@@ -1221,8 +1218,8 @@ mod tests {
             
             let (cache_capture_tx, mut cache_capture_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
             
-            let capture_port: Arc<dyn Port> = Arc::new(CapturePort {
-                inner: Arc::new(ChannelPort::new(to_cache_a.clone_sender())),
+            let capture_port: Arc<dyn MessageSender> = Arc::new(CaptureMessageSender {
+                inner: Arc::from(to_cache_a.clone_sender()),
                 capture: cache_capture_tx,
             });
 
@@ -1300,8 +1297,8 @@ mod tests {
             
             let (cache_capture_tx, mut cache_capture_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
             
-            let capture_port: Arc<dyn Port> = Arc::new(CapturePort {
-                inner: Arc::new(ChannelPort::new(to_cache_a.clone_sender())),
+            let capture_port: Arc<dyn MessageSender> = Arc::new(CaptureMessageSender {
+                inner: Arc::from(to_cache_a.clone_sender()),
                 capture: cache_capture_tx,
             });
 
@@ -1375,8 +1372,8 @@ mod tests {
             
             let (cache_capture_tx, mut cache_capture_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
             
-            let capture_port: Arc<dyn Port> = Arc::new(CapturePort {
-                inner: Arc::new(ChannelPort::new(to_cache_a.clone_sender())),
+            let capture_port: Arc<dyn MessageSender> = Arc::new(CaptureMessageSender {
+                inner: Arc::from(to_cache_a.clone_sender()),
                 capture: cache_capture_tx,
             });
 
@@ -1442,8 +1439,8 @@ mod tests {
             
             let (cache_capture_tx, mut cache_capture_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
             
-            let capture_port: Arc<dyn Port> = Arc::new(CapturePort {
-                inner: Arc::new(ChannelPort::new(to_cache_a.clone_sender())),
+            let capture_port: Arc<dyn MessageSender> = Arc::new(CaptureMessageSender {
+                inner: Arc::from(to_cache_a.clone_sender()),
                 capture: cache_capture_tx,
             });
 

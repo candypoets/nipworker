@@ -4,7 +4,7 @@ use crate::parser_utils::json::extract_event_id;
 use crate::nostr_error::NostrError;
 use crate::generated::nostr::fb::{self};
 use crate::types::Event;
-use crate::port::Port;
+use crate::channel::MessageSender;
 
 type Result<T> = std::result::Result<T, NostrError>;
 
@@ -245,7 +245,7 @@ impl Pipeline {
     /// Create default pipeline: parsing + save to db + serialize events
     pub fn default(
         parser: Arc<Parser>,
-        to_cache: Arc<dyn Port>,
+        to_cache: Arc<dyn MessageSender>,
         subscription_id: String,
     ) -> Result<Self> {
         Self::new(

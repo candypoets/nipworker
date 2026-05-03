@@ -1,5 +1,5 @@
 use nipworker_core::{
-	channel::{ChannelPort, WasmWorkerChannel, WorkerChannel},
+	channel::{MessageSender, WasmWorkerChannel, WorkerChannel},
 	crypto_client::CryptoClient,
 	parser::Parser,
 	worker::parser_worker::ParserWorker,
@@ -49,7 +49,7 @@ pub fn start_worker(
 	let from_connections = Box::new(WasmWorkerChannel::new(connections_port));
 
 	let cache_ch = WasmWorkerChannel::new(cache_port);
-	let to_cache = Arc::new(ChannelPort::new(cache_ch.clone_sender()));
+	let to_cache: Arc<dyn MessageSender> = Arc::from(cache_ch.clone_sender());
 	let from_cache = Box::new(cache_ch);
 
 	let crypto_client = CryptoClient::new(Box::new(WasmWorkerChannel::new(crypto_port)));

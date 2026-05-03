@@ -1,4 +1,4 @@
-use crate::channel::{WorkerChannel, WorkerChannelSender};
+use crate::channel::{WorkerChannel, MessageSender};
 use crate::generated::nostr::fb;
 use crate::spawn::spawn_worker;
 use crate::traits::{Signer, SignerError};
@@ -12,7 +12,7 @@ use tracing::{info, warn};
 /// Implements [`Signer`] by sending [`SignerRequest`] FlatBuffers over a
 /// [`WorkerChannel`] and awaiting [`SignerResponse`] replies.
 pub struct CryptoClient {
-    sender: Box<dyn WorkerChannelSender>,
+    sender: Box<dyn MessageSender>,
     pending: Arc<Mutex<FxHashMap<u64, oneshot::Sender<Result<String, String>>>>>,
     next_request_id: AtomicU64,
 }

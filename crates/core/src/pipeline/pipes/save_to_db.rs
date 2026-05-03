@@ -1,16 +1,16 @@
 use super::super::*;
 use flatbuffers::FlatBufferBuilder;
-use crate::{generated::nostr::fb, port::Port};
+use crate::{generated::nostr::fb, channel::MessageSender};
 use std::sync::Arc;
 use tracing::warn;
 
 pub struct SaveToDbPipe {
-    to_cache: Arc<dyn Port>,
+    to_cache: Arc<dyn MessageSender>,
     name: String,
 }
 
 impl SaveToDbPipe {
-    pub fn new(to_cache: Arc<dyn Port>) -> Self {
+    pub fn new(to_cache: Arc<dyn MessageSender>) -> Self {
         Self {
             name: "SaveToDb".to_string(),
             to_cache,

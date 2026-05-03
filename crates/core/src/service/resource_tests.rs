@@ -5,7 +5,7 @@ use tokio::task::LocalSet;
 use tokio::time::timeout;
 use std::future::Future;
 
-use crate::channel::{ChannelPort, TokioWorkerChannel, WorkerChannel};
+use crate::channel::{MessageSender, TokioWorkerChannel, WorkerChannel};
 use crate::crypto_client::CryptoClient;
 use crate::generated::nostr::fb;
 use crate::parser::Parser;
@@ -120,7 +120,7 @@ async fn test_seen_ids_deduplication_bounded() {
         .run_until(async {
             // Create a pipeline with dedup_max_size = 10000
             let parser = Arc::new(Parser::new(None));
-            let to_cache = Arc::new(ChannelPort::new(TokioWorkerChannel::new_pair().0.clone_sender()));
+            let to_cache: Arc<dyn MessageSender> = Arc::from(TokioWorkerChannel::new_pair().0.clone_sender());
             
             let pipeline = Pipeline::default(
                 parser,

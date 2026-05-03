@@ -1,4 +1,4 @@
-use crate::channel::{WorkerChannel, WorkerChannelSender};
+use crate::channel::{ChannelError, MessageSender, WorkerChannel};
 #[cfg(feature = "crypto")]
 use crate::crypto::signers::PrivateKeySigner;
 #[cfg(all(feature = "crypto", target_arch = "wasm32"))]
@@ -6,7 +6,6 @@ use crate::crypto::signers::Nip07Signer;
 #[cfg(feature = "crypto")]
 use crate::crypto::signers::nip46::{Nip46Config, Nip46Signer};
 use crate::generated::nostr::fb;
-use crate::port::Port;
 use crate::spawn::spawn_worker;
 use crate::traits::Signer;
 use crate::types::nostr::Template;
@@ -15,18 +14,15 @@ use std::sync::Arc;
 use tracing::{info, warn};
 
 // ---------------------------------------------------------------------------
-// SharedPort: bridges a WorkerChannelSender to the Port trait so NIP-46
-// transport can send frames into the connections worker.
+// SharedMessageSender lets NIP-46 hold a cloneable sender behind Rc<RefCell<_>>.
 // ---------------------------------------------------------------------------
-struct SharedPort {
-	sender: Arc<Box<dyn WorkerChannelSender>>,
+struct SharedMessageSender {
+	sender: Arc<Box<dyn MessageSender>>,
 }
 
-impl Port for SharedPort {
-	fn send(&self, bytes: &[u8]) -> Result<(), String> {
-		self.sender
-			.send(bytes)
-			.map_err(|e| e.to_string())
+impl MessageSender for SharedMessageSender {
+	fn send(&self, bytes: &[u8]) -> Result<(), ChannelError> {
+		self.sender.send(bytes)
 	}
 }
 
@@ -374,9 +370,9 @@ impl CryptoWorker {
 		mut from_engine: Box<dyn WorkerChannel>,
 		mut from_parser: Box<dyn WorkerChannel>,
 		mut from_connections: Box<dyn WorkerChannel>,
-		to_main: Box<dyn WorkerChannelSender>,
-		to_parser: Box<dyn WorkerChannelSender>,
-		to_connections: Box<dyn WorkerChannelSender>,
+		to_main: Box<dyn MessageSender>,
+		to_parser: Box<dyn MessageSender>,
+		to_connections: Box<dyn MessageSender>,
 	) {
 		let to_connections_arc =
 			Arc::new(to_connections);
@@ -467,7 +463,7 @@ impl CryptoWorker {
 													let (tx, rx) = mpsc::channel::<Vec<u8>>(256);
 													*nip46_tx_engine.borrow_mut() = Some(tx);
 
-													let port = SharedPort {
+													let port = SharedMessageSender {
 														sender: to_connections_arc_engine.clone(),
 													};
 													let nip46 = std::rc::Rc::new(Nip46Signer::new(
@@ -538,7 +534,7 @@ impl CryptoWorker {
 													let (tx, rx) = mpsc::channel::<Vec<u8>>(256);
 													*nip46_tx_engine.borrow_mut() = Some(tx);
 
-													let port = SharedPort {
+													let port = SharedMessageSender {
 														sender: to_connections_arc_engine.clone(),
 													};
 													let nip46 = std::rc::Rc::new(Nip46Signer::new(

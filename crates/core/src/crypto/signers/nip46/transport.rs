@@ -1,7 +1,7 @@
 use k256::schnorr::SigningKey;
 use serde_json::json;
 use crate::types::{Event, EventId, Keys, UnsignedEvent};
-use crate::port::Port;
+use crate::channel::MessageSender;
 use crate::crypto::nostr_crypto::compute_event_id;
 use signature::hazmat::PrehashSigner;
 use std::cell::RefCell;
@@ -9,7 +9,7 @@ use std::rc::Rc;
 use tracing::error;
 
 pub struct Transport {
-    to_connections: Rc<RefCell<dyn Port>>,
+    to_connections: Rc<RefCell<dyn MessageSender>>,
     relays: Vec<String>,
     app_name: Option<String>,
     client_keys: Keys,
@@ -18,7 +18,7 @@ pub struct Transport {
 
 impl Transport {
     pub fn new(
-        to_connections: Rc<RefCell<dyn Port>>,
+        to_connections: Rc<RefCell<dyn MessageSender>>,
         relays: Vec<String>,
         app_name: Option<String>,
         client_keys: Keys,

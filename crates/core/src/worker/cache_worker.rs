@@ -1,4 +1,4 @@
-use crate::channel::{WorkerChannel, WorkerChannelSender};
+use crate::channel::{WorkerChannel, MessageSender};
 use crate::generated::nostr::fb;
 use crate::spawn::spawn_worker;
 use crate::traits::Storage;
@@ -25,8 +25,8 @@ impl CacheWorker {
 	pub fn run(
 		self,
 		mut from_parser: Box<dyn WorkerChannel>,
-		to_parser: Box<dyn WorkerChannelSender>,
-		to_connections: Box<dyn WorkerChannelSender>,
+		to_parser: Box<dyn MessageSender>,
+		to_connections: Box<dyn MessageSender>,
 	) {
 		spawn_worker(async move {
 			info!("[CacheWorker] started");

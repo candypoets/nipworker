@@ -1,6 +1,6 @@
 use serde_json::{json, Value};
 use crate::types::Keys;
-use crate::port::Port;
+use crate::channel::MessageSender;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -40,7 +40,7 @@ pub struct Nip46Signer {
 impl Nip46Signer {
     pub fn new(
         cfg: Nip46Config,
-        to_connections: Rc<RefCell<dyn Port>>,
+        to_connections: Rc<RefCell<dyn MessageSender>>,
         from_connections_rx: mpsc::Receiver<Vec<u8>>,
         client_keys: Option<Keys>,
     ) -> Self {

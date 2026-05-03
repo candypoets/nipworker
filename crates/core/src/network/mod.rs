@@ -14,18 +14,18 @@ use crate::network::subscription::SubscriptionManager;
 use crate::nostr_error::{NostrError, NostrResult};
 use crate::parser::Parser;
 use crate::pipeline::Pipeline;
-use crate::port::Port;
+use crate::channel::{ChannelError, MessageSender};
 use crate::traits::{RelayTransport, Storage};
 use crate::types::network::Request;
 use crate::types::nostr::Template;
 use crate::types::Event;
 
-/// Dummy port stub for cache persistence in the default pipeline.
+/// Dummy sender stub for cache persistence in the default pipeline.
 /// In a full implementation this would bridge to `Arc<dyn Storage>`.
-struct DummyPort;
+struct DummyMessageSender;
 
-impl Port for DummyPort {
-	fn send(&self, _bytes: &[u8]) -> Result<(), String> {
+impl MessageSender for DummyMessageSender {
+	fn send(&self, _bytes: &[u8]) -> Result<(), ChannelError> {
 		Ok(())
 	}
 }
@@ -78,7 +78,7 @@ impl NetworkManager {
 			return Ok(());
 		}
 
-		let to_cache: Arc<dyn Port> = Arc::new(DummyPort);
+		let to_cache: Arc<dyn MessageSender> = Arc::new(DummyMessageSender);
 		let subscription_manager =
 			SubscriptionManager::new(self.inner.parser.clone());
 		let pipeline = subscription_manager
@@ -107,7 +107,7 @@ impl NetworkManager {
 			return Ok(());
 		}
 
-		let to_cache: Arc<dyn Port> = Arc::new(DummyPort);
+		let to_cache: Arc<dyn MessageSender> = Arc::new(DummyMessageSender);
 		let pipeline = Pipeline::default(
 			self.inner.parser.clone(),
 			to_cache,
