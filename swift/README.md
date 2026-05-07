@@ -384,7 +384,7 @@ The suite includes:
 
 - **Swift 6 language mode warnings** — The package compiles and runs correctly, but produces a handful of concurrency warnings (e.g., accessing `handle`/`boxPtr` in the actor initializer). These are non-blocking.
 - **FlatBuffers Object API** — Unavailable due to a `flatc` code-generation bug (`ParsedDataUnion` enum/struct name collision). All serialization uses the low-level builder API.
-- **macOS link warnings** — Rust object files are built against a newer macOS SDK version than the deployment target. This is harmless.
+- **Native deployment target warnings** — Rebuild `NipworkerNativeFFI.xcframework` with `crates/native-ffi/ios/build-ios.sh`. The script passes explicit iOS and macOS minimum-version linker flags to Rust so the compiled static libraries match the Swift package deployment targets.
 
 ## License
 

@@ -3,9 +3,10 @@
 ## Prerequisites
 
 - macOS with Xcode 15+
-- Rust toolchain with iOS targets:
+- Rust toolchain with Apple targets:
   ```bash
-  rustup target add aarch64-apple-ios x86_64-apple-ios aarch64-apple-ios-sim
+  rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
+  rustup target add aarch64-apple-darwin x86_64-apple-darwin
   ```
 
 ## Build
@@ -17,9 +18,13 @@ From this directory, run the build script:
 ```
 
 This script:
-1. Builds `libnipworker_native_ffi.a` for device (arm64) and simulator (arm64 + x86_64)
-2. Creates a universal fat binary with `lipo`
+1. Builds `libnipworker_native_ffi.a` for iOS device, iOS simulator, and macOS
+2. Creates universal simulator and macOS binaries with `lipo`
 3. Creates `NipworkerNativeFFI.xcframework`
+
+By default, the script builds with `IPHONEOS_DEPLOYMENT_TARGET=14.0` and
+`MACOSX_DEPLOYMENT_TARGET=11.0`. Override either environment variable before
+running the script if the consuming package raises its minimum supported OS.
 
 ## CocoaPods integration
 
