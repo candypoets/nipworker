@@ -5,7 +5,7 @@ use crate::traits::Storage;
 use crate::types::network::Request;
 use serde_json::{json, Map, Value};
 use std::sync::Arc;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 const DEFAULT_RELAYS: &[&str] = &[
 	"wss://relay.snort.social",
@@ -110,20 +110,76 @@ impl CacheWorker {
 						let fb_req = reqs.get(i);
 						let request = Request::from_flatbuffer(&fb_req);
 
+						info!(
+							"[CacheWorker] sub_id={} req={}/{} authors={:?} kinds={:?} cache_first={} no_cache={} cache_only={} max_relays={}",
+							sub_id,
+							i,
+							reqs.len(),
+							request.authors,
+							request.kinds,
+							request.cache_first,
+							request.no_cache,
+							request.cache_only,
+							request.max_relays
+						);
+
 						if request.no_cache {
+							info!("[CacheWorker] sub_id={} req={}/{} no_cache=true -> skipping storage lookup", sub_id, i, reqs.len());
 							continue;
 						}
 
 						let filter = match request.to_filter() {
 							Ok(f) => f,
 							Err(e) => {
-								warn!("[CacheWorker] failed to convert request to filter: {}", e);
+								warn!("[CacheWorker] sub_id={} req={}/{} failed to convert request to filter: {}", sub_id, i, reqs.len(), e);
 								continue;
 							}
 						};
 
 						match self._storage.query(vec![filter]).await {
 							Ok(events) => {
+								let skip_network = (request.cache_first && !events.is_empty()) || request.cache_only;
+								info!(
+									"[CacheWorker] sub_id={} req={}/{} cached_results={} skip_network={} cache_first={} cache_only={}",
+									sub_id,
+									i,
+									reqs.len(),
+									events.len(),
+									skip_network,
+									request.cache_first,
+									request.cache_only
+								);
+
+								for ev in &events {
+									if let Ok(wm) = flatbuffers::root::<fb::WorkerMessage>(ev) {
+										match wm.content_type() {
+											fb::Message::ParsedEvent => {
+												if let Some(p) = wm.content_as_parsed_event() {
+													debug!(
+														"[CacheWorker] sub_id={} cached_event kind={} pubkey={} id={}",
+														sub_id,
+														p.kind(),
+														p.pubkey(),
+														p.id()
+													);
+												}
+											}
+											fb::Message::NostrEvent => {
+												if let Some(n) = wm.content_as_nostr_event() {
+													debug!(
+														"[CacheWorker] sub_id={} cached_event kind={} pubkey={} id={}",
+														sub_id,
+														n.kind(),
+														n.pubkey(),
+														n.id()
+													);
+												}
+											}
+											_ => {}
+										}
+									}
+								}
+
 								if request.cache_first && !events.is_empty() {
 									skip_req_indices.insert(i);
 								}
@@ -132,7 +188,7 @@ impl CacheWorker {
 								}
 								all_cached_events.extend(events);
 							}
-							Err(e) => warn!("[CacheWorker] query failed: {}", e),
+							Err(e) => warn!("[CacheWorker] sub_id={} req={}/{} query failed: {}", sub_id, i, reqs.len(), e),
 						}
 					}
 

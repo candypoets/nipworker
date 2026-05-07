@@ -1,11 +1,11 @@
 use crate::channel::{MessageSender, WorkerChannel};
 use crate::generated::nostr::fb;
 use crate::network::{publish::PublishManager, subscription::SubscriptionManager};
+use crate::nostr_error::{NostrError, NostrResult};
 use crate::parser::Parser;
 use crate::pipeline::Pipeline;
 use crate::spawn::spawn_worker;
 use crate::types::{network::Request, nostr::Template};
-use crate::nostr_error::{NostrError, NostrResult};
 use flatbuffers::FlatBufferBuilder;
 use futures::channel::mpsc;
 use futures::lock::Mutex;
@@ -42,7 +42,6 @@ type ShardTask = (String, Arc<Vec<u8>>, ShardSource, Span);
 type DispatchTask = (usize, ShardTask);
 
 pub struct ParserWorker {
-    parser: Arc<Parser>,
     to_cache: Arc<dyn MessageSender>,
     to_main: Box<dyn MessageSender>,
     publish_manager: PublishManager,
@@ -60,7 +59,6 @@ impl ParserWorker {
         let publish_manager = PublishManager::new(parser.clone());
         let subscription_manager = SubscriptionManager::new(parser.clone());
         Self {
-            parser,
             to_cache,
             to_main,
             publish_manager,
@@ -96,12 +94,16 @@ impl ParserWorker {
                                 let sub_id = sub.subscription_id;
                                 let requests = sub.requests;
                                 let config = *sub.config;
-                                if let Err(e) = this_cmd.open_subscription(sub_id, requests, config).await {
+                                if let Err(e) =
+                                    this_cmd.open_subscription(sub_id, requests, config).await
+                                {
                                     warn!("open_subscription failed: {:?}", e);
                                 }
                             }
                             fb::MainContentT::Unsubscribe(unsub) => {
-                                if let Err(e) = this_cmd.close_subscription(unsub.subscription_id).await {
+                                if let Err(e) =
+                                    this_cmd.close_subscription(unsub.subscription_id).await
+                                {
                                     warn!("close_subscription failed: {:?}", e);
                                 }
                             }
@@ -110,7 +112,10 @@ impl ParserWorker {
                                 let template = template_from_t(&pub_msg.template);
                                 let relays = pub_msg.relays;
                                 let optimistic = pub_msg.optimistic_subids.unwrap_or_default();
-                                if let Err(e) = this_cmd.publish_event(publish_id, &template, &relays, optimistic).await {
+                                if let Err(e) = this_cmd
+                                    .publish_event(publish_id, &template, &relays, optimistic)
+                                    .await
+                                {
                                     warn!("publish_event failed: {:?}", e);
                                 }
                             }
@@ -256,11 +261,13 @@ impl ParserWorker {
 
                                     if let Some(idx) = forced {
                                         let clamped = idx.min(NUM_SHARDS - 1);
-                                        let slow_start = NUM_SHARDS.saturating_sub(SLOW_SHARDS.max(1));
+                                        let slow_start =
+                                            NUM_SHARDS.saturating_sub(SLOW_SHARDS.max(1));
                                         (clamped, clamped >= slow_start)
                                     } else {
                                         use std::hash::{Hash, Hasher};
-                                        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                                        let mut hasher =
+                                            std::collections::hash_map::DefaultHasher::new();
                                         sid.hash(&mut hasher);
                                         let fast_count = NUM_SHARDS.saturating_sub(SLOW_SHARDS);
                                         let shard = if fast_count > 0 {
@@ -320,11 +327,13 @@ impl ParserWorker {
 
                                     if let Some(idx) = forced {
                                         let clamped = idx.min(NUM_SHARDS - 1);
-                                        let slow_start = NUM_SHARDS.saturating_sub(SLOW_SHARDS.max(1));
+                                        let slow_start =
+                                            NUM_SHARDS.saturating_sub(SLOW_SHARDS.max(1));
                                         (clamped, clamped >= slow_start)
                                     } else {
                                         use std::hash::{Hash, Hasher};
-                                        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                                        let mut hasher =
+                                            std::collections::hash_map::DefaultHasher::new();
                                         sid.hash(&mut hasher);
                                         let fast_count = NUM_SHARDS.saturating_sub(SLOW_SHARDS);
                                         let shard = if fast_count > 0 {
@@ -393,10 +402,7 @@ impl ParserWorker {
         });
     }
 
-    async fn handle_message_batch(
-        &self,
-        messages: Vec<(String, Arc<Vec<u8>>, Span)>,
-    ) {
+    async fn handle_message_batch(&self, messages: Vec<(String, Arc<Vec<u8>>, Span)>) {
         for (sid, fb_bytes_arc, span) in messages {
             let _guard = span.enter();
             self.handle_message_single(sid, fb_bytes_arc).await;
@@ -608,7 +614,8 @@ impl ParserWorker {
         let mut config_builder = FlatBufferBuilder::new();
         let config_offset = config.pack(&mut config_builder);
         config_builder.finish(config_offset, None);
-        let config_fb = flatbuffers::root::<fb::SubscriptionConfig>(config_builder.finished_data()).unwrap();
+        let config_fb =
+            flatbuffers::root::<fb::SubscriptionConfig>(config_builder.finished_data()).unwrap();
 
         let pipeline = self
             .subscription_manager
@@ -671,10 +678,7 @@ impl ParserWorker {
         {
             let mut builder = FlatBufferBuilder::new();
             let sid = builder.create_string(&subscription_id);
-            let req_offsets: Vec<_> = requests
-                .iter()
-                .map(|r| r.pack(&mut builder))
-                .collect();
+            let req_offsets: Vec<_> = requests.iter().map(|r| r.pack(&mut builder)).collect();
             let req_vec = if req_offsets.is_empty() {
                 None
             } else {
@@ -708,15 +712,12 @@ impl ParserWorker {
         Ok(())
     }
 
-    async fn inject_optimistic_event(
-        &self,
-        sub_id: &str,
-        event_json: &str,
-    ) -> NostrResult<()> {
+    async fn inject_optimistic_event(&self, sub_id: &str, event_json: &str) -> NostrResult<()> {
         let pipelines: Vec<(String, Arc<Mutex<Pipeline>>)> = {
-            let guard = self.subscriptions.read().map_err(|_| {
-                NostrError::Other("Subscriptions lock poisoned".into())
-            })?;
+            let guard = self
+                .subscriptions
+                .read()
+                .map_err(|_| NostrError::Other("Subscriptions lock poisoned".into()))?;
             guard
                 .iter()
                 .filter(|(key, _)| key.contains(sub_id))
@@ -748,10 +749,7 @@ impl ParserWorker {
                     any_success = true;
                 }
                 Err(e) => {
-                    warn!(
-                        "Optimistic event failed for sub {}: {}",
-                        actual_sub_id, e
-                    );
+                    warn!("Optimistic event failed for sub {}: {}", actual_sub_id, e);
                 }
             }
         }
@@ -927,7 +925,13 @@ fn request_from_t(rt: &fb::RequestT) -> Request {
     Request {
         ids: rt.ids.clone().unwrap_or_default(),
         authors: rt.authors.clone().unwrap_or_default(),
-        kinds: rt.kinds.clone().unwrap_or_default().into_iter().map(|k| k as i32).collect(),
+        kinds: rt
+            .kinds
+            .clone()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|k| k as i32)
+            .collect(),
         tags: {
             let mut map = FxHashMap::default();
             if let Some(ref tags) = rt.tags {
@@ -1108,11 +1112,19 @@ mod tests {
     impl WorkerChannel for MockWorkerChannel {
         async fn recv(&mut self) -> std::result::Result<Vec<u8>, crate::channel::ChannelError> {
             let mut guard = self.receiver.lock().await;
-            guard.recv().await.ok_or(crate::channel::ChannelError::ChannelClosed)
+            guard
+                .recv()
+                .await
+                .ok_or(crate::channel::ChannelError::ChannelClosed)
         }
 
-        async fn send(&self, bytes: &[u8]) -> std::result::Result<(), crate::channel::ChannelError> {
-            self.sender.send(bytes.to_vec()).map_err(|_| crate::channel::ChannelError::ChannelClosed)
+        async fn send(
+            &self,
+            bytes: &[u8],
+        ) -> std::result::Result<(), crate::channel::ChannelError> {
+            self.sender
+                .send(bytes.to_vec())
+                .map_err(|_| crate::channel::ChannelError::ChannelClosed)
         }
 
         fn clone_sender(&self) -> Box<dyn crate::channel::MessageSender> {
@@ -1136,77 +1148,91 @@ mod tests {
     #[tokio::test]
     async fn test_eose_from_multiple_relays() {
         let local = tokio::task::LocalSet::new();
-        local.run_until(async {
-            let (mut to_main_ch, from_parser_ch) = FuturesWorkerChannel::new_pair();
-            let (to_cache_a, _to_cache_b) = TokioWorkerChannel::new_pair();
-            
-            let (cache_capture_tx, mut cache_capture_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
-            
-            let capture_port: Arc<dyn MessageSender> = Arc::new(CaptureMessageSender {
-                inner: Arc::from(to_cache_a.clone_sender()),
-                capture: cache_capture_tx,
-            });
+        local
+            .run_until(async {
+                let (mut to_main_ch, from_parser_ch) = FuturesWorkerChannel::new_pair();
+                let (to_cache_a, _to_cache_b) = TokioWorkerChannel::new_pair();
 
-            let parser = Arc::new(Parser::new(None));
-            let worker = ParserWorker::new(parser, capture_port, from_parser_ch.clone_sender());
+                let (cache_capture_tx, mut cache_capture_rx) =
+                    tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
 
-            let (from_engine_tx, from_engine_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
-            let from_engine = Box::new(MockWorkerChannel {
-                sender: from_engine_tx.clone(),
-                receiver: Arc::new(Mutex::new(from_engine_rx)),
-            });
+                let capture_port: Arc<dyn MessageSender> = Arc::new(CaptureMessageSender {
+                    inner: Arc::from(to_cache_a.clone_sender()),
+                    capture: cache_capture_tx,
+                });
 
-            let (conn_tx, conn_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
-            let from_connections = Box::new(MockWorkerChannel {
-                sender: conn_tx.clone(),
-                receiver: Arc::new(Mutex::new(conn_rx)),
-            });
+                let parser = Arc::new(Parser::new(None));
+                let worker = ParserWorker::new(parser, capture_port, from_parser_ch.clone_sender());
 
-            let (cache_tx, cache_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
-            let from_cache = Box::new(MockWorkerChannel {
-                sender: cache_tx,
-                receiver: Arc::new(Mutex::new(cache_rx)),
-            });
+                let (from_engine_tx, from_engine_rx) =
+                    tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+                let from_engine = Box::new(MockWorkerChannel {
+                    sender: from_engine_tx.clone(),
+                    receiver: Arc::new(Mutex::new(from_engine_rx)),
+                });
 
-            tokio::task::spawn_local(async move {
-                worker.run(from_engine, from_connections, from_cache);
-            });
+                let (conn_tx, conn_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+                let from_connections = Box::new(MockWorkerChannel {
+                    sender: conn_tx.clone(),
+                    receiver: Arc::new(Mutex::new(conn_rx)),
+                });
 
-            // Create subscription
-            let sub_msg = build_subscribe_message("multi_eose_sub", vec![]);
-            from_engine_tx.send(sub_msg).unwrap();
-            let _ = cache_capture_rx.recv().await.expect("cache capture channel closed");
+                let (cache_tx, cache_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+                let from_cache = Box::new(MockWorkerChannel {
+                    sender: cache_tx,
+                    receiver: Arc::new(Mutex::new(cache_rx)),
+                });
 
-            // Send EOSE from 3 different relays
-            let relays = ["wss://r1", "wss://r2", "wss://r3"];
-            for relay in &relays {
-                let eose_msg = build_eose_worker_message("multi_eose_sub", relay);
-                conn_tx.send(eose_msg).unwrap();
-            }
+                tokio::task::spawn_local(async move {
+                    worker.run(from_engine, from_connections, from_cache);
+                });
 
-            // Collect all 3 EOSE status messages with timeout
-            let mut received_relays = vec![];
-            for _ in 0..3 {
-                let result = tokio::time::timeout(
-                    tokio::time::Duration::from_secs(2),
-                    to_main_ch.recv()
-                ).await;
-                let bytes = result.expect("Timeout waiting for EOSE message").expect("to_main channel closed");
-                let (sub_id, data) = decode_tagged(&bytes).expect("decode failed");
-                assert_eq!(sub_id, "multi_eose_sub");
-                let wm = flatbuffers::root::<fb::WorkerMessage>(&data).unwrap();
-                assert_eq!(wm.type_(), fb::MessageType::ConnectionStatus);
-                let cs = wm.content_as_connection_status().unwrap();
-                assert_eq!(cs.status(), "EOSE");
-                received_relays.push(cs.relay_url().to_string());
-            }
+                // Create subscription
+                let sub_msg = build_subscribe_message("multi_eose_sub", vec![]);
+                from_engine_tx.send(sub_msg).unwrap();
+                let _ = cache_capture_rx
+                    .recv()
+                    .await
+                    .expect("cache capture channel closed");
 
-            // Verify all 3 relay URLs were received
-            assert_eq!(received_relays.len(), 3);
-            for relay in &relays {
-                assert!(received_relays.contains(&relay.to_string()), "Should have received EOSE from {}", relay);
-            }
-        }).await;
+                // Send EOSE from 3 different relays
+                let relays = ["wss://r1", "wss://r2", "wss://r3"];
+                for relay in &relays {
+                    let eose_msg = build_eose_worker_message("multi_eose_sub", relay);
+                    conn_tx.send(eose_msg).unwrap();
+                }
+
+                // Collect all 3 EOSE status messages with timeout
+                let mut received_relays = vec![];
+                for _ in 0..3 {
+                    let result = tokio::time::timeout(
+                        tokio::time::Duration::from_secs(2),
+                        to_main_ch.recv(),
+                    )
+                    .await;
+                    let bytes = result
+                        .expect("Timeout waiting for EOSE message")
+                        .expect("to_main channel closed");
+                    let (sub_id, data) = decode_tagged(&bytes).expect("decode failed");
+                    assert_eq!(sub_id, "multi_eose_sub");
+                    let wm = flatbuffers::root::<fb::WorkerMessage>(&data).unwrap();
+                    assert_eq!(wm.type_(), fb::MessageType::ConnectionStatus);
+                    let cs = wm.content_as_connection_status().unwrap();
+                    assert_eq!(cs.status(), "EOSE");
+                    received_relays.push(cs.relay_url().to_string());
+                }
+
+                // Verify all 3 relay URLs were received
+                assert_eq!(received_relays.len(), 3);
+                for relay in &relays {
+                    assert!(
+                        received_relays.contains(&relay.to_string()),
+                        "Should have received EOSE from {}",
+                        relay
+                    );
+                }
+            })
+            .await;
     }
 
     #[tokio::test]
@@ -1215,9 +1241,9 @@ mod tests {
         local.run_until(async {
             let (mut to_main_ch, from_parser_ch) = FuturesWorkerChannel::new_pair();
             let (to_cache_a, _to_cache_b) = TokioWorkerChannel::new_pair();
-            
+
             let (cache_capture_tx, mut cache_capture_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
-            
+
             let capture_port: Arc<dyn MessageSender> = Arc::new(CaptureMessageSender {
                 inner: Arc::from(to_cache_a.clone_sender()),
                 capture: cache_capture_tx,
@@ -1294,9 +1320,9 @@ mod tests {
         local.run_until(async {
             let (mut to_main_ch, from_parser_ch) = FuturesWorkerChannel::new_pair();
             let (to_cache_a, _to_cache_b) = TokioWorkerChannel::new_pair();
-            
+
             let (cache_capture_tx, mut cache_capture_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
-            
+
             let capture_port: Arc<dyn MessageSender> = Arc::new(CaptureMessageSender {
                 inner: Arc::from(to_cache_a.clone_sender()),
                 capture: cache_capture_tx,
@@ -1353,7 +1379,7 @@ mod tests {
             let bytes = to_main_ch.recv().await.expect("to_main channel closed");
             let (sub_id, data) = decode_tagged(&bytes).expect("decode failed");
             assert_eq!(sub_id, "flush_eose_sub");
-            
+
             // Verify it's a valid WorkerMessage (could be flushed output or EOSE status)
             let wm = flatbuffers::root::<fb::WorkerMessage>(&data).unwrap();
             // After EOSE, we should get ConnectionStatus type with EOSE
@@ -1366,68 +1392,81 @@ mod tests {
     #[tokio::test]
     async fn test_eose_with_empty_pipeline() {
         let local = tokio::task::LocalSet::new();
-        local.run_until(async {
-            let (mut to_main_ch, from_parser_ch) = FuturesWorkerChannel::new_pair();
-            let (to_cache_a, _to_cache_b) = TokioWorkerChannel::new_pair();
-            
-            let (cache_capture_tx, mut cache_capture_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
-            
-            let capture_port: Arc<dyn MessageSender> = Arc::new(CaptureMessageSender {
-                inner: Arc::from(to_cache_a.clone_sender()),
-                capture: cache_capture_tx,
-            });
+        local
+            .run_until(async {
+                let (mut to_main_ch, from_parser_ch) = FuturesWorkerChannel::new_pair();
+                let (to_cache_a, _to_cache_b) = TokioWorkerChannel::new_pair();
 
-            let parser = Arc::new(Parser::new(None));
-            let worker = ParserWorker::new(parser, capture_port, from_parser_ch.clone_sender());
+                let (cache_capture_tx, mut cache_capture_rx) =
+                    tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
 
-            let subscriptions = worker.subscriptions.clone();
+                let capture_port: Arc<dyn MessageSender> = Arc::new(CaptureMessageSender {
+                    inner: Arc::from(to_cache_a.clone_sender()),
+                    capture: cache_capture_tx,
+                });
 
-            let (from_engine_tx, from_engine_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
-            let from_engine = Box::new(MockWorkerChannel {
-                sender: from_engine_tx.clone(),
-                receiver: Arc::new(Mutex::new(from_engine_rx)),
-            });
+                let parser = Arc::new(Parser::new(None));
+                let worker = ParserWorker::new(parser, capture_port, from_parser_ch.clone_sender());
 
-            let (conn_tx, conn_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
-            let from_connections = Box::new(MockWorkerChannel {
-                sender: conn_tx.clone(),
-                receiver: Arc::new(Mutex::new(conn_rx)),
-            });
+                let subscriptions = worker.subscriptions.clone();
 
-            let (cache_tx, cache_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
-            let from_cache = Box::new(MockWorkerChannel {
-                sender: cache_tx,
-                receiver: Arc::new(Mutex::new(cache_rx)),
-            });
+                let (from_engine_tx, from_engine_rx) =
+                    tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+                let from_engine = Box::new(MockWorkerChannel {
+                    sender: from_engine_tx.clone(),
+                    receiver: Arc::new(Mutex::new(from_engine_rx)),
+                });
 
-            tokio::task::spawn_local(async move {
-                worker.run(from_engine, from_connections, from_cache);
-            });
+                let (conn_tx, conn_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+                let from_connections = Box::new(MockWorkerChannel {
+                    sender: conn_tx.clone(),
+                    receiver: Arc::new(Mutex::new(conn_rx)),
+                });
 
-            // Create subscription
-            let sub_msg = build_subscribe_message("empty_eose_sub", vec![]);
-            from_engine_tx.send(sub_msg).unwrap();
-            let _ = cache_capture_rx.recv().await.expect("cache capture channel closed");
+                let (cache_tx, cache_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+                let from_cache = Box::new(MockWorkerChannel {
+                    sender: cache_tx,
+                    receiver: Arc::new(Mutex::new(cache_rx)),
+                });
 
-            // Send EOSE immediately with no prior events
-            let eose_msg = build_eose_worker_message("empty_eose_sub", "wss://relay.example.com");
-            conn_tx.send(eose_msg).unwrap();
+                tokio::task::spawn_local(async move {
+                    worker.run(from_engine, from_connections, from_cache);
+                });
 
-            // Should receive EOSE status without crashing
-            let bytes = to_main_ch.recv().await.expect("to_main channel closed");
-            let (sub_id, data) = decode_tagged(&bytes).expect("decode failed");
-            assert_eq!(sub_id, "empty_eose_sub");
-            let wm = flatbuffers::root::<fb::WorkerMessage>(&data).unwrap();
-            assert_eq!(wm.type_(), fb::MessageType::ConnectionStatus);
-            let cs = wm.content_as_connection_status().unwrap();
-            assert_eq!(cs.status(), "EOSE");
+                // Create subscription
+                let sub_msg = build_subscribe_message("empty_eose_sub", vec![]);
+                from_engine_tx.send(sub_msg).unwrap();
+                let _ = cache_capture_rx
+                    .recv()
+                    .await
+                    .expect("cache capture channel closed");
 
-            // Verify subscription.eosed is set
-            tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
-            let subs = subscriptions.read().unwrap();
-            let sub = subs.get("empty_eose_sub").expect("subscription should exist");
-            assert!(sub.eosed, "subscription should be marked as eosed after EOSE on empty pipeline");
-        }).await;
+                // Send EOSE immediately with no prior events
+                let eose_msg =
+                    build_eose_worker_message("empty_eose_sub", "wss://relay.example.com");
+                conn_tx.send(eose_msg).unwrap();
+
+                // Should receive EOSE status without crashing
+                let bytes = to_main_ch.recv().await.expect("to_main channel closed");
+                let (sub_id, data) = decode_tagged(&bytes).expect("decode failed");
+                assert_eq!(sub_id, "empty_eose_sub");
+                let wm = flatbuffers::root::<fb::WorkerMessage>(&data).unwrap();
+                assert_eq!(wm.type_(), fb::MessageType::ConnectionStatus);
+                let cs = wm.content_as_connection_status().unwrap();
+                assert_eq!(cs.status(), "EOSE");
+
+                // Verify subscription.eosed is set
+                tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+                let subs = subscriptions.read().unwrap();
+                let sub = subs
+                    .get("empty_eose_sub")
+                    .expect("subscription should exist");
+                assert!(
+                    sub.eosed,
+                    "subscription should be marked as eosed after EOSE on empty pipeline"
+                );
+            })
+            .await;
     }
 
     #[tokio::test]
@@ -1436,9 +1475,9 @@ mod tests {
         local.run_until(async {
             let (mut to_main_ch, from_parser_ch) = FuturesWorkerChannel::new_pair();
             let (to_cache_a, _to_cache_b) = TokioWorkerChannel::new_pair();
-            
+
             let (cache_capture_tx, mut cache_capture_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
-            
+
             let capture_port: Arc<dyn MessageSender> = Arc::new(CaptureMessageSender {
                 inner: Arc::from(to_cache_a.clone_sender()),
                 capture: cache_capture_tx,

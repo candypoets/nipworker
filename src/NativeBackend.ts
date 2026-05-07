@@ -575,7 +575,7 @@ export class NativeBackend extends BaseBackend {
 						new PipeT(PipeConfig.MuteFilterPipeConfig, new MuteFilterPipeConfigT()),
 						new PipeT(PipeConfig.ParsePipeConfig, new ParsePipeConfigT()),
 						new PipeT(PipeConfig.SaveToDbPipeConfig, new SaveToDbPipeConfigT()),
-						new PipeT(PipeConfig.SerializeEventsPipeConfig, new SerializeEventsPipeConfigT())
+						new PipeT(PipeConfig.SerializeEventsPipeConfig, new SerializeEventsPipeConfigT(subId))
 					]);
 		const optionsT = new SubscriptionConfigT(
 			pipeline,

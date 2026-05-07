@@ -9,6 +9,17 @@ logs/
 .kimi
 .gradle/
 .kotlin/
+crates/native-ffi/android/build/
+crates/native-ffi/ios/NipworkerNativeFFI.xcframework/
+.swiftpm/
+**/.swiftpm/
+**/.build/
+**/Package.resolved
+**/local.properties
+**/.idea/
+**/*.iml
+**/.cxx/
+**/externalNativeBuild/
 *.o
 *.so
 *.a
