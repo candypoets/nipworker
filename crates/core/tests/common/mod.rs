@@ -165,6 +165,10 @@ impl MockStorage {
 	pub fn get_query_calls(&self) -> Vec<Vec<Filter>> {
 		self.query_calls.lock().unwrap().clone()
 	}
+
+	pub fn set_query_results(&self, results: Vec<Vec<Vec<u8>>>) {
+		*self.query_results.lock().unwrap() = results;
+	}
 }
 
 #[async_trait(?Send)]
@@ -336,6 +340,65 @@ pub fn build_nostr_event_worker_message(
 	let sig_off = builder.create_string(sig);
 
 	let tags = builder.create_vector(&[] as &[flatbuffers::WIPOffset<fb::StringVec>]);
+	let event = fb::NostrEvent::create(
+		&mut builder,
+		&fb::NostrEventArgs {
+			id: Some(id_off),
+			pubkey: Some(pubkey_off),
+			kind,
+			content: Some(content_off),
+			tags: Some(tags),
+			created_at: created_at as i32,
+			sig: Some(sig_off),
+		},
+	);
+
+	let wm = fb::WorkerMessage::create(
+		&mut builder,
+		&fb::WorkerMessageArgs {
+			sub_id: Some(sid),
+			url: Some(url_off),
+			type_: fb::MessageType::NostrEvent,
+			content_type: fb::Message::NostrEvent,
+			content: Some(event.as_union_value()),
+		},
+	);
+	builder.finish(wm, None);
+	builder.finished_data().to_vec()
+}
+
+/// Build a WorkerMessage containing a NostrEvent with explicit tags.
+pub fn build_nostr_event_worker_message_with_tags(
+	sub_id: &str,
+	url: &str,
+	id: &str,
+	pubkey: &str,
+	kind: u16,
+	content: &str,
+	tags: Vec<Vec<String>>,
+	created_at: u64,
+	sig: &str,
+) -> Vec<u8> {
+	use nipworker_core::generated::nostr::fb;
+	use flatbuffers::FlatBufferBuilder;
+
+	let mut builder = FlatBufferBuilder::new();
+	let sid = builder.create_string(sub_id);
+	let url_off = builder.create_string(url);
+	let id_off = builder.create_string(id);
+	let pubkey_off = builder.create_string(pubkey);
+	let content_off = builder.create_string(content);
+	let sig_off = builder.create_string(sig);
+
+	let tag_offsets: Vec<_> = tags
+		.iter()
+		.map(|tag| {
+			let items: Vec<_> = tag.iter().map(|item| builder.create_string(item)).collect();
+			let items = builder.create_vector(&items);
+			fb::StringVec::create(&mut builder, &fb::StringVecArgs { items: Some(items) })
+		})
+		.collect();
+	let tags = builder.create_vector(&tag_offsets);
 	let event = fb::NostrEvent::create(
 		&mut builder,
 		&fb::NostrEventArgs {

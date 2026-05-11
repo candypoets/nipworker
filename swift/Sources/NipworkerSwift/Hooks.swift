@@ -8,34 +8,39 @@ public func useSubscription(
     manager: NostrManager,
     subscriptionId: String,
     requests: [RequestObject],
-    callback: @escaping ([NostrEvent]) -> Void,
+    callback: @escaping ([WorkerMessageView]) -> Void,
     options: SubscriptionConfig = SubscriptionConfig()
 ) -> () -> Void {
     var notificationToken: NSObjectProtocol?
     var lastReadPosition = 4
     var isActive = true
+    let canonicalSubscriptionId = manager.createShortId(subscriptionId)
+
+    func readAvailableMessages() {
+        Task {
+            let result = await manager.readWorkerMessages(for: canonicalSubscriptionId, from: lastReadPosition)
+            lastReadPosition = result.newPosition
+            if isActive, !result.messages.isEmpty {
+                callback(result.messages)
+            }
+        }
+    }
 
     Task {
-        _ = await manager.subscribe(subscriptionId: subscriptionId, requests: requests, options: options)
-
         notificationToken = NotificationCenter.default.addObserver(
             forName: .nipworkerSubscriptionUpdated,
             object: nil,
             queue: .main
-        ) { [weak manager] notification in
+        ) { notification in
             guard isActive,
-                  let manager = manager,
                   let updatedSubId = notification.userInfo?["subId"] as? String,
-                  updatedSubId == subscriptionId else { return }
+                  updatedSubId == canonicalSubscriptionId else { return }
 
-            Task {
-                let result = await manager.readEvents(for: subscriptionId, from: lastReadPosition)
-                lastReadPosition = result.newPosition
-                if !result.events.isEmpty {
-                    callback(result.events)
-                }
-            }
+            readAvailableMessages()
         }
+
+        _ = await manager.subscribe(subscriptionId: subscriptionId, requests: requests, options: options)
+        readAvailableMessages()
     }
 
     return {
@@ -44,7 +49,7 @@ public func useSubscription(
             NotificationCenter.default.removeObserver(token)
         }
         Task {
-            await manager.unsubscribe(subscriptionId: subscriptionId)
+            await manager.unsubscribe(subscriptionId: canonicalSubscriptionId)
         }
     }
 }

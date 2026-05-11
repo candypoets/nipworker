@@ -230,6 +230,13 @@ public actor NostrManager {
         return (events, result.newReadPosition)
     }
 
+    public func readWorkerMessages(for subId: String, from position: Int) -> (messages: [WorkerMessageView], newPosition: Int) {
+        guard let state = subscriptions[subId] else { return ([], position) }
+        let result = ArrayBufferReader.readMessages(buffer: state.buffer, lastReadPosition: position)
+        let messages = result.messages.compactMap { WorkerMessageView($0) }
+        return (messages, result.newReadPosition)
+    }
+
     public func readPublishStatuses(for publishId: String, from position: Int) -> (statuses: [String: PublishStatus], newPosition: Int) {
         guard let state = publishes[publishId] else { return ([:], position) }
         let result = ArrayBufferReader.readMessages(buffer: state.buffer, lastReadPosition: position)
@@ -315,10 +322,13 @@ public actor NostrManager {
 
     private func handleDirectResponse(_ payload: Data) {
         guard payload.count >= 4 else { return }
-        let msgLen = Int(payload.withUnsafeBytes { $0.load(fromByteOffset: 0, as: UInt32.self).littleEndian })
-        guard payload.count >= 4 + msgLen else { return }
-        let msgData = payload.subdata(in: 4..<4 + msgLen)
-        _parseDirectResponse(msgData)
+
+        let firstWord = Int(payload.withUnsafeBytes { $0.load(fromByteOffset: 0, as: UInt32.self).littleEndian })
+        if firstWord > 0, payload.count == 4 + firstWord {
+            _parseDirectResponse(payload.subdata(in: 4..<4 + firstWord))
+        } else {
+            _parseDirectResponse(payload)
+        }
     }
 
     private func handleCryptoMessage(_ payload: Data) {
@@ -327,7 +337,7 @@ public actor NostrManager {
 
     // MARK: - Helpers
 
-    public func createShortId(_ input: String) -> String {
+    public nonisolated func createShortId(_ input: String) -> String {
         if input.count < 64 { return input }
         var hash: Int32 = 0
         for char in input.utf16 {
@@ -367,6 +377,9 @@ public actor NostrManager {
                 createdAt: Int(parsed.createdAt),
                 sig: ""
             )
+        case .raw:
+            guard let raw = workerMsg.content(type: nostr_fb_Raw.self) else { return nil }
+            return parseRawEventMessage(raw.raw)
         default:
             return nil
         }
@@ -406,8 +419,10 @@ public actor NostrManager {
     }
 
     private func _parseDirectResponse(_ data: Data) {
+        guard data.count >= 4 else { return }
         let bb = ByteBuffer(data: data)
         let rootOffset = bb.read(def: Int32.self, position: 0)
+        guard rootOffset >= 0, Int(rootOffset) < data.count else { return }
         let workerMsg = nostr_fb_WorkerMessage(bb, o: rootOffset)
 
         switch workerMsg.contentType {
@@ -541,12 +556,37 @@ public actor NostrManager {
         return NostrEvent(
             id: dict["id"] as? String ?? "",
             pubkey: dict["pubkey"] as? String ?? "",
-            kind: dict["kind"] as? UInt16 ?? 0,
+            kind: uint16Value(dict["kind"]),
             content: dict["content"] as? String ?? "",
             tags: (dict["tags"] as? [[String]]) ?? [],
-            createdAt: dict["created_at"] as? Int ?? 0,
+            createdAt: intValue(dict["created_at"]),
             sig: dict["sig"] as? String ?? ""
         )
+    }
+
+    private func parseRawEventMessage(_ raw: String) -> NostrEvent? {
+        guard let data = raw.data(using: .utf8),
+              let array = try? JSONSerialization.jsonObject(with: data) as? [Any],
+              array.count >= 3,
+              let messageType = array[0] as? String,
+              messageType == "EVENT",
+              let eventDict = array[2] as? [String: Any] else {
+            return nil
+        }
+        return parseEventDict(eventDict)
+    }
+
+    private func uint16Value(_ value: Any?) -> UInt16 {
+        if let value = value as? UInt16 { return value }
+        if let value = value as? Int { return UInt16(value) }
+        if let value = value as? NSNumber { return value.uint16Value }
+        return 0
+    }
+
+    private func intValue(_ value: Any?) -> Int {
+        if let value = value as? Int { return value }
+        if let value = value as? NSNumber { return value.intValue }
+        return 0
     }
 }
 

@@ -16,8 +16,8 @@ func buildSubscribeMessage(
         let kindsOffset = req.kinds?.isEmpty == false ? builder.createVector(req.kinds!) : Offset()
         let tagsOffset: Offset
         if let tags = req.tags, !tags.isEmpty {
-            let tagVecOffsets = tags.map { (_, values) -> Offset in
-                let items = builder.createVector(ofStrings: values)
+            let tagVecOffsets = tags.map { (key, values) -> Offset in
+                let items = builder.createVector(ofStrings: [key] + values)
                 return nostr_fb_StringVec.createStringVec(&builder, itemsVectorOffset: items)
             }
             tagsOffset = builder.createVector(ofOffsets: tagVecOffsets)
@@ -42,7 +42,7 @@ func buildSubscribeMessage(
             cacheFirst: req.cacheFirst ?? true,
             noCache: req.noCache ?? false,
             maxRelays: req.maxRelays ?? 0,
-            cacheOnly: false
+            cacheOnly: options.cacheOnly
         )
     }
 
