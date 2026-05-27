@@ -17,7 +17,7 @@ function selfContainedEntries(entries: Array<{ input: string; output: string }>)
 			const { build } = await import('esbuild');
 			const fs = await import('fs');
 			const path = await import('path');
-			
+
 			for (const entry of entries) {
 				// Delete the Rollup-generated version if it exists
 				const rollupOutput = path.resolve(process.cwd(), entry.output);
@@ -26,7 +26,7 @@ function selfContainedEntries(entries: Array<{ input: string; output: string }>)
 					const mapFile = rollupOutput + '.map';
 					if (fs.existsSync(mapFile)) fs.unlinkSync(mapFile);
 				}
-				
+
 				// Build self-contained version with esbuild
 				await build({
 					entryPoints: [path.resolve(process.cwd(), entry.input)],
@@ -40,7 +40,7 @@ function selfContainedEntries(entries: Array<{ input: string; output: string }>)
 					minify: true,
 					loader: { '.ts': 'ts' }
 				});
-				
+
 				console.log(`✓ ${entry.output} (self-contained)`);
 			}
 		}
@@ -80,7 +80,10 @@ export default defineConfig({
 		},
 		rollupOptions: {
 			external: (id) => {
-				return ['flatbuffers', 'nostr-tools', 'ws', 'socks-proxy-agent'].includes(id) || id.startsWith('node:');
+				return (
+					['flatbuffers', 'nostr-tools', 'react-native', 'ws', 'socks-proxy-agent'].includes(id) ||
+					id.startsWith('node:')
+				);
 			},
 			input: {
 				index: resolve(__dirname, 'src/index.ts'),
@@ -90,8 +93,9 @@ export default defineConfig({
 				proxyServer: resolve(__dirname, 'src/proxy/server.ts'),
 				proxyVite: resolve(__dirname, 'src/proxy/vite.ts'),
 				native: resolve(__dirname, 'src/native.ts'),
-					engine: resolve(__dirname, 'src/engine.ts'),
-					legacy: resolve(__dirname, 'src/legacy.ts'),
+				reactNative: resolve(__dirname, 'src/react-native.ts'),
+				engine: resolve(__dirname, 'src/engine.ts'),
+				legacy: resolve(__dirname, 'src/legacy.ts'),
 				connections: resolve(__dirname, 'src/connections/index.ts'),
 				// proxy.ts is handled by selfContainedEntries
 				cache: resolve(__dirname, 'src/cache/index.ts'),
@@ -109,6 +113,7 @@ export default defineConfig({
 						proxyServer: 'proxy/server.js',
 						proxyVite: 'proxy/vite.js',
 						native: 'native.js',
+						reactNative: 'react-native.js',
 						engine: 'engine.js',
 						legacy: 'legacy.js',
 						connections: 'connections/index.js',

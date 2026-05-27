@@ -1,7 +1,7 @@
 import * as flatbuffers from 'flatbuffers';
 import { ArrayBufferReader } from 'src/lib/ArrayBufferReader';
 import { BaseBackend, type StorageAdapter } from 'src/lib/BaseBackend';
-import { NostrManagerConfig, RequestObject, SubscriptionConfig } from 'src/types';
+import type { NostrManagerConfig, RequestObject, SubscriptionConfig } from 'src/types';
 import type { EventTemplate, NostrEvent } from 'nostr-tools';
 import {
 	GetPublicKeyT,
@@ -63,12 +63,22 @@ type NativeBackendGlobalState = {
 				emitter: any;
 				listener: (arg: any) => void;
 				instanceId: string;
+				eventName: string;
 		  }
 		| undefined;
 	instances: Array<{ instanceId: string; stack?: string | undefined; t: number }>;
 };
 
 const NATIVE_BACKEND_STATE_KEY = '__nipworker_native_backend_state';
+const LYNX_EVENT_NAME = 'NipworkerEvent';
+
+export type NativeRuntimeBridge = {
+	name: string;
+	eventName: string;
+	storage: StorageAdapter;
+	getModule(): any;
+	getEventEmitter(): any;
+};
 
 function getNativeBackendState(): NativeBackendGlobalState {
 	const g = globalThis as any;
@@ -142,7 +152,7 @@ function base64ToBytes(base64: string): Uint8Array {
 	return bytes.subarray(0, j);
 }
 
-function getNipworkerModule(): any {
+function getLynxNipworkerModule(): any {
 	// In Sparkling/Lynx real builds, NativeModules is injected as a bundle
 	// parameter (IIFE argument), not mounted on globalThis.
 	let mod =
@@ -169,6 +179,27 @@ function getNipworkerModule(): any {
 	return mod;
 }
 
+function getLynxEventEmitter(): any {
+	let emitter = globalThis.lynx?.getJSModule?.('GlobalEventEmitter');
+	if (!emitter && typeof lynx !== 'undefined') {
+		emitter = lynx.getJSModule?.('GlobalEventEmitter');
+	}
+	if (!emitter) {
+		throw new Error(
+			'[NativeBackend] GlobalEventEmitter not found. Native events will not be received.'
+		);
+	}
+	return emitter;
+}
+
+export const lynxNativeBridge: NativeRuntimeBridge = {
+	name: 'lynx',
+	eventName: LYNX_EVENT_NAME,
+	storage: lynxStorageAdapter,
+	getModule: getLynxNipworkerModule,
+	getEventEmitter: getLynxEventEmitter
+};
+
 /**
  * NativeBackend implements the same public interface as EngineManager / NostrManager,
  * but communicates with the native libnipworker_native_ffi via a Lynx native module.
@@ -182,9 +213,14 @@ export class NativeBackend extends BaseBackend {
 	private eventEmitter: any;
 	private eventListener: ((arg: any) => void) | null = null;
 	private deinitialized = false;
+	private runtimeBridge: NativeRuntimeBridge;
 
-	constructor(_config: NostrManagerConfig = {}) {
-		super(lynxStorageAdapter);
+	constructor(
+		_config: NostrManagerConfig = {},
+		runtimeBridge: NativeRuntimeBridge = lynxNativeBridge
+	) {
+		super(runtimeBridge.storage);
+		this.runtimeBridge = runtimeBridge;
 		this.instanceId = Math.random().toString(36).slice(2, 8);
 		const nativeState = getNativeBackendState();
 		nativeState.instances.push({
@@ -192,13 +228,7 @@ export class NativeBackend extends BaseBackend {
 			stack: new Error().stack,
 			t: Date.now()
 		});
-		this.nativeModule = getNipworkerModule();
-		console.log(
-			'[NativeBackend-diag] instanceId=' +
-				this.instanceId +
-				', nativeModule found, init type=' +
-				typeof this.nativeModule.init
-		);
+		this.nativeModule = runtimeBridge.getModule();
 		if (typeof globalThis !== 'undefined') {
 			(globalThis as any).__nipworker_native_diag = {
 				callbackCount: 0,
@@ -210,8 +240,9 @@ export class NativeBackend extends BaseBackend {
 				publishCount: 0
 			};
 		}
-		// Probe the Lynx environment and store diagnostics before any throw.
+		// Probe the native environment and store diagnostics before any throw.
 		const probe = {
+			runtime: runtimeBridge.name,
 			hasLynx: !!globalThis.lynx,
 			hasGetJSModule: !!globalThis.lynx?.getJSModule,
 			hasGlobalEventEmitter: false,
@@ -225,10 +256,7 @@ export class NativeBackend extends BaseBackend {
 		};
 		let emitter;
 		try {
-			emitter = globalThis.lynx?.getJSModule?.('GlobalEventEmitter');
-			if (!emitter && typeof lynx !== 'undefined') {
-				emitter = lynx.getJSModule?.('GlobalEventEmitter');
-			}
+			emitter = runtimeBridge.getEventEmitter();
 			probe.hasGlobalEventEmitter = !!emitter;
 			probe.emitterType = typeof emitter;
 			probe.emitterHasAddListener = typeof emitter?.addListener === 'function';
@@ -247,11 +275,6 @@ export class NativeBackend extends BaseBackend {
 		// Register a persistent listener via Lynx GlobalEventEmitter before
 		// starting the native engine. Events arrive as base64-encoded JSON
 		// envelopes to avoid Lynx's one-shot callback limitation.
-		if (!emitter) {
-			throw new Error(
-				'[NativeBackend] GlobalEventEmitter not found. Native events will not be received.'
-			);
-		}
 		this.eventEmitter = emitter;
 		this.eventListener = (arg: any) => {
 			if (this.deinitialized) return;
@@ -284,12 +307,6 @@ export class NativeBackend extends BaseBackend {
 					diag.lastCallbackTime = Date.now();
 				}
 			}
-			console.log(
-				'[NativeBackend-diag] instanceId=' +
-					this.instanceId +
-					' event received, len=' +
-					decoded.length
-			);
 			try {
 				this.handleNativeMessage(decoded);
 			} catch (e) {
@@ -306,7 +323,7 @@ export class NativeBackend extends BaseBackend {
 		if (nativeState.activeListener) {
 			try {
 				nativeState.activeListener.emitter.removeListener(
-					'NipworkerEvent',
+					nativeState.activeListener.eventName,
 					nativeState.activeListener.listener
 				);
 				console.warn(
@@ -317,11 +334,12 @@ export class NativeBackend extends BaseBackend {
 				console.warn('[NativeBackend] Failed to remove stale NipworkerEvent listener', e);
 			}
 		}
-		emitter.addListener('NipworkerEvent', this.eventListener);
+		emitter.addListener(runtimeBridge.eventName, this.eventListener);
 		nativeState.activeListener = {
 			emitter,
 			listener: this.eventListener,
-			instanceId: this.instanceId
+			instanceId: this.instanceId,
+			eventName: runtimeBridge.eventName
 		};
 		nativeState.instance = this;
 		this.nativeModule.init();
@@ -340,7 +358,6 @@ export class NativeBackend extends BaseBackend {
 			} else if (wasHidden) {
 				wasHidden = false;
 				// TODO: native engine wake not yet implemented via FFI
-				console.log('[NativeBackend] App returned to foreground');
 			}
 		});
 	}
@@ -354,14 +371,8 @@ export class NativeBackend extends BaseBackend {
 			const diag = (globalThis as any).__nipworker_native_diag;
 			if (diag) diag.handleNativeMessageCount++;
 		}
-		console.log(
-			'[NativeBackend] handleNativeMessage called, len=' +
-				data.length +
-				', instance=' +
-				this.instanceId
-		);
 		if (data.length < 8) {
-			console.log('[NativeBackend] handleNativeMessage: data too short (<8), dropping');
+			console.warn('[NativeBackend] Ignoring malformed native message: data too short');
 			return;
 		}
 		const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
@@ -369,34 +380,31 @@ export class NativeBackend extends BaseBackend {
 		const subIdLen = view.getUint32(offset, true);
 		offset += 4;
 		if (offset + subIdLen > data.byteLength) {
-			console.log('[NativeBackend] handleNativeMessage: subId exceeds buffer, dropping');
+			console.warn('[NativeBackend] Ignoring malformed native message: subId exceeds buffer');
 			return;
 		}
 		const subId = new TextDecoder().decode(data.subarray(offset, offset + subIdLen));
 		offset += subIdLen;
 		if (offset + 4 > data.byteLength) {
-			console.log('[NativeBackend] handleNativeMessage: payloadLen exceeds buffer, dropping');
+			console.warn('[NativeBackend] Ignoring malformed native message: missing payload length');
 			return;
 		}
 		const payloadLen = view.getUint32(offset, true);
 		offset += 4;
 		if (offset + payloadLen > data.byteLength) {
-			console.log('[NativeBackend] handleNativeMessage: payload exceeds buffer, dropping');
+			console.warn('[NativeBackend] Ignoring malformed native message: payload exceeds buffer');
 			return;
 		}
 		const payload = data.subarray(offset, offset + payloadLen);
 
 		if (subId === 'crypto') {
-			console.log('[NativeBackend] crypto message, len=' + payload.length);
 			this.handleCryptoMessage(payload);
 			return;
 		}
 		if (subId === '') {
-			console.log('[NativeBackend] direct response, len=' + payload.length);
 			this.handleDirectResponse(payload);
 			return;
 		}
-		console.log('[NativeBackend] subscription message, subId=' + subId + ', len=' + payload.length);
 		if (typeof globalThis !== 'undefined') {
 			const diag = (globalThis as any).__nipworker_native_diag;
 			if (diag) diag.subscriptionCount = this.subscriptions.size;
@@ -412,17 +420,7 @@ export class NativeBackend extends BaseBackend {
 		const subscription = this.subscriptions.get(subId);
 		if (subscription) {
 			const buf = subscription.buffer;
-			const writePos = new DataView(buf).getUint32(0, true);
-			console.log(
-				'[NativeBackend] subscription found, subId=' +
-					subId +
-					', bufferLen=' +
-					buf.byteLength +
-					', writePos=' +
-					writePos
-			);
 			const written = ArrayBufferReader.writeBatchedData(buf, lengthPrefixed, subId);
-			console.log('[NativeBackend] writeBatchedData result=' + written + ', subId=' + subId);
 			if (written) {
 				this.dispatch(`subscription:${subId}`, subId);
 			}
@@ -432,17 +430,14 @@ export class NativeBackend extends BaseBackend {
 		const publish = this.publishes.get(subId);
 		if (publish) {
 			const written = ArrayBufferReader.writeBatchedData(publish.buffer, lengthPrefixed, subId);
-			console.log(
-				'[NativeBackend] writeBatchedData (publish) result=' + written + ', subId=' + subId
-			);
 			if (written) {
 				this.dispatch(`publish:${subId}`, subId);
 			}
 			return;
 		}
 
-		console.log(
-			'[NativeBackend] WARNING: no subscription or publish found for subId=' +
+		console.warn(
+			'[NativeBackend] Dropping native message for unknown subId=' +
 				subId +
 				', subscriptions=' +
 				this.subscriptions.size +
@@ -734,7 +729,7 @@ export class NativeBackend extends BaseBackend {
 		this.deinitialized = true;
 		const nativeState = getNativeBackendState();
 		if (this.eventEmitter && this.eventListener) {
-			this.eventEmitter.removeListener('NipworkerEvent', this.eventListener);
+			this.eventEmitter.removeListener(this.runtimeBridge.eventName, this.eventListener);
 		}
 		if (nativeState.activeListener?.listener === this.eventListener) {
 			nativeState.activeListener = undefined;
