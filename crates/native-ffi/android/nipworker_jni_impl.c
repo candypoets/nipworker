@@ -41,18 +41,15 @@ static void native_callback(void* userdata, const uint8_t* ptr, size_t len);
 static void ensure_jni_cache(JNIEnv* env, jclass cls) {
     if (g_vm != NULL && g_cls != NULL && g_mid != NULL) return;
 
+    if ((*env)->ExceptionCheck(env)) {
+        (*env)->ExceptionClear(env);
+    }
+
     jint ret = (*env)->GetJavaVM(env, &g_vm);
     if (ret != 0 || g_vm == NULL) return;
 
-    jclass local_cls = (*env)->FindClass(
-        env,
-        "com/candypoets/nipworker/lynx/NipworkerLynxModule"
-    );
-    if (local_cls == NULL) return;
-
-    g_cls = (jclass)(*env)->NewGlobalRef(env, local_cls);
+    g_cls = (jclass)(*env)->NewGlobalRef(env, cls);
     g_mid = (*env)->GetStaticMethodID(env, g_cls, "onNativeData", "(J[B)V");
-    (*env)->DeleteLocalRef(env, local_cls);
 }
 
 JNIEXPORT jlong JNICALL
@@ -89,7 +86,10 @@ JNIEXPORT jint JNICALL impl_JNI_OnLoad(JavaVM* vm, void* reserved) {
         "com/candypoets/nipworker/lynx/NipworkerLynxModule"
     );
     if (cls == NULL) {
-        return JNI_ERR;
+        if ((*env)->ExceptionCheck(env)) {
+            (*env)->ExceptionClear(env);
+        }
+        return JNI_VERSION_1_6;
     }
 
     /* Cache global class ref and onNativeData method ID for callbacks */

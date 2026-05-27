@@ -10,6 +10,7 @@ logs/
 .gradle/
 .kotlin/
 crates/native-ffi/android/build/
+crates/native-ffi/react-native/android/build/
 crates/native-ffi/ios/NipworkerNativeFFI.xcframework/
 .swiftpm/
 **/.swiftpm/

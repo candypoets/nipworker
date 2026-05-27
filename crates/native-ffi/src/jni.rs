@@ -126,3 +126,71 @@ pub extern "C" fn Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipwork
         )
     }
 }
+
+#[no_mangle]
+pub extern "C" fn Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerInit(
+    env: *mut c_void,
+    cls: *mut c_void,
+    userdata: i64,
+) -> i64 {
+    unsafe {
+        impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerInit(
+            env, cls, userdata,
+        )
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerHandleMessage(
+    env: *mut c_void,
+    cls: *mut c_void,
+    handle: i64,
+    bytes: *mut c_void,
+) {
+    unsafe {
+        impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerHandleMessage(
+            env, cls, handle, bytes,
+        )
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerSetPrivateKey(
+    env: *mut c_void,
+    cls: *mut c_void,
+    handle: i64,
+    secret: *mut c_void,
+) {
+    unsafe {
+        impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerSetPrivateKey(
+            env, cls, handle, secret,
+        )
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerDeinit(
+    env: *mut c_void,
+    cls: *mut c_void,
+    handle: i64,
+) {
+    unsafe {
+        impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerDeinit(
+            env, cls, handle,
+        )
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerFreeBytes(
+    env: *mut c_void,
+    cls: *mut c_void,
+    ptr: i64,
+    len: i64,
+) {
+    unsafe {
+        impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerFreeBytes(
+            env, cls, ptr, len,
+        )
+    }
+}
