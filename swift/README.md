@@ -327,10 +327,57 @@ struct FeedView: View {
 }
 ```
 
+### Native login and signer restore
+
+`NostrManager` keeps the active signer in memory only. It does not persist private
+keys, NIP-46 session data, or login state. Native apps should own that policy with
+their own secure storage, typically Keychain on iOS/macOS.
+
+On first login, validate the key by installing it as the signer and asking the
+native engine for the public key:
+
+```swift
+let secret = "your-hex-private-key"
+manager.setSigner(.privkey(secret))
+let pubkey = try await manager.getPublicKey()
+
+let session = AuthSession(
+    pubkey: pubkey,
+    signer: .privateKey(secret)
+)
+
+// App-owned persistence. Store this in Keychain, not UserDefaults.
+let data = try JSONEncoder().encode(session)
+try await keychain.save(data, account: "nostr-auth")
+```
+
+On app restart, load the saved session and restore the native signer explicitly:
+
+```swift
+if let data = try await keychain.load(account: "nostr-auth") {
+    let session = try JSONDecoder().decode(AuthSession.self, from: data)
+
+    switch session.signer {
+    case .privateKey(let secret):
+        manager.setSigner(.privkey(secret))
+        _ = try await manager.getPublicKey()
+    }
+}
+```
+
+The library exposes `AuthSession` as a small `Codable` value so app code can use
+one stable storage format. The actual storage backend is intentionally outside
+`NostrManager`; the host app decides whether to persist, when to restore, whether
+to use biometric gates, and how logout deletes credentials.
+
+`logout()` clears Swift-side auth state for the manager. If the app persisted an
+`AuthSession`, it must also delete that saved session from its own secure store.
+
 ### Publish a signed event
 
 ```swift
-await manager.setSigner(.privkey(secret: "your-hex-private-key"))
+manager.setSigner(.privkey("your-hex-private-key"))
+_ = try await manager.getPublicKey()
 
 let template = EventTemplate(
     kind: 1,
