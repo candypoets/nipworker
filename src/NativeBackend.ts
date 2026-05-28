@@ -152,6 +152,37 @@ function base64ToBytes(base64: string): Uint8Array {
 	return bytes.subarray(0, j);
 }
 
+function eventDataToBytes(event: any): Uint8Array | null {
+	if (event instanceof Uint8Array) {
+		return event;
+	}
+	if (event instanceof ArrayBuffer) {
+		return new Uint8Array(event);
+	}
+	if (ArrayBuffer.isView(event)) {
+		return new Uint8Array(event.buffer, event.byteOffset, event.byteLength);
+	}
+	if (Array.isArray(event)) {
+		return new Uint8Array(event);
+	}
+	if (typeof event === 'string') {
+		return base64ToBytes(event);
+	}
+	if (!event || typeof event !== 'object') {
+		return null;
+	}
+	if (event.v !== 1 || typeof event.data === 'undefined') {
+		return null;
+	}
+	if (event.encoding === 'bytes') {
+		return eventDataToBytes(event.data);
+	}
+	if (event.encoding === 'base64' && typeof event.data === 'string') {
+		return base64ToBytes(event.data);
+	}
+	return null;
+}
+
 function getLynxNipworkerModule(): any {
 	// In Sparkling/Lynx real builds, NativeModules is injected as a bundle
 	// parameter (IIFE argument), not mounted on globalThis.
@@ -272,31 +303,22 @@ export class NativeBackend extends BaseBackend {
 				t: Date.now()
 			});
 		}
-		// Register a persistent listener via Lynx GlobalEventEmitter before
-		// starting the native engine. Events arrive as base64-encoded JSON
-		// envelopes to avoid Lynx's one-shot callback limitation.
+		// Register a persistent listener before starting the native engine.
+		// Lynx may still send base64 envelopes; React Native sends byte arrays.
 		this.eventEmitter = emitter;
 		this.eventListener = (arg: any) => {
 			if (this.deinitialized) return;
 			const event = Array.isArray(arg) ? arg[0] : arg;
-			let base64Str: string;
-			if (typeof event === 'string') {
-				base64Str = event;
-			} else if (event && typeof event === 'object') {
-				if (event.v !== 1 || event.encoding !== 'base64' || typeof event.data !== 'string') {
-					console.warn('[NativeBackend] Ignoring malformed NipworkerEvent envelope', event);
-					return;
-				}
-				base64Str = event.data;
-			} else {
-				console.warn('[NativeBackend] Ignoring malformed NipworkerEvent', event);
-				return;
-			}
 			let decoded: Uint8Array;
 			try {
-				decoded = base64ToBytes(base64Str);
+				const bytes = eventDataToBytes(event);
+				if (!bytes) {
+					console.warn('[NativeBackend] Ignoring malformed NipworkerEvent', event);
+					return;
+				}
+				decoded = bytes;
 			} catch (e) {
-				console.error('[NativeBackend] Failed to decode base64 payload', e);
+				console.error('[NativeBackend] Failed to decode native event payload', e);
 				return;
 			}
 			if (typeof globalThis !== 'undefined') {

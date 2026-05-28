@@ -21,7 +21,11 @@ static void NipworkerReactNativeCallbackForwarder(void* userdata, const uint8_t*
 	NSData* data = [NSData dataWithBytes:ptr length:len];
 	nipworker_free_bytes((uint8_t*)ptr, len);
 
-	NSString* base64 = [data base64EncodedStringWithOptions:0];
+	NSMutableArray<NSNumber*>* bytes = [NSMutableArray arrayWithCapacity:len];
+	const uint8_t* rawBytes = (const uint8_t*)data.bytes;
+	for (NSUInteger i = 0; i < len; i++) {
+		[bytes addObject:@(rawBytes[i])];
+	}
 
 	dispatch_async(dispatch_get_main_queue(), ^{
 		if (!module.hasListeners) {
@@ -30,8 +34,8 @@ static void NipworkerReactNativeCallbackForwarder(void* userdata, const uint8_t*
 		[module sendEventWithName:NipworkerEventName
 							 body:@{
 								 @"v": @1,
-								 @"encoding": @"base64",
-								 @"data": base64
+								 @"encoding": @"bytes",
+								 @"data": bytes
 							 }];
 	});
 }
@@ -62,9 +66,13 @@ RCT_REMAP_METHOD(init, initEngine) {
 	}
 }
 
-RCT_EXPORT_METHOD(handleMessage:(NSString *)base64) {
-	NSData* data = [[NSData alloc] initWithBase64EncodedString:base64 options:0];
-	if (self.engineHandle && data) {
+RCT_EXPORT_METHOD(handleMessage:(NSArray<NSNumber *> *)bytes) {
+	if (self.engineHandle && bytes) {
+		NSMutableData* data = [NSMutableData dataWithLength:bytes.count];
+		uint8_t* rawBytes = (uint8_t*)data.mutableBytes;
+		for (NSUInteger i = 0; i < bytes.count; i++) {
+			rawBytes[i] = (uint8_t)(bytes[i].unsignedCharValue);
+		}
 		nipworker_handle_message(self.engineHandle, (const uint8_t*)data.bytes, data.length);
 	}
 }

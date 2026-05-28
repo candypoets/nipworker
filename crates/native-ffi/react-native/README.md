@@ -19,15 +19,16 @@ The React Native bridge receives native events as:
 ```ts
 {
 	v: 1,
-	encoding: 'base64',
-	data: string
+	encoding: 'bytes',
+	data: number[]
 }
 ```
 
 The JS entry point decodes those events and routes them through the shared
-`NativeBackend`. Outgoing `handleMessage` calls are also base64-encoded because
-the legacy React Native bridge does not provide a stable binary `Uint8Array`
-transport across iOS and Android.
+`NativeBackend`. Outgoing `handleMessage` calls pass `number[]` payloads for the
+same reason: this legacy React Native native module does not expose a direct
+`ArrayBuffer` transport. A future JSI/TurboModule backend should replace the
+array bridge with direct `ArrayBuffer`/native-buffer access.
 
 ## iOS
 

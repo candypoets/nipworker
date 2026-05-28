@@ -1,8 +1,8 @@
 package com.candypoets.nipworker.reactnative
 
 import android.content.Context
-import android.util.Base64
 import com.facebook.react.bridge.Arguments
+import com.facebook.react.bridge.ReadableArray
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
@@ -35,10 +35,14 @@ class NipworkerReactNativeModule(
 		@JvmStatic
 		fun onNativeData(userdata: Long, data: ByteArray) {
 			val module = activeModule ?: return
+			val bytes = Arguments.createArray()
+			for (byte in data) {
+				bytes.pushInt(byte.toInt() and 0xff)
+			}
 			val payload = Arguments.createMap().apply {
 				putInt("v", 1)
-				putString("encoding", "base64")
-				putString("data", Base64.encodeToString(data, Base64.NO_WRAP))
+				putString("encoding", "bytes")
+				putArray("data", bytes)
 			}
 			module.reactContext
 				.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
@@ -87,9 +91,13 @@ class NipworkerReactNativeModule(
 	}
 
 	@ReactMethod
-	fun handleMessage(base64: String) {
+	fun handleMessage(bytes: ReadableArray) {
 		if (sharedHandle != 0L) {
-			nipworkerHandleMessage(sharedHandle, Base64.decode(base64, Base64.DEFAULT))
+			val data = ByteArray(bytes.size())
+			for (i in 0 until bytes.size()) {
+				data[i] = (bytes.getInt(i) and 0xff).toByte()
+			}
+			nipworkerHandleMessage(sharedHandle, data)
 		}
 	}
 

@@ -7,23 +7,23 @@ const mockNativeModule = {
 	init: vi.fn(),
 	handleMessage: vi.fn(),
 	setPrivateKey: vi.fn(),
-	deinit: vi.fn(),
+	deinit: vi.fn()
 };
 
 const mockEmitter = {
 	addListener: vi.fn(),
-	removeListener: vi.fn(),
+	removeListener: vi.fn()
 };
 
 beforeAll(() => {
 	(globalThis as any).NativeModules = {
-		NipworkerLynxModule: mockNativeModule,
+		NipworkerLynxModule: mockNativeModule
 	};
 	(globalThis as any).lynx = {
 		getJSModule: vi.fn((name: string) => {
 			if (name === 'GlobalEventEmitter') return mockEmitter;
 			return undefined;
-		}),
+		})
 	};
 });
 
@@ -36,14 +36,7 @@ function buildCryptoRawMessage(json: string): Uint8Array {
 	const builder = new flatbuffers.Builder(256);
 	const rawStr = builder.createString(json);
 	const raw = Raw.createRaw(builder, rawStr);
-	const msg = WorkerMessage.createWorkerMessage(
-		builder,
-		0,
-		0,
-		MessageType.Raw,
-		Message.Raw,
-		raw
-	);
+	const msg = WorkerMessage.createWorkerMessage(builder, 0, 0, MessageType.Raw, Message.Raw, raw);
 	builder.finish(msg);
 	return builder.asUint8Array();
 }
@@ -85,7 +78,10 @@ describe('NativeBackend', () => {
 
 			// Build a native frame: [subIdLen]["crypto"][payloadLen][cryptoPayload]
 			const cryptoPayload = buildCryptoRawMessage(
-				JSON.stringify({ op: 'get_public_key', result: 'deadbeef12345678deadbeef12345678deadbeef12345678deadbeef12345678' })
+				JSON.stringify({
+					op: 'get_public_key',
+					result: 'deadbeef12345678deadbeef12345678deadbeef12345678deadbeef12345678'
+				})
 			);
 			const frame = buildNativeFrame('crypto', cryptoPayload);
 			const base64 = bytesToBase64(frame);
@@ -95,7 +91,35 @@ describe('NativeBackend', () => {
 
 			expect(authHandler).toHaveBeenCalledTimes(1);
 			const detail = authHandler.mock.calls[0][0].detail;
-			expect(detail.pubkey).toBe('deadbeef12345678deadbeef12345678deadbeef12345678deadbeef12345678');
+			expect(detail.pubkey).toBe(
+				'deadbeef12345678deadbeef12345678deadbeef12345678deadbeef12345678'
+			);
+			expect(detail.hasSigner).toBe(true);
+		});
+
+		it('should receive a byte array event and route to handleCryptoMessage', () => {
+			const backend = new NativeBackend();
+			const authHandler = vi.fn();
+			backend.addEventListener('auth', authHandler);
+
+			const listener =
+				mockEmitter.addListener.mock.calls[mockEmitter.addListener.mock.calls.length - 1][1];
+
+			const cryptoPayload = buildCryptoRawMessage(
+				JSON.stringify({
+					op: 'get_public_key',
+					result: 'bytes1234567890abcdefbytes1234567890abcdefbytes1234567890abcdef12'
+				})
+			);
+			const frame = buildNativeFrame('crypto', cryptoPayload);
+
+			listener({ v: 1, encoding: 'bytes', data: Array.from(frame) });
+
+			expect(authHandler).toHaveBeenCalledTimes(1);
+			const detail = authHandler.mock.calls[0][0].detail;
+			expect(detail.pubkey).toBe(
+				'bytes1234567890abcdefbytes1234567890abcdefbytes1234567890abcdef12'
+			);
 			expect(detail.hasSigner).toBe(true);
 		});
 
@@ -104,10 +128,14 @@ describe('NativeBackend', () => {
 			const authHandler = vi.fn();
 			backend.addEventListener('auth', authHandler);
 
-			const listener = mockEmitter.addListener.mock.calls[mockEmitter.addListener.mock.calls.length - 1][1];
+			const listener =
+				mockEmitter.addListener.mock.calls[mockEmitter.addListener.mock.calls.length - 1][1];
 
 			const cryptoPayload = buildCryptoRawMessage(
-				JSON.stringify({ op: 'get_public_key', result: 'arraywrapped12345678arraywrapped12345678arraywrapped12345678arraywrapped12345678' })
+				JSON.stringify({
+					op: 'get_public_key',
+					result: 'arraywrapped12345678arraywrapped12345678arraywrapped12345678arraywrapped12345678'
+				})
 			);
 			const frame = buildNativeFrame('crypto', cryptoPayload);
 			const base64 = bytesToBase64(frame);
@@ -117,7 +145,9 @@ describe('NativeBackend', () => {
 
 			expect(authHandler).toHaveBeenCalledTimes(1);
 			const detail = authHandler.mock.calls[0][0].detail;
-			expect(detail.pubkey).toBe('arraywrapped12345678arraywrapped12345678arraywrapped12345678arraywrapped12345678');
+			expect(detail.pubkey).toBe(
+				'arraywrapped12345678arraywrapped12345678arraywrapped12345678arraywrapped12345678'
+			);
 		});
 
 		it('should drop malformed envelopes', () => {
@@ -125,7 +155,8 @@ describe('NativeBackend', () => {
 			const authHandler = vi.fn();
 			backend.addEventListener('auth', authHandler);
 
-			const listener = mockEmitter.addListener.mock.calls[mockEmitter.addListener.mock.calls.length - 1][1];
+			const listener =
+				mockEmitter.addListener.mock.calls[mockEmitter.addListener.mock.calls.length - 1][1];
 
 			// Wrong version
 			listener({ v: 2, encoding: 'base64', data: 'abc' });
@@ -148,17 +179,24 @@ describe('NativeBackend', () => {
 			(backend as any)._pendingSession = { type: 'privkey', payload: 'secret' };
 
 			const payload = buildCryptoRawMessage(
-				JSON.stringify({ op: 'set_signer', result: '79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798' })
+				JSON.stringify({
+					op: 'set_signer',
+					result: '79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798'
+				})
 			);
 			(backend as any).handleCryptoMessage(payload);
 
 			expect(authHandler).toHaveBeenCalledTimes(1);
 			const detail = authHandler.mock.calls[0][0].detail;
-			expect(detail.pubkey).toBe('79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798');
+			expect(detail.pubkey).toBe(
+				'79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798'
+			);
 			expect(detail.hasSigner).toBe(true);
 			expect(detail.secretKey).toBe('secret');
 			expect((backend as any)._pendingSession).toBeNull();
-			expect((backend as any).activePubkey).toBe('79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798');
+			expect((backend as any).activePubkey).toBe(
+				'79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798'
+			);
 		});
 
 		it('should dispatch auth event on get_public_key success', () => {
@@ -167,13 +205,18 @@ describe('NativeBackend', () => {
 			backend.addEventListener('auth', authHandler);
 
 			const payload = buildCryptoRawMessage(
-				JSON.stringify({ op: 'get_public_key', result: 'abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890' })
+				JSON.stringify({
+					op: 'get_public_key',
+					result: 'abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890'
+				})
 			);
 			(backend as any).handleCryptoMessage(payload);
 
 			expect(authHandler).toHaveBeenCalledTimes(1);
 			const detail = authHandler.mock.calls[0][0].detail;
-			expect(detail.pubkey).toBe('abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890');
+			expect(detail.pubkey).toBe(
+				'abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890'
+			);
 			expect(detail.hasSigner).toBe(true);
 		});
 
@@ -189,7 +232,7 @@ describe('NativeBackend', () => {
 				kind: 1,
 				tags: [],
 				content: 'hello',
-				sig: 'sig',
+				sig: 'sig'
 			};
 			const payload = buildCryptoRawMessage(
 				JSON.stringify({ op: 'sign_event', result: JSON.stringify(signedEvent) })
