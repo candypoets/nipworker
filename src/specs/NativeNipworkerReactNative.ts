@@ -14,4 +14,4 @@ export interface Spec extends TurboModule {
 	readonly onData: CodegenTypes.EventEmitter<Readonly<{ data: Array<number> }>>;
 }
 
-export default TurboModuleRegistry.get<Spec>('NipworkerReactNative');
+export default TurboModuleRegistry.get<Spec>('NipworkerReactNativeModule');

@@ -25,7 +25,7 @@ type ByteRuntime = {
 	handleMessage(bytes: ArrayBuffer): void;
 	setPrivateKey(secret: string): void;
 	deinit(): void;
-	addListener(listener: (event: ArrayBuffer) => void): { remove: () => void };
+	drain(): ArrayBuffer[];
 };
 
 function getByteRuntime(): ByteRuntime | undefined {
@@ -121,14 +121,25 @@ const reactNativeBridge: NativeRuntimeBridge = {
 					mod.deinit();
 				}
 			};
-		},
+	},
 	getEventEmitter(): any {
+		const mod = getReactNativeModule();
+		if (typeof mod.installByteRuntime === 'function') {
+			mod.installByteRuntime();
+		}
 		const byteRuntime = getByteRuntime();
 		if (byteRuntime) {
+			const emitter = new NativeEventEmitter(mod);
 			const subscriptions = new Map<(event: any) => void, { remove: () => void }>();
 			return {
 				addListener(_eventName: string, listener: (event: any) => void): void {
-					subscriptions.set(listener, byteRuntime.addListener(listener));
+					const subscription = emitter.addListener(REACT_NATIVE_EVENT_NAME, (event: any) => {
+						if (event?.v !== 1 || event?.encoding !== 'queued') return;
+						for (const buffer of byteRuntime.drain()) {
+							listener(buffer);
+						}
+					});
+					subscriptions.set(listener, subscription);
 				},
 				removeListener(_eventName: string, listener: (event: any) => void): void {
 					subscriptions.get(listener)?.remove();
@@ -151,7 +162,7 @@ const reactNativeBridge: NativeRuntimeBridge = {
 			};
 		}
 
-		const emitter = new NativeEventEmitter(getReactNativeModule());
+		const emitter = new NativeEventEmitter(mod);
 		const subscriptions = new Map<(event: any) => void, { remove: () => void }>();
 		return {
 			addListener(eventName: string, listener: (event: any) => void): void {

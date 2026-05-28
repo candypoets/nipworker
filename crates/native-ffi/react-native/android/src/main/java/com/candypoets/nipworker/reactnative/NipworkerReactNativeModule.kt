@@ -19,6 +19,7 @@ class NipworkerReactNativeModule(
 
 		init {
 			System.loadLibrary("nipworker_native_ffi")
+			System.loadLibrary("nipworker_react_native")
 		}
 
 		private val nextUserdata = AtomicLong(1L)
@@ -33,9 +34,19 @@ class NipworkerReactNativeModule(
 		private var activeModule: NipworkerReactNativeModule? = null
 
 		@JvmStatic
-		fun onNativeData(userdata: Long, data: ByteArray) {
-			val module = activeModule ?: return
-			val bytes = Arguments.createArray()
+			fun onNativeData(userdata: Long, data: ByteArray) {
+				val module = activeModule ?: return
+				if (nativeIsByteRuntimeInstalled() && nativeQueueData(data)) {
+					val payload = Arguments.createMap().apply {
+						putInt("v", 1)
+						putString("encoding", "queued")
+					}
+					module.reactContext
+						.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+						.emit(EVENT_NAME, payload)
+					return
+				}
+				val bytes = Arguments.createArray()
 			for (byte in data) {
 				bytes.pushInt(byte.toInt() and 0xff)
 			}
@@ -61,9 +72,18 @@ class NipworkerReactNativeModule(
 		@JvmStatic
 		external fun nipworkerDeinit(handle: Long)
 
-		@JvmStatic
-		external fun nipworkerFreeBytes(ptr: Long, len: Long)
-	}
+			@JvmStatic
+			external fun nipworkerFreeBytes(ptr: Long, len: Long)
+
+			@JvmStatic
+			external fun nativeInstallByteRuntime(runtimePtr: Long, handle: Long): Boolean
+
+			@JvmStatic
+			external fun nativeIsByteRuntimeInstalled(): Boolean
+
+			@JvmStatic
+			external fun nativeQueueData(bytes: ByteArray): Boolean
+		}
 
 	override fun getName(): String = NAME
 
@@ -88,6 +108,16 @@ class NipworkerReactNativeModule(
 			sharedUserdata = nextUserdata.getAndIncrement()
 			sharedHandle = nipworkerInit(sharedUserdata)
 		}
+	}
+
+	@ReactMethod(isBlockingSynchronousMethod = true)
+	fun installByteRuntime(): Boolean {
+		init()
+		val runtimePtr = reactContext.javaScriptContextHolder?.get() ?: 0L
+		if (runtimePtr == 0L || sharedHandle == 0L) {
+			return false
+		}
+		return nativeInstallByteRuntime(runtimePtr, sharedHandle)
 	}
 
 	@ReactMethod

@@ -47,9 +47,12 @@ globalThis.__nipworkerReactNativeByteRuntime.handleMessage(bytes: ArrayBuffer): 
 
 The installer keeps the codegen surface on officially supported types while the
 JSI runtime carries direct `ArrayBuffer` payloads. Native platform
-implementations still need to install that JSI object and be tested inside a New
-Architecture React Native app. Until then, the JS entry point falls back to the
-existing `number[]` TurboModule/legacy bridge shape.
+implementations install that JSI object as
+`globalThis.__nipworkerReactNativeByteRuntime`. Rust callback packets are queued
+natively, the legacy event emitter sends a tiny `{ encoding: 'queued' }` wake-up,
+and JS drains the native queue as `ArrayBuffer[]`. Until installation succeeds,
+the JS entry point falls back to the existing `number[]` TurboModule/legacy
+bridge shape.
 
 ## iOS
 

@@ -12,8 +12,11 @@ Pod::Spec.new do |s|
   s.public_header_files = 'crates/native-ffi/react-native/ios/NipworkerReactNativeModule.h'
   s.vendored_frameworks = 'crates/native-ffi/ios/NipworkerNativeFFI.xcframework'
   s.dependency 'React-Core'
+  s.dependency 'React-jsi'
+  s.dependency 'React-cxxreact'
   s.pod_target_xcconfig = {
     'CLANG_CXX_LANGUAGE_STANDARD' => 'c++17',
+    'CLANG_CXX_LIBRARY' => 'libc++',
     'OTHER_LDFLAGS' => '$(inherited) -lc++'
   }
 end

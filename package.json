@@ -78,7 +78,7 @@
 		},
 		"ios": {
 			"modules": {
-				"NipworkerReactNative": {
+				"NipworkerReactNativeModule": {
 					"className": "NipworkerReactNativeModule"
 				}
 			}
