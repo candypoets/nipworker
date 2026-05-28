@@ -1,6 +1,24 @@
 import { describe, expect, it } from 'vitest';
+import * as flatbuffers from 'flatbuffers';
 
 import { ArrayBufferReader } from './ArrayBufferReader';
+import { Eoce, Message, MessageType, WorkerMessage } from '../generated/nostr/fb';
+
+function buildEoceMessage(subId: string): Uint8Array {
+	const builder = new flatbuffers.Builder(256);
+	const subscriptionId = builder.createString(subId);
+	const eoce = Eoce.createEoce(builder, subscriptionId);
+	const message = WorkerMessage.createWorkerMessage(
+		builder,
+		0,
+		0,
+		MessageType.Eoce,
+		Message.Eoce,
+		eoce
+	);
+	builder.finish(message);
+	return builder.asUint8Array();
+}
 
 describe('ArrayBufferReader', () => {
 	it('writes a raw payload with a length prefix', () => {
@@ -23,5 +41,22 @@ describe('ArrayBufferReader', () => {
 
 		expect(ArrayBufferReader.writePayload(buffer, new Uint8Array([1]))).toBe(false);
 		expect(ArrayBufferReader.getCurrentWritePosition(buffer)).toBe(4);
+	});
+
+	it('reads WorkerMessage FlatBuffers written through writePayload', () => {
+		const buffer = new ArrayBuffer(256);
+		ArrayBufferReader.initializeBuffer(buffer);
+
+		expect(ArrayBufferReader.writePayload(buffer, buildEoceMessage('turbo-sub'))).toBe(true);
+
+		const result = ArrayBufferReader.readMessages(buffer, 4);
+		expect(result.hasNewData).toBe(true);
+		expect(result.messages).toHaveLength(1);
+		expect(result.newReadPosition).toBe(ArrayBufferReader.getCurrentWritePosition(buffer));
+
+		const message = result.messages[0]!;
+		expect(message.type()).toBe(MessageType.Eoce);
+		expect(message.contentType()).toBe(Message.Eoce);
+		expect(message.content(new Eoce())?.subscriptionId()).toBe('turbo-sub');
 	});
 });
