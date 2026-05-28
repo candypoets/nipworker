@@ -88,6 +88,28 @@ export class ArrayBufferReader {
 		return true;
 	}
 
+	static writePayload(buffer: ArrayBuffer, payload: Uint8Array, _debugId?: string): boolean {
+		const view = new DataView(buffer);
+		const uint8View = new Uint8Array(buffer);
+		const currentWritePosition = view.getUint32(0, true);
+		const requiredSpace = 4 + payload.length;
+
+		if (currentWritePosition + requiredSpace > buffer.byteLength) {
+			console.warn(
+				`[ArrayBufferReader] Dropping ${_debugId ? `event for subscription '${_debugId}'` : 'event'}: ` +
+					`buffer full (${currentWritePosition}/${buffer.byteLength} bytes used, ` +
+					`need ${requiredSpace} more bytes). ` +
+					`Consider increasing 'bytesPerEvent' or reducing subscription limits.`
+			);
+			return false;
+		}
+
+		view.setUint32(currentWritePosition, payload.length, true);
+		uint8View.set(payload, currentWritePosition + 4);
+		view.setUint32(0, currentWritePosition + requiredSpace, true);
+		return true;
+	}
+
 	/**
 	 * Read new messages from ArrayBuffer since last read position
 	 * @param buffer The ArrayBuffer to read from

@@ -14,7 +14,7 @@ setManager(manager);
 
 ## Event Transport
 
-The React Native bridge receives native events as:
+The current legacy React Native bridge receives native events as:
 
 ```ts
 {
@@ -29,6 +29,27 @@ The JS entry point decodes those events and routes them through the shared
 same reason: this legacy React Native native module does not expose a direct
 `ArrayBuffer` transport. A future JSI/TurboModule backend should replace the
 array bridge with direct `ArrayBuffer`/native-buffer access.
+
+## TurboModule Experiment
+
+This package declares a New Architecture codegen spec at
+`src/specs/NativeNipworkerReactNative.ts` and registers it through
+`codegenConfig` in `package.json`. The JS entry point prefers the generated
+TurboModule when it is available and falls back to the legacy bridge otherwise.
+
+The intended direct-byte shape is a small codegen TurboModule installer plus a
+JSI runtime object:
+
+```ts
+installByteRuntime(): boolean
+globalThis.__nipworkerReactNativeByteRuntime.handleMessage(bytes: ArrayBuffer): void
+```
+
+The installer keeps the codegen surface on officially supported types while the
+JSI runtime carries direct `ArrayBuffer` payloads. Native platform
+implementations still need to install that JSI object and be tested inside a New
+Architecture React Native app. Until then, the JS entry point falls back to the
+existing `number[]` TurboModule/legacy bridge shape.
 
 ## iOS
 

@@ -14,14 +14,35 @@ import { getManager, setManager, setGlobalManager } from './manager';
 import type { NostrManagerLike } from './manager';
 import type { NostrManagerConfig } from './types';
 import type { StorageAdapter } from './lib/BaseBackend';
+import NativeNipworkerReactNative from './specs/NativeNipworkerReactNative';
 
 const REACT_NATIVE_EVENT_NAME = 'NipworkerEvent';
 const memoryStorage = new Map<string, string>();
 let reactNativeBackendInstance: ReactNativeBackend | undefined;
 
+type ByteRuntime = {
+	init(): void;
+	handleMessage(bytes: ArrayBuffer): void;
+	setPrivateKey(secret: string): void;
+	deinit(): void;
+	addListener(listener: (event: ArrayBuffer) => void): { remove: () => void };
+};
+
+function getByteRuntime(): ByteRuntime | undefined {
+	return (globalThis as any).__nipworkerReactNativeByteRuntime;
+}
+
+function getTurboModule(): any {
+	return NativeNipworkerReactNative;
+}
+
+function getAnyReactNativeModule(): any {
+	return getTurboModule() ?? NativeModules.NipworkerReactNativeModule;
+}
+
 const reactNativeStorageAdapter: StorageAdapter = {
 	getItem(key: string): string | null {
-		const mod = NativeModules.NipworkerReactNativeModule;
+		const mod = getAnyReactNativeModule();
 		if (typeof mod?.getStorageItem === 'function') {
 			const value = mod.getStorageItem(key);
 			return typeof value === 'string' ? value : null;
@@ -29,7 +50,7 @@ const reactNativeStorageAdapter: StorageAdapter = {
 		return memoryStorage.get(key) ?? null;
 	},
 	setItem(key: string, value: string): void {
-		const mod = NativeModules.NipworkerReactNativeModule;
+		const mod = getAnyReactNativeModule();
 		if (typeof mod?.setStorageItem === 'function') {
 			mod.setStorageItem(key, value);
 			return;
@@ -37,7 +58,7 @@ const reactNativeStorageAdapter: StorageAdapter = {
 		memoryStorage.set(key, value);
 	},
 	removeItem(key: string): void {
-		const mod = NativeModules.NipworkerReactNativeModule;
+		const mod = getAnyReactNativeModule();
 		if (typeof mod?.removeStorageItem === 'function') {
 			mod.removeStorageItem(key);
 			return;
@@ -47,10 +68,10 @@ const reactNativeStorageAdapter: StorageAdapter = {
 };
 
 function getReactNativeModule(): any {
-	const mod = NativeModules.NipworkerReactNativeModule;
+	const mod = getAnyReactNativeModule();
 	if (!mod) {
 		throw new Error(
-			'[ReactNativeBackend] NipworkerReactNativeModule not found. Ensure the native module is linked.'
+			'[ReactNativeBackend] NipworkerReactNative native module not found. Ensure the native module is linked.'
 		);
 	}
 	return mod;
@@ -60,24 +81,76 @@ const reactNativeBridge: NativeRuntimeBridge = {
 	name: 'react-native',
 	eventName: REACT_NATIVE_EVENT_NAME,
 	storage: reactNativeStorageAdapter,
-	getModule(): any {
-		const mod = getReactNativeModule();
-		return {
-			init(): void {
-				mod.init();
-			},
-			handleMessage(bytes: Uint8Array): void {
-				mod.handleMessage(Array.from(bytes));
-			},
-			setPrivateKey(secret: string): void {
-				mod.setPrivateKey(secret);
-			},
-			deinit(): void {
-				mod.deinit();
-			}
-		};
-	},
+		getModule(): any {
+			const mod = getReactNativeModule();
+			return {
+				init(): void {
+					if (typeof mod.installByteRuntime === 'function') {
+						mod.installByteRuntime();
+					}
+					const byteRuntime = getByteRuntime();
+					if (byteRuntime) {
+						byteRuntime.init();
+						return;
+					}
+					mod.init();
+				},
+				handleMessage(bytes: Uint8Array): void {
+					const exact = bytes.slice();
+					const byteRuntime = getByteRuntime();
+					if (byteRuntime) {
+						byteRuntime.handleMessage(exact.buffer);
+						return;
+					}
+					mod.handleMessage(Array.from(exact));
+				},
+				setPrivateKey(secret: string): void {
+					const byteRuntime = getByteRuntime();
+					if (byteRuntime) {
+						byteRuntime.setPrivateKey(secret);
+						return;
+					}
+					mod.setPrivateKey(secret);
+				},
+				deinit(): void {
+					const byteRuntime = getByteRuntime();
+					if (byteRuntime) {
+						byteRuntime.deinit();
+						return;
+					}
+					mod.deinit();
+				}
+			};
+		},
 	getEventEmitter(): any {
+		const byteRuntime = getByteRuntime();
+		if (byteRuntime) {
+			const subscriptions = new Map<(event: any) => void, { remove: () => void }>();
+			return {
+				addListener(_eventName: string, listener: (event: any) => void): void {
+					subscriptions.set(listener, byteRuntime.addListener(listener));
+				},
+				removeListener(_eventName: string, listener: (event: any) => void): void {
+					subscriptions.get(listener)?.remove();
+					subscriptions.delete(listener);
+				}
+			};
+		}
+
+		const turbo = getTurboModule();
+		if (turbo?.onData) {
+			const subscriptions = new Map<(event: any) => void, { remove: () => void }>();
+			return {
+				addListener(_eventName: string, listener: (event: any) => void): void {
+					subscriptions.set(listener, turbo.onData((event: { data: number[] }) => listener(event.data)));
+				},
+				removeListener(_eventName: string, listener: (event: any) => void): void {
+					subscriptions.get(listener)?.remove();
+					subscriptions.delete(listener);
+				}
+			};
+		}
+
 		const emitter = new NativeEventEmitter(getReactNativeModule());
 		const subscriptions = new Map<(event: any) => void, { remove: () => void }>();
 		return {
@@ -111,7 +184,15 @@ export function createNostrManager(config?: NostrManagerConfig): NostrManagerLik
 }
 
 export function hasReactNativeModule(): boolean {
-	return !!NativeModules.NipworkerReactNativeModule;
+	return !!getAnyReactNativeModule();
+}
+
+export function hasReactNativeTurboModule(): boolean {
+	return !!getTurboModule();
+}
+
+export function hasReactNativeByteRuntime(): boolean {
+	return !!getByteRuntime();
 }
 
 export function hasNativeModule(): boolean {

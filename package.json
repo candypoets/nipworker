@@ -59,6 +59,7 @@
 	},
 	"files": [
 		"dist",
+		"src/specs",
 		"prebuilt",
 		"react-native.config.cjs",
 		"react-native.config.ts",
@@ -68,6 +69,21 @@
 		"crates/native-ffi/react-native",
 		"README.md"
 	],
+	"codegenConfig": {
+		"name": "NipworkerReactNativeSpec",
+		"type": "modules",
+		"jsSrcsDir": "src/specs",
+		"android": {
+			"javaPackageName": "com.candypoets.nipworker.reactnative"
+		},
+		"ios": {
+			"modules": {
+				"NipworkerReactNative": {
+					"className": "NipworkerReactNativeModule"
+				}
+			}
+		}
+	},
 	"scripts": {
 		"build": "npm-run-all --parallel build:connections build:cache build:parser build:crypto build:engine && vite build",
 		"build:crates": "npm-run-all --parallel build:connections build:cache build:parser build:crypto build:engine",

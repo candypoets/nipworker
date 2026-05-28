@@ -432,17 +432,10 @@ export class NativeBackend extends BaseBackend {
 			if (diag) diag.subscriptionCount = this.subscriptions.size;
 		}
 
-		// Parser sends raw FlatBuffer bytes; prepend 4-byte LE length so
-		// ArrayBufferReader.readMessages can parse them correctly.
-		const lengthPrefixed = new Uint8Array(4 + payload.length);
-		const lpView = new DataView(lengthPrefixed.buffer);
-		lpView.setUint32(0, payload.length, true);
-		lengthPrefixed.set(payload, 4);
-
 		const subscription = this.subscriptions.get(subId);
 		if (subscription) {
 			const buf = subscription.buffer;
-			const written = ArrayBufferReader.writeBatchedData(buf, lengthPrefixed, subId);
+			const written = ArrayBufferReader.writePayload(buf, payload, subId);
 			if (written) {
 				this.dispatch(`subscription:${subId}`, subId);
 			}
@@ -451,7 +444,7 @@ export class NativeBackend extends BaseBackend {
 
 		const publish = this.publishes.get(subId);
 		if (publish) {
-			const written = ArrayBufferReader.writeBatchedData(publish.buffer, lengthPrefixed, subId);
+			const written = ArrayBufferReader.writePayload(publish.buffer, payload, subId);
 			if (written) {
 				this.dispatch(`publish:${subId}`, subId);
 			}
