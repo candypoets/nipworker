@@ -28,6 +28,19 @@ type ByteRuntime = {
 	drain(): ArrayBuffer[];
 };
 
+function toExactUint8Array(bytes: Uint8Array | ArrayBuffer): Uint8Array {
+	if (bytes instanceof Uint8Array) {
+		return bytes.slice();
+	}
+	return new Uint8Array(bytes).slice();
+}
+
+function toExactArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+	const output = new ArrayBuffer(bytes.byteLength);
+	new Uint8Array(output).set(bytes);
+	return output;
+}
+
 function getByteRuntime(): ByteRuntime | undefined {
 	return (globalThis as any).__nipworkerReactNativeByteRuntime;
 }
@@ -81,46 +94,46 @@ const reactNativeBridge: NativeRuntimeBridge = {
 	name: 'react-native',
 	eventName: REACT_NATIVE_EVENT_NAME,
 	storage: reactNativeStorageAdapter,
-		getModule(): any {
-			const mod = getReactNativeModule();
-			return {
-				init(): void {
-					if (typeof mod.installByteRuntime === 'function') {
-						mod.installByteRuntime();
-					}
-					const byteRuntime = getByteRuntime();
-					if (byteRuntime) {
-						byteRuntime.init();
-						return;
-					}
-					mod.init();
-				},
-				handleMessage(bytes: Uint8Array): void {
-					const exact = bytes.slice();
-					const byteRuntime = getByteRuntime();
-					if (byteRuntime) {
-						byteRuntime.handleMessage(exact.buffer);
-						return;
-					}
-					mod.handleMessage(Array.from(exact));
-				},
-				setPrivateKey(secret: string): void {
-					const byteRuntime = getByteRuntime();
-					if (byteRuntime) {
-						byteRuntime.setPrivateKey(secret);
-						return;
-					}
-					mod.setPrivateKey(secret);
-				},
-				deinit(): void {
-					const byteRuntime = getByteRuntime();
-					if (byteRuntime) {
-						byteRuntime.deinit();
-						return;
-					}
-					mod.deinit();
+	getModule(): any {
+		const mod = getReactNativeModule();
+		return {
+			init(): void {
+				if (typeof mod.installByteRuntime === 'function') {
+					mod.installByteRuntime();
 				}
-			};
+				const byteRuntime = getByteRuntime();
+				if (byteRuntime) {
+					byteRuntime.init();
+					return;
+				}
+				mod.init();
+			},
+			handleMessage(bytes: Uint8Array | ArrayBuffer): void {
+				const exact = toExactUint8Array(bytes);
+				const byteRuntime = getByteRuntime();
+				if (byteRuntime) {
+					byteRuntime.handleMessage(toExactArrayBuffer(exact));
+					return;
+				}
+				mod.handleMessage(Array.from(exact));
+			},
+			setPrivateKey(secret: string): void {
+				const byteRuntime = getByteRuntime();
+				if (byteRuntime) {
+					byteRuntime.setPrivateKey(secret);
+					return;
+				}
+				mod.setPrivateKey(secret);
+			},
+			deinit(): void {
+				const byteRuntime = getByteRuntime();
+				if (byteRuntime) {
+					byteRuntime.deinit();
+					return;
+				}
+				mod.deinit();
+			}
+		};
 	},
 	getEventEmitter(): any {
 		const mod = getReactNativeModule();

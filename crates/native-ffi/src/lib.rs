@@ -112,13 +112,14 @@ pub extern "C" fn nipworker_init(
         let local = LocalSet::new();
 
         local.spawn_local(async move {
-            let transport = Arc::new(NativeTransport::new());
-            let storage = Arc::new(InMemoryStorage::new());
-
             let (async_event_tx, mut async_event_rx) =
                 futures::channel::mpsc::channel::<(String, Vec<u8>)>(256);
 
-            let engine = Arc::new(NostrEngine::new(transport, storage, async_event_tx));
+            let engine = Arc::new(NostrEngine::new_threaded(
+                || Arc::new(NativeTransport::new()),
+                || Arc::new(InMemoryStorage::new()),
+                async_event_tx,
+            ));
 
             // Bridge async events to sync callback thread.
             // The callback receives an owned buffer; the host must call

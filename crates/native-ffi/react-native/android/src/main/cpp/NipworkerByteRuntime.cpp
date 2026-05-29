@@ -15,11 +15,28 @@ namespace {
 using facebook::jsi::Array;
 using facebook::jsi::ArrayBuffer;
 using facebook::jsi::Function;
+using facebook::jsi::MutableBuffer;
 using facebook::jsi::Object;
 using facebook::jsi::PropNameID;
 using facebook::jsi::Runtime;
 using facebook::jsi::String;
 using facebook::jsi::Value;
+
+class VectorMutableBuffer final : public MutableBuffer {
+public:
+	explicit VectorMutableBuffer(std::vector<uint8_t> bytes) : bytes_(std::move(bytes)) {}
+
+	size_t size() const override {
+		return bytes_.size();
+	}
+
+	uint8_t* data() override {
+		return bytes_.data();
+	}
+
+private:
+	std::vector<uint8_t> bytes_;
+};
 
 std::mutex gQueueMutex;
 std::vector<std::vector<uint8_t>> gQueuedPackets;
@@ -151,8 +168,8 @@ Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nativeInsta
 				auto packets = drainBytes();
 				Array output(runtime, packets.size());
 				for (size_t i = 0; i < packets.size(); i++) {
-					ArrayBuffer buffer(runtime, packets[i].size());
-					std::memcpy(buffer.data(runtime), packets[i].data(), packets[i].size());
+					auto nativeBuffer = std::make_shared<VectorMutableBuffer>(std::move(packets[i]));
+					ArrayBuffer buffer(runtime, std::move(nativeBuffer));
 					output.setValueAtIndex(runtime, i, std::move(buffer));
 				}
 				return output;

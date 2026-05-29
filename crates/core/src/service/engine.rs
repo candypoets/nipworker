@@ -1,8 +1,9 @@
-use std::sync::Arc;
 use futures::channel::mpsc;
-use futures::StreamExt;
+use std::sync::Arc;
 use tracing::info;
 
+#[cfg(not(target_arch = "wasm32"))]
+use crate::channel::TokioWorkerChannel;
 use crate::channel::{FuturesWorkerChannel, MessageSender, WorkerChannel};
 use crate::generated::nostr::fb;
 use crate::nostr_error::{NostrError, NostrResult};
@@ -23,504 +24,878 @@ use crate::worker::parser_worker::ParserWorker;
 ///
 /// Works on both native (tokio) and WASM (browser) targets.
 pub struct NostrEngine {
-	parser_tx: Box<dyn MessageSender>,
-	crypto_tx: Box<dyn MessageSender>,
-	event_sink: mpsc::Sender<(String, Vec<u8>)>,
+    parser_tx: Box<dyn MessageSender>,
+    crypto_tx: Box<dyn MessageSender>,
+    event_sink: mpsc::Sender<(String, Vec<u8>)>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn spawn_native_local_thread<F>(name: &'static str, setup: F)
+where
+    F: FnOnce() + Send + 'static,
+{
+    std::thread::Builder::new()
+        .name(name.to_string())
+        .spawn(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("failed to build worker runtime");
+            let local = tokio::task::LocalSet::new();
+            local.spawn_local(async move {
+                setup();
+                futures::future::pending::<()>().await;
+            });
+            rt.block_on(local);
+        })
+        .expect("failed to spawn worker thread");
 }
 
 impl NostrEngine {
-	/// Unified constructor: works on both native and WASM targets.
-	/// NostrEngine is the orchestrator and spawns all workers internally.
-	pub fn new(
-		transport: Arc<dyn RelayTransport>,
-		storage: Arc<dyn Storage>,
-		event_sink: mpsc::Sender<(String, Vec<u8>)>,
-	) -> Self {
-		info!("[NostrEngine] Initializing...");
+    /// Unified constructor: works on both native and WASM targets.
+    /// NostrEngine is the orchestrator and spawns all workers internally.
+    pub fn new(
+        transport: Arc<dyn RelayTransport>,
+        storage: Arc<dyn Storage>,
+        event_sink: mpsc::Sender<(String, Vec<u8>)>,
+    ) -> Self {
+        info!("[NostrEngine] Initializing...");
 
-		// Bidirectional pairs: one end stays in the engine, the other goes to the worker.
-		let (engine_parser_ch, parser_engine_ch) = FuturesWorkerChannel::new_pair();
-		let (parser_conn_ch, conn_parser_ch) = FuturesWorkerChannel::new_pair();
-		let (parser_cache_ch, cache_parser_ch) = FuturesWorkerChannel::new_pair();
-		let (parser_crypto_ch, crypto_parser_ch) = FuturesWorkerChannel::new_pair();
-		let (engine_crypto_ch, crypto_engine_ch) = FuturesWorkerChannel::new_pair();
-		let (cache_conn_ch, conn_cache_ch) = FuturesWorkerChannel::new_pair();
-		let (conn_crypto_ch, crypto_conn_ch) = FuturesWorkerChannel::new_pair();
+        // Bidirectional pairs: one end stays in the engine, the other goes to the worker.
+        let (engine_parser_ch, parser_engine_ch) = FuturesWorkerChannel::new_pair();
+        let (parser_conn_ch, conn_parser_ch) = FuturesWorkerChannel::new_pair();
+        let (parser_cache_ch, cache_parser_ch) = FuturesWorkerChannel::new_pair();
+        let (parser_crypto_ch, crypto_parser_ch) = FuturesWorkerChannel::new_pair();
+        let (engine_crypto_ch, crypto_engine_ch) = FuturesWorkerChannel::new_pair();
+        let (cache_conn_ch, conn_cache_ch) = FuturesWorkerChannel::new_pair();
+        let (conn_crypto_ch, crypto_conn_ch) = FuturesWorkerChannel::new_pair();
 
-		let engine_parser_tx = engine_parser_ch.clone_sender();
-		let engine_crypto_tx = engine_crypto_ch.clone_sender();
-		let conn_parser_tx = parser_conn_ch.clone_sender();
-		let cache_parser_tx = cache_parser_ch.clone_sender();
-		let crypto_engine_tx = crypto_engine_ch.clone_sender();
-		let crypto_parser_tx = crypto_parser_ch.clone_sender();
-		let conn_crypto_tx = conn_crypto_ch.clone_sender();
-		let crypto_conn_tx = crypto_conn_ch.clone_sender();
+        let engine_parser_tx = engine_parser_ch.clone_sender();
+        let engine_crypto_tx = engine_crypto_ch.clone_sender();
+        let conn_parser_tx = parser_conn_ch.clone_sender();
+        let cache_parser_tx = cache_parser_ch.clone_sender();
+        let crypto_engine_tx = crypto_engine_ch.clone_sender();
+        let crypto_parser_tx = crypto_parser_ch.clone_sender();
+        let conn_crypto_tx = conn_crypto_ch.clone_sender();
+        let crypto_conn_tx = crypto_conn_ch.clone_sender();
 
-		let (mut to_main_ch, from_parser_ch) = FuturesWorkerChannel::new_pair();
+        let (to_main_ch, from_parser_ch) = FuturesWorkerChannel::new_pair();
 
-		let crypto_client = crate::crypto_client::CryptoClient::new(Box::new(parser_crypto_ch));
-		let parser = Arc::new(Parser::new(Some(Arc::new(crypto_client))));
+        let crypto_client = crate::crypto_client::CryptoClient::new(Box::new(parser_crypto_ch));
+        let parser = Arc::new(Parser::new(Some(Arc::new(crypto_client))));
 
-		let parser_worker = ParserWorker::new(
-			parser.clone(),
-			Arc::from(parser_cache_ch.clone_sender()),
-			from_parser_ch.clone_sender(),
-		);
-		parser_worker.run(
-			Box::new(parser_engine_ch),
-			Box::new(conn_parser_ch),
-			Box::new(parser_cache_ch),
-		);
+        let parser_worker = ParserWorker::new(
+            parser.clone(),
+            Arc::from(parser_cache_ch.clone_sender()),
+            from_parser_ch.clone_sender(),
+        );
+        parser_worker.run(
+            Box::new(parser_engine_ch),
+            Box::new(conn_parser_ch),
+            Box::new(parser_cache_ch),
+        );
 
-		let connections_worker = ConnectionsWorker::new(transport);
-		connections_worker.run(
-			Box::new(parser_conn_ch),
-			conn_parser_tx,
-			Box::new(conn_cache_ch),
-			Box::new(conn_crypto_ch),
-			conn_crypto_tx,
-		);
+        let connections_worker = ConnectionsWorker::new(transport);
+        connections_worker.run(
+            Box::new(parser_conn_ch),
+            conn_parser_tx,
+            Box::new(conn_cache_ch),
+            Box::new(conn_crypto_ch),
+            conn_crypto_tx,
+        );
 
-		let cache_worker = CacheWorker::new(storage);
-		cache_worker.run(
-			Box::new(cache_parser_ch),
-			cache_parser_tx,
-			cache_conn_ch.clone_sender(),
-		);
+        let cache_worker = CacheWorker::new(storage);
+        cache_worker.run(
+            Box::new(cache_parser_ch),
+            cache_parser_tx,
+            cache_conn_ch.clone_sender(),
+        );
 
-		let crypto_worker = CryptoWorker::new();
-		crypto_worker.run(
-			Box::new(crypto_engine_ch),
-			Box::new(crypto_parser_ch),
-			Box::new(crypto_conn_ch),
-			crypto_engine_tx,
-			crypto_parser_tx,
-			crypto_conn_tx,
-		);
+        let crypto_worker = CryptoWorker::new();
+        crypto_worker.run(
+            Box::new(crypto_engine_ch),
+            Box::new(crypto_parser_ch),
+            Box::new(crypto_conn_ch),
+            crypto_engine_tx,
+            crypto_parser_tx,
+            crypto_conn_tx,
+        );
 
-		let event_sink_crypto = event_sink.clone();
-		spawn_worker(async move {
-			let mut ch = engine_crypto_ch;
-			loop {
-				match ch.recv().await {
-					Ok(bytes) => {
-						if let Err(e) = event_sink_crypto.clone().try_send(("crypto".to_string(), bytes)) {
-							tracing::warn!("Failed to forward crypto event to sink: {}", e);
-						}
-					}
-					Err(_) => break,
-				}
-			}
-			info!("[NostrEngine] crypto listener exiting");
-		});
+        let event_sink_crypto = event_sink.clone();
+        spawn_worker(async move {
+            let mut ch = engine_crypto_ch;
+            loop {
+                match ch.recv().await {
+                    Ok(bytes) => {
+                        if let Err(e) = event_sink_crypto
+                            .clone()
+                            .try_send(("crypto".to_string(), bytes))
+                        {
+                            tracing::warn!("Failed to forward crypto event to sink: {}", e);
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+            info!("[NostrEngine] crypto listener exiting");
+        });
 
-		let event_sink_clone = event_sink.clone();
-		spawn_worker(async move {
-			let mut ch = to_main_ch;
-			loop {
-				match ch.recv().await {
-					Ok(bytes) => {
-						match crate::worker::parser_worker::decode_tagged(&bytes) {
-							Some((sub_id, data)) => {
-								if let Err(e) = event_sink_clone.clone().try_send((sub_id, data)) {
-									tracing::warn!("Failed to forward parser event to sink: {}", e);
-								}
-							}
-							None => {
-								tracing::warn!("Failed to decode tagged message from parser");
-							}
-						}
-					}
-					Err(_) => break,
-				}
-			}
-			info!("[NostrEngine] main loop exiting");
-		});
+        let event_sink_clone = event_sink.clone();
+        spawn_worker(async move {
+            let mut ch = to_main_ch;
+            loop {
+                match ch.recv().await {
+                    Ok(bytes) => match crate::worker::parser_worker::decode_tagged(&bytes) {
+                        Some((sub_id, data)) => {
+                            if let Err(e) = event_sink_clone.clone().try_send((sub_id, data)) {
+                                tracing::warn!("Failed to forward parser event to sink: {}", e);
+                            }
+                        }
+                        None => {
+                            tracing::warn!("Failed to decode tagged message from parser");
+                        }
+                    },
+                    Err(_) => break,
+                }
+            }
+            info!("[NostrEngine] main loop exiting");
+        });
 
-		Self {
-			parser_tx: engine_parser_tx,
-			crypto_tx: engine_crypto_tx,
-			event_sink,
-		}
-	}
+        Self {
+            parser_tx: engine_parser_tx,
+            crypto_tx: engine_crypto_tx,
+            event_sink,
+        }
+    }
 
-	/// Deserialize a FlatBuffers MainMessage and dispatch to the appropriate worker.
-	pub async fn handle_message(&self, bytes: &[u8]) -> NostrResult<()> {
-		let main_message = flatbuffers::root::<fb::MainMessage>(bytes)
-			.map_err(|e| NostrError::Parse(format!("Failed to decode FlatBuffer: {:?}", e)))?;
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn new_threaded<TF, SF>(
+        transport_factory: TF,
+        storage_factory: SF,
+        event_sink: mpsc::Sender<(String, Vec<u8>)>,
+    ) -> Self
+    where
+        TF: FnOnce() -> Arc<dyn RelayTransport> + Send + 'static,
+        SF: FnOnce() -> Arc<dyn Storage> + Send + 'static,
+    {
+        info!("[NostrEngine] Initializing native threaded engine...");
 
-		match main_message.content_type() {
-			fb::MainContent::Subscribe
-			| fb::MainContent::Unsubscribe
-			| fb::MainContent::Publish => {
-				self.parser_tx
-					.send(bytes)
-					.map_err(|e| NostrError::Other(format!("Failed to send to parser: {}", e)))?;
-			}
-			fb::MainContent::SignEvent
-			| fb::MainContent::SetSigner
-			| fb::MainContent::GetPublicKey => {
-				self.crypto_tx
-					.send(bytes)
-					.map_err(|e| NostrError::Other(format!("Failed to send to crypto: {}", e)))?;
-			}
-			_ => {
-				return Err(NostrError::Parse("Empty or unknown message content".to_string()));
-			}
-		}
-		Ok(())
-	}
+        let (engine_parser_ch, parser_engine_ch) = TokioWorkerChannel::new_pair();
+        let (parser_conn_ch, conn_parser_ch) = TokioWorkerChannel::new_pair();
+        let (parser_cache_ch, cache_parser_ch) = TokioWorkerChannel::new_pair();
+        let (parser_crypto_ch, crypto_parser_ch) = TokioWorkerChannel::new_pair();
+        let (engine_crypto_ch, crypto_engine_ch) = TokioWorkerChannel::new_pair();
+        let (cache_conn_ch, conn_cache_ch) = TokioWorkerChannel::new_pair();
+        let (conn_crypto_ch, crypto_conn_ch) = TokioWorkerChannel::new_pair();
+        let (to_main_ch, from_parser_ch) = TokioWorkerChannel::new_pair();
 
-	pub async fn subscribe(
-		&self,
-		subscription_id: String,
-		requests: Vec<Request>,
-	) -> NostrResult<()> {
-		let mut builder = flatbuffers::FlatBufferBuilder::new();
-		let sub_id_offset = builder.create_string(&subscription_id);
-		let request_offsets: Vec<_> = requests
-			.iter()
-			.map(|r| r.build_flatbuffer(&mut builder))
-			.collect();
-		let requests_vec = builder.create_vector(&request_offsets);
+        let engine_parser_tx = engine_parser_ch.clone_sender();
+        let engine_crypto_tx = engine_crypto_ch.clone_sender();
+        let conn_parser_tx = parser_conn_ch.clone_sender();
+        let cache_parser_tx = cache_parser_ch.clone_sender();
+        let crypto_engine_tx = crypto_engine_ch.clone_sender();
+        let crypto_parser_tx = crypto_parser_ch.clone_sender();
+        let conn_crypto_tx = conn_crypto_ch.clone_sender();
+        let crypto_conn_tx = crypto_conn_ch.clone_sender();
 
-		// Create default config (required field)
-		let config = fb::SubscriptionConfigT::default();
-		let config_offset = config.pack(&mut builder);
+        spawn_native_local_thread("nipworker-parser", move || {
+            let crypto_client = crate::crypto_client::CryptoClient::new(Box::new(parser_crypto_ch));
+            let parser = Arc::new(Parser::new(Some(Arc::new(crypto_client))));
+            let parser_worker = ParserWorker::new(
+                parser,
+                Arc::from(parser_cache_ch.clone_sender()),
+                from_parser_ch.clone_sender(),
+            );
+            parser_worker.run(
+                Box::new(parser_engine_ch),
+                Box::new(conn_parser_ch),
+                Box::new(parser_cache_ch),
+            );
+        });
 
-		let subscribe = fb::Subscribe::create(
-			&mut builder,
-			&fb::SubscribeArgs {
-				subscription_id: Some(sub_id_offset),
-				requests: Some(requests_vec),
-				config: Some(config_offset),
-			},
-		);
-		let main_msg = fb::MainMessage::create(
-			&mut builder,
-			&fb::MainMessageArgs {
-				content_type: fb::MainContent::Subscribe,
-				content: Some(subscribe.as_union_value()),
-			},
-		);
-		builder.finish(main_msg, None);
-		let bytes = builder.finished_data();
+        spawn_native_local_thread("nipworker-connections", move || {
+            let connections_worker = ConnectionsWorker::new(transport_factory());
+            connections_worker.run(
+                Box::new(parser_conn_ch),
+                conn_parser_tx,
+                Box::new(conn_cache_ch),
+                Box::new(conn_crypto_ch),
+                conn_crypto_tx,
+            );
+        });
 
-		self.parser_tx
-			.send(bytes)
-			.map_err(|e| NostrError::Other(format!("Failed to send subscribe: {}", e)))?;
-		Ok(())
-	}
+        spawn_native_local_thread("nipworker-cache", move || {
+            let cache_worker = CacheWorker::new(storage_factory());
+            cache_worker.run(
+                Box::new(cache_parser_ch),
+                cache_parser_tx,
+                cache_conn_ch.clone_sender(),
+            );
+        });
 
-	pub async fn unsubscribe(&self, subscription_id: String) -> NostrResult<()> {
-		let mut builder = flatbuffers::FlatBufferBuilder::new();
-		let sub_id_offset = builder.create_string(&subscription_id);
-		let unsubscribe = fb::Unsubscribe::create(
-			&mut builder,
-			&fb::UnsubscribeArgs {
-				subscription_id: Some(sub_id_offset),
-			},
-		);
-		let main_msg = fb::MainMessage::create(
-			&mut builder,
-			&fb::MainMessageArgs {
-				content_type: fb::MainContent::Unsubscribe,
-				content: Some(unsubscribe.as_union_value()),
-			},
-		);
-		builder.finish(main_msg, None);
-		let bytes = builder.finished_data();
+        spawn_native_local_thread("nipworker-crypto", move || {
+            let crypto_worker = CryptoWorker::new();
+            crypto_worker.run(
+                Box::new(crypto_engine_ch),
+                Box::new(crypto_parser_ch),
+                Box::new(crypto_conn_ch),
+                crypto_engine_tx,
+                crypto_parser_tx,
+                crypto_conn_tx,
+            );
+        });
 
-		self.parser_tx
-			.send(bytes)
-			.map_err(|e| NostrError::Other(format!("Failed to send unsubscribe: {}", e)))?;
-		Ok(())
-	}
+        let event_sink_crypto = event_sink.clone();
+        spawn_worker(async move {
+            let mut ch = engine_crypto_ch;
+            while let Ok(bytes) = ch.recv().await {
+                if let Err(e) = event_sink_crypto
+                    .clone()
+                    .try_send(("crypto".to_string(), bytes))
+                {
+                    tracing::warn!("Failed to forward crypto event to sink: {}", e);
+                }
+            }
+            info!("[NostrEngine] crypto listener exiting");
+        });
 
-	pub async fn publish(
-		&self,
-		publish_id: String,
-		template: &Template,
-		relays: Vec<String>,
-		optimistic_subids: Vec<String>,
-	) -> NostrResult<()> {
-		let mut builder = flatbuffers::FlatBufferBuilder::new();
-		let publish_id_offset = builder.create_string(&publish_id);
-		let template_offset = template.build_flatbuffer(&mut builder);
-		let relay_offsets: Vec<_> = relays.iter().map(|r| builder.create_string(r)).collect();
-		let relay_vec = builder.create_vector(&relay_offsets);
-		let opt_subid_offsets: Vec<_> =
-			optimistic_subids.iter().map(|s| builder.create_string(s)).collect();
-		let opt_subid_vec = builder.create_vector(&opt_subid_offsets);
+        let event_sink_clone = event_sink.clone();
+        spawn_worker(async move {
+            let mut ch = to_main_ch;
+            while let Ok(bytes) = ch.recv().await {
+                match crate::worker::parser_worker::decode_tagged(&bytes) {
+                    Some((sub_id, data)) => {
+                        if let Err(e) = event_sink_clone.clone().try_send((sub_id, data)) {
+                            tracing::warn!("Failed to forward parser event to sink: {}", e);
+                        }
+                    }
+                    None => {
+                        tracing::warn!("Failed to decode tagged message from parser");
+                    }
+                }
+            }
+            info!("[NostrEngine] main loop exiting");
+        });
 
-		let publish = fb::Publish::create(
-			&mut builder,
-			&fb::PublishArgs {
-				publish_id: Some(publish_id_offset),
-				template: Some(template_offset),
-				relays: Some(relay_vec),
-				optimistic_subids: Some(opt_subid_vec),
-			},
-		);
-		let main_msg = fb::MainMessage::create(
-			&mut builder,
-			&fb::MainMessageArgs {
-				content_type: fb::MainContent::Publish,
-				content: Some(publish.as_union_value()),
-			},
-		);
-		builder.finish(main_msg, None);
-		let bytes = builder.finished_data();
+        Self {
+            parser_tx: engine_parser_tx,
+            crypto_tx: engine_crypto_tx,
+            event_sink,
+        }
+    }
 
-		self.parser_tx
-			.send(bytes)
-			.map_err(|e| NostrError::Other(format!("Failed to send publish: {}", e)))?;
-		Ok(())
-	}
+    /// Deserialize a FlatBuffers MainMessage and dispatch to the appropriate worker.
+    pub async fn handle_message(&self, bytes: &[u8]) -> NostrResult<()> {
+        let main_message = flatbuffers::root::<fb::MainMessage>(bytes)
+            .map_err(|e| NostrError::Parse(format!("Failed to decode FlatBuffer: {:?}", e)))?;
+
+        match main_message.content_type() {
+            fb::MainContent::Subscribe
+            | fb::MainContent::Unsubscribe
+            | fb::MainContent::Publish => {
+                self.parser_tx
+                    .send(bytes)
+                    .map_err(|e| NostrError::Other(format!("Failed to send to parser: {}", e)))?;
+            }
+            fb::MainContent::SignEvent
+            | fb::MainContent::SetSigner
+            | fb::MainContent::GetPublicKey => {
+                self.crypto_tx
+                    .send(bytes)
+                    .map_err(|e| NostrError::Other(format!("Failed to send to crypto: {}", e)))?;
+            }
+            _ => {
+                return Err(NostrError::Parse(
+                    "Empty or unknown message content".to_string(),
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    pub async fn subscribe(
+        &self,
+        subscription_id: String,
+        requests: Vec<Request>,
+    ) -> NostrResult<()> {
+        let mut builder = flatbuffers::FlatBufferBuilder::new();
+        let sub_id_offset = builder.create_string(&subscription_id);
+        let request_offsets: Vec<_> = requests
+            .iter()
+            .map(|r| r.build_flatbuffer(&mut builder))
+            .collect();
+        let requests_vec = builder.create_vector(&request_offsets);
+
+        // Create default config (required field)
+        let config = fb::SubscriptionConfigT::default();
+        let config_offset = config.pack(&mut builder);
+
+        let subscribe = fb::Subscribe::create(
+            &mut builder,
+            &fb::SubscribeArgs {
+                subscription_id: Some(sub_id_offset),
+                requests: Some(requests_vec),
+                config: Some(config_offset),
+            },
+        );
+        let main_msg = fb::MainMessage::create(
+            &mut builder,
+            &fb::MainMessageArgs {
+                content_type: fb::MainContent::Subscribe,
+                content: Some(subscribe.as_union_value()),
+            },
+        );
+        builder.finish(main_msg, None);
+        let bytes = builder.finished_data();
+
+        self.parser_tx
+            .send(bytes)
+            .map_err(|e| NostrError::Other(format!("Failed to send subscribe: {}", e)))?;
+        Ok(())
+    }
+
+    pub async fn unsubscribe(&self, subscription_id: String) -> NostrResult<()> {
+        let mut builder = flatbuffers::FlatBufferBuilder::new();
+        let sub_id_offset = builder.create_string(&subscription_id);
+        let unsubscribe = fb::Unsubscribe::create(
+            &mut builder,
+            &fb::UnsubscribeArgs {
+                subscription_id: Some(sub_id_offset),
+            },
+        );
+        let main_msg = fb::MainMessage::create(
+            &mut builder,
+            &fb::MainMessageArgs {
+                content_type: fb::MainContent::Unsubscribe,
+                content: Some(unsubscribe.as_union_value()),
+            },
+        );
+        builder.finish(main_msg, None);
+        let bytes = builder.finished_data();
+
+        self.parser_tx
+            .send(bytes)
+            .map_err(|e| NostrError::Other(format!("Failed to send unsubscribe: {}", e)))?;
+        Ok(())
+    }
+
+    pub async fn publish(
+        &self,
+        publish_id: String,
+        template: &Template,
+        relays: Vec<String>,
+        optimistic_subids: Vec<String>,
+    ) -> NostrResult<()> {
+        let mut builder = flatbuffers::FlatBufferBuilder::new();
+        let publish_id_offset = builder.create_string(&publish_id);
+        let template_offset = template.build_flatbuffer(&mut builder);
+        let relay_offsets: Vec<_> = relays.iter().map(|r| builder.create_string(r)).collect();
+        let relay_vec = builder.create_vector(&relay_offsets);
+        let opt_subid_offsets: Vec<_> = optimistic_subids
+            .iter()
+            .map(|s| builder.create_string(s))
+            .collect();
+        let opt_subid_vec = builder.create_vector(&opt_subid_offsets);
+
+        let publish = fb::Publish::create(
+            &mut builder,
+            &fb::PublishArgs {
+                publish_id: Some(publish_id_offset),
+                template: Some(template_offset),
+                relays: Some(relay_vec),
+                optimistic_subids: Some(opt_subid_vec),
+            },
+        );
+        let main_msg = fb::MainMessage::create(
+            &mut builder,
+            &fb::MainMessageArgs {
+                content_type: fb::MainContent::Publish,
+                content: Some(publish.as_union_value()),
+            },
+        );
+        builder.finish(main_msg, None);
+        let bytes = builder.finished_data();
+
+        self.parser_tx
+            .send(bytes)
+            .map_err(|e| NostrError::Other(format!("Failed to send publish: {}", e)))?;
+        Ok(())
+    }
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
-	use super::*;
-	use crate::traits::{RelayTransport, Storage, TransportError, TransportStatus, StorageError};
-	use crate::types::nostr::{Filter, Template};
-	use crate::types::network::Request;
-	use async_trait::async_trait;
-	use std::collections::HashMap;
-	use std::sync::{Arc, Mutex, RwLock};
-	use tokio::task::LocalSet;
+    use super::*;
+    use crate::traits::{RelayTransport, Storage, StorageError, TransportError, TransportStatus};
+    use crate::types::network::Request;
+    use crate::types::nostr::{Filter, Template};
+    use async_trait::async_trait;
+    use futures::StreamExt;
+    use std::collections::HashMap;
+    use std::sync::{Arc, Mutex, RwLock};
+    use std::time::Duration;
+    use tokio::task::LocalSet;
 
-	// ============================================================================
-	// Mock Implementations
-	// ============================================================================
+    // ============================================================================
+    // Mock Implementations
+    // ============================================================================
 
-	#[derive(Clone, Debug, PartialEq)]
-	enum TransportCall {
-		Connect(String),
-		Disconnect(String),
-		Send(String, String),
-	}
+    #[derive(Clone, Debug, PartialEq)]
+    enum TransportCall {
+        Connect(String),
+        Disconnect(String),
+        Send(String, String),
+    }
 
-	struct MockRelayTransport {
-		sent_frames: Arc<Mutex<Vec<(String, String)>>>, // (url, frame)
-		message_callbacks: Arc<RwLock<HashMap<String, Box<dyn Fn(String)>>>>,
-		status_callbacks: Arc<RwLock<HashMap<String, Box<dyn Fn(TransportStatus)>>>>,
-		calls: Arc<Mutex<Vec<TransportCall>>>,
-	}
+    struct MockRelayTransport {
+        sent_frames: Arc<Mutex<Vec<(String, String)>>>, // (url, frame)
+        message_callbacks: Arc<RwLock<HashMap<String, Box<dyn Fn(String)>>>>,
+        status_callbacks: Arc<RwLock<HashMap<String, Box<dyn Fn(TransportStatus)>>>>,
+        calls: Arc<Mutex<Vec<TransportCall>>>,
+    }
 
-	impl MockRelayTransport {
-		fn new() -> Self {
-			Self {
-				sent_frames: Arc::new(Mutex::new(Vec::new())),
-				message_callbacks: Arc::new(RwLock::new(HashMap::new())),
-				status_callbacks: Arc::new(RwLock::new(HashMap::new())),
-				calls: Arc::new(Mutex::new(Vec::new())),
-			}
-		}
+    impl MockRelayTransport {
+        fn new() -> Self {
+            Self {
+                sent_frames: Arc::new(Mutex::new(Vec::new())),
+                message_callbacks: Arc::new(RwLock::new(HashMap::new())),
+                status_callbacks: Arc::new(RwLock::new(HashMap::new())),
+                calls: Arc::new(Mutex::new(Vec::new())),
+            }
+        }
 
-		fn get_sent_frames(&self) -> Vec<(String, String)> {
-			self.sent_frames.lock().unwrap().clone()
-		}
+        fn get_sent_frames(&self) -> Vec<(String, String)> {
+            self.sent_frames.lock().unwrap().clone()
+        }
 
-		fn invoke_message_callback(&self, url: &str, msg: String) {
-			let cbs = self.message_callbacks.read().unwrap();
-			if let Some(cb) = cbs.get(url) {
-				cb(msg);
-			}
-		}
+        fn invoke_message_callback(&self, url: &str, msg: String) {
+            let cbs = self.message_callbacks.read().unwrap();
+            if let Some(cb) = cbs.get(url) {
+                cb(msg);
+            }
+        }
 
-		fn invoke_status_callback(&self, url: &str, status: TransportStatus) {
-			let cbs = self.status_callbacks.read().unwrap();
-			if let Some(cb) = cbs.get(url) {
-				cb(status);
-			}
-		}
-	}
+        fn invoke_status_callback(&self, url: &str, status: TransportStatus) {
+            let cbs = self.status_callbacks.read().unwrap();
+            if let Some(cb) = cbs.get(url) {
+                cb(status);
+            }
+        }
+    }
 
-	#[async_trait(?Send)]
-	impl RelayTransport for MockRelayTransport {
-		async fn connect(&self, url: &str) -> Result<(), TransportError> {
-			self.calls.lock().unwrap().push(TransportCall::Connect(url.to_string()));
-			Ok(())
-		}
+    #[async_trait(?Send)]
+    impl RelayTransport for MockRelayTransport {
+        async fn connect(&self, url: &str) -> Result<(), TransportError> {
+            self.calls
+                .lock()
+                .unwrap()
+                .push(TransportCall::Connect(url.to_string()));
+            Ok(())
+        }
 
-		fn disconnect(&self, url: &str) {
-			self.calls.lock().unwrap().push(TransportCall::Disconnect(url.to_string()));
-		}
+        fn disconnect(&self, url: &str) {
+            self.calls
+                .lock()
+                .unwrap()
+                .push(TransportCall::Disconnect(url.to_string()));
+        }
 
-		async fn send(&self, url: &str, frame: String) -> Result<(), TransportError> {
-			self.calls.lock().unwrap().push(TransportCall::Send(url.to_string(), frame.clone()));
-			self.sent_frames.lock().unwrap().push((url.to_string(), frame));
-			Ok(())
-		}
+        async fn send(&self, url: &str, frame: String) -> Result<(), TransportError> {
+            self.calls
+                .lock()
+                .unwrap()
+                .push(TransportCall::Send(url.to_string(), frame.clone()));
+            self.sent_frames
+                .lock()
+                .unwrap()
+                .push((url.to_string(), frame));
+            Ok(())
+        }
 
-		fn on_message(&self, url: &str, callback: Box<dyn Fn(String)>) {
-			self.message_callbacks.write().unwrap().insert(url.to_string(), callback);
-		}
+        fn on_message(&self, url: &str, callback: Box<dyn Fn(String)>) {
+            self.message_callbacks
+                .write()
+                .unwrap()
+                .insert(url.to_string(), callback);
+        }
 
-		fn on_status(&self, url: &str, callback: Box<dyn Fn(TransportStatus)>) {
-			self.status_callbacks.write().unwrap().insert(url.to_string(), callback);
-		}
-	}
+        fn on_status(&self, url: &str, callback: Box<dyn Fn(TransportStatus)>) {
+            self.status_callbacks
+                .write()
+                .unwrap()
+                .insert(url.to_string(), callback);
+        }
+    }
 
-	#[derive(Debug, Clone)]
-	struct QueryCall {
-		filters: Vec<Filter>,
-	}
+    #[derive(Debug, Clone)]
+    struct QueryCall {
+        filters: Vec<Filter>,
+    }
 
-	struct MockStorage {
-		query_results: Arc<Mutex<Vec<Vec<Vec<u8>>>>>, // per-filter canned results
-		persisted: Arc<Mutex<Vec<Vec<u8>>>>,
-		query_calls: Arc<Mutex<Vec<QueryCall>>>,
-	}
+    struct MockStorage {
+        query_results: Arc<Mutex<Vec<Vec<Vec<u8>>>>>, // per-filter canned results
+        persisted: Arc<Mutex<Vec<Vec<u8>>>>,
+        query_calls: Arc<Mutex<Vec<QueryCall>>>,
+    }
 
-	impl MockStorage {
-		fn new() -> Self {
-			Self {
-				query_results: Arc::new(Mutex::new(Vec::new())),
-				persisted: Arc::new(Mutex::new(Vec::new())),
-				query_calls: Arc::new(Mutex::new(Vec::new())),
-			}
-		}
+    impl MockStorage {
+        fn new() -> Self {
+            Self {
+                query_results: Arc::new(Mutex::new(Vec::new())),
+                persisted: Arc::new(Mutex::new(Vec::new())),
+                query_calls: Arc::new(Mutex::new(Vec::new())),
+            }
+        }
 
-		fn with_query_results(results: Vec<Vec<Vec<u8>>>) -> Self {
-			let s = Self::new();
-			*s.query_results.lock().unwrap() = results;
-			s
-		}
+        fn with_query_results(results: Vec<Vec<Vec<u8>>>) -> Self {
+            let s = Self::new();
+            *s.query_results.lock().unwrap() = results;
+            s
+        }
 
-		fn get_query_calls(&self) -> Vec<QueryCall> {
-			self.query_calls.lock().unwrap().clone()
-		}
+        fn get_query_calls(&self) -> Vec<QueryCall> {
+            self.query_calls.lock().unwrap().clone()
+        }
 
-		fn get_persisted(&self) -> Vec<Vec<u8>> {
-			self.persisted.lock().unwrap().clone()
-		}
-	}
+        fn get_persisted(&self) -> Vec<Vec<u8>> {
+            self.persisted.lock().unwrap().clone()
+        }
+    }
 
-	#[async_trait(?Send)]
-	impl Storage for MockStorage {
-		async fn query(&self, filters: Vec<Filter>) -> Result<Vec<Vec<u8>>, StorageError> {
-			self.query_calls.lock().unwrap().push(QueryCall { filters });
-			let mut results = self.query_results.lock().unwrap();
-			if !results.is_empty() {
-				Ok(results.remove(0))
-			} else {
-				Ok(Vec::new())
-			}
-		}
+    #[async_trait(?Send)]
+    impl Storage for MockStorage {
+        async fn query(&self, filters: Vec<Filter>) -> Result<Vec<Vec<u8>>, StorageError> {
+            self.query_calls.lock().unwrap().push(QueryCall { filters });
+            let mut results = self.query_results.lock().unwrap();
+            if !results.is_empty() {
+                Ok(results.remove(0))
+            } else {
+                Ok(Vec::new())
+            }
+        }
 
-		async fn persist(&self, event_bytes: &[u8]) -> Result<(), StorageError> {
-			self.persisted.lock().unwrap().push(event_bytes.to_vec());
-			Ok(())
-		}
+        async fn persist(&self, event_bytes: &[u8]) -> Result<(), StorageError> {
+            self.persisted.lock().unwrap().push(event_bytes.to_vec());
+            Ok(())
+        }
 
-		async fn initialize(&self) -> Result<(), StorageError> {
-			Ok(())
-		}
-	}
+        async fn initialize(&self) -> Result<(), StorageError> {
+            Ok(())
+        }
+    }
 
-	// ============================================================================
-	// Test 1: Engine Wiring Valid
-	// ============================================================================
+    fn build_get_public_key_message() -> Vec<u8> {
+        let mut builder = flatbuffers::FlatBufferBuilder::new();
+        let get_pk = fb::GetPublicKey::create(&mut builder, &fb::GetPublicKeyArgs {});
+        let main_msg = fb::MainMessage::create(
+            &mut builder,
+            &fb::MainMessageArgs {
+                content_type: fb::MainContent::GetPublicKey,
+                content: Some(get_pk.as_union_value()),
+            },
+        );
+        builder.finish(main_msg, None);
+        builder.finished_data().to_vec()
+    }
 
-	#[tokio::test]
-	async fn test_engine_wiring_valid() {
-		let local = LocalSet::new();
-		local.run_until(async {
-			// Create mocks
-			let transport = Arc::new(MockRelayTransport::new());
-			let storage = Arc::new(MockStorage::new());
+    fn build_set_private_key_message(secret: &str) -> Vec<u8> {
+        let mut builder = flatbuffers::FlatBufferBuilder::new();
+        let mut pk = fb::PrivateKeyT::default();
+        pk.private_key = secret.to_string();
+        let signer_type = fb::SignerTypeT::PrivateKey(Box::new(pk));
+        let signer_offset = signer_type.pack(&mut builder);
+        let set_signer = fb::SetSigner::create(
+            &mut builder,
+            &fb::SetSignerArgs {
+                signer_type_type: fb::SignerType::PrivateKey,
+                signer_type: signer_offset,
+            },
+        );
+        let main_msg = fb::MainMessage::create(
+            &mut builder,
+            &fb::MainMessageArgs {
+                content_type: fb::MainContent::SetSigner,
+                content: Some(set_signer.as_union_value()),
+            },
+        );
+        builder.finish(main_msg, None);
+        builder.finished_data().to_vec()
+    }
 
-			// Create event sink (futures channel)
-			let (event_sink_tx, _event_sink_rx) = futures::channel::mpsc::channel::<(String, Vec<u8>)>(100);
+    fn build_cached_nostr_event_message(sub_id: &str) -> Vec<u8> {
+        let mut builder = flatbuffers::FlatBufferBuilder::new();
+        let sid = builder.create_string(sub_id);
+        let url = builder.create_string("cache");
+        let id = builder
+            .create_string("0000000000000000000000000000000000000000000000000000000000000001");
+        let pubkey = builder
+            .create_string("0000000000000000000000000000000000000000000000000000000000000001");
+        let content = builder.create_string("cached threaded event");
+        let sig = builder.create_string(
+            "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001",
+        );
+        let tags = builder.create_vector(&[] as &[flatbuffers::WIPOffset<fb::StringVec>]);
+        let event = fb::NostrEvent::create(
+            &mut builder,
+            &fb::NostrEventArgs {
+                id: Some(id),
+                pubkey: Some(pubkey),
+                kind: 1,
+                content: Some(content),
+                tags: Some(tags),
+                created_at: 1234567890,
+                sig: Some(sig),
+            },
+        );
+        let wm = fb::WorkerMessage::create(
+            &mut builder,
+            &fb::WorkerMessageArgs {
+                sub_id: Some(sid),
+                url: Some(url),
+                type_: fb::MessageType::NostrEvent,
+                content_type: fb::Message::NostrEvent,
+                content: Some(event.as_union_value()),
+            },
+        );
+        builder.finish(wm, None);
+        builder.finished_data().to_vec()
+    }
 
-			// Create engine - this verifies that all 7 WorkerChannel pairs are correctly wired
-			let engine = NostrEngine::new(
-				transport.clone(),
-				storage.clone(),
-				event_sink_tx,
-			);
+    async fn next_crypto_raw_response(
+        event_sink_rx: &mut futures::channel::mpsc::Receiver<(String, Vec<u8>)>,
+    ) -> serde_json::Value {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        while tokio::time::Instant::now() < deadline {
+            match tokio::time::timeout(Duration::from_millis(200), event_sink_rx.next()).await {
+                Ok(Some((sub_id, bytes))) if sub_id == "crypto" => {
+                    let wm = flatbuffers::root::<fb::WorkerMessage>(&bytes)
+                        .expect("valid WorkerMessage from crypto worker");
+                    if wm.type_() == fb::MessageType::Raw {
+                        if let Some(raw) = wm.content_as_raw() {
+                            if let Ok(value) = serde_json::from_str::<serde_json::Value>(raw.raw())
+                            {
+                                return value;
+                            }
+                        }
+                    }
+                }
+                Ok(Some(_)) => continue,
+                _ => continue,
+            }
+        }
+        panic!("timed out waiting for crypto response");
+    }
 
-			// Verify engine was created without panicking
-			assert!(true, "Engine started without panicking");
+    async fn next_event_for_sub(
+        event_sink_rx: &mut futures::channel::mpsc::Receiver<(String, Vec<u8>)>,
+        sub_id: &str,
+    ) -> Vec<u8> {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        while tokio::time::Instant::now() < deadline {
+            match tokio::time::timeout(Duration::from_millis(200), event_sink_rx.next()).await {
+                Ok(Some((sid, bytes))) if sid == sub_id => return bytes,
+                Ok(Some(_)) => continue,
+                _ => continue,
+            }
+        }
+        panic!("timed out waiting for event for {sub_id}");
+    }
 
-			// Verify parser_tx is functional by sending a subscribe message
-			let result = engine.subscribe("test_sub".to_string(), vec![Request::default()]).await;
-			assert!(result.is_ok(), "parser_tx should be functional for subscribe");
+    // ============================================================================
+    // Test 1: Engine Wiring Valid
+    // ============================================================================
 
-			// Verify crypto_tx is functional by sending a GetPublicKey message
-			let mut builder = flatbuffers::FlatBufferBuilder::new();
-			let get_pk = fb::GetPublicKey::create(&mut builder, &fb::GetPublicKeyArgs {});
-			let main_msg = fb::MainMessage::create(
-				&mut builder,
-				&fb::MainMessageArgs {
-					content_type: fb::MainContent::GetPublicKey,
-					content: Some(get_pk.as_union_value()),
-				},
-			);
-			builder.finish(main_msg, None);
-			let bytes = builder.finished_data().to_vec();
+    #[tokio::test]
+    async fn test_threaded_engine_crypto_roundtrip() {
+        const SECRET: &str = "f7e69dd87239da6a828fb9a2fbf481b5b9e147edb848497620e8dc6f5ec10a0a";
 
-			let result = engine.handle_message(&bytes).await;
-			assert!(result.is_ok(), "crypto_tx should be functional for GetPublicKey");
-		}).await;
-	}
+        let local = LocalSet::new();
+        local
+            .run_until(async {
+                let (event_sink_tx, mut event_sink_rx) =
+                    futures::channel::mpsc::channel::<(String, Vec<u8>)>(100);
 
-	// ============================================================================
-	// Test 2: Subscribe End-to-End
-	// ============================================================================
+                let engine = NostrEngine::new_threaded(
+                    || Arc::new(MockRelayTransport::new()),
+                    || Arc::new(MockStorage::new()),
+                    event_sink_tx,
+                );
 
-	#[tokio::test]
-	async fn test_subscribe_end_to_end() {
-		let local = LocalSet::new();
-		local.run_until(async {
-			// Create mocks
-			let transport = Arc::new(MockRelayTransport::new());
-			let storage = Arc::new(MockStorage::with_query_results(vec![
-				vec![], // Empty query result for cache lookup
-			]));
+                engine
+                    .handle_message(&build_set_private_key_message(SECRET))
+                    .await
+                    .unwrap();
+                let set_signer = next_crypto_raw_response(&mut event_sink_rx).await;
+                assert_eq!(set_signer["op"].as_str(), Some("set_signer"));
+                assert!(
+                    set_signer["result"].as_str().is_some(),
+                    "set_signer should return a pubkey, got {set_signer}"
+                );
 
-			// Create event sink (futures channel)
-			let (event_sink_tx, _event_sink_rx) = futures::channel::mpsc::channel::<(String, Vec<u8>)>(100);
+                engine
+                    .handle_message(&build_get_public_key_message())
+                    .await
+                    .unwrap();
+                let get_pubkey = next_crypto_raw_response(&mut event_sink_rx).await;
+                assert_eq!(get_pubkey["op"].as_str(), Some("get_public_key"));
+                assert!(
+                    get_pubkey["result"].as_str().is_some(),
+                    "get_public_key should return a pubkey, got {get_pubkey}"
+                );
+                assert_eq!(set_signer["result"], get_pubkey["result"]);
+            })
+            .await;
+    }
 
-			// Create engine
-			let engine = NostrEngine::new(
-				transport.clone(),
-				storage.clone(),
-				event_sink_tx,
-			);
+    #[tokio::test]
+    async fn test_engine_wiring_valid() {
+        let local = LocalSet::new();
+        local
+            .run_until(async {
+                // Create mocks
+                let transport = Arc::new(MockRelayTransport::new());
+                let storage = Arc::new(MockStorage::new());
 
-			// Call subscribe
-			let sub_id = "s1";
-			let request = Request {
-				relays: vec!["wss://r".to_string()],
-				..Default::default()
-			};
-			let result = engine.subscribe(sub_id.to_string(), vec![request]).await;
-			assert!(result.is_ok(), "subscribe should succeed");
+                // Create event sink (futures channel)
+                let (event_sink_tx, _event_sink_rx) =
+                    futures::channel::mpsc::channel::<(String, Vec<u8>)>(100);
 
-			// Assert: Verify parser received the subscribe message (via engine's subscribe method)
-			// This is implicitly verified by the fact that subscribe() returned Ok
-			assert!(true, "Parser received subscribe message");
+                // Create engine - this verifies that all 7 WorkerChannel pairs are correctly wired
+                let engine = NostrEngine::new(transport.clone(), storage.clone(), event_sink_tx);
 
-			// Assert: Verify cache connection is wired (we can't easily verify end-to-end
-			// without complex async coordination, but the wiring is verified by engine construction)
-			assert!(true, "Cache channel is wired (verified by engine construction)");
+                // Verify engine was created without panicking
+                assert!(true, "Engine started without panicking");
 
-			// Assert: Verify connections channel is wired
-			assert!(true, "Connections channel is wired (verified by engine construction)");
-		}).await;
-	}
+                // Verify parser_tx is functional by sending a subscribe message
+                let result = engine
+                    .subscribe("test_sub".to_string(), vec![Request::default()])
+                    .await;
+                assert!(
+                    result.is_ok(),
+                    "parser_tx should be functional for subscribe"
+                );
 
-	// ============================================================================
-	// Test 3: Cache Persist + Cache-Only Retrieval
-	// ============================================================================
+                // Verify crypto_tx is functional by sending a GetPublicKey message
+                let mut builder = flatbuffers::FlatBufferBuilder::new();
+                let get_pk = fb::GetPublicKey::create(&mut builder, &fb::GetPublicKeyArgs {});
+                let main_msg = fb::MainMessage::create(
+                    &mut builder,
+                    &fb::MainMessageArgs {
+                        content_type: fb::MainContent::GetPublicKey,
+                        content: Some(get_pk.as_union_value()),
+                    },
+                );
+                builder.finish(main_msg, None);
+                let bytes = builder.finished_data().to_vec();
 
-	#[tokio::test]
-	async fn test_cache_persist_and_cache_only_retrieval() {
-		let local = LocalSet::new();
-		local.run_until(async {
+                let result = engine.handle_message(&bytes).await;
+                assert!(
+                    result.is_ok(),
+                    "crypto_tx should be functional for GetPublicKey"
+                );
+            })
+            .await;
+    }
+
+    #[tokio::test]
+    async fn test_threaded_engine_cache_only_roundtrip() {
+        let local = LocalSet::new();
+        local
+            .run_until(async {
+                let sub_id = "threaded-cache";
+                let cached = build_cached_nostr_event_message(sub_id);
+                let storage = Arc::new(MockStorage::with_query_results(vec![vec![cached]]));
+                let storage_for_worker = storage.clone();
+                let (event_sink_tx, mut event_sink_rx) =
+                    futures::channel::mpsc::channel::<(String, Vec<u8>)>(100);
+
+                let engine = NostrEngine::new_threaded(
+                    || Arc::new(MockRelayTransport::new()),
+                    move || storage_for_worker,
+                    event_sink_tx,
+                );
+
+                engine
+                    .subscribe(
+                        sub_id.to_string(),
+                        vec![Request {
+                            cache_only: true,
+                            relays: vec!["wss://r".to_string()],
+                            ..Default::default()
+                        }],
+                    )
+                    .await
+                    .unwrap();
+
+                let bytes = next_event_for_sub(&mut event_sink_rx, sub_id).await;
+                assert!(!bytes.is_empty(), "cache-only event should not be empty");
+                assert!(
+                    !storage.get_query_calls().is_empty(),
+                    "cache worker should query storage"
+                );
+            })
+            .await;
+    }
+
+    // ============================================================================
+    // Test 2: Subscribe End-to-End
+    // ============================================================================
+
+    #[tokio::test]
+    async fn test_subscribe_end_to_end() {
+        let local = LocalSet::new();
+        local
+            .run_until(async {
+                // Create mocks
+                let transport = Arc::new(MockRelayTransport::new());
+                let storage = Arc::new(MockStorage::with_query_results(vec![
+                    vec![], // Empty query result for cache lookup
+                ]));
+
+                // Create event sink (futures channel)
+                let (event_sink_tx, _event_sink_rx) =
+                    futures::channel::mpsc::channel::<(String, Vec<u8>)>(100);
+
+                // Create engine
+                let engine = NostrEngine::new(transport.clone(), storage.clone(), event_sink_tx);
+
+                // Call subscribe
+                let sub_id = "s1";
+                let request = Request {
+                    relays: vec!["wss://r".to_string()],
+                    ..Default::default()
+                };
+                let result = engine.subscribe(sub_id.to_string(), vec![request]).await;
+                assert!(result.is_ok(), "subscribe should succeed");
+
+                // Assert: Verify parser received the subscribe message (via engine's subscribe method)
+                // This is implicitly verified by the fact that subscribe() returned Ok
+                assert!(true, "Parser received subscribe message");
+
+                // Assert: Verify cache connection is wired (we can't easily verify end-to-end
+                // without complex async coordination, but the wiring is verified by engine construction)
+                assert!(
+                    true,
+                    "Cache channel is wired (verified by engine construction)"
+                );
+
+                // Assert: Verify connections channel is wired
+                assert!(
+                    true,
+                    "Connections channel is wired (verified by engine construction)"
+                );
+            })
+            .await;
+    }
+
+    // ============================================================================
+    // Test 3: Cache Persist + Cache-Only Retrieval
+    // ============================================================================
+
+    #[tokio::test]
+    async fn test_cache_persist_and_cache_only_retrieval() {
+        let local = LocalSet::new();
+        local.run_until(async {
 			let transport = Arc::new(MockRelayTransport::new());
 			let storage = Arc::new(MockStorage::new());
 
@@ -595,390 +970,423 @@ mod tests {
 				sub2_events.len()
 			);
 		}).await;
-	}
+    }
 
-	// ============================================================================
-	// Test 4: Publish Flow Engine to Connections
-	// ============================================================================
+    // ============================================================================
+    // Test 4: Publish Flow Engine to Connections
+    // ============================================================================
 
-	#[tokio::test]
-	async fn test_publish_flow_engine_to_connections() {
-		let local = LocalSet::new();
-		local.run_until(async {
-			// Create mocks
-			let transport = Arc::new(MockRelayTransport::new());
-			let storage = Arc::new(MockStorage::new());
+    #[tokio::test]
+    async fn test_publish_flow_engine_to_connections() {
+        let local = LocalSet::new();
+        local
+            .run_until(async {
+                // Create mocks
+                let transport = Arc::new(MockRelayTransport::new());
+                let storage = Arc::new(MockStorage::new());
 
-			// Create event sink (futures channel)
-			let (event_sink_tx, _event_sink_rx) = futures::channel::mpsc::channel::<(String, Vec<u8>)>(100);
+                // Create event sink (futures channel)
+                let (event_sink_tx, _event_sink_rx) =
+                    futures::channel::mpsc::channel::<(String, Vec<u8>)>(100);
 
-			// Create engine
-			let engine = NostrEngine::new(
-				transport.clone(),
-				storage.clone(),
-				event_sink_tx,
-			);
+                // Create engine
+                let engine = NostrEngine::new(transport.clone(), storage.clone(), event_sink_tx);
 
-			// Create template with kind=1, content="hello"
-			let template = Template {
-				kind: 1,
-				content: "hello".to_string(),
-				tags: vec![],
-				created_at: 0,
-			};
+                // Create template with kind=1, content="hello"
+                let template = Template {
+                    kind: 1,
+                    content: "hello".to_string(),
+                    tags: vec![],
+                    created_at: 0,
+                };
 
-			// Call publish
-			let publish_id = "pub1";
-			let result = engine.publish(
-				publish_id.to_string(),
-				&template,
-				vec!["wss://r".to_string()],
-				vec![],
-			).await;
-			assert!(result.is_ok(), "publish should succeed");
+                // Call publish
+                let publish_id = "pub1";
+                let result = engine
+                    .publish(
+                        publish_id.to_string(),
+                        &template,
+                        vec!["wss://r".to_string()],
+                        vec![],
+                    )
+                    .await;
+                assert!(result.is_ok(), "publish should succeed");
 
-			// Assert: Publish message reached parser (verified by Ok result)
-			assert!(true, "Parser received publish message");
+                // Assert: Publish message reached parser (verified by Ok result)
+                assert!(true, "Parser received publish message");
 
-			// Assert: Crypto channel is wired for signing
-			assert!(true, "Crypto channel is wired for signing (verified by engine construction)");
+                // Assert: Crypto channel is wired for signing
+                assert!(
+                    true,
+                    "Crypto channel is wired for signing (verified by engine construction)"
+                );
 
-			// Assert: Cache channel is wired for event persistence
-			assert!(true, "Cache channel is wired for persistence (verified by engine construction)");
+                // Assert: Cache channel is wired for event persistence
+                assert!(
+                    true,
+                    "Cache channel is wired for persistence (verified by engine construction)"
+                );
 
-			// Assert: Connections channel is wired for EVENT frame
-			assert!(true, "Connections channel is wired for EVENT (verified by engine construction)");
-		}).await;
-	}
+                // Assert: Connections channel is wired for EVENT frame
+                assert!(
+                    true,
+                    "Connections channel is wired for EVENT (verified by engine construction)"
+                );
+            })
+            .await;
+    }
 
-	// ============================================================================
-	// Chaos Tests
-	// ============================================================================
+    // ============================================================================
+    // Chaos Tests
+    // ============================================================================
 
-	/// Mock transport that randomly fails 10% of the time (deterministic with seed)
-	struct RandomFailingTransport {
-		inner: MockRelayTransport,
-		fail_rate: f64,
-		rng_seed: u64,
-		call_count: Arc<Mutex<u64>>,
-	}
+    /// Mock transport that randomly fails 10% of the time (deterministic with seed)
+    struct RandomFailingTransport {
+        inner: MockRelayTransport,
+        fail_rate: f64,
+        rng_seed: u64,
+        call_count: Arc<Mutex<u64>>,
+    }
 
-	impl RandomFailingTransport {
-		fn new(inner: MockRelayTransport, fail_rate: f64, rng_seed: u64) -> Self {
-			Self {
-				inner,
-				fail_rate,
-				rng_seed,
-				call_count: Arc::new(Mutex::new(0)),
-			}
-		}
+    impl RandomFailingTransport {
+        fn new(inner: MockRelayTransport, fail_rate: f64, rng_seed: u64) -> Self {
+            Self {
+                inner,
+                fail_rate,
+                rng_seed,
+                call_count: Arc::new(Mutex::new(0)),
+            }
+        }
 
-		fn should_fail(&self) -> bool {
-			let mut count = self.call_count.lock().unwrap();
-			*count += 1;
-			// Deterministic pseudo-random: (seed + count) % 100 < fail_rate * 100
-			let value = ((self.rng_seed.wrapping_add(*count)) % 100) as f64;
-			value < (self.fail_rate * 100.0)
-		}
-	}
+        fn should_fail(&self) -> bool {
+            let mut count = self.call_count.lock().unwrap();
+            *count += 1;
+            // Deterministic pseudo-random: (seed + count) % 100 < fail_rate * 100
+            let value = ((self.rng_seed.wrapping_add(*count)) % 100) as f64;
+            value < (self.fail_rate * 100.0)
+        }
+    }
 
-	#[async_trait(?Send)]
-	impl RelayTransport for RandomFailingTransport {
-		async fn connect(&self, url: &str) -> Result<(), TransportError> {
-			if self.should_fail() {
-				return Err(TransportError::Other(format!(
-					"Random failure on connect to {}",
-					url
-				)));
-			}
-			self.inner.connect(url).await
-		}
+    #[async_trait(?Send)]
+    impl RelayTransport for RandomFailingTransport {
+        async fn connect(&self, url: &str) -> Result<(), TransportError> {
+            if self.should_fail() {
+                return Err(TransportError::Other(format!(
+                    "Random failure on connect to {}",
+                    url
+                )));
+            }
+            self.inner.connect(url).await
+        }
 
-		fn disconnect(&self, url: &str) {
-			self.inner.disconnect(url);
-		}
+        fn disconnect(&self, url: &str) {
+            self.inner.disconnect(url);
+        }
 
-		async fn send(&self, url: &str, frame: String) -> Result<(), TransportError> {
-			if self.should_fail() {
-				return Err(TransportError::Other(format!(
-					"Random failure on send to {}",
-					url
-				)));
-			}
-			self.inner.send(url, frame).await
-		}
+        async fn send(&self, url: &str, frame: String) -> Result<(), TransportError> {
+            if self.should_fail() {
+                return Err(TransportError::Other(format!(
+                    "Random failure on send to {}",
+                    url
+                )));
+            }
+            self.inner.send(url, frame).await
+        }
 
-		fn on_message(&self, url: &str, callback: Box<dyn Fn(String)>) {
-			self.inner.on_message(url, callback);
-		}
+        fn on_message(&self, url: &str, callback: Box<dyn Fn(String)>) {
+            self.inner.on_message(url, callback);
+        }
 
-		fn on_status(&self, url: &str, callback: Box<dyn Fn(TransportStatus)>) {
-			self.inner.on_status(url, callback);
-		}
-	}
+        fn on_status(&self, url: &str, callback: Box<dyn Fn(TransportStatus)>) {
+            self.inner.on_status(url, callback);
+        }
+    }
 
-	/// Mock storage that delays every query by specified duration
-	struct SlowStorage {
-		inner: MockStorage,
-		delay_ms: u64,
-	}
+    /// Mock storage that delays every query by specified duration
+    struct SlowStorage {
+        inner: MockStorage,
+        delay_ms: u64,
+    }
 
-	impl SlowStorage {
-		fn new(inner: MockStorage, delay_ms: u64) -> Self {
-			Self { inner, delay_ms }
-		}
-	}
+    impl SlowStorage {
+        fn new(inner: MockStorage, delay_ms: u64) -> Self {
+            Self { inner, delay_ms }
+        }
+    }
 
-	#[async_trait(?Send)]
-	impl Storage for SlowStorage {
-		async fn query(&self, filters: Vec<Filter>) -> Result<Vec<Vec<u8>>, StorageError> {
-			tokio::time::sleep(tokio::time::Duration::from_millis(self.delay_ms)).await;
-			self.inner.query(filters).await
-		}
+    #[async_trait(?Send)]
+    impl Storage for SlowStorage {
+        async fn query(&self, filters: Vec<Filter>) -> Result<Vec<Vec<u8>>, StorageError> {
+            tokio::time::sleep(tokio::time::Duration::from_millis(self.delay_ms)).await;
+            self.inner.query(filters).await
+        }
 
-		async fn persist(&self, event_bytes: &[u8]) -> Result<(), StorageError> {
-			self.inner.persist(event_bytes).await
-		}
+        async fn persist(&self, event_bytes: &[u8]) -> Result<(), StorageError> {
+            self.inner.persist(event_bytes).await
+        }
 
-		async fn initialize(&self) -> Result<(), StorageError> {
-			self.inner.initialize().await
-		}
-	}
+        async fn initialize(&self) -> Result<(), StorageError> {
+            self.inner.initialize().await
+        }
+    }
 
-	/// Test 1: Random transport failures - system survives and some messages get through
-	#[tokio::test]
-	async fn test_chaos_random_transport_failures() {
-		let local = LocalSet::new();
-		local.run_until(async {
-			// Create mock transport with 10% random failure rate, deterministic seed
-			let inner_transport = MockRelayTransport::new();
-			let transport = Arc::new(RandomFailingTransport::new(inner_transport, 0.10, 42));
-			let storage = Arc::new(MockStorage::new());
+    /// Test 1: Random transport failures - system survives and some messages get through
+    #[tokio::test]
+    async fn test_chaos_random_transport_failures() {
+        let local = LocalSet::new();
+        local
+            .run_until(async {
+                // Create mock transport with 10% random failure rate, deterministic seed
+                let inner_transport = MockRelayTransport::new();
+                let transport = Arc::new(RandomFailingTransport::new(inner_transport, 0.10, 42));
+                let storage = Arc::new(MockStorage::new());
 
-			let (event_sink_tx, _event_sink_rx) = futures::channel::mpsc::channel::<(String, Vec<u8>)>(100);
+                let (event_sink_tx, _event_sink_rx) =
+                    futures::channel::mpsc::channel::<(String, Vec<u8>)>(100);
 
-			let engine = NostrEngine::new(
-				transport.clone(),
-				storage.clone(),
-				event_sink_tx,
-			);
+                let engine = NostrEngine::new(transport.clone(), storage.clone(), event_sink_tx);
 
-			// Send 50 messages (subscribe/unsubscribe alternation)
-			let mut success_count = 0;
-			for i in 0..50 {
-				let sub_id = format!("chaos_sub_{}", i);
-				let result = engine.subscribe(sub_id.clone(), vec![Request::default()]).await;
-				if result.is_ok() {
-					success_count += 1;
-				}
+                // Send 50 messages (subscribe/unsubscribe alternation)
+                let mut success_count = 0;
+                for i in 0..50 {
+                    let sub_id = format!("chaos_sub_{}", i);
+                    let result = engine
+                        .subscribe(sub_id.clone(), vec![Request::default()])
+                        .await;
+                    if result.is_ok() {
+                        success_count += 1;
+                    }
 
-				// Also test unsubscribe
-				let unsub_result = engine.unsubscribe(sub_id).await;
-				if unsub_result.is_ok() {
-					success_count += 1;
-				}
-			}
+                    // Also test unsubscribe
+                    let unsub_result = engine.unsubscribe(sub_id).await;
+                    if unsub_result.is_ok() {
+                        success_count += 1;
+                    }
+                }
 
-			// Verify system survived (no panic, engine still functional)
-			assert!(success_count > 0, "At least some messages should succeed despite failures");
+                // Verify system survived (no panic, engine still functional)
+                assert!(
+                    success_count > 0,
+                    "At least some messages should succeed despite failures"
+                );
 
-			// Verify we can still send a final successful message
-			let final_result = engine.subscribe("final_test".to_string(), vec![Request::default()]).await;
-			assert!(final_result.is_ok(), "Engine should remain functional after chaos");
-		}).await;
-	}
+                // Verify we can still send a final successful message
+                let final_result = engine
+                    .subscribe("final_test".to_string(), vec![Request::default()])
+                    .await;
+                assert!(
+                    final_result.is_ok(),
+                    "Engine should remain functional after chaos"
+                );
+            })
+            .await;
+    }
 
-	/// Test 2: Slow storage - verify system remains responsive with delayed queries
-	#[tokio::test]
-	async fn test_chaos_slow_storage() {
-		let local = LocalSet::new();
-		local.run_until(async {
-			// Create storage with 100ms delay on every query
-			let inner_storage = MockStorage::new();
-			let storage = Arc::new(SlowStorage::new(inner_storage, 100));
-			let transport = Arc::new(MockRelayTransport::new());
+    /// Test 2: Slow storage - verify system remains responsive with delayed queries
+    #[tokio::test]
+    async fn test_chaos_slow_storage() {
+        let local = LocalSet::new();
+        local
+            .run_until(async {
+                // Create storage with 100ms delay on every query
+                let inner_storage = MockStorage::new();
+                let storage = Arc::new(SlowStorage::new(inner_storage, 100));
+                let transport = Arc::new(MockRelayTransport::new());
 
-			let (event_sink_tx, mut event_sink_rx) = futures::channel::mpsc::channel::<(String, Vec<u8>)>(100);
+                let (event_sink_tx, mut event_sink_rx) =
+                    futures::channel::mpsc::channel::<(String, Vec<u8>)>(100);
 
-			let engine = NostrEngine::new(
-				transport.clone(),
-				storage.clone(),
-				event_sink_tx,
-			);
+                let engine = NostrEngine::new(transport.clone(), storage.clone(), event_sink_tx);
 
-			// Subscribe and publish rapidly
-			let subscribe_future = async {
-				for i in 0..10 {
-					let sub_id = format!("slow_sub_{}", i);
-					let _ = engine.subscribe(sub_id, vec![Request::default()]).await;
-				}
-			};
+                // Subscribe and publish rapidly
+                let subscribe_future = async {
+                    for i in 0..10 {
+                        let sub_id = format!("slow_sub_{}", i);
+                        let _ = engine.subscribe(sub_id, vec![Request::default()]).await;
+                    }
+                };
 
-			let publish_future = async {
-				for i in 0..5 {
-					let template = Template {
-						kind: 1,
-						content: format!("test {}", i),
-						tags: vec![],
-						created_at: 0,
-					};
-					let _ = engine.publish(
-						format!("pub_{}", i),
-						&template,
-						vec!["wss://r".to_string()],
-						vec![],
-					).await;
-				}
-			};
+                let publish_future = async {
+                    for i in 0..5 {
+                        let template = Template {
+                            kind: 1,
+                            content: format!("test {}", i),
+                            tags: vec![],
+                            created_at: 0,
+                        };
+                        let _ = engine
+                            .publish(
+                                format!("pub_{}", i),
+                                &template,
+                                vec!["wss://r".to_string()],
+                                vec![],
+                            )
+                            .await;
+                    }
+                };
 
-			// Use timeout to verify no deadlock - should complete within 5 seconds
-			let timeout_duration = tokio::time::Duration::from_secs(5);
-			let combined = async {
-				tokio::join!(subscribe_future, publish_future);
-			};
+                // Use timeout to verify no deadlock - should complete within 5 seconds
+                let timeout_duration = tokio::time::Duration::from_secs(5);
+                let combined = async {
+                    tokio::join!(subscribe_future, publish_future);
+                };
 
-			let result = tokio::time::timeout(timeout_duration, combined).await;
-			assert!(
-				result.is_ok(),
-				"System should remain responsive despite slow storage (no timeout/deadlock)"
-			);
+                let result = tokio::time::timeout(timeout_duration, combined).await;
+                assert!(
+                    result.is_ok(),
+                    "System should remain responsive despite slow storage (no timeout/deadlock)"
+                );
 
-			// Drain any events that came through
-			tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-			while let Ok(Some(_)) = event_sink_rx.try_next() {
-				// Just drain
-			}
-		}).await;
-	}
+                // Drain any events that came through
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                while let Ok(Some(_)) = event_sink_rx.try_next() {
+                    // Just drain
+                }
+            })
+            .await;
+    }
 
-	/// Test 3: Rapid subscribe/unsubscribe - verify no panic, memory bounded, clean final state
-	#[tokio::test]
-	async fn test_chaos_rapid_subscribe_unsubscribe() {
-		let local = LocalSet::new();
-		local.run_until(async {
-			let transport = Arc::new(MockRelayTransport::new());
-			let storage = Arc::new(MockStorage::new());
+    /// Test 3: Rapid subscribe/unsubscribe - verify no panic, memory bounded, clean final state
+    #[tokio::test]
+    async fn test_chaos_rapid_subscribe_unsubscribe() {
+        let local = LocalSet::new();
+        local
+            .run_until(async {
+                let transport = Arc::new(MockRelayTransport::new());
+                let storage = Arc::new(MockStorage::new());
 
-			let (event_sink_tx, _event_sink_rx) = futures::channel::mpsc::channel::<(String, Vec<u8>)>(100);
+                let (event_sink_tx, _event_sink_rx) =
+                    futures::channel::mpsc::channel::<(String, Vec<u8>)>(100);
 
-			let engine = NostrEngine::new(
-				transport.clone(),
-				storage.clone(),
-				event_sink_tx,
-			);
+                let engine = NostrEngine::new(transport.clone(), storage.clone(), event_sink_tx);
 
-			// Rapidly create and close 100 subscriptions with unique sub_ids
-			for i in 0..100 {
-				let sub_id = format!("rapid_sub_{}_{}", i, i * 100000);
-				let _ = engine.subscribe(sub_id.clone(), vec![Request::default()]).await;
-				let _ = engine.unsubscribe(sub_id).await;
-			}
+                // Rapidly create and close 100 subscriptions with unique sub_ids
+                for i in 0..100 {
+                    let sub_id = format!("rapid_sub_{}_{}", i, i * 100000);
+                    let _ = engine
+                        .subscribe(sub_id.clone(), vec![Request::default()])
+                        .await;
+                    let _ = engine.unsubscribe(sub_id).await;
+                }
 
-			// No panic assertion - if we reach here, the test passed
-			assert!(true, "System survived 100 rapid subscribe/unsubscribe cycles without panic");
+                // No panic assertion - if we reach here, the test passed
+                assert!(
+                    true,
+                    "System survived 100 rapid subscribe/unsubscribe cycles without panic"
+                );
 
-			// Verify final state is clean by sending a fresh subscription
-			let final_sub = engine.subscribe("final_clean".to_string(), vec![Request::default()]).await;
-			assert!(
-				final_sub.is_ok(),
-				"Final subscription should succeed (system in clean state)"
-			);
-		}).await;
-	}
+                // Verify final state is clean by sending a fresh subscription
+                let final_sub = engine
+                    .subscribe("final_clean".to_string(), vec![Request::default()])
+                    .await;
+                assert!(
+                    final_sub.is_ok(),
+                    "Final subscription should succeed (system in clean state)"
+                );
+            })
+            .await;
+    }
 
-	/// Test 4: Mixed message flood - valid and garbage messages
-	#[tokio::test]
-	async fn test_chaos_mixed_message_flood() {
-		let local = LocalSet::new();
-		local.run_until(async {
-			let transport = Arc::new(MockRelayTransport::new());
-			let storage = Arc::new(MockStorage::new());
+    /// Test 4: Mixed message flood - valid and garbage messages
+    #[tokio::test]
+    async fn test_chaos_mixed_message_flood() {
+        let local = LocalSet::new();
+        local
+            .run_until(async {
+                let transport = Arc::new(MockRelayTransport::new());
+                let storage = Arc::new(MockStorage::new());
 
-			let (event_sink_tx, _event_sink_rx) = futures::channel::mpsc::channel::<(String, Vec<u8>)>(100);
+                let (event_sink_tx, _event_sink_rx) =
+                    futures::channel::mpsc::channel::<(String, Vec<u8>)>(100);
 
-			let engine = NostrEngine::new(
-				transport.clone(),
-				storage.clone(),
-				event_sink_tx,
-			);
+                let engine = NostrEngine::new(transport.clone(), storage.clone(), event_sink_tx);
 
-			// Valid messages count
-			let mut valid_success = 0;
+                // Valid messages count
+                let mut valid_success = 0;
 
-			// Flood with mix of valid and garbage messages
-			for i in 0..30 {
-				// Valid: Subscribe
-				let sub_id = format!("flood_sub_{}", i);
-				if engine.subscribe(sub_id, vec![Request::default()]).await.is_ok() {
-					valid_success += 1;
-				}
+                // Flood with mix of valid and garbage messages
+                for i in 0..30 {
+                    // Valid: Subscribe
+                    let sub_id = format!("flood_sub_{}", i);
+                    if engine
+                        .subscribe(sub_id, vec![Request::default()])
+                        .await
+                        .is_ok()
+                    {
+                        valid_success += 1;
+                    }
 
-				// Garbage: Random bytes
-				let garbage = vec![0xFF, 0xFE, 0xFD, 0xFC, i as u8];
-				let _ = engine.handle_message(&garbage).await; // Expected to fail
+                    // Garbage: Random bytes
+                    let garbage = vec![0xFF, 0xFE, 0xFD, 0xFC, i as u8];
+                    let _ = engine.handle_message(&garbage).await; // Expected to fail
 
-				// Valid: Unsubscribe
-				let unsub_id = format!("flood_sub_{}", i);
-				if engine.unsubscribe(unsub_id).await.is_ok() {
-					valid_success += 1;
-				}
+                    // Valid: Unsubscribe
+                    let unsub_id = format!("flood_sub_{}", i);
+                    if engine.unsubscribe(unsub_id).await.is_ok() {
+                        valid_success += 1;
+                    }
 
-				// Garbage: Malformed FlatBuffers (truncated message)
-				let malformed_fb = vec![0x0C, 0x00, 0x00, 0x00, 0x08]; // Incomplete flatbuffer
-				let _ = engine.handle_message(&malformed_fb).await; // Expected to fail
+                    // Garbage: Malformed FlatBuffers (truncated message)
+                    let malformed_fb = vec![0x0C, 0x00, 0x00, 0x00, 0x08]; // Incomplete flatbuffer
+                    let _ = engine.handle_message(&malformed_fb).await; // Expected to fail
 
-				// Valid: Publish
-				let template = Template {
-					kind: 1,
-					content: format!("flood test {}", i),
-					tags: vec![],
-					created_at: 0,
-				};
-				if engine
-					.publish(
-						format!("flood_pub_{}", i),
-						&template,
-						vec!["wss://r".to_string()],
-						vec![],
-					)
-					.await
-					.is_ok()
-				{
-					valid_success += 1;
-				}
+                    // Valid: Publish
+                    let template = Template {
+                        kind: 1,
+                        content: format!("flood test {}", i),
+                        tags: vec![],
+                        created_at: 0,
+                    };
+                    if engine
+                        .publish(
+                            format!("flood_pub_{}", i),
+                            &template,
+                            vec!["wss://r".to_string()],
+                            vec![],
+                        )
+                        .await
+                        .is_ok()
+                    {
+                        valid_success += 1;
+                    }
 
-				// Garbage: Empty message
-				let _ = engine.handle_message(&[]).await; // Expected to fail
-			}
+                    // Garbage: Empty message
+                    let _ = engine.handle_message(&[]).await; // Expected to fail
+                }
 
-			// System should have processed some valid messages despite garbage
-			assert!(
-				valid_success > 0,
-				"At least some valid messages should succeed"
-			);
+                // System should have processed some valid messages despite garbage
+                assert!(
+                    valid_success > 0,
+                    "At least some valid messages should succeed"
+                );
 
-			// Verify system recovers and continues processing valid messages
-			let recovery_sub = engine.subscribe("recovery_test".to_string(), vec![Request::default()]).await;
-			assert!(
-				recovery_sub.is_ok(),
-				"System should recover and process valid messages after garbage flood"
-			);
+                // Verify system recovers and continues processing valid messages
+                let recovery_sub = engine
+                    .subscribe("recovery_test".to_string(), vec![Request::default()])
+                    .await;
+                assert!(
+                    recovery_sub.is_ok(),
+                    "System should recover and process valid messages after garbage flood"
+                );
 
-			let recovery_pub = engine.publish(
-				"recovery_pub".to_string(),
-				&Template {
-					kind: 1,
-					content: "recovery".to_string(),
-					tags: vec![],
-					created_at: 0,
-				},
-				vec!["wss://r".to_string()],
-				vec![],
-			).await;
-			assert!(
-				recovery_pub.is_ok(),
-				"Publish should work after garbage flood"
-			);
-		}).await;
-	}
+                let recovery_pub = engine
+                    .publish(
+                        "recovery_pub".to_string(),
+                        &Template {
+                            kind: 1,
+                            content: "recovery".to_string(),
+                            tags: vec![],
+                            created_at: 0,
+                        },
+                        vec!["wss://r".to_string()],
+                        vec![],
+                    )
+                    .await;
+                assert!(
+                    recovery_pub.is_ok(),
+                    "Publish should work after garbage flood"
+                );
+            })
+            .await;
+    }
 }

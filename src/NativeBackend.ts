@@ -332,10 +332,7 @@ export class NativeBackend extends BaseBackend {
 			try {
 				this.handleNativeMessage(decoded);
 			} catch (e) {
-				console.error(
-					'[NativeBackend-diag] instanceId=' + this.instanceId + ' handleNativeMessage THREW:',
-					e
-				);
+				console.error('[NativeBackend] Failed to handle native message', e);
 				if (typeof globalThis !== 'undefined') {
 					const diag = (globalThis as any).__nipworker_native_diag;
 					if (diag) diag.handleNativeMessageErrors++;

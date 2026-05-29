@@ -1,8 +1,12 @@
 #import "NipworkerReactNativeModule.h"
+#if __has_include(<React/RCTBridge+Private.h>)
 #import <React/RCTBridge+Private.h>
-#import <React/RCTCxxBridgeDelegate.h>
+#elif __has_include(<React_Core/React/RCTBridge+Private.h>)
+#import <React_Core/React/RCTBridge+Private.h>
+#endif
 #import <jsi/jsi.h>
 
+#include <memory>
 #include <mutex>
 #include <vector>
 
@@ -41,6 +45,22 @@ static std::vector<std::vector<uint8_t>> NipworkerDrainPackets() {
 	packets.swap(NipworkerQueuedPackets);
 	return packets;
 }
+
+class NipworkerMutableBuffer final : public facebook::jsi::MutableBuffer {
+public:
+	explicit NipworkerMutableBuffer(std::vector<uint8_t>&& bytes) : bytes_(std::move(bytes)) {}
+
+	size_t size() const override {
+		return bytes_.size();
+	}
+
+	uint8_t* data() override {
+		return bytes_.data();
+	}
+
+private:
+	std::vector<uint8_t> bytes_;
+};
 
 static void NipworkerReactNativeCallbackForwarder(void* userdata, const uint8_t* ptr, size_t len) {
 	NipworkerReactNativeModule* module = (__bridge NipworkerReactNativeModule*)userdata;
@@ -190,8 +210,8 @@ RCT_EXPORT_BLOCKING_SYNCHRONOUS_METHOD(installByteRuntime) {
 				auto packets = NipworkerDrainPackets();
 				facebook::jsi::Array output(runtime, packets.size());
 				for (size_t i = 0; i < packets.size(); i++) {
-					facebook::jsi::ArrayBuffer buffer(runtime, packets[i].size());
-					memcpy(buffer.data(runtime), packets[i].data(), packets[i].size());
+					auto nativeBuffer = std::make_shared<NipworkerMutableBuffer>(std::move(packets[i]));
+					facebook::jsi::ArrayBuffer buffer(runtime, std::move(nativeBuffer));
 					output.setValueAtIndex(runtime, i, std::move(buffer));
 				}
 				return output;
