@@ -2,6 +2,7 @@ use super::super::*;
 use crate::parser_types::parsed_event::ParsedData;
 use crate::{
     generated::nostr::fb::{self},
+    platform,
     types::Proof,
 };
 use std::sync::{Arc, Mutex};
@@ -14,6 +15,7 @@ use tracing::{debug, error, warn};
 
 // Cap concurrent proof verifications to avoid SAB ring overflow and CPU saturation
 const MAX_CONCURRENT_PROOFS: usize = 4;
+const MINT_KEY_FAILURE_BACKOFF_MS: u64 = 30_000;
 
 /// Cached mint keys for avoiding repeated network requests
 #[derive(Clone)]
@@ -32,6 +34,7 @@ pub struct ProofVerificationPipe {
     name: String,
     verification_running: bool,
     mint_keys_cache: Arc<Mutex<FxHashMap<String, CachedKeys>>>, // cached mint keys
+    mint_key_failures: Arc<Mutex<FxHashMap<String, u64>>>, // mint_url -> retry_after_ms
 }
 
 impl ProofVerificationPipe {
@@ -44,6 +47,7 @@ impl ProofVerificationPipe {
             name: format!("ProofVerification(max:{})", max_proofs),
             verification_running: false,
             mint_keys_cache: Arc::new(Mutex::new(FxHashMap::default())),
+            mint_key_failures: Arc::new(Mutex::new(FxHashMap::default())),
         }
     }
 
@@ -90,9 +94,40 @@ impl ProofVerificationPipe {
             return Ok(());
         }
 
-        // No-op verification: just mark all new proofs as seen
-        for proof in new_proofs {
-            self.seen_proofs.insert(proof.secret);
+        let futures_iter = new_proofs.into_iter().map(|proof| {
+            let secret = proof.secret.clone();
+            let mint_keys = mint_keys_json.clone();
+
+            async move {
+                let result = verify_proof_and_return_y_point(&proof, &mint_keys);
+                (proof, secret, result)
+            }
+        });
+
+        let stream = stream::iter(futures_iter).buffered(MAX_CONCURRENT_PROOFS);
+        let results = stream.collect::<Vec<_>>().await;
+
+        for (proof, secret, result) in results {
+            match result {
+                Ok(y_point) => {
+                    if y_point.is_empty() {
+                        debug!("Proof has invalid DLEQ signature, skipping");
+                        self.seen_proofs.insert(secret);
+                        continue;
+                    }
+
+                    self.pending_verifications.insert(secret.clone(), y_point);
+                    self.pending_proofs
+                        .entry(mint_url.clone())
+                        .or_default()
+                        .insert(secret.clone(), proof);
+                    self.seen_proofs.insert(secret);
+                }
+                Err(e) => {
+                    warn!("DLEQ verification failed: {}", e);
+                    self.seen_proofs.insert(secret);
+                }
+            }
         }
 
         Ok(())
@@ -339,8 +374,31 @@ impl ProofVerificationPipe {
             }
         }
 
+        {
+            let failures = self.mint_key_failures.lock().unwrap();
+            if let Some(retry_after_ms) = failures.get(mint_url) {
+                let now_ms = platform::now_millis();
+                if now_ms < *retry_after_ms {
+                    return Err(NostrError::Other(format!(
+                        "mint key fetch recently failed; retrying in {}ms",
+                        retry_after_ms.saturating_sub(now_ms)
+                    )));
+                }
+            }
+        }
+
         // Fetch from network and update cache
-        let keys_json = self.fetch_mint_keys_from_network(mint_url).await?;
+        let keys_json = match self.fetch_mint_keys_from_network(mint_url).await {
+            Ok(keys) => keys,
+            Err(e) => {
+                let retry_after_ms = platform::now_millis() + MINT_KEY_FAILURE_BACKOFF_MS;
+                self.mint_key_failures
+                    .lock()
+                    .unwrap()
+                    .insert(mint_url.to_string(), retry_after_ms);
+                return Err(e);
+            }
+        };
 
         {
             let mut cache = self.mint_keys_cache.lock().unwrap();
@@ -351,18 +409,70 @@ impl ProofVerificationPipe {
                 },
             );
         }
+        self.mint_key_failures.lock().unwrap().remove(mint_url);
 
         Ok(keys_json)
     }
 
-    /// Fetch mint keys from network (stub in core crate)
+    /// Fetch mint keys from network.
+    #[cfg(target_arch = "wasm32")]
     async fn fetch_mint_keys_from_network(&self, mint_url: &str) -> Result<String> {
         let url = format!("{}/v1/keys", mint_url.trim_end_matches('/'));
-        Err(NostrError::Other(format!(
-            "fetch_mint_keys_from_network not available in core crate (url: {})",
-            url
-        )))
+        let response = gloo_net::http::Request::get(&url)
+            .send()
+            .await
+            .map_err(|e| NostrError::Other(format!("HTTP request failed: {:?}", e)))?;
+
+        if !response.ok() {
+            return Err(NostrError::Other(format!(
+                "Mint returned status: {}",
+                response.status()
+            )));
+        }
+
+        response
+            .text()
+            .await
+            .map_err(|e| NostrError::Other(format!("Failed to read response: {:?}", e)))
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    async fn fetch_mint_keys_from_network(&self, mint_url: &str) -> Result<String> {
+        let url = format!("{}/v1/keys", mint_url.trim_end_matches('/'));
+        let response = reqwest::get(&url)
+            .await
+            .map_err(|e| NostrError::Other(format!("HTTP request failed: {}", e)))?;
+
+        if !response.status().is_success() {
+            return Err(NostrError::Other(format!(
+                "Mint returned status: {}",
+                response.status()
+            )));
+        }
+
+        response
+            .text()
+            .await
+            .map_err(|e| NostrError::Other(format!("Failed to read response: {}", e)))
     }
 }
 
-// Custom JSON parsers for the structs
+#[cfg(feature = "crypto")]
+fn verify_proof_and_return_y_point(proof: &Proof, mint_keys_json: &str) -> Result<String> {
+    let payload = format!("{}|||{}", proof.to_json(), mint_keys_json);
+    let (proof, keys_map) = crate::crypto::utils::parse_verification_payload(&payload)
+        .map_err(|e| NostrError::Other(e.to_string()))?;
+
+    if crate::crypto::utils::verify_proof_dleq_with_keys(&proof, &keys_map) {
+        Ok(crate::crypto::utils::compute_y_point(&proof.secret))
+    } else {
+        Ok(String::new())
+    }
+}
+
+#[cfg(not(feature = "crypto"))]
+fn verify_proof_and_return_y_point(_proof: &Proof, _mint_keys_json: &str) -> Result<String> {
+    Err(NostrError::Other(
+        "proof verification requires the crypto feature".to_string(),
+    ))
+}
