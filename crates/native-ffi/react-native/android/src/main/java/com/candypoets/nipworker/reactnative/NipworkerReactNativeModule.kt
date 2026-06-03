@@ -4,14 +4,15 @@ import android.content.Context
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.ReadableArray
 import com.facebook.react.bridge.ReactApplicationContext
-import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
+import com.facebook.react.module.annotations.ReactModule
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import java.util.concurrent.atomic.AtomicLong
 
+@ReactModule(name = NipworkerReactNativeModule.NAME)
 class NipworkerReactNativeModule(
 	private val reactContext: ReactApplicationContext
-) : ReactContextBaseJavaModule(reactContext) {
+) : NativeNipworkerReactNativeSpec(reactContext) {
 	companion object {
 		const val NAME = "NipworkerReactNativeModule"
 		private const val EVENT_NAME = "NipworkerEvent"
@@ -34,19 +35,17 @@ class NipworkerReactNativeModule(
 		private var activeModule: NipworkerReactNativeModule? = null
 
 		@JvmStatic
-			fun onNativeData(userdata: Long, data: ByteArray) {
-				val module = activeModule ?: return
-				if (nativeIsByteRuntimeInstalled() && nativeQueueData(data)) {
-					val payload = Arguments.createMap().apply {
-						putInt("v", 1)
-						putString("encoding", "queued")
-					}
-					module.reactContext
-						.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
-						.emit(EVENT_NAME, payload)
-					return
+		fun onNativeData(userdata: Long, data: ByteArray) {
+			val module = activeModule ?: return
+			if (nativeIsByteRuntimeInstalled() && nativeQueueData(data)) {
+				val payload = Arguments.createMap().apply {
+					putInt("v", 1)
+					putString("encoding", "queued")
 				}
-				val bytes = Arguments.createArray()
+				module.emitData(payload)
+				return
+			}
+			val bytes = Arguments.createArray()
 			for (byte in data) {
 				bytes.pushInt(byte.toInt() and 0xff)
 			}
@@ -55,9 +54,7 @@ class NipworkerReactNativeModule(
 				putString("encoding", "bytes")
 				putArray("data", bytes)
 			}
-			module.reactContext
-				.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
-				.emit(EVENT_NAME, payload)
+			module.emitData(payload)
 		}
 
 		@JvmStatic
@@ -72,20 +69,18 @@ class NipworkerReactNativeModule(
 		@JvmStatic
 		external fun nipworkerDeinit(handle: Long)
 
-			@JvmStatic
-			external fun nipworkerFreeBytes(ptr: Long, len: Long)
+		@JvmStatic
+		external fun nipworkerFreeBytes(ptr: Long, len: Long)
 
-			@JvmStatic
-			external fun nativeInstallByteRuntime(runtimePtr: Long, handle: Long): Boolean
+		@JvmStatic
+		external fun nativeInstallByteRuntime(runtimePtr: Long, handle: Long): Boolean
 
-			@JvmStatic
-			external fun nativeIsByteRuntimeInstalled(): Boolean
+		@JvmStatic
+		external fun nativeIsByteRuntimeInstalled(): Boolean
 
-			@JvmStatic
-			external fun nativeQueueData(bytes: ByteArray): Boolean
-		}
-
-	override fun getName(): String = NAME
+		@JvmStatic
+		external fun nativeQueueData(bytes: ByteArray): Boolean
+	}
 
 	private val storage by lazy {
 		reactContext.getSharedPreferences(STORAGE_NAME, Context.MODE_PRIVATE)
@@ -93,16 +88,15 @@ class NipworkerReactNativeModule(
 
 	@ReactMethod
 	fun addListener(eventName: String) {
-		// Required by NativeEventEmitter on Android. Events are emitted through RCTDeviceEventEmitter.
+		// Required by NativeEventEmitter on Android legacy paths.
 	}
 
 	@ReactMethod
 	fun removeListeners(count: Int) {
-		// Required by NativeEventEmitter on Android. Listener cleanup is handled by JavaScript subscriptions.
+		// Required by NativeEventEmitter on Android legacy paths.
 	}
 
-	@ReactMethod
-	fun init() {
+	override fun initEngine() {
 		activeModule = this
 		if (sharedHandle == 0L) {
 			sharedUserdata = nextUserdata.getAndIncrement()
@@ -111,8 +105,8 @@ class NipworkerReactNativeModule(
 	}
 
 	@ReactMethod(isBlockingSynchronousMethod = true)
-	fun installByteRuntime(): Boolean {
-		init()
+	override fun installByteRuntime(): Boolean {
+		initEngine()
 		val runtimePtr = reactContext.javaScriptContextHolder?.get() ?: 0L
 		if (runtimePtr == 0L || sharedHandle == 0L) {
 			return false
@@ -121,7 +115,7 @@ class NipworkerReactNativeModule(
 	}
 
 	@ReactMethod
-	fun handleMessage(bytes: ReadableArray) {
+	override fun handleMessage(bytes: ReadableArray) {
 		if (sharedHandle != 0L) {
 			val data = ByteArray(bytes.size())
 			for (i in 0 until bytes.size()) {
@@ -132,29 +126,28 @@ class NipworkerReactNativeModule(
 	}
 
 	@ReactMethod
-	fun setPrivateKey(secret: String) {
+	override fun setPrivateKey(secret: String) {
 		if (sharedHandle != 0L) {
 			nipworkerSetPrivateKey(sharedHandle, secret)
 		}
 	}
 
 	@ReactMethod(isBlockingSynchronousMethod = true)
-	fun getStorageItem(key: String): String? {
+	override fun getStorageItem(key: String): String? {
 		return storage.getString(key, null)
 	}
 
 	@ReactMethod(isBlockingSynchronousMethod = true)
-	fun setStorageItem(key: String, value: String): Boolean {
+	override fun setStorageItem(key: String, value: String): Boolean {
 		return storage.edit().putString(key, value).commit()
 	}
 
 	@ReactMethod(isBlockingSynchronousMethod = true)
-	fun removeStorageItem(key: String): Boolean {
+	override fun removeStorageItem(key: String): Boolean {
 		return storage.edit().remove(key).commit()
 	}
 
-	@ReactMethod
-	fun deinit() {
+	override fun deinitEngine() {
 		if (sharedHandle != 0L) {
 			nipworkerDeinit(sharedHandle)
 			sharedHandle = 0L
@@ -162,6 +155,16 @@ class NipworkerReactNativeModule(
 		}
 		if (activeModule === this) {
 			activeModule = null
+		}
+	}
+
+	private fun emitData(payload: com.facebook.react.bridge.WritableMap) {
+		try {
+			emitOnData(payload)
+		} catch (_: Throwable) {
+			reactContext
+				.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+				.emit(EVENT_NAME, payload)
 		}
 	}
 }

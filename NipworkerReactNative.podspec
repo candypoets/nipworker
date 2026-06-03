@@ -12,6 +12,11 @@ Pod::Spec.new do |s|
   s.public_header_files = 'crates/native-ffi/react-native/ios/NipworkerReactNativeModule.h'
   s.vendored_frameworks = 'crates/native-ffi/ios/NipworkerNativeFFI.xcframework'
   s.dependency 'React-Core'
+  s.dependency 'ReactCodegen'
+  s.dependency 'RCTRequired'
+  s.dependency 'RCTTypeSafety'
+  s.dependency 'ReactCommon'
+  s.dependency 'React-NativeModulesApple'
   s.dependency 'React-jsi'
   s.dependency 'React-cxxreact'
   s.pod_target_xcconfig = {

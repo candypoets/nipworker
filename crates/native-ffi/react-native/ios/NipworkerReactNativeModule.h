@@ -1,5 +1,9 @@
 #import <React/RCTBridgeModule.h>
-#import <React/RCTEventEmitter.h>
+#import <ReactCodegen/NipworkerReactNativeSpec/NipworkerReactNativeSpec.h>
+#import <ReactCommon/RCTTurboModuleWithJSIBindings.h>
 
-@interface NipworkerReactNativeModule : RCTEventEmitter <RCTBridgeModule>
+@interface NipworkerReactNativeModule : NativeNipworkerReactNativeSpecBase <
+	NativeNipworkerReactNativeSpec,
+	RCTTurboModuleWithJSIBindings
+>
 @end

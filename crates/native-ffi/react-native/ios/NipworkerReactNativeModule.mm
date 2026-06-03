@@ -9,11 +9,14 @@
 #include <memory>
 #include <mutex>
 #include <vector>
+#include <atomic>
 
 @interface NipworkerReactNativeModule ()
 @property (nonatomic, assign) void* engineHandle;
 @property (nonatomic, assign) BOOL hasListeners;
 @property (nonatomic, assign) BOOL byteRuntimeInstalled;
+@property (nonatomic, assign) void* byteRuntimeAddress;
+- (void)emitNipworkerData:(NSDictionary *)body;
 @end
 
 extern "C" {
@@ -28,6 +31,14 @@ static NSString * const NipworkerEventName = @"NipworkerEvent";
 static NSString * const NipworkerStoragePrefix = @"nipworker.";
 static std::mutex NipworkerQueuedPacketsMutex;
 static std::vector<std::vector<uint8_t>> NipworkerQueuedPackets;
+static std::atomic_bool NipworkerByteRuntimeInstalled(false);
+static void* NipworkerByteRuntimeAddress = NULL;
+static void* NipworkerEngineHandle = NULL;
+static NSHashTable<NipworkerReactNativeModule*>* NipworkerListenerModules;
+
+static void NipworkerReactNativeCallbackForwarder(void* userdata, const uint8_t* ptr, size_t len);
+static void* NipworkerGetEngineHandle(void* userdata);
+static void NipworkerNotifyQueuedPacket(void);
 
 static void NipworkerQueuePacket(const uint8_t* ptr, size_t len) {
 	if (!ptr || len == 0) {
@@ -46,6 +57,30 @@ static std::vector<std::vector<uint8_t>> NipworkerDrainPackets() {
 	return packets;
 }
 
+static void* NipworkerGetEngineHandle(void* userdata) {
+	@synchronized ([NipworkerReactNativeModule class]) {
+		if (!NipworkerEngineHandle) {
+			NipworkerEngineHandle = nipworker_init(NipworkerReactNativeCallbackForwarder, userdata);
+		}
+		return NipworkerEngineHandle;
+	}
+}
+
+static void NipworkerNotifyQueuedPacket(void) {
+	dispatch_async(dispatch_get_main_queue(), ^{
+		NSArray<NipworkerReactNativeModule*>* listeners = nil;
+		@synchronized ([NipworkerReactNativeModule class]) {
+			listeners = NipworkerListenerModules.allObjects;
+		}
+		for (NipworkerReactNativeModule* listener in listeners) {
+			[listener emitNipworkerData:@{
+				@"v": @1,
+				@"encoding": @"queued"
+			}];
+		}
+	});
+}
+
 class NipworkerMutableBuffer final : public facebook::jsi::MutableBuffer {
 public:
 	explicit NipworkerMutableBuffer(std::vector<uint8_t>&& bytes) : bytes_(std::move(bytes)) {}
@@ -62,83 +97,7 @@ private:
 	std::vector<uint8_t> bytes_;
 };
 
-static void NipworkerReactNativeCallbackForwarder(void* userdata, const uint8_t* ptr, size_t len) {
-	NipworkerReactNativeModule* module = (__bridge NipworkerReactNativeModule*)userdata;
-	NSData* data = [NSData dataWithBytes:ptr length:len];
-	nipworker_free_bytes((uint8_t*)ptr, len);
-
-	if (module.byteRuntimeInstalled) {
-		NipworkerQueuePacket((const uint8_t*)data.bytes, data.length);
-		dispatch_async(dispatch_get_main_queue(), ^{
-			if (!module.hasListeners) {
-				return;
-			}
-			[module sendEventWithName:NipworkerEventName
-								 body:@{
-									 @"v": @1,
-									 @"encoding": @"queued"
-								 }];
-		});
-		return;
-	}
-
-	NSMutableArray<NSNumber*>* bytes = [NSMutableArray arrayWithCapacity:len];
-	const uint8_t* rawBytes = (const uint8_t*)data.bytes;
-	for (NSUInteger i = 0; i < len; i++) {
-		[bytes addObject:@(rawBytes[i])];
-	}
-
-	dispatch_async(dispatch_get_main_queue(), ^{
-		if (!module.hasListeners) {
-			return;
-		}
-		[module sendEventWithName:NipworkerEventName
-							 body:@{
-								 @"v": @1,
-								 @"encoding": @"bytes",
-								 @"data": bytes
-							 }];
-	});
-}
-
-@implementation NipworkerReactNativeModule
-
-RCT_EXPORT_MODULE(NipworkerReactNativeModule)
-
-+ (BOOL)requiresMainQueueSetup {
-	return NO;
-}
-
-- (NSArray<NSString *> *)supportedEvents {
-	return @[NipworkerEventName];
-}
-
-- (void)startObserving {
-	self.hasListeners = YES;
-}
-
-- (void)stopObserving {
-	self.hasListeners = NO;
-}
-
-RCT_REMAP_METHOD(init, initEngine) {
-	if (!self.engineHandle) {
-		self.engineHandle = nipworker_init(NipworkerReactNativeCallbackForwarder, (__bridge void*)self);
-	}
-}
-
-RCT_EXPORT_BLOCKING_SYNCHRONOUS_METHOD(installByteRuntime) {
-	if (!self.engineHandle) {
-		self.engineHandle = nipworker_init(NipworkerReactNativeCallbackForwarder, (__bridge void*)self);
-	}
-	RCTCxxBridge* cxxBridge = (RCTCxxBridge*)self.bridge;
-	if (![cxxBridge isKindOfClass:[RCTCxxBridge class]] || !cxxBridge.runtime) {
-		return @NO;
-	}
-
-	facebook::jsi::Runtime& runtime = *reinterpret_cast<facebook::jsi::Runtime*>(cxxBridge.runtime);
-	void* engineHandle = self.engineHandle;
-
+static void NipworkerInstallByteRuntime(facebook::jsi::Runtime& runtime, void* engineHandle) {
 	facebook::jsi::Object byteRuntime(runtime);
 	byteRuntime.setProperty(
 		runtime,
@@ -224,7 +183,106 @@ RCT_EXPORT_BLOCKING_SYNCHRONOUS_METHOD(installByteRuntime) {
 		"__nipworkerReactNativeByteRuntime",
 		std::move(byteRuntime)
 	);
+}
+
+static void NipworkerReactNativeCallbackForwarder(void* userdata, const uint8_t* ptr, size_t len) {
+	NipworkerReactNativeModule* module = (__bridge NipworkerReactNativeModule*)userdata;
+	NSData* data = [NSData dataWithBytes:ptr length:len];
+	nipworker_free_bytes((uint8_t*)ptr, len);
+
+	if (module.byteRuntimeInstalled || NipworkerByteRuntimeInstalled.load()) {
+		NipworkerQueuePacket((const uint8_t*)data.bytes, data.length);
+		NipworkerNotifyQueuedPacket();
+		return;
+	}
+
+	NSMutableArray<NSNumber*>* bytes = [NSMutableArray arrayWithCapacity:len];
+	const uint8_t* rawBytes = (const uint8_t*)data.bytes;
+	for (NSUInteger i = 0; i < len; i++) {
+		[bytes addObject:@(rawBytes[i])];
+	}
+
+	dispatch_async(dispatch_get_main_queue(), ^{
+		[module emitNipworkerData:@{
+			@"v": @1,
+			@"encoding": @"bytes",
+			@"data": bytes
+		}];
+	});
+}
+
+@implementation NipworkerReactNativeModule
+
+RCT_EXPORT_MODULE(NipworkerReactNativeModule)
+
++ (BOOL)requiresMainQueueSetup {
+	return NO;
+}
+
+- (NSArray<NSString *> *)supportedEvents {
+	return @[NipworkerEventName];
+}
+
+- (void)emitNipworkerData:(NSDictionary *)body {
+	if (!_eventEmitterCallback) {
+		return;
+	}
+	[self emitOnData:body];
+}
+
+- (void)setEventEmitterCallback:(EventEmitterCallbackWrapper *)eventEmitterCallbackWrapper {
+	[super setEventEmitterCallback:eventEmitterCallbackWrapper];
+	@synchronized ([NipworkerReactNativeModule class]) {
+		if (!NipworkerListenerModules) {
+			NipworkerListenerModules = [NSHashTable weakObjectsHashTable];
+		}
+		[NipworkerListenerModules addObject:self];
+	}
+}
+
+- (void)startObserving {
+	self.hasListeners = YES;
+	@synchronized ([NipworkerReactNativeModule class]) {
+		if (!NipworkerListenerModules) {
+			NipworkerListenerModules = [NSHashTable weakObjectsHashTable];
+		}
+		[NipworkerListenerModules addObject:self];
+	}
+}
+
+- (void)stopObserving {
+	self.hasListeners = NO;
+	@synchronized ([NipworkerReactNativeModule class]) {
+		[NipworkerListenerModules removeObject:self];
+	}
+}
+
+RCT_REMAP_METHOD(init, initEngine) {
+	self.engineHandle = NipworkerGetEngineHandle((__bridge void*)self);
+}
+
+RCT_EXPORT_BLOCKING_SYNCHRONOUS_METHOD(installByteRuntime) {
+	self.engineHandle = NipworkerGetEngineHandle((__bridge void*)self);
+	if (NipworkerByteRuntimeInstalled.load()) {
+		self.byteRuntimeInstalled = YES;
+		self.byteRuntimeAddress = NipworkerByteRuntimeAddress;
+		return @YES;
+	}
+	id bridge = [self respondsToSelector:@selector(bridge)] ? [self performSelector:@selector(bridge)] : nil;
+	RCTCxxBridge* cxxBridge = (RCTCxxBridge*)bridge;
+	if (![cxxBridge isKindOfClass:[RCTCxxBridge class]] || !cxxBridge.runtime) {
+		return @NO;
+	}
+
+	facebook::jsi::Runtime& runtime = *reinterpret_cast<facebook::jsi::Runtime*>(cxxBridge.runtime);
+	if (self.byteRuntimeInstalled && self.byteRuntimeAddress == &runtime) {
+		return @YES;
+	}
+	NipworkerInstallByteRuntime(runtime, self.engineHandle);
 	self.byteRuntimeInstalled = YES;
+	self.byteRuntimeAddress = &runtime;
+	NipworkerByteRuntimeAddress = &runtime;
+	NipworkerByteRuntimeInstalled.store(true);
 	return @YES;
 }
 
@@ -272,15 +330,34 @@ RCT_EXPORT_BLOCKING_SYNCHRONOUS_METHOD(removeStorageItem:(NSString *)key) {
 	return @([[NSUserDefaults standardUserDefaults] synchronize]);
 }
 
-RCT_REMAP_METHOD(deinit, deinitEngine) {
+- (void)deinitEngine {
 	if (self.engineHandle) {
-		nipworker_deinit(self.engineHandle);
 		self.engineHandle = NULL;
 	}
 }
 
 - (void)invalidate {
 	[self deinitEngine];
+}
+
+- (void)installJSIBindingsWithRuntime:(facebook::jsi::Runtime &)runtime
+                          callInvoker:(const std::shared_ptr<facebook::react::CallInvoker> &)callInvoker {
+	if (!self.engineHandle) {
+		self.engineHandle = NipworkerGetEngineHandle((__bridge void*)self);
+	}
+	if (self.byteRuntimeInstalled && self.byteRuntimeAddress == &runtime) {
+		return;
+	}
+	NipworkerInstallByteRuntime(runtime, self.engineHandle);
+	self.byteRuntimeInstalled = YES;
+	self.byteRuntimeAddress = &runtime;
+	NipworkerByteRuntimeAddress = &runtime;
+	NipworkerByteRuntimeInstalled.store(true);
+}
+
+- (std::shared_ptr<facebook::react::TurboModule>)getTurboModule:
+	(const facebook::react::ObjCTurboModule::InitParams &)params {
+	return std::make_shared<facebook::react::NativeNipworkerReactNativeSpecJSI>(params);
 }
 
 @end

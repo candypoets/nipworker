@@ -303,6 +303,11 @@ export class NativeBackend extends BaseBackend {
 				t: Date.now()
 			});
 		}
+		if (!emitter || typeof emitter.addListener !== 'function') {
+			throw new Error(
+				`[NativeBackend] ${runtimeBridge.name} event emitter unavailable: ${probe.emitterType}`
+			);
+		}
 		// Register a persistent listener before starting the native engine.
 		// Lynx may still send base64 envelopes; React Native sends byte arrays.
 		this.eventEmitter = emitter;
@@ -435,6 +440,8 @@ export class NativeBackend extends BaseBackend {
 			const written = ArrayBufferReader.writePayload(buf, payload, subId);
 			if (written) {
 				this.dispatch(`subscription:${subId}`, subId);
+			} else {
+				this.closeSubscription(subId);
 			}
 			return;
 		}
@@ -444,6 +451,8 @@ export class NativeBackend extends BaseBackend {
 			const written = ArrayBufferReader.writePayload(publish.buffer, payload, subId);
 			if (written) {
 				this.dispatch(`publish:${subId}`, subId);
+			} else {
+				this.publishes.delete(subId);
 			}
 			return;
 		}
@@ -554,6 +563,15 @@ export class NativeBackend extends BaseBackend {
 		// Builder.asUint8Array() returns a view on a potentially larger backing buffer.
 		// Copy to an exact-sized ArrayBuffer so the native bridge receives only valid bytes.
 		this.nativeModule.handleMessage(bytes.slice().buffer);
+	}
+
+	private closeSubscription(subId: string): void {
+		const unsubscribeT = new UnsubscribeT(this.textEncoder.encode(subId));
+		const mainT = new MainMessageT(MainContent.Unsubscribe, unsubscribeT);
+		const builder = new flatbuffers.Builder(1024);
+		builder.finish(mainT.pack(builder));
+		this.postMessage(builder.asUint8Array());
+		this.subscriptions.delete(subId);
 	}
 
 	subscribe(

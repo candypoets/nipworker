@@ -106,7 +106,11 @@ const reactNativeBridge: NativeRuntimeBridge = {
 					byteRuntime.init();
 					return;
 				}
-				mod.init();
+				if (typeof mod.initEngine === 'function') {
+					mod.initEngine();
+				} else {
+					mod.init();
+				}
 			},
 			handleMessage(bytes: Uint8Array | ArrayBuffer): void {
 				const exact = toExactUint8Array(bytes);
@@ -131,7 +135,11 @@ const reactNativeBridge: NativeRuntimeBridge = {
 					byteRuntime.deinit();
 					return;
 				}
-				mod.deinit();
+				if (typeof mod.deinitEngine === 'function') {
+					mod.deinitEngine();
+				} else {
+					mod.deinit();
+				}
 			}
 		};
 	},
@@ -142,16 +150,25 @@ const reactNativeBridge: NativeRuntimeBridge = {
 		}
 		const byteRuntime = getByteRuntime();
 		if (byteRuntime) {
-			const emitter = new NativeEventEmitter(mod);
+			const turbo = getTurboModule();
+			const emitter = turbo?.onData ? undefined : new NativeEventEmitter(mod);
 			const subscriptions = new Map<(event: any) => void, { remove: () => void }>();
+			const deliverBuffers = (listener: (event: any) => void, buffers: ArrayBuffer[]) => {
+				for (const buffer of buffers) {
+					listener(buffer);
+				}
+			};
+			const handleQueuedEvent = (listener: (event: any) => void, event: any) => {
+				if (event?.v !== 1 || event?.encoding !== 'queued') return;
+				deliverBuffers(listener, byteRuntime.drain());
+			};
 			return {
 				addListener(_eventName: string, listener: (event: any) => void): void {
-					const subscription = emitter.addListener(REACT_NATIVE_EVENT_NAME, (event: any) => {
-						if (event?.v !== 1 || event?.encoding !== 'queued') return;
-						for (const buffer of byteRuntime.drain()) {
-							listener(buffer);
-						}
-					});
+					const subscription = turbo?.onData
+						? turbo.onData((event: any) => handleQueuedEvent(listener, event))
+						: emitter.addListener(REACT_NATIVE_EVENT_NAME, (event: any) =>
+								handleQueuedEvent(listener, event)
+							);
 					subscriptions.set(listener, subscription);
 				},
 				removeListener(_eventName: string, listener: (event: any) => void): void {
@@ -166,7 +183,10 @@ const reactNativeBridge: NativeRuntimeBridge = {
 			const subscriptions = new Map<(event: any) => void, { remove: () => void }>();
 			return {
 				addListener(_eventName: string, listener: (event: any) => void): void {
-					subscriptions.set(listener, turbo.onData((event: { data: number[] }) => listener(event.data)));
+					subscriptions.set(
+						listener,
+						turbo.onData((event: { data: number[] }) => listener(event.data))
+					);
 				},
 				removeListener(_eventName: string, listener: (event: any) => void): void {
 					subscriptions.get(listener)?.remove();
