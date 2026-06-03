@@ -3,7 +3,7 @@ use crate::parser::{ParserError, Result};
 
 use crate::generated::nostr::*;
 use crate::types::network::Request;
-use crate::types::nostr::{Template, EventId, PublicKey};
+use crate::types::nostr::{EventId, PublicKey, Template};
 use crate::types::Event;
 
 pub struct MintInfo {

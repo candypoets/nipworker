@@ -118,7 +118,11 @@ impl BatchBuffer {
         if self.buffer.is_empty() {
             return;
         }
-        debug!("Flushed batch for sub {}: {} bytes", self.sub_id, self.buffer.len());
+        debug!(
+            "Flushed batch for sub {}: {} bytes",
+            self.sub_id,
+            self.buffer.len()
+        );
         self.buffer.clear();
         *self.first_event_time.borrow_mut() = None;
     }

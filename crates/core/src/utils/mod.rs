@@ -514,26 +514,26 @@ pub fn extract_event_id<'a>(json: &'a str) -> Option<&'a str> {
 
 /// Validate relay URL format
 pub fn validate_relay_url(url: &str) -> Result<()> {
-	if url.is_empty() {
-		return Err(crate::types::ParserError::InvalidFormat(
-			"URL cannot be empty".to_string(),
-		));
-	}
+    if url.is_empty() {
+        return Err(crate::types::ParserError::InvalidFormat(
+            "URL cannot be empty".to_string(),
+        ));
+    }
 
-	if !url.starts_with("ws://") && !url.starts_with("wss://") {
-		return Err(crate::types::ParserError::InvalidFormat(
-			"URL must start with ws:// or wss://".to_string(),
-		));
-	}
+    if !url.starts_with("ws://") && !url.starts_with("wss://") {
+        return Err(crate::types::ParserError::InvalidFormat(
+            "URL must start with ws:// or wss://".to_string(),
+        ));
+    }
 
-	Ok(())
+    Ok(())
 }
 
 /// Normalize relay URL (remove trailing slash, convert to lowercase)
 pub fn normalize_relay_url(url: &str) -> String {
-	let mut normalized = url.trim().to_lowercase();
-	if normalized.ends_with('/') && normalized.len() > 1 {
-		normalized.pop();
-	}
-	normalized
+    let mut normalized = url.trim().to_lowercase();
+    if normalized.ends_with('/') && normalized.len() > 1 {
+        normalized.pop();
+    }
+    normalized
 }

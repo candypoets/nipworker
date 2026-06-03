@@ -40,13 +40,13 @@ pub struct QueryFilter {
     pub authors: Option<Vec<String>>, // was Vec<PublicKey>
     pub kinds: Option<Vec<u16>>,      // keep u16 (fb uses ushort)
     pub e_tags: Option<Vec<String>>,  // lowercase e (NIP-10)
-    pub E_tags: Option<Vec<String>>, // uppercase E (NIP-22)
-    pub p_tags: Option<Vec<String>>, // lowercase p (NIP-10)
-    pub P_tags: Option<Vec<String>>, // uppercase P (NIP-22)
+    pub E_tags: Option<Vec<String>>,  // uppercase E (NIP-22)
+    pub p_tags: Option<Vec<String>>,  // lowercase p (NIP-10)
+    pub P_tags: Option<Vec<String>>,  // uppercase P (NIP-22)
     pub a_tags: Option<Vec<String>>,
     pub d_tags: Option<Vec<String>>,
     pub q_tags: Option<Vec<String>>, // q tag (quote/citation)
-    pub since: Option<u32>, // use u32 (fb since/until are i32)
+    pub since: Option<u32>,          // use u32 (fb since/until are i32)
     pub until: Option<u32>,
     pub limit: Option<usize>,
     pub search: Option<String>,
@@ -136,13 +136,13 @@ pub struct DatabaseIndexes {
     /// Secondary indexes
     pub events_by_kind: KindIndex,
     pub events_by_pubkey: PubkeyIndex,
-    pub events_by_e_tag: TagIndex,   // lowercase e (NIP-10)
-    pub events_by_E_tag: TagIndex,  // uppercase E (NIP-22)
-    pub events_by_p_tag: TagIndex,  // lowercase p (NIP-10)
-    pub events_by_P_tag: TagIndex,  // uppercase P (NIP-22)
+    pub events_by_e_tag: TagIndex, // lowercase e (NIP-10)
+    pub events_by_E_tag: TagIndex, // uppercase E (NIP-22)
+    pub events_by_p_tag: TagIndex, // lowercase p (NIP-10)
+    pub events_by_P_tag: TagIndex, // uppercase P (NIP-22)
     pub events_by_a_tag: TagIndex,
     pub events_by_d_tag: TagIndex,
-    pub events_by_q_tag: TagIndex,  // q tag (quote/citation)
+    pub events_by_q_tag: TagIndex, // q tag (quote/citation)
 }
 
 impl DatabaseIndexes {

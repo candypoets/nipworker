@@ -1,11 +1,11 @@
 pub mod channel;
 pub mod generated;
 pub mod platform;
-pub mod types;
-pub mod utils;
-pub mod traits;
 pub mod service;
 pub mod spawn;
+pub mod traits;
+pub mod types;
+pub mod utils;
 
 pub mod nostr_error;
 
@@ -13,15 +13,15 @@ pub mod crypto_client;
 pub mod worker;
 
 #[cfg(feature = "parser")]
-pub mod parser;
-#[cfg(feature = "parser")]
-pub mod pipeline;
-#[cfg(feature = "parser")]
 pub mod network;
+#[cfg(feature = "parser")]
+pub mod parser;
 #[cfg(feature = "parser")]
 pub mod parser_types;
 #[cfg(feature = "parser")]
 pub mod parser_utils;
+#[cfg(feature = "parser")]
+pub mod pipeline;
 
 #[cfg(feature = "cache")]
 pub mod storage;

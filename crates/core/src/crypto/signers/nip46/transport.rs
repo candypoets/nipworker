@@ -1,8 +1,8 @@
-use k256::schnorr::SigningKey;
-use serde_json::json;
-use crate::types::{Event, EventId, Keys, UnsignedEvent};
 use crate::channel::MessageSender;
 use crate::crypto::nostr_crypto::compute_event_id;
+use crate::types::{Event, EventId, Keys, UnsignedEvent};
+use k256::schnorr::SigningKey;
+use serde_json::json;
 use signature::hazmat::PrehashSigner;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -87,17 +87,20 @@ impl Transport {
         event.id = crate::types::EventId::from_hex(&event_id_hex)
             .map_err(|e| format!("Failed to parse event ID: {}", e))?;
 
-        let secret_key = self.client_keys.secret_key()
+        let secret_key = self
+            .client_keys
+            .secret_key()
             .map_err(|e| format!("Failed to get secret key: {}", e))?;
 
         let signing_key = SigningKey::from_bytes(&secret_key.0)
             .map_err(|e| format!("Failed to create signing key: {}", e))?;
 
-        let signature = signing_key.sign_prehash(&event.id.to_bytes())
+        let signature = signing_key
+            .sign_prehash(&event.id.to_bytes())
             .map_err(|e| format!("Schnorr prehash sign failed: {}", e))?;
 
         event.sig = hex::encode(signature.to_bytes());
-        
+
         let frame = format!(r#"["EVENT",{}]"#, event.to_json());
         self.publish_frames(&[frame]);
         Ok(())

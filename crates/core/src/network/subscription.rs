@@ -1,10 +1,10 @@
+use crate::channel::MessageSender;
+use crate::generated::nostr::fb;
+use crate::nostr_error::NostrError;
 use crate::parser::Parser;
 use crate::pipeline::pipes::*;
 use crate::pipeline::{PipeType, Pipeline};
-use crate::generated::nostr::fb;
 use crate::types::network::Request;
-use crate::channel::MessageSender;
-use crate::nostr_error::NostrError;
 
 use rustc_hash::FxHashMap;
 
@@ -48,11 +48,7 @@ impl SubscriptionManager {
         let _permit = self.acquire_permit().await;
 
         // Create pipeline based on config
-        let pipeline = self.build_pipeline(
-            config.pipeline(),
-            to_cache,
-            subscription_id.clone(),
-        )?;
+        let pipeline = self.build_pipeline(config.pipeline(), to_cache, subscription_id.clone())?;
 
         // let (network_requests, events) =
         //     match self.cache_processor.process_local_requests(_requests).await {

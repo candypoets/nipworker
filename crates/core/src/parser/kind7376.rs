@@ -4,7 +4,7 @@ use crate::{
     generated::nostr::*,
     types::{
         network::Request,
-        nostr::{NostrTags, Template, EventId, PublicKey},
+        nostr::{EventId, NostrTags, PublicKey, Template},
         Event,
     },
 };
@@ -110,15 +110,9 @@ impl Parser {
                             "e" => {
                                 if tag.len() >= 4 {
                                     match tag[3].as_str() {
-                                        "created" => {
-                                            parsed.created_events.push(tag[1].clone())
-                                        }
-                                        "destroyed" => {
-                                            parsed.destroyed_events.push(tag[1].clone())
-                                        }
-                                        "redeemed" => {
-                                            parsed.redeemed_events.push(tag[1].clone())
-                                        }
+                                        "created" => parsed.created_events.push(tag[1].clone()),
+                                        "destroyed" => parsed.destroyed_events.push(tag[1].clone()),
+                                        "redeemed" => parsed.redeemed_events.push(tag[1].clone()),
                                         _ => {}
                                     }
                                 }

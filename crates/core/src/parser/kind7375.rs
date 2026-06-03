@@ -2,7 +2,11 @@ use crate::parser::{Parser, ParserError, Result};
 
 use crate::{
     generated::nostr::*,
-    types::{network::Request, nostr::{Template, EventId, PublicKey}, Event, Proof, TokenContent},
+    types::{
+        network::Request,
+        nostr::{EventId, PublicKey, Template},
+        Event, Proof, TokenContent,
+    },
 };
 use tracing::warn;
 

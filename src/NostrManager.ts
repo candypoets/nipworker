@@ -177,9 +177,15 @@ export class NostrManager extends BaseBackend {
 
 			const subscription = this.subscriptions.get(subId);
 			if (subscription) {
-				const written = ArrayBufferReader.writeBatchedData(subscription.buffer, lengthPrefixed, subId);
+				const written = ArrayBufferReader.writeBatchedData(
+					subscription.buffer,
+					lengthPrefixed,
+					subId
+				);
 				if (written) {
 					this.dispatch(`subscription:${subId}`, subId);
+				} else {
+					this.closeSubscription(subId);
 				}
 				return;
 			}
@@ -189,6 +195,8 @@ export class NostrManager extends BaseBackend {
 				const written = ArrayBufferReader.writeBatchedData(publish.buffer, lengthPrefixed, subId);
 				if (written) {
 					this.dispatch(`publish:${subId}`, subId);
+				} else {
+					this.publishes.delete(subId);
 				}
 				return;
 			}
@@ -309,6 +317,16 @@ export class NostrManager extends BaseBackend {
 		}
 	}
 
+	private closeSubscription(subId: string): void {
+		const unsubscribeT = new UnsubscribeT(this.textEncoder.encode(subId));
+		const mainT = new MainMessageT(MainContent.Unsubscribe, unsubscribeT);
+		const builder = new flatbuffers.Builder(256);
+		builder.finish(mainT.pack(builder));
+		const uint8Array = builder.asUint8Array();
+		this.parserMainPort.postMessage(uint8Array, [uint8Array.buffer]);
+		this.subscriptions.delete(subId);
+	}
+
 	private sendCryptoMessage(contentType: MainContent, content: any) {
 		const mainT = new MainMessageT(contentType, content);
 		const builder = new flatbuffers.Builder(2048);
@@ -328,10 +346,7 @@ export class NostrManager extends BaseBackend {
 			console.log('[main] set_signer:', msg.result ? 'success' : 'failed', msg.result);
 			if (msg.result) {
 				this.activePubkey = msg.result;
-				if (
-					this._pendingSession?.type === 'nip46' &&
-					this._pendingSession?.payload?.clientSecret
-				) {
+				if (this._pendingSession?.type === 'nip46' && this._pendingSession?.payload?.clientSecret) {
 					console.log('[main] NIP-46 session saved for:', this.activePubkey);
 					this.saveSession(this.activePubkey!, 'nip46', {
 						url: this._pendingSession.payload.url,
@@ -340,9 +355,7 @@ export class NostrManager extends BaseBackend {
 					this._pendingSession = null;
 				} else if (this._pendingSession) {
 					const secretKey =
-						this._pendingSession?.type === 'privkey'
-							? this._pendingSession.payload
-							: undefined;
+						this._pendingSession?.type === 'privkey' ? this._pendingSession.payload : undefined;
 					this.saveSession(
 						this.activePubkey!,
 						this._pendingSession.type,
@@ -467,8 +480,8 @@ export class NostrManager extends BaseBackend {
 						r.closeOnEOSE,
 						r.cacheFirst,
 						r.noCache,
-							undefined,
-							options.cacheOnly
+						undefined,
+						options.cacheOnly
 					)
 			),
 			optionsT
@@ -597,7 +610,7 @@ export class NostrManager extends BaseBackend {
 			// Transfer the underlying buffer for zero-copy
 			this.postToWorker({ serializedMessage: uint8Array });
 
-				// Connections worker subscriptions are closed by parser via Unsubscribe
+			// Connections worker subscriptions are closed by parser via Unsubscribe
 
 			// Remove from local subscriptions map
 			this.subscriptions.delete(subId);

@@ -11,8 +11,8 @@ use cbc::cipher::{block_padding::Pkcs7, BlockDecryptMut, BlockEncryptMut, KeyIvI
 use getrandom::getrandom;
 use k256::{PublicKey as K256PublicKey, SecretKey as K256SecretKey};
 
-use crate::types::{PublicKey, SecretKey};
 use crate::crypto::signers::SignerError;
+use crate::types::{PublicKey, SecretKey};
 
 type Aes256CbcEnc = cbc::Encryptor<Aes256>;
 type Aes256CbcDec = cbc::Decryptor<Aes256>;

@@ -1,19 +1,18 @@
+use async_trait::async_trait;
+use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
-use async_trait::async_trait;
 use tokio::task::LocalSet;
 use tokio::time::timeout;
-use std::future::Future;
 
 use crate::channel::{MessageSender, TokioWorkerChannel, WorkerChannel};
 use crate::crypto_client::CryptoClient;
 use crate::generated::nostr::fb;
 use crate::parser::Parser;
-use crate::pipeline::{Pipeline};
+use crate::pipeline::Pipeline;
 use crate::service::engine::NostrEngine;
 use crate::traits::{
-    RelayTransport, Signer, Storage, TransportError, TransportStatus,
-    StorageError,
+    RelayTransport, Signer, Storage, StorageError, TransportError, TransportStatus,
 };
 use crate::types::network::Request;
 
@@ -44,7 +43,10 @@ struct MockStorage;
 
 #[async_trait(?Send)]
 impl Storage for MockStorage {
-    async fn query(&self, _filters: Vec<crate::types::nostr::Filter>) -> Result<Vec<Vec<u8>>, StorageError> {
+    async fn query(
+        &self,
+        _filters: Vec<crate::types::nostr::Filter>,
+    ) -> Result<Vec<Vec<u8>>, StorageError> {
         Ok(Vec::new())
     }
 
@@ -72,11 +74,7 @@ async fn test_no_memory_leak_1000_subscriptions() {
             let (event_sink_tx, _event_sink_rx) =
                 futures::channel::mpsc::channel::<(String, Vec<u8>)>(100);
 
-            let engine = NostrEngine::new(
-                transport.clone(),
-                storage.clone(),
-                event_sink_tx,
-            );
+            let engine = NostrEngine::new(transport.clone(), storage.clone(), event_sink_tx);
 
             // Create 1000 subscriptions sequentially and unsubscribe each immediately
             for i in 0..1000 {
@@ -99,12 +97,20 @@ async fn test_no_memory_leak_1000_subscriptions() {
             tokio::time::sleep(Duration::from_millis(100)).await;
 
             // Verify we can still create a new subscription (system is healthy)
-            let final_sub = engine.subscribe("final_after_1000".to_string(), vec![]).await;
-            assert!(final_sub.is_ok(), "Should be able to create subscription after 1000 cycles");
+            let final_sub = engine
+                .subscribe("final_after_1000".to_string(), vec![])
+                .await;
+            assert!(
+                final_sub.is_ok(),
+                "Should be able to create subscription after 1000 cycles"
+            );
 
             // Verify we can unsubscribe it
             let final_unsub = engine.unsubscribe("final_after_1000".to_string()).await;
-            assert!(final_unsub.is_ok(), "Should be able to unsubscribe after 1000 cycles");
+            assert!(
+                final_unsub.is_ok(),
+                "Should be able to unsubscribe after 1000 cycles"
+            );
         })
         .await;
 }
@@ -120,26 +126,27 @@ async fn test_seen_ids_deduplication_bounded() {
         .run_until(async {
             // Create a pipeline with dedup_max_size = 10000
             let parser = Arc::new(Parser::new(None));
-            let to_cache: Arc<dyn MessageSender> = Arc::from(TokioWorkerChannel::new_pair().0.clone_sender());
-            
-            let pipeline = Pipeline::default(
-                parser,
-                to_cache,
-                "dedup_test".to_string(),
-            ).expect("Failed to create pipeline");
+            let to_cache: Arc<dyn MessageSender> =
+                Arc::from(TokioWorkerChannel::new_pair().0.clone_sender());
+
+            let pipeline = Pipeline::default(parser, to_cache, "dedup_test".to_string())
+                .expect("Failed to create pipeline");
 
             // Create 10000 events with sequential IDs and mark them as seen
             for i in 0..10000 {
                 let id_hex = format!("{:064x}", i);
-                
+
                 // Create a minimal ParsedEvent FlatBuffer with correct fields
                 let mut builder = flatbuffers::FlatBufferBuilder::new();
                 let id_offset = builder.create_string(&id_hex);
-                let pubkey_offset = builder.create_string("0000000000000000000000000000000000000000000000000000000000000001");
-                
+                let pubkey_offset = builder.create_string(
+                    "0000000000000000000000000000000000000000000000000000000000000001",
+                );
+
                 // Create empty tags vector (required field)
-                let tags_offset = builder.create_vector::<flatbuffers::WIPOffset<fb::StringVec>>(&[]);
-                
+                let tags_offset =
+                    builder.create_vector::<flatbuffers::WIPOffset<fb::StringVec>>(&[]);
+
                 let parsed_offset = fb::ParsedEvent::create(
                     &mut builder,
                     &fb::ParsedEventArgs {
@@ -173,7 +180,7 @@ async fn test_seen_ids_deduplication_bounded() {
             // Verify seen_ids set doesn't grow beyond dedup_max_size (10000)
             // The seen_ids is private, but we can test by checking that
             // duplicates are still correctly detected after max size is reached
-            
+
             // Send 100 more events - they should still be tracked as new
             for i in 10000..10100 {
                 let id_hex = format!("{:064x}", i);
@@ -181,11 +188,14 @@ async fn test_seen_ids_deduplication_bounded() {
                 // Create ParsedEvent FlatBuffer
                 let mut builder = flatbuffers::FlatBufferBuilder::new();
                 let id_offset = builder.create_string(&id_hex);
-                let pubkey_offset = builder.create_string("0000000000000000000000000000000000000000000000000000000000000001");
-                
+                let pubkey_offset = builder.create_string(
+                    "0000000000000000000000000000000000000000000000000000000000000001",
+                );
+
                 // Create empty tags vector (required field)
-                let tags_offset = builder.create_vector::<flatbuffers::WIPOffset<fb::StringVec>>(&[]);
-                
+                let tags_offset =
+                    builder.create_vector::<flatbuffers::WIPOffset<fb::StringVec>>(&[]);
+
                 let parsed_offset = fb::ParsedEvent::create(
                     &mut builder,
                     &fb::ParsedEventArgs {
@@ -238,8 +248,9 @@ async fn test_pending_crypto_requests_cleaned() {
             let client = CryptoClient::new(Box::new(client_ch));
 
             // Shared channel reference for the second server task
-            let (server_ch2_tx, mut server_ch2_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
-            
+            let (server_ch2_tx, mut server_ch2_rx) =
+                tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+
             // Forward messages from server_ch to both the first and second handlers
             let forward_handle = tokio::task::spawn_local(async move {
                 while let Ok(bytes) = timeout(Duration::from_millis(100), server_ch.recv()).await {
@@ -361,11 +372,7 @@ async fn test_shard_channels_dropped_on_unsubscribe() {
             let (event_sink_tx, _event_sink_rx) =
                 futures::channel::mpsc::channel::<(String, Vec<u8>)>(1000);
 
-            let engine = NostrEngine::new(
-                transport.clone(),
-                storage.clone(),
-                event_sink_tx,
-            );
+            let engine = NostrEngine::new(transport.clone(), storage.clone(), event_sink_tx);
 
             // Create a subscription
             let sub_id = "shard_cleanup_test";

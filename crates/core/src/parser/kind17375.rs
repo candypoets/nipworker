@@ -5,7 +5,7 @@ use crate::{
     generated::nostr::*,
     types::{
         network::Request,
-        nostr::{NostrTags, Template, EventId, PublicKey},
+        nostr::{EventId, NostrTags, PublicKey, Template},
         Event,
     },
 };

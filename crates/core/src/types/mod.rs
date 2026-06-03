@@ -19,8 +19,8 @@ pub use crate::types::nostr::{
 
 // Re-export Kind helpers
 pub use crate::types::nostr::{
-    CONTACT_LIST, ENCRYPTED_DIRECT_MESSAGE, EVENT_DELETION, METADATA, REACTION, RELAY_LIST,
-    REPOST, TEXT_NOTE,
+    CONTACT_LIST, ENCRYPTED_DIRECT_MESSAGE, EVENT_DELETION, METADATA, REACTION, RELAY_LIST, REPOST,
+    TEXT_NOTE,
 };
 
 // Type alias for Kind

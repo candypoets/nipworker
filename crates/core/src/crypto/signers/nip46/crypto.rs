@@ -26,11 +26,13 @@ impl Crypto {
         if self.remote_signer_pubkey.is_empty() {
             return Err("Remote signer pubkey not yet discovered".to_string());
         }
-        
-        let remote_pk = PublicKey::from_hex(&self.remote_signer_pubkey)
-            .map_err(|e| format!("pk: {}", e))?;
-        
-        let secret = self.client_keys.secret_key()
+
+        let remote_pk =
+            PublicKey::from_hex(&self.remote_signer_pubkey).map_err(|e| format!("pk: {}", e))?;
+
+        let secret = self
+            .client_keys
+            .secret_key()
             .map_err(|e| format!("secret key: {}", e))?;
 
         if self.use_nip44 {
@@ -41,19 +43,20 @@ impl Crypto {
             }
         }
 
-        nip04::encrypt(secret, &remote_pk, plaintext)
-            .map_err(|e| format!("nip04 encrypt: {}", e))
+        nip04::encrypt(secret, &remote_pk, plaintext).map_err(|e| format!("nip04 encrypt: {}", e))
     }
 
     pub fn decrypt_from_remote(&self, ciphertext: &str) -> Result<String, String> {
         if self.remote_signer_pubkey.is_empty() {
             return Err("Remote signer pubkey not set".to_string());
         }
-        
-        let remote_pk = PublicKey::from_hex(&self.remote_signer_pubkey)
-            .map_err(|e| format!("pk: {}", e))?;
-        
-        let secret = self.client_keys.secret_key()
+
+        let remote_pk =
+            PublicKey::from_hex(&self.remote_signer_pubkey).map_err(|e| format!("pk: {}", e))?;
+
+        let secret = self
+            .client_keys
+            .secret_key()
             .map_err(|e| format!("secret key: {}", e))?;
 
         if self.use_nip44 {
@@ -64,7 +67,6 @@ impl Crypto {
             }
         }
 
-        nip04::decrypt(secret, &remote_pk, ciphertext)
-            .map_err(|e| format!("nip04 decrypt: {}", e))
+        nip04::decrypt(secret, &remote_pk, ciphertext).map_err(|e| format!("nip04 decrypt: {}", e))
     }
 }

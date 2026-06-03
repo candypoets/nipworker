@@ -1,7 +1,11 @@
 use crate::parser::{Parser, ParserError, Result};
 use crate::{
     generated::nostr::*,
-    types::{network::Request, nostr::{Template, EventId, PublicKey}, Event},
+    types::{
+        network::Request,
+        nostr::{EventId, PublicKey, Template},
+        Event,
+    },
 }; // brings `fb::...` into scope
 
 use tracing::warn;
@@ -97,17 +101,24 @@ impl Parser {
                 let plaintext = if let Some(signer) = &self.signer {
                     let result = match enc.as_str() {
                         "nip04" | "nip-04" => {
-                            signer.nip04_decrypt_between(&author, &author, &event.content).await
+                            signer
+                                .nip04_decrypt_between(&author, &author, &event.content)
+                                .await
                         }
                         "nip44" | "nip-44" => {
-                            signer.nip44_decrypt_between(&author, &author, &event.content).await
+                            signer
+                                .nip44_decrypt_between(&author, &author, &event.content)
+                                .await
                         }
                         _ => Ok(event.content.clone()),
                     };
                     match result {
                         Ok(pt) => pt,
                         Err(e) => {
-                            warn!("Failed to decrypt NIP-51 content: {}, treating as plaintext", e);
+                            warn!(
+                                "Failed to decrypt NIP-51 content: {}, treating as plaintext",
+                                e
+                            );
                             event.content.clone()
                         }
                     }
@@ -381,7 +392,9 @@ fn parse_tag_arrays_json(json: &str) -> Result<Vec<Vec<String>>> {
 }
 
 // Parse an array of strings from the current parser position (expects '[')
-fn parse_string_array(parser: &mut crate::parser_utils::json::BaseJsonParser) -> Result<Vec<String>> {
+fn parse_string_array(
+    parser: &mut crate::parser_utils::json::BaseJsonParser,
+) -> Result<Vec<String>> {
     parser.expect_byte(b'[')?;
     let mut arr = Vec::new();
 

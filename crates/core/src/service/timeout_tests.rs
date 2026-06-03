@@ -1,16 +1,13 @@
+use async_trait::async_trait;
 use std::sync::Arc;
 use std::time::Duration;
-use async_trait::async_trait;
 use tokio::task::LocalSet;
 use tokio::time::timeout;
 
-use crate::channel::{TokioWorkerChannel, WorkerChannel, ChannelError};
+use crate::channel::{ChannelError, TokioWorkerChannel, WorkerChannel};
 use crate::generated::nostr::fb;
 use crate::service::engine::NostrEngine;
-use crate::traits::{
-    RelayTransport, Storage, TransportError, TransportStatus,
-    StorageError,
-};
+use crate::traits::{RelayTransport, Storage, StorageError, TransportError, TransportStatus};
 use crate::types::network::Request;
 use crate::types::nostr::Template;
 
@@ -23,7 +20,10 @@ struct HangingStorage;
 
 #[async_trait(?Send)]
 impl Storage for HangingStorage {
-    async fn query(&self, _filters: Vec<crate::types::nostr::Filter>) -> Result<Vec<Vec<u8>>, StorageError> {
+    async fn query(
+        &self,
+        _filters: Vec<crate::types::nostr::Filter>,
+    ) -> Result<Vec<Vec<u8>>, StorageError> {
         // Hang forever using std::future::pending()
         std::future::pending::<()>().await;
         unreachable!()
@@ -82,11 +82,7 @@ async fn test_storage_query_timeout() {
                 futures::channel::mpsc::channel::<(String, Vec<u8>)>(100);
 
             // Create engine - should not block during construction
-            let engine = NostrEngine::new(
-                transport.clone(),
-                storage.clone(),
-                event_sink_tx,
-            );
+            let engine = NostrEngine::new(transport.clone(), storage.clone(), event_sink_tx);
 
             // Send a subscribe request that will trigger cache query
             // The parser should not deadlock even though storage.query() hangs
@@ -141,11 +137,7 @@ async fn test_transport_connect_timeout() {
             let (event_sink_tx, _event_sink_rx) =
                 futures::channel::mpsc::channel::<(String, Vec<u8>)>(100);
 
-            let engine = NostrEngine::new(
-                transport.clone(),
-                storage.clone(),
-                event_sink_tx,
-            );
+            let engine = NostrEngine::new(transport.clone(), storage.clone(), event_sink_tx);
 
             // Create a publish request that will trigger relay connection
             let template = Template {
@@ -207,21 +199,17 @@ async fn test_signer_slow_response() {
             let (event_sink_tx, _event_sink_rx) =
                 futures::channel::mpsc::channel::<(String, Vec<u8>)>(100);
 
-            let engine = NostrEngine::new(
-                transport.clone(),
-                storage.clone(),
-                event_sink_tx,
-            );
+            let engine = NostrEngine::new(transport.clone(), storage.clone(), event_sink_tx);
 
             // Build a SignEvent message using Template
             let mut builder = flatbuffers::FlatBufferBuilder::new();
-            
+
             // Create empty tags vector (tags is required field in Template)
             let tags_offset = builder.create_vector::<flatbuffers::WIPOffset<fb::StringVec>>(&[]);
-            
+
             // Create strings first, before builder is borrowed
             let content_offset = builder.create_string("test content");
-            
+
             // Create a minimal Template for signing
             let template_offset = fb::Template::create(
                 &mut builder,
@@ -232,7 +220,7 @@ async fn test_signer_slow_response() {
                     tags: Some(tags_offset),
                 },
             );
-            
+
             let sign_event = fb::SignEvent::create(
                 &mut builder,
                 &fb::SignEventArgs {
@@ -251,21 +239,15 @@ async fn test_signer_slow_response() {
 
             // Send the sign request - this should not block the test
             // (the actual signing is done asynchronously by the crypto worker)
-            let result: Result<Result<(), crate::nostr_error::NostrError>, _> = timeout(
-                Duration::from_millis(100),
-                engine.handle_message(&bytes),
-            )
-            .await;
+            let result: Result<Result<(), crate::nostr_error::NostrError>, _> =
+                timeout(Duration::from_millis(100), engine.handle_message(&bytes)).await;
 
             // The handle_message call should complete quickly (just sends to crypto worker)
             assert!(
                 result.is_ok(),
                 "handle_message should complete within timeout"
             );
-            assert!(
-                result.unwrap().is_ok(),
-                "handle_message should succeed"
-            );
+            assert!(result.unwrap().is_ok(), "handle_message should succeed");
 
             // Wait a bit but not the full 5 seconds to verify the system is responsive
             tokio::time::sleep(Duration::from_millis(50)).await;
@@ -301,10 +283,8 @@ async fn test_channel_recv_timeout() {
             drop(ch_b);
 
             // Try to recv with timeout - should return ChannelClosed or timeout
-            let result: Result<Result<Vec<u8>, ChannelError>, _> = timeout(
-                Duration::from_millis(100), 
-                ch_a.recv()
-            ).await;
+            let result: Result<Result<Vec<u8>, ChannelError>, _> =
+                timeout(Duration::from_millis(100), ch_a.recv()).await;
 
             // The result should either be:
             // - Err(Elapsed) if timeout happens first

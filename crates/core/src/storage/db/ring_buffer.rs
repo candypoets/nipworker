@@ -253,8 +253,8 @@ impl RingBufferStorage {
         let mut p = 0usize;
         let mut event_count = 0usize;
         while p + 4 <= bytes.len() {
-            let size = u32::from_le_bytes([bytes[p], bytes[p + 1], bytes[p + 2], bytes[p + 3]])
-                as usize;
+            let size =
+                u32::from_le_bytes([bytes[p], bytes[p + 1], bytes[p + 2], bytes[p + 3]]) as usize;
             if size == 0 {
                 return Err(format!("Invalid event size 0 at position {}", p));
             }

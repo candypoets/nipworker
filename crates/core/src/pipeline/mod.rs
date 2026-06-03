@@ -1,10 +1,10 @@
+use crate::channel::MessageSender;
+use crate::generated::nostr::fb::{self};
+use crate::nostr_error::NostrError;
 use crate::parser::Parser;
 use crate::parser_types::parsed_event::ParsedEvent;
 use crate::parser_utils::json::extract_event_id;
-use crate::nostr_error::NostrError;
-use crate::generated::nostr::fb::{self};
 use crate::types::Event;
-use crate::channel::MessageSender;
 
 type Result<T> = std::result::Result<T, NostrError>;
 

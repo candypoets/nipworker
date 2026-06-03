@@ -1,7 +1,11 @@
-use crate::parser::{Parser, ParserError, Result};
-use crate::parser::content::{parse_content, ContentParser, serialize_content_data, ContentBlock};
 use crate::generated::nostr::*;
-use crate::types::{network::Request, nostr::{Template, EventId, PublicKey}, Event};
+use crate::parser::content::{parse_content, serialize_content_data, ContentBlock, ContentParser};
+use crate::parser::{Parser, ParserError, Result};
+use crate::types::{
+    network::Request,
+    nostr::{EventId, PublicKey, Template},
+    Event,
+};
 
 pub struct PollOption {
     pub id: String,
@@ -35,10 +39,7 @@ impl PollType {
 }
 
 impl Parser {
-    pub fn parse_kind_1068(
-        &self,
-        event: &Event,
-    ) -> Result<(Kind1068Parsed, Option<Vec<Request>>)> {
+    pub fn parse_kind_1068(&self, event: &Event) -> Result<(Kind1068Parsed, Option<Vec<Request>>)> {
         if event.kind != 1068 {
             return Err(ParserError::Other("event is not kind 1068".to_string()));
         }

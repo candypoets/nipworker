@@ -3,15 +3,18 @@
 //! This module provides common cryptographic functions used across
 //! different components of the NIPWorker system.
 
+use crate::types::proof::{DleqProof, Proof};
+use crate::types::ParserError;
 use hex;
 use k256::{
-    elliptic_curve::{sec1::{FromEncodedPoint, ToEncodedPoint}, PrimeField},
+    elliptic_curve::{
+        sec1::{FromEncodedPoint, ToEncodedPoint},
+        PrimeField,
+    },
     AffinePoint, EncodedPoint, ProjectivePoint, PublicKey, Scalar,
 };
 use rustc_hash::FxHashMap;
 use sha2::{Digest, Sha256};
-use crate::types::proof::{DleqProof, Proof};
-use crate::types::ParserError;
 
 type Result<T> = std::result::Result<T, ParserError>;
 
@@ -150,21 +153,22 @@ pub fn verify_proof_dleq_string(payload: &str) -> std::result::Result<bool, Stri
 pub fn parse_verification_payload(payload: &str) -> Result<(Proof, FxHashMap<u64, String>)> {
     // Split payload by delimiter
     let parts: Vec<&str> = payload.split("|||").collect();
-    
+
     if parts.len() != 2 {
-        return Err(ParserError::Other("Invalid payload format: expected proof|||mint_keys".into()));
+        return Err(ParserError::Other(
+            "Invalid payload format: expected proof|||mint_keys".into(),
+        ));
     }
-    
+
     let proof_json = parts[0];
     let mint_keys_json = parts[1];
-    
+
     // Use Proof::from_json directly
-    let proof = Proof::from_json(proof_json)
-        .map_err(|e| ParserError::Parse(e.to_string()))?;
-    
+    let proof = Proof::from_json(proof_json).map_err(|e| ParserError::Parse(e.to_string()))?;
+
     // Parse mint keys
     let keys_map = parse_mint_keys_json(mint_keys_json)?;
-    
+
     Ok((proof, keys_map))
 }
 
@@ -296,13 +300,13 @@ mod tests {
     fn test_compute_y_point() {
         let secret = "test_secret";
         let y_point = compute_y_point(secret);
-        
+
         // Y point should be 66 hex chars (33 bytes * 2)
         assert_eq!(y_point.len(), 66);
-        
+
         // Should start with 02 or 03 (compressed point prefix)
         assert!(y_point.starts_with("02") || y_point.starts_with("03"));
-        
+
         // Should be valid hex
         hex::decode(&y_point).expect("Y point should be valid hex");
     }
@@ -312,7 +316,7 @@ mod tests {
         let secret = "deterministic_test";
         let y_point1 = compute_y_point(secret);
         let y_point2 = compute_y_point(secret);
-        
+
         // Should be deterministic
         assert_eq!(y_point1, y_point2);
     }
@@ -321,7 +325,7 @@ mod tests {
     fn test_compute_y_point_different_secrets() {
         let y_point1 = compute_y_point("secret1");
         let y_point2 = compute_y_point("secret2");
-        
+
         // Different secrets should produce different points
         assert_ne!(y_point1, y_point2);
     }

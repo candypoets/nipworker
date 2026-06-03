@@ -1,12 +1,12 @@
 use tracing::info;
 
+use crate::crypto::nostr_crypto::compute_event_id;
 use crate::crypto::signers::{
     nip44::{decrypt, encrypt, ConversationKey},
     SignerError,
 };
-use crate::types::{Event, Keys, PublicKey, SecretKey};
 use crate::types::nostr::Template;
-use crate::crypto::nostr_crypto::compute_event_id;
+use crate::types::{Event, Keys, PublicKey, SecretKey};
 
 use signature::hazmat::{PrehashSigner, PrehashVerifier};
 
@@ -251,22 +251,38 @@ impl Signer for PrivateKeySigner {
             .map_err(|e| TraitSignerError::Other(e.to_string()))
     }
 
-    async fn nip04_encrypt(&self, peer: &str, plaintext: &str) -> std::result::Result<String, TraitSignerError> {
+    async fn nip04_encrypt(
+        &self,
+        peer: &str,
+        plaintext: &str,
+    ) -> std::result::Result<String, TraitSignerError> {
         self.nip04_encrypt(peer, plaintext)
             .map_err(|e| TraitSignerError::Other(e.to_string()))
     }
 
-    async fn nip04_decrypt(&self, peer: &str, ciphertext: &str) -> std::result::Result<String, TraitSignerError> {
+    async fn nip04_decrypt(
+        &self,
+        peer: &str,
+        ciphertext: &str,
+    ) -> std::result::Result<String, TraitSignerError> {
         self.nip04_decrypt(peer, ciphertext)
             .map_err(|e| TraitSignerError::Other(e.to_string()))
     }
 
-    async fn nip44_encrypt(&self, peer: &str, plaintext: &str) -> std::result::Result<String, TraitSignerError> {
+    async fn nip44_encrypt(
+        &self,
+        peer: &str,
+        plaintext: &str,
+    ) -> std::result::Result<String, TraitSignerError> {
         self.nip44_encrypt(peer, plaintext)
             .map_err(|e| TraitSignerError::Other(e.to_string()))
     }
 
-    async fn nip44_decrypt(&self, peer: &str, ciphertext: &str) -> std::result::Result<String, TraitSignerError> {
+    async fn nip44_decrypt(
+        &self,
+        peer: &str,
+        ciphertext: &str,
+    ) -> std::result::Result<String, TraitSignerError> {
         self.nip44_decrypt(peer, ciphertext)
             .map_err(|e| TraitSignerError::Other(e.to_string()))
     }

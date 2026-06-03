@@ -1,6 +1,6 @@
-use serde_json::{json, Value};
-use crate::types::Keys;
 use crate::channel::MessageSender;
+use crate::types::Keys;
+use serde_json::{json, Value};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -46,7 +46,10 @@ impl Nip46Signer {
     ) -> Self {
         let client_keys = client_keys.unwrap_or_else(Keys::generate);
         let client_pubkey_hex = client_keys.public_key().to_hex();
-        let sub_id = format!("n46:{}", &client_pubkey_hex[..60.min(client_pubkey_hex.len())]);
+        let sub_id = format!(
+            "n46:{}",
+            &client_pubkey_hex[..60.min(client_pubkey_hex.len())]
+        );
 
         let crypto = Crypto::new(
             client_keys.clone(),
@@ -76,20 +79,22 @@ impl Nip46Signer {
             on_discovery: Rc::new(RefCell::new(None)),
         }
     }
-    
+
     /// Get the client pubkey hex (for debug logging)
     pub fn get_client_pubkey(&self) -> &str {
         &self.client_pubkey_hex
     }
-    
+
     /// Get the subscription ID (for debug logging)
     pub fn get_sub_id(&self) -> &str {
         &self.sub_id
     }
-    
+
     /// Get the client secret key as hex string (for session storage)
     pub fn get_client_secret(&self) -> Result<String, String> {
-        let secret = self.client_keys.secret_key()
+        let secret = self
+            .client_keys
+            .secret_key()
             .map_err(|e| format!("Failed to get secret key: {}", e))?;
         Ok(hex::encode(secret.0))
     }
@@ -99,7 +104,8 @@ impl Nip46Signer {
         F: Fn(std::pin::Pin<Box<dyn std::future::Future<Output = ()>>>) + 'static,
     {
         *self.on_discovery.borrow_mut() = on_discovery;
-        self.transport.open_req_subscription(&self.sub_id, Self::unix_time());
+        self.transport
+            .open_req_subscription(&self.sub_id, Self::unix_time());
         self.spawn_pump_once(spawner);
     }
 
@@ -118,8 +124,13 @@ impl Nip46Signer {
 
     /// Update the crypto module with the discovered remote signer pubkey
     pub fn update_crypto_remote_pubkey(&self, pubkey: &str) {
-        info!("[nip46] Updating crypto remote pubkey: {}...", &pubkey[..16.min(pubkey.len())]);
-        self.crypto.borrow_mut().set_remote_signer_pubkey(pubkey.to_string());
+        info!(
+            "[nip46] Updating crypto remote pubkey: {}...",
+            &pubkey[..16.min(pubkey.len())]
+        );
+        self.crypto
+            .borrow_mut()
+            .set_remote_signer_pubkey(pubkey.to_string());
         info!("[nip46] Crypto remote pubkey updated successfully");
     }
 
@@ -130,7 +141,8 @@ impl Nip46Signer {
             if i > 0 {
                 url.push('&');
             }
-            let encoded_relay: String = url::form_urlencoded::byte_serialize(relay.as_bytes()).collect();
+            let encoded_relay: String =
+                url::form_urlencoded::byte_serialize(relay.as_bytes()).collect();
             url.push_str(&format!("relay={}", encoded_relay));
         }
         if let Some(secret) = &self.cfg.expected_secret {
@@ -163,8 +175,7 @@ impl Nip46Signer {
         let id = self.next_id();
         let params = vec![template_json.to_string()];
         let res = self.rpc_call("sign_event", params, &id).await?;
-        let v: Value =
-            serde_json::from_str(&res).map_err(|e| format!("{}", e))?;
+        let v: Value = serde_json::from_str(&res).map_err(|e| format!("{}", e))?;
         Ok(v)
     }
 
@@ -257,7 +268,7 @@ impl Nip46Signer {
         id: &str,
     ) -> Result<String, String> {
         info!("[nip46] rpc_call: method={}, id={}", method, id);
-        
+
         let payload = json!({
             "id": id,
             "method": method,
@@ -272,12 +283,20 @@ impl Nip46Signer {
 
         let remote_pubkey =
             if let Some(discovered) = self.discovered_remote_pubkey.borrow().as_ref() {
-                info!("[nip46] rpc_call: using discovered remote pubkey: {}", discovered);
+                info!(
+                    "[nip46] rpc_call: using discovered remote pubkey: {}",
+                    discovered
+                );
                 discovered.clone()
             } else {
-                info!("[nip46] rpc_call: using configured remote pubkey: {}", 
-                      if self.cfg.remote_signer_pubkey.is_empty() { "(empty, QR mode)".to_string() } 
-                      else { self.cfg.remote_signer_pubkey.clone() });
+                info!(
+                    "[nip46] rpc_call: using configured remote pubkey: {}",
+                    if self.cfg.remote_signer_pubkey.is_empty() {
+                        "(empty, QR mode)".to_string()
+                    } else {
+                        self.cfg.remote_signer_pubkey.clone()
+                    }
+                );
                 self.cfg.remote_signer_pubkey.clone()
             };
 

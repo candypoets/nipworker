@@ -8,8 +8,8 @@
 //! - tags[]
 //! and recursively handles Kind6Parsed.reposted_event.
 
-use flatbuffers::{FlatBufferBuilder, ForwardsUOffset, Vector, WIPOffset};
 use crate::generated::nostr::fb;
+use flatbuffers::{FlatBufferBuilder, ForwardsUOffset, Vector, WIPOffset};
 use tracing::info;
 
 //

@@ -5,7 +5,7 @@ use crate::parser::{ParserError, Result};
 use crate::parser_utils::request_deduplication::RequestDeduplicator;
 
 use crate::types::network::Request;
-use crate::types::nostr::{Template, EventId, PublicKey};
+use crate::types::nostr::{EventId, PublicKey, Template};
 use crate::types::Event;
 use tracing::{info, warn};
 
@@ -75,8 +75,7 @@ impl Parser {
         let sender_pubkey = event.pubkey.to_hex();
         info!(
             "Attempting to decrypt kind 4 message from {} to {}",
-            sender_pubkey,
-            parsed.recipient
+            sender_pubkey, parsed.recipient
         );
 
         if let Some(signer) = &self.signer {

@@ -1,8 +1,8 @@
 use super::super::*;
-use flatbuffers;
-use rustc_hash::FxHashSet;
 use crate::generated::nostr::fb;
 use crate::types::Event;
+use flatbuffers;
+use rustc_hash::FxHashSet;
 
 /// Pre-parsed mute criteria. Build this upstream from your parsed mute event (kind 10000).
 /// - pubkeys: hex pubkeys to mute

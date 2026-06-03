@@ -2,8 +2,8 @@ use crate::parser::Parser;
 use crate::parser::{ParserError, Result};
 
 // NEW: Imports for FlatBuffers
-use crate::parser_utils::relay::RelayUtils;
 use crate::generated::nostr::*;
+use crate::parser_utils::relay::RelayUtils;
 use crate::types::network::Request;
 use crate::types::Event;
 

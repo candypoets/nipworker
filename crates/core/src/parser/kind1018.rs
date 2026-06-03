@@ -1,6 +1,10 @@
-use crate::parser::{Parser, ParserError, Result};
 use crate::generated::nostr::*;
-use crate::types::{network::Request, nostr::{Template, EventId, PublicKey}, Event};
+use crate::parser::{Parser, ParserError, Result};
+use crate::types::{
+    network::Request,
+    nostr::{EventId, PublicKey, Template},
+    Event,
+};
 
 pub struct Kind1018Parsed {
     pub id: String,
@@ -10,10 +14,7 @@ pub struct Kind1018Parsed {
 }
 
 impl Parser {
-    pub fn parse_kind_1018(
-        &self,
-        event: &Event,
-    ) -> Result<(Kind1018Parsed, Option<Vec<Request>>)> {
+    pub fn parse_kind_1018(&self, event: &Event) -> Result<(Kind1018Parsed, Option<Vec<Request>>)> {
         if event.kind != 1018 {
             return Err(ParserError::Other("event is not kind 1018".to_string()));
         }

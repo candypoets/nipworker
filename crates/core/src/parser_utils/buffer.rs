@@ -1,5 +1,5 @@
-use flatbuffers::FlatBufferBuilder;
 use crate::generated::nostr::fb;
+use flatbuffers::FlatBufferBuilder;
 
 /// Serialize a ConnectionStatus WorkerMessage to bytes for batch buffer.
 /// Returns the serialized FlatBuffer bytes.

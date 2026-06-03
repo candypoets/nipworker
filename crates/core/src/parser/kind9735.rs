@@ -8,7 +8,7 @@ use std::fmt::Write;
 // NEW: Imports for FlatBuffers
 use crate::generated::nostr::*;
 use crate::types::network::Request;
-use crate::types::nostr::{NostrTags, Template, EventId, PublicKey};
+use crate::types::nostr::{EventId, NostrTags, PublicKey, Template};
 use crate::types::Event;
 
 /// ZapRequest for Nostr kind 9735 zap receipts

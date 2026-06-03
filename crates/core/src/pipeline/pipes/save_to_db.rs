@@ -1,6 +1,6 @@
 use super::super::*;
+use crate::{channel::MessageSender, generated::nostr::fb};
 use flatbuffers::FlatBufferBuilder;
-use crate::{generated::nostr::fb, channel::MessageSender};
 use std::sync::Arc;
 use tracing::warn;
 

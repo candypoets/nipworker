@@ -1,5 +1,5 @@
-use crate::parser::Parser;
 use crate::nostr_error::NostrError;
+use crate::parser::Parser;
 use std::sync::Arc;
 
 type Result<T> = std::result::Result<T, NostrError>;

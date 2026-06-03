@@ -3,7 +3,11 @@ use crate::parser::{Parser, ParserError, Result};
 // NEW: Imports for FlatBuffers
 use crate::{
     generated::nostr::*,
-    types::{network::Request, nostr::{Template, EventId, PublicKey}, Event},
+    types::{
+        network::Request,
+        nostr::{EventId, PublicKey, Template},
+        Event,
+    },
 };
 use tracing::warn;
 

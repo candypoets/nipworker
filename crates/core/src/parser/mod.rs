@@ -1,8 +1,8 @@
 pub mod kind1018;
 pub mod kind1068;
 use crate::traits::Signer;
-use crate::types::{nostr::Template, Event, ParserError};
 use crate::types::nostr::{EventId, PublicKey};
+use crate::types::{nostr::Template, Event, ParserError};
 use std::sync::Arc;
 
 pub type Result<T> = std::result::Result<T, ParserError>;

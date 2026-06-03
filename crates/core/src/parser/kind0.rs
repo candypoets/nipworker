@@ -1,10 +1,10 @@
+use crate::generated::nostr::*;
 use crate::parser::Parser;
 use crate::parser::{ParserError, Result};
 use crate::parser_utils::json::BaseJsonParser;
-use rustc_hash::FxHashMap;
-use crate::generated::nostr::*;
 use crate::types::network::Request;
 use crate::types::nostr::Event;
+use rustc_hash::FxHashMap;
 
 pub struct Kind0Parsed {
     pub pubkey: String,

@@ -1,7 +1,7 @@
 use crate::generated::nostr::fb::Request;
 use crate::storage::db::index::NostrDB;
 use crate::storage::db::sharded_storage::ShardedRingBufferStorage;
-use crate::storage::db::types::{QueryFilter, DatabaseError};
+use crate::storage::db::types::{DatabaseError, QueryFilter};
 use crate::traits::{Storage, StorageError};
 use crate::types::nostr::Filter;
 use async_trait::async_trait;
@@ -44,7 +44,7 @@ impl NostrDbStorage {
     /// Convert nostr Filter to QueryFilter for NostrDB
     fn filter_to_query_filter(filter: &Filter) -> QueryFilter {
         let mut qf = QueryFilter::new();
-        
+
         if let Some(ref ids) = filter.ids {
             qf.ids = Some(ids.iter().map(|id| id.to_string()).collect());
         }
@@ -66,7 +66,7 @@ impl NostrDbStorage {
         if let Some(ref search) = filter.search {
             qf.search = Some(search.clone());
         }
-        
+
         // Handle tags
         if let Some(ref e_tags) = filter.e_tags {
             qf.e_tags = Some(e_tags.clone());
@@ -80,7 +80,7 @@ impl NostrDbStorage {
         if let Some(ref d_tags) = filter.d_tags {
             qf.d_tags = Some(d_tags.clone());
         }
-        
+
         qf
     }
 
@@ -144,9 +144,8 @@ impl NostrDbStorage {
                         if let Some(stripped) = key.strip_prefix('#') {
                             key = stripped.to_string();
                         }
-                        let values: Vec<String> = (1..items.len())
-                            .map(|j| items.get(j).to_string())
-                            .collect();
+                        let values: Vec<String> =
+                            (1..items.len()).map(|j| items.get(j).to_string()).collect();
                         match key.as_str() {
                             "e" => {
                                 if f.e_tags.is_none() {
@@ -187,10 +186,10 @@ impl NostrDbStorage {
 impl Storage for NostrDbStorage {
     async fn query(&self, filters: Vec<Filter>) -> Result<Vec<Vec<u8>>, StorageError> {
         let mut all_events = Vec::new();
-        
+
         for filter in filters {
             let query_filter = Self::filter_to_query_filter(&filter);
-            
+
             match self.db.query_events_with_filter(query_filter) {
                 Ok(result) => {
                     all_events.extend(result.events);
@@ -200,14 +199,14 @@ impl Storage for NostrDbStorage {
                 }
             }
         }
-        
+
         // Sort by created_at (newest first)
         all_events.sort_by(|a, b| {
             let ca = Self::extract_created_at(a).unwrap_or_default();
             let cb = Self::extract_created_at(b).unwrap_or_default();
             cb.cmp(&ca)
         });
-        
+
         Ok(all_events)
     }
 
@@ -231,8 +230,8 @@ impl Storage for NostrDbStorage {
 impl NostrDbStorage {
     /// Try to extract created_at from event bytes (handles both WorkerMessage and direct events)
     fn extract_created_at(bytes: &[u8]) -> Option<u32> {
-        use crate::generated::nostr::fb::{self, WorkerMessage, ParsedEvent, NostrEvent};
-        
+        use crate::generated::nostr::fb::{self, NostrEvent, ParsedEvent, WorkerMessage};
+
         // Try WorkerMessage first
         if let Ok(wm) = flatbuffers::root::<WorkerMessage>(bytes) {
             match wm.content_type() {
@@ -250,17 +249,17 @@ impl NostrDbStorage {
             }
             return None;
         }
-        
+
         // Legacy format: direct ParsedEvent
         if let Ok(p) = flatbuffers::root::<ParsedEvent>(bytes) {
             return Some(p.created_at());
         }
-        
+
         // Legacy format: direct NostrEvent
         if let Ok(n) = flatbuffers::root::<NostrEvent>(bytes) {
             return Some(n.created_at().max(0) as u32);
         }
-        
+
         None
     }
 }
@@ -271,13 +270,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_nostr_db_storage_basic() {
-        let storage = NostrDbStorage::new(
-            "test".to_string(),
-            1024 * 1024,
-            vec![],
-            vec![],
-        );
-        
+        let storage = NostrDbStorage::new("test".to_string(), 1024 * 1024, vec![], vec![]);
+
         assert!(storage.initialize().await.is_ok());
     }
 }

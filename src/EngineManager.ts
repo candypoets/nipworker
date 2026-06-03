@@ -68,6 +68,8 @@ export class EngineManager extends BaseBackend {
 					const written = ArrayBufferReader.writeBatchedData(subscription.buffer, data, subId);
 					if (written) {
 						this.dispatch(`subscription:${subId}`, subId);
+					} else {
+						this.closeSubscription(subId);
 					}
 					return;
 				}
@@ -76,6 +78,8 @@ export class EngineManager extends BaseBackend {
 					const written = ArrayBufferReader.writeBatchedData(publish.buffer, data, subId);
 					if (written) {
 						this.dispatch(`publish:${subId}`, subId);
+					} else {
+						this.publishes.delete(subId);
 					}
 					return;
 				}
@@ -95,7 +99,12 @@ export class EngineManager extends BaseBackend {
 							const pubkeyObj = workerMsg.content(new Pubkey());
 							const pubkey = pubkeyObj ? pubkeyObj.pubkey() : null;
 							if (pubkey) {
-								this.handleCryptoResponse({ type: 'response', op: 'get_pubkey', ok: true, result: pubkey });
+								this.handleCryptoResponse({
+									type: 'response',
+									op: 'get_pubkey',
+									ok: true,
+									result: pubkey
+								});
 							}
 						} else if (msgType === MessageType.SignedEvent) {
 							const signedEventObj = workerMsg.content(new SignedEvent());
@@ -160,7 +169,12 @@ export class EngineManager extends BaseBackend {
 					}
 					this.postMessage({ type: 'extension_response', id, ok: true, result });
 				} catch (e: any) {
-					this.postMessage({ type: 'extension_response', id, ok: false, error: e.message || String(e) });
+					this.postMessage({
+						type: 'extension_response',
+						id,
+						ok: false,
+						error: e.message || String(e)
+					});
 				}
 				return;
 			}
@@ -209,12 +223,26 @@ export class EngineManager extends BaseBackend {
 		this.enginePort.postMessage(message, transfer || []);
 	}
 
+	private closeSubscription(subId: string): void {
+		const unsubscribeT = new UnsubscribeT(this.textEncoder.encode(subId));
+		const mainT = new MainMessageT(MainContent.Unsubscribe, unsubscribeT);
+		const builder = new flatbuffers.Builder(256);
+		builder.finish(mainT.pack(builder));
+		const uint8Array = builder.asUint8Array();
+		this.postMessage({ serializedMessage: uint8Array }, [uint8Array.buffer]);
+		this.subscriptions.delete(subId);
+	}
+
 	private handleCryptoResponse(msg: any) {
 		if (msg.op === 'get_pubkey') {
 			if (msg.ok) {
 				this.activePubkey = msg.result;
 				if (this._pendingSession) {
-					this.saveSession(this.activePubkey!, this._pendingSession.type, this._pendingSession.payload);
+					this.saveSession(
+						this.activePubkey!,
+						this._pendingSession.type,
+						this._pendingSession.payload
+					);
 					this._pendingSession = null;
 				}
 			}
@@ -245,7 +273,11 @@ export class EngineManager extends BaseBackend {
 				if (msg.result) {
 					this.activePubkey = msg.result;
 					if (this._pendingSession) {
-						this.saveSession(this.activePubkey!, this._pendingSession.type, this._pendingSession.payload);
+						this.saveSession(
+							this.activePubkey!,
+							this._pendingSession.type,
+							this._pendingSession.payload
+						);
 						this._pendingSession = null;
 					}
 				}
@@ -261,7 +293,11 @@ export class EngineManager extends BaseBackend {
 		}
 	}
 
-	subscribe(subscriptionId: string, requests: RequestObject[], options: SubscriptionConfig): ArrayBuffer {
+	subscribe(
+		subscriptionId: string,
+		requests: RequestObject[],
+		options: SubscriptionConfig
+	): ArrayBuffer {
 		const subId = this.createShortId(subscriptionId);
 		const existing = this.subscriptions.get(subId);
 		if (existing) {
@@ -325,7 +361,12 @@ export class EngineManager extends BaseBackend {
 		return buffer;
 	}
 
-	publish(publish_id: string, event: NostrEvent, defaultRelays: string[] = [], optimisticSubIds?: string[]): ArrayBuffer {
+	publish(
+		publish_id: string,
+		event: NostrEvent,
+		defaultRelays: string[] = [],
+		optimisticSubIds?: string[]
+	): ArrayBuffer {
 		const buffer = new ArrayBuffer(3072);
 		ArrayBufferReader.initializeBuffer(buffer);
 

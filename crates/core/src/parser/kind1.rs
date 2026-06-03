@@ -1,7 +1,6 @@
 use crate::parser::{
     content::{
-        enrich_media_with_imeta, serialize_content_data, ContentBlock,
-        ContentParser, ImetaData,
+        enrich_media_with_imeta, serialize_content_data, ContentBlock, ContentParser, ImetaData,
     },
     Parser,
 };

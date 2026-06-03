@@ -7,8 +7,8 @@ use crate::{generated::nostr::fb, types::TypesError};
 use crate::parser::{
     Kind0Parsed, Kind10002Parsed, Kind10019Parsed, Kind1018Parsed, Kind1068Parsed, Kind1111Parsed,
     Kind1311Parsed, Kind17375Parsed, Kind17Parsed, Kind1Parsed, Kind20Parsed, Kind22Parsed,
-    Kind3Parsed, Kind4Parsed, Kind6Parsed, Kind7374Parsed, Kind7375Parsed, Kind7376Parsed,
-    Kind7Parsed, Kind9321Parsed, Kind9735Parsed, Kind30023Parsed,
+    Kind30023Parsed, Kind3Parsed, Kind4Parsed, Kind6Parsed, Kind7374Parsed, Kind7375Parsed,
+    Kind7376Parsed, Kind7Parsed, Kind9321Parsed, Kind9735Parsed,
 };
 
 /// Strongly typed parsed data for different event kinds

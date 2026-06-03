@@ -1,3 +1,4 @@
+use crate::generated::nostr::fb::{self, NostrEvent, ParsedEvent, Request, WorkerMessage};
 use crate::platform::now_millis;
 use crate::storage::db::sharded_storage::ShardedRingBufferStorage;
 use crate::storage::db::types::{
@@ -5,7 +6,6 @@ use crate::storage::db::types::{
     QueryFilter, QueryResult,
 };
 use rustc_hash::{FxHashMap, FxHashSet};
-use crate::generated::nostr::fb::{self, NostrEvent, ParsedEvent, Request, WorkerMessage};
 
 type Result<T> = std::result::Result<T, DatabaseError>;
 
@@ -105,7 +105,10 @@ impl<S: EventStorage> NostrDB<S> {
     }
 
     pub async fn add_worker_message_bytes(&self, bytes: &[u8]) -> Result<()> {
-        let sharded = self.storage.as_any().downcast_ref::<ShardedRingBufferStorage>();
+        let sharded = self
+            .storage
+            .as_any()
+            .downcast_ref::<ShardedRingBufferStorage>();
 
         // Try WorkerMessage first (SaveToDbPipe sends this format)
         if let Ok(worker_msg) = flatbuffers::root::<WorkerMessage>(bytes) {
@@ -122,7 +125,7 @@ impl<S: EventStorage> NostrDB<S> {
                 self.index_parsed_event(parsed, offset);
                 return Ok(());
             }
-            
+
             // Check if it's a NostrEvent
             if let Some(nostr) = worker_msg.content_as_nostr_event() {
                 let offset = if let Some(sharded) = sharded {
@@ -136,7 +139,7 @@ impl<S: EventStorage> NostrDB<S> {
                 self.index_nostr_event(nostr, offset);
                 return Ok(());
             }
-            
+
             // Other message types - skip
             return Ok(());
         }
@@ -428,7 +431,10 @@ impl<S: EventStorage> NostrDB<S> {
             }
         }
 
-        info!("build_indexes_from_events: loaded {} events from storage", raw_events.len());
+        info!(
+            "build_indexes_from_events: loaded {} events from storage",
+            raw_events.len()
+        );
 
         // Optional: pre-allocate based on frequencies
         // Note: Events are now stored as WorkerMessage, so we need to unwrap them
@@ -436,7 +442,7 @@ impl<S: EventStorage> NostrDB<S> {
         let mut kind_frequency = FxHashMap::default();
         let mut worker_message_count = 0;
         let mut legacy_count = 0;
-        
+
         for bytes in &raw_events {
             // Try WorkerMessage first (new format)
             if let Ok(wm) = flatbuffers::root::<WorkerMessage>(bytes) {
@@ -468,10 +474,12 @@ impl<S: EventStorage> NostrDB<S> {
                 }
             }
         }
-        
-        info!("build_indexes_from_events: {} WorkerMessage format, {} legacy format", 
-              worker_message_count, legacy_count);
-        
+
+        info!(
+            "build_indexes_from_events: {} WorkerMessage format, {} legacy format",
+            worker_message_count, legacy_count
+        );
+
         for (pubkey, count) in pubkey_frequency {
             if count > 5 {
                 self.indexes.events_by_pubkey.borrow_mut().insert(
@@ -519,7 +527,10 @@ impl<S: EventStorage> NostrDB<S> {
             }
         }
 
-        info!("build_indexes_from_events: indexed {} events", indexed_count);
+        info!(
+            "build_indexes_from_events: indexed {} events",
+            indexed_count
+        );
         Ok(())
     }
 
@@ -785,7 +796,7 @@ impl<S: EventStorage> NostrDB<S> {
     #[allow(non_snake_case)]
     pub fn query_events_with_filter(&self, filter: QueryFilter) -> Result<QueryResult> {
         let start_time = now_millis();
-        
+
         // Start with candidate sets from indexed fields
         let mut candidate_sets = Vec::new();
         let mut use_full_scan = true;
@@ -1026,8 +1037,10 @@ impl<S: EventStorage> NostrDB<S> {
     /// Query events using the internal filter format
     pub fn query_events(&self, fb_req: &Request<'_>) -> Result<QueryResult> {
         let filter = Self::query_filter_from_fb_request(fb_req)?;
-        info!("query_events: filter kinds={:?}, authors={:?}, limit={:?}", 
-              filter.kinds, filter.authors, filter.limit);
+        info!(
+            "query_events: filter kinds={:?}, authors={:?}, limit={:?}",
+            filter.kinds, filter.authors, filter.limit
+        );
         self.query_events_with_filter(filter)
     }
 

@@ -19,8 +19,8 @@ use hkdf::Hkdf;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 
-use crate::types::{PublicKey, SecretKey};
 use crate::crypto::signers::SignerError;
+use crate::types::{PublicKey, SecretKey};
 
 // Constants as per NIP44 specification
 const VERSION: u8 = 2;

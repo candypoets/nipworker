@@ -42,14 +42,16 @@ impl Pump {
                     &remote_pk_str_for_closure
                 };
 
-                let remote_pk = PublicKey::from_hex(pk_to_use)
-                    .map_err(|e| format!("pk: {}", e))?;
+                let remote_pk = PublicKey::from_hex(pk_to_use).map_err(|e| format!("pk: {}", e))?;
                 let keys = Keys::new(SecretKey(secret_bytes));
                 let secret = &keys.secret_key;
 
                 if use_nip44 {
-                    if let Ok(pt) = nip44::decrypt(cipher, &ConversationKey::derive(secret, &remote_pk)
-                        .map_err(|e| format!("nip44 derive: {}", e))?) {
+                    if let Ok(pt) = nip44::decrypt(
+                        cipher,
+                        &ConversationKey::derive(secret, &remote_pk)
+                            .map_err(|e| format!("nip44 derive: {}", e))?,
+                    ) {
                         return Ok(pt);
                     }
                 }
@@ -192,19 +194,18 @@ impl Pump {
             }
 
             let event_pubkey = event.pubkey.to_hex();
-            
+
             // Check if event is addressed to us
             let addressed_to_us = event.tags().iter().any(|tag| {
-                tag.get(0) == Some(&"p".to_string())
-                    && tag.get(1) == Some(&client_pk.to_string())
+                tag.get(0) == Some(&"p".to_string()) && tag.get(1) == Some(&client_pk.to_string())
             });
-            
+
             if !addressed_to_us {
                 return;
             }
 
             let ciphertext = event.content();
-            
+
             match decrypt_helper(ciphertext, &event_pubkey) {
                 Ok(pt) => {
                     Self::process_rpc_response(
@@ -232,12 +233,24 @@ impl Pump {
         on_discovery: &Rc<RefCell<Option<Rc<dyn Fn(String)>>>>,
     ) {
         if let Ok(rpc) = serde_json::from_str::<serde_json::Value>(plaintext) {
-            let rid = rpc.get("id").and_then(|v| v.as_str()).unwrap_or_default().to_string();
-            let err = rpc.get("error").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let rid = rpc
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let err = rpc
+                .get("error")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
             // Use as_str() for strings to avoid JSON escaping, otherwise to_string() for objects
-            let res = rpc.get("result").map(|v| {
-                v.as_str().map(|s| s.to_string()).unwrap_or_else(|| v.to_string())
-            }).unwrap_or_default();
+            let res = rpc
+                .get("result")
+                .map(|v| {
+                    v.as_str()
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| v.to_string())
+                })
+                .unwrap_or_default();
 
             let outcome = if let Some(e) = err {
                 error!("[nip46] RPC error for id={}: {}", rid, e);
