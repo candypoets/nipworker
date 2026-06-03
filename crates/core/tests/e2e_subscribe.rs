@@ -1,11 +1,11 @@
 mod common;
 use std::sync::Arc;
 
-use std::time::Duration;
 use futures::StreamExt;
 use nipworker_core::generated::nostr::fb;
 use nipworker_core::service::engine::NostrEngine;
 use nipworker_core::types::network::Request;
+use std::time::Duration;
 use tokio::task::LocalSet;
 
 const PUBKEY: &str = "0000000000000000000000000000000000000000000000000000000000000001";
@@ -13,8 +13,8 @@ const SIGNATURE: &str = "0000000000000000000000000000000000000000000000000000000
 
 #[tokio::test]
 async fn test_subscribe_receive_eose() {
-	let local = LocalSet::new();
-	local
+    let local = LocalSet::new();
+    local
 		.run_until(async {
 			let transport = Arc::new(common::MockRelayTransport::new());
 			let storage = Arc::new(common::MockStorage::new());

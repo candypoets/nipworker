@@ -1,10 +1,10 @@
 mod common;
 
-use std::sync::Arc;
-use std::time::Duration;
 use futures::StreamExt;
 use nipworker_core::generated::nostr::fb;
 use nipworker_core::service::engine::NostrEngine;
+use std::sync::Arc;
+use std::time::Duration;
 use tokio::task::LocalSet;
 
 const SECRET_A: &str = "f7e69dd87239da6a828fb9a2fbf481b5b9e147edb848497620e8dc6f5ec10a0a";
@@ -116,11 +116,7 @@ async fn test_set_signer_hot_swap() {
             let (event_sink_tx, mut event_sink_rx) =
                 futures::channel::mpsc::channel::<(String, Vec<u8>)>(100);
 
-            let engine = NostrEngine::new(
-                transport.clone(),
-                storage.clone(),
-                event_sink_tx,
-            );
+            let engine = NostrEngine::new(transport.clone(), storage.clone(), event_sink_tx);
 
             // 1) No signer configured yet: request public key should error.
             engine
@@ -151,7 +147,9 @@ async fn test_set_signer_hot_swap() {
                 .unwrap();
 
             let resp_a = drain_until_get_pubkey(&mut event_sink_rx).await;
-            let pubkey_a = resp_a["result"].as_str().expect("pubkey A should be present");
+            let pubkey_a = resp_a["result"]
+                .as_str()
+                .expect("pubkey A should be present");
             assert!(
                 !pubkey_a.is_empty(),
                 "Signer A should return a non-empty pubkey"
@@ -173,7 +171,9 @@ async fn test_set_signer_hot_swap() {
                 .unwrap();
 
             let resp_b = drain_until_get_pubkey(&mut event_sink_rx).await;
-            let pubkey_b = resp_b["result"].as_str().expect("pubkey B should be present");
+            let pubkey_b = resp_b["result"]
+                .as_str()
+                .expect("pubkey B should be present");
             assert!(
                 !pubkey_b.is_empty(),
                 "Signer B should return a non-empty pubkey"

@@ -1,11 +1,11 @@
 mod common;
 use std::sync::Arc;
 
-use std::time::Duration;
 use futures::StreamExt;
 use nipworker_core::generated::nostr::fb;
 use nipworker_core::service::engine::NostrEngine;
 use nipworker_core::types::network::Request;
+use std::time::Duration;
 use tokio::task::LocalSet;
 
 const PUBKEY: &str = "0000000000000000000000000000000000000000000000000000000000000001";
@@ -98,15 +98,11 @@ async fn test_cache_hit_then_network_event() {
             ]]));
 
             let transport = Arc::new(common::MockRelayTransport::new());
-            
+
             let (event_sink_tx, mut event_sink_rx) =
                 futures::channel::mpsc::channel::<(String, Vec<u8>)>(100);
 
-            let engine = NostrEngine::new(
-                transport.clone(),
-                storage.clone(),
-                event_sink_tx,
-            );
+            let engine = NostrEngine::new(transport.clone(), storage.clone(), event_sink_tx);
 
             let request = Request {
                 relays: vec!["wss://r1".to_string()],
