@@ -64,9 +64,13 @@
 		"react-native.config.cjs",
 		"react-native.config.ts",
 		"NipworkerReactNative.podspec",
-		"crates/native-ffi/android",
-		"crates/native-ffi/ios",
-		"crates/native-ffi/react-native",
+		"crates/native-ffi/android/src/main/jniLibs",
+		"crates/native-ffi/ios/NipworkerNativeFFI.xcframework",
+		"crates/native-ffi/react-native/android/build.gradle",
+		"crates/native-ffi/react-native/android/CMakeLists.txt",
+		"crates/native-ffi/react-native/android/consumer-rules.pro",
+		"crates/native-ffi/react-native/android/src",
+		"crates/native-ffi/react-native/ios",
 		"README.md"
 	],
 	"codegenConfig": {

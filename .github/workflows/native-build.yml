@@ -67,6 +67,12 @@ jobs:
           name: android-aar
           path: crates/native-ffi/android/build/outputs/aar/*-release.aar
 
+      - name: Upload Android JNI libraries
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-jniLibs
+          path: crates/native-ffi/android/src/main/jniLibs/
+
   # ──────────────────────────────────────────
   # iOS — build .a for device + simulator
   # ──────────────────────────────────────────
@@ -80,51 +86,16 @@ jobs:
 
       - name: Add iOS Rust targets
         run: |
-          rustup target add aarch64-apple-ios
-          rustup target add aarch64-apple-ios-sim
-          rustup target add x86_64-apple-ios
+          rustup target add \
+            aarch64-apple-ios \
+            aarch64-apple-ios-sim \
+            x86_64-apple-ios \
+            aarch64-apple-darwin \
+            x86_64-apple-darwin
 
-      - name: Build iOS device library
-        working-directory: crates/native-ffi
-        run: |
-          cargo build --release --target aarch64-apple-ios
-
-      - name: Build iOS simulator library (arm64)
-        working-directory: crates/native-ffi
-        run: |
-          cargo build --release --target aarch64-apple-ios-sim
-
-      - name: Build iOS simulator library (x86_64)
-        working-directory: crates/native-ffi
-        run: |
-          cargo build --release --target x86_64-apple-ios
-
-      - name: Create iOS binaries
-        working-directory: crates/native-ffi
-        run: |
-          mkdir -p ios/Frameworks
-
-          # Simulator fat binary (arm64 + x86_64)
-          lipo -create \
-            target/aarch64-apple-ios-sim/release/libnipworker_native_ffi.a \
-            target/x86_64-apple-ios/release/libnipworker_native_ffi.a \
-            -output ios/Frameworks/libnipworker_native_ffi_sim.a
-
-          # Device binary
-          cp target/aarch64-apple-ios/release/libnipworker_native_ffi.a \
-            ios/Frameworks/libnipworker_native_ffi_device.a
-
-          # Universal static library (CocoaPods)
-          lipo -create \
-            ios/Frameworks/libnipworker_native_ffi_device.a \
-            ios/Frameworks/libnipworker_native_ffi_sim.a \
-            -output ios/libnipworker_native_ffi.a
-
-          # Create XCFramework
-          xcodebuild -create-xcframework \
-            -library ios/Frameworks/libnipworker_native_ffi_device.a \
-            -library ios/Frameworks/libnipworker_native_ffi_sim.a \
-            -output ios/NipworkerNativeFFI.xcframework
+      - name: Build iOS XCFramework
+        working-directory: crates/native-ffi/ios
+        run: ./build-ios.sh
 
       - name: Upload iOS XCFramework
         uses: actions/upload-artifact@v4
@@ -136,7 +107,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ios-staticlib
-          path: crates/native-ffi/ios/libnipworker_native_ffi.a
+          path: crates/native-ffi/ios/Frameworks/ios-arm64/libnipworker_native_ffi.a
 
   # ──────────────────────────────────────────
   # Linux host — build .so for local testing
