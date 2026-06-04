@@ -104,6 +104,22 @@ impl<S: EventStorage> NostrDB<S> {
         &self.storage
     }
 
+    /// Rebuild query indexes from the currently loaded storage contents.
+    ///
+    /// This is used by platform wrappers that hydrate the backing storage after
+    /// core initialization, such as WASM IndexedDB persistence.
+    pub fn rebuild_indexes_from_storage(&self) -> Result<()> {
+        self.indexes.clear();
+
+        let events = self.storage.load_events()?;
+        if !events.is_empty() {
+            info!("Rebuilding indexes from {} storage events", events.len());
+            self.build_indexes_from_events(events)?;
+        }
+
+        Ok(())
+    }
+
     pub async fn add_worker_message_bytes(&self, bytes: &[u8]) -> Result<()> {
         let sharded = self
             .storage
