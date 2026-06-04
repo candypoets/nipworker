@@ -41,6 +41,11 @@ impl NostrDbStorage {
         self.db.storage()
     }
 
+    /// Rebuild in-memory query indexes from the current sharded storage bytes.
+    pub fn rebuild_indexes_from_storage(&self) -> Result<(), DatabaseError> {
+        self.db.rebuild_indexes_from_storage()
+    }
+
     /// Convert nostr Filter to QueryFilter for NostrDB
     fn filter_to_query_filter(filter: &Filter) -> QueryFilter {
         let mut qf = QueryFilter::new();

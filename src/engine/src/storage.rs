@@ -25,7 +25,7 @@ const SYNC_INTERVAL_MS: i64 = 30_000;
 /// - 30-second sync timer: only saves to IndexedDB if 30s has elapsed since last sync
 pub struct NostrDbStorage {
     core: Rc<CoreNostrDbStorage>,
-    last_sync_time: Cell<i64>,
+    last_sync_time: Rc<Cell<i64>>,
 }
 
 impl NostrDbStorage {
@@ -42,7 +42,7 @@ impl NostrDbStorage {
         
         Self {
             core,
-            last_sync_time: Cell::new(0),
+            last_sync_time: Rc::new(Cell::new(0)),
         }
     }
 
@@ -91,9 +91,14 @@ impl NostrDbStorage {
                             "[NostrDbStorage] Failed to load shards: {}",
                             e
                         )));
+                    } else if let Err(e) = self.core.rebuild_indexes_from_storage() {
+                        web_sys::console::warn_1(&JsValue::from_str(&format!(
+                            "[NostrDbStorage] Failed to rebuild indexes: {}",
+                            e
+                        )));
                     } else {
                         web_sys::console::log_1(&JsValue::from_str(
-                            "[NostrDbStorage] Shards loaded into memory"
+                            "[NostrDbStorage] Shards loaded into memory and indexed"
                         ));
                     }
                 } else {
@@ -158,7 +163,7 @@ impl NostrDbStorage {
     /// Spawn background sync task
     fn spawn_background_sync(&self) {
         let core_clone: Rc<CoreNostrDbStorage> = Rc::clone(&self.core);
-        let last_sync_ref: Cell<i64> = self.last_sync_time.clone();
+        let last_sync_ref: Rc<Cell<i64>> = Rc::clone(&self.last_sync_time);
         
         spawn_local(async move {
             // Check if enough time has passed
