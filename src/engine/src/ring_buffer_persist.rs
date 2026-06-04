@@ -138,9 +138,12 @@ impl IndexedDbRingBufferPersistence {
                 .map_err(|_| DatabaseError::StorageError("Failed to get object store".into()))?;
 
             let js_array = Uint8Array::from(bytes.as_slice());
-            store
+            let request = store
                 .put_with_key(&js_array, &JsValue::from_str("buffer"))
                 .map_err(|_| DatabaseError::StorageError("Failed to put data".into()))?;
+            JsFuture::from(idb_request_promise(&request))
+                .await
+                .map_err(|_| DatabaseError::StorageError("Put request failed".into()))?;
         }
 
         Ok(())
