@@ -73,6 +73,62 @@ table ContentBlock {
   data: ContentData;
 }
 
+enum ArticleBlockType : byte {
+  Paragraph = 0,
+  Heading = 1,
+  Blockquote = 2,
+  List = 3,
+  ListItem = 4,
+  CodeBlock = 5,
+  Image = 6,
+  Video = 7,
+  ThematicBreak = 8,
+  Html = 9
+}
+
+enum ArticleInlineType : byte {
+  Text = 0,
+  Emphasis = 1,
+  Strong = 2,
+  Link = 3,
+  Image = 4,
+  Code = 5,
+  NostrEntity = 6,
+  Hashtag = 7,
+  LineBreak = 8,
+  SoftBreak = 9,
+  Html = 10
+}
+
+table ArticleEntity {
+  entity: string (required);
+  id: string;
+  relays: [string];
+  author: string;
+  kind: ulong;
+}
+
+table ArticleInline {
+  type: ArticleInlineType;
+  text: string;
+  url: string;
+  tag: string;
+  entity: ArticleEntity;
+  children: [ArticleInline];
+}
+
+table ArticleBlock {
+  type: ArticleBlockType;
+  text: string;
+  url: string;
+  language: string;
+  depth: ubyte;
+  ordered: bool;
+  start: ulong;
+  inlines: [ArticleInline];
+  children: [ArticleBlock];
+}
+
 
 // Enums (shared)
 enum ReactionType : byte { Like = 0, Dislike = 1, Emoji = 2, Custom = 3 }

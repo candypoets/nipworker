@@ -18,6 +18,7 @@ futures = { version = "0.3", features = ["std", "async-await"] }
 async-trait = "0.1"
 async-lock = "3.4.1"
 regex = "1"
+pulldown-cmark = { version = "0.12", default-features = false }
 
 # Optional crypto dependencies
 k256 = { version = "0.13.4", optional = true, features = ["ecdh"] }

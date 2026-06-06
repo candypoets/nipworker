@@ -97,7 +97,7 @@
 		"build:parser": "wasm-pack build ./crates/parser --release --target web",
 		"build:crypto": "wasm-pack build ./crates/crypto --release --target web",
 		"flatc": "npm run flatc:rust && npm run flatc:ts",
-		"flatc:rust": "flatc --rust --gen-object-api --gen-all --filename-suffix '' -o ./src/shared/src/generated ./schemas/message.fbs",
+		"flatc:rust": "flatc --rust --gen-object-api --gen-all --filename-suffix '' -o ./crates/core/src/generated ./schemas/message.fbs",
 		"flatc:ts": "flatc --ts --gen-object-api --gen-all --filename-suffix '' -o ./src/generated ./schemas/message.fbs",
 		"build:types": "tsc --emitDeclarationOnly --outDir dist",
 		"prepublishOnly": "npm run build",

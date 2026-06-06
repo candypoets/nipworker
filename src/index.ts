@@ -5,6 +5,7 @@ import { getManager, setManager, setGlobalManager, NostrManagerLike } from './ma
 
 export * from './lib/NostrUtils';
 export * from './types';
+export * from './generated/nostr/fb';
 export { getManager, setManager, setGlobalManager } from './manager';
 export type { NostrManagerLike } from './manager';
 

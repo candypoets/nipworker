@@ -2,6 +2,11 @@
 
 /* eslint-disable @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any, @typescript-eslint/no-non-null-assertion */
 
+export { ArticleBlock, ArticleBlockT } from './fb/article-block.js';
+export { ArticleBlockType } from './fb/article-block-type.js';
+export { ArticleEntity, ArticleEntityT } from './fb/article-entity.js';
+export { ArticleInline, ArticleInlineT } from './fb/article-inline.js';
+export { ArticleInlineType } from './fb/article-inline-type.js';
 export { BufferFull, BufferFullT } from './fb/buffer-full.js';
 export { CacheInput } from './fb/cache-input.js';
 export { CacheInputMessage, CacheInputMessageT } from './fb/cache-input-message.js';

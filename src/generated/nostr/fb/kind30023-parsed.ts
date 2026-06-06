@@ -4,6 +4,7 @@
 
 import * as flatbuffers from 'flatbuffers';
 
+import { ArticleBlock, ArticleBlockT } from '../../nostr/fb/article-block.js';
 
 
 export class Kind30023Parsed implements flatbuffers.IUnpackableObject<Kind30023ParsedT> {
@@ -90,8 +91,18 @@ content(optionalEncoding?:any):string|Uint8Array|null {
   return offset ? this.bb!.__string(this.bb_pos + offset, optionalEncoding) : null;
 }
 
+articleBlocks(index: number, obj?:ArticleBlock):ArticleBlock|null {
+  const offset = this.bb!.__offset(this.bb_pos, 22);
+  return offset ? (obj || new ArticleBlock()).__init(this.bb!.__indirect(this.bb!.__vector(this.bb_pos + offset) + index * 4), this.bb!) : null;
+}
+
+articleBlocksLength():number {
+  const offset = this.bb!.__offset(this.bb_pos, 22);
+  return offset ? this.bb!.__vector_len(this.bb_pos + offset) : 0;
+}
+
 static startKind30023Parsed(builder:flatbuffers.Builder) {
-  builder.startObject(9);
+  builder.startObject(10);
 }
 
 static addSlug(builder:flatbuffers.Builder, slugOffset:flatbuffers.Offset) {
@@ -142,12 +153,28 @@ static addContent(builder:flatbuffers.Builder, contentOffset:flatbuffers.Offset)
   builder.addFieldOffset(8, contentOffset, 0);
 }
 
+static addArticleBlocks(builder:flatbuffers.Builder, articleBlocksOffset:flatbuffers.Offset) {
+  builder.addFieldOffset(9, articleBlocksOffset, 0);
+}
+
+static createArticleBlocksVector(builder:flatbuffers.Builder, data:flatbuffers.Offset[]):flatbuffers.Offset {
+  builder.startVector(4, data.length, 4);
+  for (let i = data.length - 1; i >= 0; i--) {
+    builder.addOffset(data[i]!);
+  }
+  return builder.endVector();
+}
+
+static startArticleBlocksVector(builder:flatbuffers.Builder, numElems:number) {
+  builder.startVector(4, numElems, 4);
+}
+
 static endKind30023Parsed(builder:flatbuffers.Builder):flatbuffers.Offset {
   const offset = builder.endObject();
   return offset;
 }
 
-static createKind30023Parsed(builder:flatbuffers.Builder, slugOffset:flatbuffers.Offset, titleOffset:flatbuffers.Offset, summaryOffset:flatbuffers.Offset, imageOffset:flatbuffers.Offset, canonicalOffset:flatbuffers.Offset, topicsOffset:flatbuffers.Offset, publishedAt:bigint, naddrOffset:flatbuffers.Offset, contentOffset:flatbuffers.Offset):flatbuffers.Offset {
+static createKind30023Parsed(builder:flatbuffers.Builder, slugOffset:flatbuffers.Offset, titleOffset:flatbuffers.Offset, summaryOffset:flatbuffers.Offset, imageOffset:flatbuffers.Offset, canonicalOffset:flatbuffers.Offset, topicsOffset:flatbuffers.Offset, publishedAt:bigint, naddrOffset:flatbuffers.Offset, contentOffset:flatbuffers.Offset, articleBlocksOffset:flatbuffers.Offset):flatbuffers.Offset {
   Kind30023Parsed.startKind30023Parsed(builder);
   Kind30023Parsed.addSlug(builder, slugOffset);
   Kind30023Parsed.addTitle(builder, titleOffset);
@@ -158,6 +185,7 @@ static createKind30023Parsed(builder:flatbuffers.Builder, slugOffset:flatbuffers
   Kind30023Parsed.addPublishedAt(builder, publishedAt);
   Kind30023Parsed.addNaddr(builder, naddrOffset);
   Kind30023Parsed.addContent(builder, contentOffset);
+  Kind30023Parsed.addArticleBlocks(builder, articleBlocksOffset);
   return Kind30023Parsed.endKind30023Parsed(builder);
 }
 
@@ -171,7 +199,8 @@ unpack(): Kind30023ParsedT {
     this.bb!.createScalarList<string>(this.topics.bind(this), this.topicsLength()),
     this.publishedAt(),
     this.naddr(),
-    this.content()
+    this.content(),
+    this.bb!.createObjList<ArticleBlock, ArticleBlockT>(this.articleBlocks.bind(this), this.articleBlocksLength())
   );
 }
 
@@ -186,6 +215,7 @@ unpackTo(_o: Kind30023ParsedT): void {
   _o.publishedAt = this.publishedAt();
   _o.naddr = this.naddr();
   _o.content = this.content();
+  _o.articleBlocks = this.bb!.createObjList<ArticleBlock, ArticleBlockT>(this.articleBlocks.bind(this), this.articleBlocksLength());
 }
 }
 
@@ -199,7 +229,8 @@ constructor(
   public topics: (string)[] = [],
   public publishedAt: bigint = BigInt('0'),
   public naddr: string|Uint8Array|null = null,
-  public content: string|Uint8Array|null = null
+  public content: string|Uint8Array|null = null,
+  public articleBlocks: (ArticleBlockT)[] = []
 ){}
 
 
@@ -212,6 +243,7 @@ pack(builder:flatbuffers.Builder): flatbuffers.Offset {
   const topics = Kind30023Parsed.createTopicsVector(builder, builder.createObjectOffsetList(this.topics));
   const naddr = (this.naddr !== null ? builder.createString(this.naddr!) : 0);
   const content = (this.content !== null ? builder.createString(this.content!) : 0);
+  const articleBlocks = Kind30023Parsed.createArticleBlocksVector(builder, builder.createObjectOffsetList(this.articleBlocks));
 
   return Kind30023Parsed.createKind30023Parsed(builder,
     slug,
@@ -222,7 +254,8 @@ pack(builder:flatbuffers.Builder): flatbuffers.Offset {
     topics,
     this.publishedAt,
     naddr,
-    content
+    content,
+    articleBlocks
   );
 }
 }
