@@ -61,6 +61,9 @@ class NipworkerReactNativeModule(
 		external fun nipworkerInit(userdata: Long): Long
 
 		@JvmStatic
+		external fun nipworkerInitWithStoragePath(userdata: Long, storagePath: String): Long
+
+		@JvmStatic
 		external fun nipworkerHandleMessage(handle: Long, bytes: ByteArray)
 
 		@JvmStatic
@@ -100,7 +103,8 @@ class NipworkerReactNativeModule(
 		activeModule = this
 		if (sharedHandle == 0L) {
 			sharedUserdata = nextUserdata.getAndIncrement()
-			sharedHandle = nipworkerInit(sharedUserdata)
+			val cacheDir = reactContext.filesDir.resolve("nipworker")
+			sharedHandle = nipworkerInitWithStoragePath(sharedUserdata, cacheDir.absolutePath)
 		}
 	}
 

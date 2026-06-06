@@ -20,6 +20,11 @@ extern void* nipworker_init(
     void (*callback)(void* userdata, const uint8_t* ptr, size_t len),
     void* userdata
 );
+extern void* nipworker_init_with_storage_path(
+    void (*callback)(void* userdata, const uint8_t* ptr, size_t len),
+    void* userdata,
+    const char* storage_path
+);
 extern void nipworker_handle_message(void* handle, const uint8_t* ptr, size_t len);
 extern void nipworker_set_private_key(void* handle, const char* ptr);
 extern void nipworker_deinit(void* handle);
@@ -55,6 +60,9 @@ static void ensure_jni_cache(JNIEnv* env, jclass cls) {
 JNIEXPORT jlong JNICALL
 impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerInit(
     JNIEnv* env, jclass cls, jlong userdata);
+JNIEXPORT jlong JNICALL
+impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerInitWithStoragePath(
+    JNIEnv* env, jclass cls, jlong userdata, jstring storage_path);
 JNIEXPORT void JNICALL
 impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerHandleMessage(
     JNIEnv* env, jclass cls, jlong handle, jbyteArray bytes);
@@ -170,6 +178,30 @@ impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerInit(
 ) {
     ensure_jni_cache(env, cls);
     void* handle = nipworker_init(native_callback, (void*)(uintptr_t)userdata);
+    return (jlong)handle;
+}
+
+JNI_USED
+JNIEXPORT jlong JNICALL
+impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerInitWithStoragePath(
+    JNIEnv* env,
+    jclass cls,
+    jlong userdata,
+    jstring storage_path
+) {
+    ensure_jni_cache(env, cls);
+    const char* cpath = NULL;
+    if (storage_path != NULL) {
+        cpath = (*env)->GetStringUTFChars(env, storage_path, NULL);
+    }
+    void* handle = nipworker_init_with_storage_path(
+        native_callback,
+        (void*)(uintptr_t)userdata,
+        cpath
+    );
+    if (storage_path != NULL && cpath != NULL) {
+        (*env)->ReleaseStringUTFChars(env, storage_path, cpath);
+    }
     return (jlong)handle;
 }
 

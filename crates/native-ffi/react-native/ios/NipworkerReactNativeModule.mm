@@ -21,6 +21,7 @@
 
 extern "C" {
 void* nipworker_init(void (*callback)(void* userdata, const uint8_t* ptr, size_t len), void* userdata);
+void* nipworker_init_with_storage_path(void (*callback)(void* userdata, const uint8_t* ptr, size_t len), void* userdata, const char* storage_path);
 void nipworker_handle_message(void* handle, const uint8_t* ptr, size_t len);
 void nipworker_set_private_key(void* handle, const char* ptr);
 void nipworker_deinit(void* handle);
@@ -39,6 +40,7 @@ static NSHashTable<NipworkerReactNativeModule*>* NipworkerListenerModules;
 static void NipworkerReactNativeCallbackForwarder(void* userdata, const uint8_t* ptr, size_t len);
 static void* NipworkerGetEngineHandle(void* userdata);
 static void NipworkerNotifyQueuedPacket(void);
+static NSString* NipworkerStorageDirectory(void);
 
 static void NipworkerQueuePacket(const uint8_t* ptr, size_t len) {
 	if (!ptr || len == 0) {
@@ -60,10 +62,26 @@ static std::vector<std::vector<uint8_t>> NipworkerDrainPackets() {
 static void* NipworkerGetEngineHandle(void* userdata) {
 	@synchronized ([NipworkerReactNativeModule class]) {
 		if (!NipworkerEngineHandle) {
-			NipworkerEngineHandle = nipworker_init(NipworkerReactNativeCallbackForwarder, userdata);
+			NSString* path = NipworkerStorageDirectory();
+			NipworkerEngineHandle = nipworker_init_with_storage_path(
+				NipworkerReactNativeCallbackForwarder,
+				userdata,
+				[path UTF8String]
+			);
 		}
 		return NipworkerEngineHandle;
 	}
+}
+
+static NSString* NipworkerStorageDirectory(void) {
+	NSArray<NSURL*>* urls = [[NSFileManager defaultManager] URLsForDirectory:NSApplicationSupportDirectory inDomains:NSUserDomainMask];
+	NSURL* baseURL = urls.firstObject;
+	if (!baseURL) {
+		baseURL = [NSURL fileURLWithPath:NSTemporaryDirectory()];
+	}
+	NSURL* dirURL = [baseURL URLByAppendingPathComponent:@"nipworker" isDirectory:YES];
+	[[NSFileManager defaultManager] createDirectoryAtURL:dirURL withIntermediateDirectories:YES attributes:nil error:nil];
+	return [dirURL path];
 }
 
 static void NipworkerNotifyQueuedPacket(void) {
