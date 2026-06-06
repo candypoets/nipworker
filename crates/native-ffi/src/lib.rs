@@ -3,7 +3,9 @@ mod jni;
 
 use futures::StreamExt;
 use nipworker_core::service::engine::NostrEngine;
+use nipworker_core::storage::{NostrDbStorage, PersistentNostrDbStorage};
 use std::ffi::{c_char, c_void, CStr};
+use std::path::PathBuf;
 use std::slice;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -14,8 +16,29 @@ use tokio::task::LocalSet;
 pub mod storage;
 pub mod transport;
 
-use storage::InMemoryStorage;
+use storage::FileBlobStore;
 use transport::NativeTransport;
+
+const DEFAULT_RELAYS: &[&str] = &[
+    "wss://relay.snort.social",
+    "wss://relay.damus.io",
+    "wss://relay.primal.net",
+];
+const INDEXER_RELAYS: &[&str] = &[
+    "wss://user.kindpag.es",
+    "wss://relay.nos.social",
+    "wss://purplepag.es",
+    "wss://relay.nostr.band",
+];
+
+fn new_core_storage(max_buffer_size: usize) -> NostrDbStorage {
+    NostrDbStorage::new(
+        "nipworker".to_string(),
+        max_buffer_size,
+        DEFAULT_RELAYS.iter().map(|s| s.to_string()).collect(),
+        INDEXER_RELAYS.iter().map(|s| s.to_string()).collect(),
+    )
+}
 
 /// Commands sent to the engine thread
 enum EngineCommand {
@@ -65,6 +88,15 @@ pub extern "C" fn nipworker_init(
     callback: extern "C" fn(*mut c_void, *const u8, usize),
     userdata: *mut c_void,
 ) -> *mut c_void {
+    nipworker_init_with_storage_path(callback, userdata, std::ptr::null())
+}
+
+#[no_mangle]
+pub extern "C" fn nipworker_init_with_storage_path(
+    callback: extern "C" fn(*mut c_void, *const u8, usize),
+    userdata: *mut c_void,
+    storage_path: *const c_char,
+) -> *mut c_void {
     // Initialize tracing subscriber for native builds
     #[cfg(target_vendor = "apple")]
     {
@@ -93,6 +125,19 @@ pub extern "C" fn nipworker_init(
             .try_init();
     }
 
+    let storage_path = if storage_path.is_null() {
+        None
+    } else {
+        let path = unsafe { CStr::from_ptr(storage_path) }
+            .to_string_lossy()
+            .to_string();
+        if path.is_empty() {
+            None
+        } else {
+            Some(PathBuf::from(path))
+        }
+    };
+
     // Set panic hook so Rust panics are visible instead of silent thread death
     std::panic::set_hook(Box::new(|info| {
         let backtrace = std::backtrace::Backtrace::capture();
@@ -115,9 +160,20 @@ pub extern "C" fn nipworker_init(
             let (async_event_tx, mut async_event_rx) =
                 futures::channel::mpsc::channel::<(String, Vec<u8>)>(256);
 
+            let storage_path = storage_path.clone();
             let engine = Arc::new(NostrEngine::new_threaded(
                 || Arc::new(NativeTransport::new()),
-                || Arc::new(InMemoryStorage::new()),
+                move || {
+                    if let Some(path) = storage_path.clone() {
+                        Arc::new(PersistentNostrDbStorage::new(
+                            new_core_storage(8 * 1024 * 1024),
+                            FileBlobStore::new(path),
+                        )) as Arc<dyn nipworker_core::traits::Storage>
+                    } else {
+                        Arc::new(new_core_storage(8 * 1024 * 1024))
+                            as Arc<dyn nipworker_core::traits::Storage>
+                    }
+                },
                 async_event_tx,
             ));
 
