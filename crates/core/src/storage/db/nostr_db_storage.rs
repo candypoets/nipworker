@@ -85,6 +85,15 @@ impl NostrDbStorage {
         if let Some(ref d_tags) = filter.d_tags {
             qf.d_tags = Some(d_tags.clone());
         }
+        if let Some(q_tags) = filter.tags.get("q") {
+            qf.q_tags = Some(q_tags.clone());
+        }
+        if let Some(e_tags) = filter.tags.get("E") {
+            qf.E_tags = Some(e_tags.clone());
+        }
+        if let Some(p_tags) = filter.tags.get("P") {
+            qf.P_tags = Some(p_tags.clone());
+        }
 
         qf
     }
@@ -272,11 +281,103 @@ impl NostrDbStorage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::generated::nostr::fb;
+    use flatbuffers::FlatBufferBuilder;
+
+    fn build_worker_message_with_tags(
+        sub_id: &str,
+        kind: u16,
+        pubkey: &str,
+        id: &str,
+        created_at: u32,
+        tags: &[&[&str]],
+    ) -> Vec<u8> {
+        let mut builder = FlatBufferBuilder::new();
+        let id_off = builder.create_string(id);
+        let pubkey_off = builder.create_string(pubkey);
+
+        let mut tag_offsets = Vec::new();
+        for tag in tags {
+            let item_offsets: Vec<_> = tag.iter().map(|s| builder.create_string(s)).collect();
+            let items_vec = builder.create_vector(&item_offsets);
+            tag_offsets.push(fb::StringVec::create(
+                &mut builder,
+                &fb::StringVecArgs {
+                    items: Some(items_vec),
+                },
+            ));
+        }
+        let tags_vec = builder.create_vector(&tag_offsets);
+
+        let parsed = fb::ParsedEvent::create(
+            &mut builder,
+            &fb::ParsedEventArgs {
+                id: Some(id_off),
+                pubkey: Some(pubkey_off),
+                kind,
+                created_at,
+                tags: Some(tags_vec),
+                ..Default::default()
+            },
+        );
+        let sub_id_off = builder.create_string(sub_id);
+        let message = fb::WorkerMessage::create(
+            &mut builder,
+            &fb::WorkerMessageArgs {
+                sub_id: Some(sub_id_off),
+                content_type: fb::Message::ParsedEvent,
+                content: Some(parsed.as_union_value()),
+                ..Default::default()
+            },
+        );
+        builder.finish(message, None);
+        builder.finished_data().to_vec()
+    }
 
     #[tokio::test]
     async fn test_nostr_db_storage_basic() {
         let storage = NostrDbStorage::new("test".to_string(), 1024 * 1024, vec![], vec![]);
 
         assert!(storage.initialize().await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_query_filters_by_q_tag() {
+        let storage = NostrDbStorage::new("test-q".to_string(), 1024 * 1024, vec![], vec![]);
+        storage.initialize().await.unwrap();
+
+        let pubkey = "0000000000000000000000000000000000000000000000000000000000000001";
+        let target = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let matching_id = "0000000000000000000000000000000000000000000000000000000000000002";
+        let other_id = "0000000000000000000000000000000000000000000000000000000000000003";
+
+        let matching = build_worker_message_with_tags(
+            "save_to_db",
+            1,
+            pubkey,
+            matching_id,
+            2000,
+            &[&["q", target]],
+        );
+        let other = build_worker_message_with_tags(
+            "save_to_db",
+            1,
+            pubkey,
+            other_id,
+            1000,
+            &[&["e", target]],
+        );
+        storage.persist(&matching).await.unwrap();
+        storage.persist(&other).await.unwrap();
+
+        let mut filter = Filter::new();
+        filter
+            .tags
+            .insert("q".to_string(), vec![target.to_string()]);
+
+        let results = storage.query(vec![filter]).await.unwrap();
+        assert_eq!(results.len(), 1);
+        let created_at = NostrDbStorage::extract_created_at(&results[0]);
+        assert_eq!(created_at, Some(2000));
     }
 }
