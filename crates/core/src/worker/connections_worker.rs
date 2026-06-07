@@ -1,17 +1,48 @@
-
 use crate::channel::{MessageSender, WorkerChannel};
 use crate::generated::nostr::fb;
 use crate::spawn::spawn_worker;
 use crate::traits::RelayTransport;
 use crate::transport::connection::RelayConnection;
 use crate::transport::fb_utils::{build_worker_message, serialize_connection_status};
-use crate::transport::types::RelayConfig;
-use futures::{SinkExt, StreamExt};
+use futures::StreamExt;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::{Arc, RwLock};
 use tracing::{info, warn};
+
+#[derive(serde::Deserialize)]
+struct Envelope {
+    relays: Vec<String>,
+    frames: Vec<String>,
+}
+
+fn send_envelope(bytes: &[u8], source: &str, get_conn: &dyn Fn(&str) -> Arc<RelayConnection>) {
+    let env: Envelope = match serde_json::from_slice(bytes) {
+        Ok(e) => e,
+        Err(_) => {
+            warn!(
+                "[ConnectionsWorker] Failed to parse envelope from {}",
+                source
+            );
+            return;
+        }
+    };
+    for relay in &env.relays {
+        if relay.is_empty() {
+            continue;
+        }
+        let conn = get_conn(relay);
+        for frame in &env.frames {
+            if let Err(e) = conn.send_raw(frame) {
+                warn!(
+                    "[ConnectionsWorker] send_raw failed for {} from {}: {:?}",
+                    relay, source, e
+                );
+            }
+        }
+    }
+}
 
 pub struct ConnectionsWorker {
     transport: Arc<dyn RelayTransport>,
@@ -63,13 +94,19 @@ impl ConnectionsWorker {
                 let tx_msg = parser_tx.clone();
                 let tx_status = parser_tx.clone();
                 let transport = transport.clone();
+                let to_crypto_messages = to_crypto_rc.clone();
 
                 let out_writer: Rc<dyn Fn(&str, &str, &str)> =
                     Rc::new(move |url: &str, sub_id: &str, msg: &str| {
                         let mut fbb = flatbuffers::FlatBufferBuilder::new();
                         let wm = build_worker_message(&mut fbb, sub_id, url, msg);
                         fbb.finish(wm, None);
-                        let _ = tx_msg.unbounded_send(fbb.finished_data().to_vec());
+                        let bytes = fbb.finished_data().to_vec();
+                        if sub_id.starts_with("n46:") {
+                            let _ = to_crypto_messages.send(&bytes);
+                        } else {
+                            let _ = tx_msg.unbounded_send(bytes);
+                        }
                     });
 
                 let status_writer: Rc<dyn Fn(&str, &str)> =
@@ -200,35 +237,10 @@ impl ConnectionsWorker {
         let get_conn_cache = get_or_create_connection.clone();
         spawn_worker(async move {
             info!("[ConnectionsWorker] cache loop started");
-            #[derive(serde::Deserialize)]
-            struct Envelope {
-                relays: Vec<String>,
-                frames: Vec<String>,
-            }
             loop {
                 match from_cache.recv().await {
                     Ok(bytes) => {
-                        let env: Envelope = match serde_json::from_slice(&bytes) {
-                            Ok(e) => e,
-                            Err(_) => {
-                                warn!("[ConnectionsWorker] Failed to parse envelope from cache");
-                                continue;
-                            }
-                        };
-                        for relay in &env.relays {
-                            if relay.is_empty() {
-                                continue;
-                            }
-                            let conn = get_conn_cache(relay);
-                            for frame in &env.frames {
-                                if let Err(e) = conn.send_raw(frame) {
-                                    warn!(
-                                        "[ConnectionsWorker] send_raw failed for {}: {:?}",
-                                        relay, e
-                                    );
-                                }
-                            }
-                        }
+                        send_envelope(&bytes, "cache", &get_conn_cache);
                     }
                     Err(_) => break,
                 }
@@ -236,8 +248,9 @@ impl ConnectionsWorker {
             info!("[ConnectionsWorker] cache loop exiting");
         });
 
-        // Loop for crypto responses (e.g. NIP-42 AUTH signed events)
+        // Loop for crypto traffic: NIP-46 relay envelopes and NIP-42 AUTH signed events.
         let connections_crypto = self.connections.clone();
+        let get_conn_crypto = get_or_create_connection.clone();
         spawn_worker(async move {
             info!("[ConnectionsWorker] crypto loop started");
             loop {
@@ -245,11 +258,8 @@ impl ConnectionsWorker {
                     Ok(bytes) => {
                         let resp = match flatbuffers::root::<fb::SignerResponse>(&bytes) {
                             Ok(r) => r,
-                            Err(e) => {
-                                warn!(
-									"[ConnectionsWorker] failed to decode SignerResponse from crypto: {}",
-									e
-								);
+                            Err(_) => {
+                                send_envelope(&bytes, "crypto", &get_conn_crypto);
                                 continue;
                             }
                         };
@@ -631,6 +641,88 @@ mod tests {
 					);
 				})
 				.await;
+    }
+
+    #[tokio::test]
+    async fn test_crypto_envelope_forwards_nip46_frames() {
+        let local = LocalSet::new();
+        local
+            .run_until(async {
+                let (transport, _parser_test, _parser_out_test, _cache_test, crypto_test) =
+                    setup().await;
+
+                let envelope = serde_json::json!({
+                    "relays": ["wss://r"],
+                    "frames": [r#"["REQ","n46:client",{"kinds":[24133]}]"#]
+                });
+                let bytes = serde_json::to_vec(&envelope).unwrap();
+                crypto_test.send(&bytes).await.unwrap();
+                tokio::task::yield_now().await;
+                tokio::task::yield_now().await;
+                tokio::task::yield_now().await;
+
+                let calls = transport.calls();
+                assert!(
+                    calls
+                        .iter()
+                        .any(|c| matches!(c, Call::Connect(url) if url == "wss://r")),
+                    "connect was not called"
+                );
+                assert!(
+                    calls.iter().any(|c| {
+                        matches!(
+                            c,
+                            Call::Send(url, frame)
+                                if url == "wss://r"
+                                    && frame == r#"["REQ","n46:client",{"kinds":[24133]}]"#
+                        )
+                    }),
+                    "NIP-46 frame was not sent"
+                );
+            })
+            .await;
+    }
+
+    #[tokio::test]
+    async fn test_nip46_relay_message_routes_to_crypto() {
+        let local = LocalSet::new();
+        local
+            .run_until(async {
+                let (transport, parser_test, mut parser_out_test, _cache_test, mut crypto_test) =
+                    setup().await;
+
+                let trigger = build_raw_worker_message("wss://r", "trigger");
+                parser_test.send(&trigger).await.unwrap();
+                tokio::task::yield_now().await;
+                tokio::task::yield_now().await;
+
+                let _ = parser_out_test.recv().await.unwrap();
+                let _ = parser_out_test.recv().await.unwrap();
+                let _ = parser_out_test.recv().await.unwrap();
+
+                transport.invoke_message_callback(
+                    "wss://r",
+                    r#"["EVENT","n46:client",{"kind":24133}]"#.to_string(),
+                );
+
+                let bytes = crypto_test
+                    .recv()
+                    .await
+                    .expect("expected NIP-46 frame on crypto");
+                let wm = flatbuffers::root::<fb::WorkerMessage>(&bytes).unwrap();
+                assert_eq!(wm.sub_id(), Some("n46:client"));
+
+                assert!(
+                    tokio::time::timeout(
+                        std::time::Duration::from_millis(10),
+                        parser_out_test.recv()
+                    )
+                    .await
+                    .is_err(),
+                    "NIP-46 frame should not be routed to parser"
+                );
+            })
+            .await;
     }
 
     #[tokio::test]
