@@ -1,7 +1,18 @@
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import { EngineManager } from './EngineManager';
 import * as flatbuffers from 'flatbuffers';
-import { WorkerMessage, MessageType, Raw, Message } from './generated/nostr/fb';
+import {
+	MainContent,
+	MainMessage,
+	Message,
+	MessageType,
+	Nip46BunkerT,
+	Nip46QRT,
+	Raw,
+	SetSigner,
+	SignerType,
+	WorkerMessage
+} from './generated/nostr/fb';
 
 // Mock the engine worker so we can send messages back to EngineManager
 class MockWorker {
@@ -26,7 +37,7 @@ beforeAll(() => {
 	(globalThis as any).localStorage = {
 		getItem: vi.fn(),
 		setItem: vi.fn(),
-		removeItem: vi.fn(),
+		removeItem: vi.fn()
 	};
 });
 
@@ -38,14 +49,7 @@ function buildCryptoRawMessage(json: string): Uint8Array {
 	const builder = new flatbuffers.Builder(256);
 	const rawStr = builder.createString(json);
 	const raw = Raw.createRaw(builder, rawStr);
-	const msg = WorkerMessage.createWorkerMessage(
-		builder,
-		0,
-		0,
-		MessageType.Raw,
-		Message.Raw,
-		raw
-	);
+	const msg = WorkerMessage.createWorkerMessage(builder, 0, 0, MessageType.Raw, Message.Raw, raw);
 	builder.finish(msg);
 	return builder.asUint8Array();
 }
@@ -62,7 +66,10 @@ describe('EngineManager', () => {
 
 			// Build the crypto message with 4-byte length prefix (as the WASM engine sends)
 			const workerBytes = buildCryptoRawMessage(
-				JSON.stringify({ op: 'set_signer', result: '79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798' })
+				JSON.stringify({
+					op: 'set_signer',
+					result: '79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798'
+				})
 			);
 			const data = new Uint8Array(4 + workerBytes.length);
 			const view = new DataView(data.buffer);
@@ -73,10 +80,40 @@ describe('EngineManager', () => {
 
 			expect(authHandler).toHaveBeenCalledTimes(1);
 			const detail = authHandler.mock.calls[0][0].detail;
-			expect(detail.pubkey).toBe('79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798');
+			expect(detail.pubkey).toBe(
+				'79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798'
+			);
 			expect(detail.hasSigner).toBe(true);
 			expect(detail.secretKey).toBe('secret');
 			expect((manager as any)._pendingSession).toBeNull();
+		});
+
+		it('should request public key when NIP-46 set_signer only confirms initialization', () => {
+			const manager = new EngineManager();
+			const authHandler = vi.fn();
+			const getPublicKey = vi.spyOn(manager, 'getPublicKey').mockImplementation(() => {});
+			manager.addEventListener('auth', authHandler);
+			(manager as any)._pendingSession = {
+				type: 'nip46',
+				payload: { url: 'bunker://remote?relay=wss%3A%2F%2Fr', clientSecret: 'secret' }
+			};
+
+			const workerBytes = buildCryptoRawMessage(
+				JSON.stringify({
+					op: 'set_signer',
+					result: 'NIP-46 QR signer initialized, awaiting discovery'
+				})
+			);
+			const data = new Uint8Array(4 + workerBytes.length);
+			const view = new DataView(data.buffer);
+			view.setUint32(0, workerBytes.length, true);
+			data.set(workerBytes, 4);
+
+			(manager as any).handleCryptoMessage(data.buffer);
+
+			expect(authHandler).not.toHaveBeenCalled();
+			expect(getPublicKey).toHaveBeenCalledTimes(1);
+			expect((manager as any)._pendingSession?.type).toBe('nip46');
 		});
 
 		it('should dispatch auth event on get_public_key success', () => {
@@ -85,7 +122,10 @@ describe('EngineManager', () => {
 			manager.addEventListener('auth', authHandler);
 
 			const workerBytes = buildCryptoRawMessage(
-				JSON.stringify({ op: 'get_public_key', result: 'abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890' })
+				JSON.stringify({
+					op: 'get_public_key',
+					result: 'abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890'
+				})
 			);
 			const data = new Uint8Array(4 + workerBytes.length);
 			const view = new DataView(data.buffer);
@@ -96,7 +136,9 @@ describe('EngineManager', () => {
 
 			expect(authHandler).toHaveBeenCalledTimes(1);
 			const detail = authHandler.mock.calls[0][0].detail;
-			expect(detail.pubkey).toBe('abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890');
+			expect(detail.pubkey).toBe(
+				'abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890'
+			);
 			expect(detail.hasSigner).toBe(true);
 		});
 
@@ -112,7 +154,7 @@ describe('EngineManager', () => {
 				kind: 1,
 				tags: [],
 				content: 'hello',
-				sig: 'sig',
+				sig: 'sig'
 			};
 			const workerBytes = buildCryptoRawMessage(
 				JSON.stringify({ op: 'sign_event', result: JSON.stringify(signedEvent) })
@@ -147,6 +189,50 @@ describe('EngineManager', () => {
 			const detail = authHandler.mock.calls[0][0].detail;
 			expect(detail.pubkey).toBeNull();
 			expect(detail.hasSigner).toBe(false);
+		});
+	});
+
+	describe('setSigner', () => {
+		it('packs NIP-46 bunker signer fields in schema order', () => {
+			const manager = new EngineManager();
+			let sent: Uint8Array | undefined;
+			(manager as any).postMessage = (message: any) => {
+				sent = message.serializedMessage;
+			};
+
+			manager.setSigner('nip46', {
+				url: 'bunker://remote?relay=wss%3A%2F%2Fr',
+				clientSecret: 'secret'
+			});
+
+			const main = MainMessage.getRootAsMainMessage(new flatbuffers.ByteBuffer(sent!));
+			expect(main.contentType()).toBe(MainContent.SetSigner);
+			const setSigner = main.content(new SetSigner())!;
+			expect(setSigner.signerTypeType()).toBe(SignerType.Nip46Bunker);
+			const unpacked = setSigner.unpack().signerType as Nip46BunkerT;
+			expect(unpacked.bunkerUrl).toBe('bunker://remote?relay=wss%3A%2F%2Fr');
+			expect(unpacked.clientSecret).toBe('secret');
+		});
+
+		it('packs NIP-46 QR signer fields in schema order', () => {
+			const manager = new EngineManager();
+			let sent: Uint8Array | undefined;
+			(manager as any).postMessage = (message: any) => {
+				sent = message.serializedMessage;
+			};
+
+			manager.setSigner('nip46', {
+				url: 'nostrconnect://client?relay=wss%3A%2F%2Fr&secret=s',
+				clientSecret: 'secret'
+			});
+
+			const main = MainMessage.getRootAsMainMessage(new flatbuffers.ByteBuffer(sent!));
+			expect(main.contentType()).toBe(MainContent.SetSigner);
+			const setSigner = main.content(new SetSigner())!;
+			expect(setSigner.signerTypeType()).toBe(SignerType.Nip46QR);
+			const unpacked = setSigner.unpack().signerType as Nip46QRT;
+			expect(unpacked.nostrconnectUrl).toBe('nostrconnect://client?relay=wss%3A%2F%2Fr&secret=s');
+			expect(unpacked.clientSecret).toBe('secret');
 		});
 	});
 });

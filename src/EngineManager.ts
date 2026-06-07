@@ -233,22 +233,32 @@ export class EngineManager extends BaseBackend {
 		this.subscriptions.delete(subId);
 	}
 
+	private isPubkeyResult(value: unknown): value is string {
+		return typeof value === 'string' && /^[0-9a-f]{64}$/i.test(value);
+	}
+
+	private handleSignerPubkey(pubkey: string, secretKey?: unknown) {
+		this.activePubkey = pubkey;
+		if (this._pendingSession) {
+			this.saveSession(this.activePubkey, this._pendingSession.type, this._pendingSession.payload);
+			this._pendingSession = null;
+		}
+		this.dispatch('auth', {
+			pubkey: this.activePubkey,
+			hasSigner: true,
+			...(secretKey ? { secretKey } : {})
+		});
+	}
+
 	private handleCryptoResponse(msg: any) {
 		if (msg.op === 'get_pubkey') {
-			if (msg.ok) {
-				this.activePubkey = msg.result;
-				if (this._pendingSession) {
-					this.saveSession(
-						this.activePubkey!,
-						this._pendingSession.type,
-						this._pendingSession.payload
-					);
-					this._pendingSession = null;
-				}
-			}
 			const secretKey =
 				this._pendingSession?.type === 'privkey' ? this._pendingSession.payload : undefined;
-			this.dispatch('auth', { pubkey: this.activePubkey, hasSigner: msg.ok, secretKey });
+			if (msg.ok && this.isPubkeyResult(msg.result)) {
+				this.handleSignerPubkey(msg.result, secretKey);
+			} else {
+				this.dispatch('auth', { pubkey: this.activePubkey, hasSigner: false });
+			}
 		}
 	}
 
@@ -270,18 +280,17 @@ export class EngineManager extends BaseBackend {
 			if (msg.op === 'get_public_key' || msg.op === 'set_signer') {
 				const secretKey =
 					this._pendingSession?.type === 'privkey' ? this._pendingSession.payload : undefined;
-				if (msg.result) {
-					this.activePubkey = msg.result;
-					if (this._pendingSession) {
-						this.saveSession(
-							this.activePubkey!,
-							this._pendingSession.type,
-							this._pendingSession.payload
-						);
-						this._pendingSession = null;
-					}
+				if (this.isPubkeyResult(msg.result)) {
+					this.handleSignerPubkey(msg.result, secretKey);
+				} else if (
+					msg.op === 'set_signer' &&
+					this._pendingSession?.type === 'nip46' &&
+					msg.result
+				) {
+					this.getPublicKey();
+				} else if (msg.error) {
+					this.dispatch('auth', { pubkey: null, hasSigner: false });
 				}
-				this.dispatch('auth', { pubkey: this.activePubkey, hasSigner: !!msg.result, secretKey });
 			} else if (msg.op === 'sign_event' && msg.result) {
 				const parsed = JSON.parse(msg.result);
 				this._signCB(parsed);
@@ -424,7 +433,7 @@ export class EngineManager extends BaseBackend {
 				const nip46Payload = payload as { url: string; clientSecret: string } | undefined;
 				if (nip46Payload?.url) {
 					if (nip46Payload.url.startsWith('bunker://')) {
-						const bunkerT = new Nip46BunkerT(nip46Payload.clientSecret, nip46Payload.url);
+						const bunkerT = new Nip46BunkerT(nip46Payload.url, nip46Payload.clientSecret);
 						const setSignerT = new SetSignerT(SignerType.Nip46Bunker, bunkerT);
 						const mainT = new MainMessageT(MainContent.SetSigner, setSignerT);
 						const builder = new flatbuffers.Builder(2048);
@@ -432,7 +441,7 @@ export class EngineManager extends BaseBackend {
 						const uint8Array = builder.asUint8Array();
 						this.postMessage({ serializedMessage: uint8Array }, [uint8Array.buffer]);
 					} else if (nip46Payload.url.startsWith('nostrconnect://')) {
-						const qrT = new Nip46QRT(nip46Payload.clientSecret, nip46Payload.url);
+						const qrT = new Nip46QRT(nip46Payload.url, nip46Payload.clientSecret);
 						const setSignerT = new SetSignerT(SignerType.Nip46QR, qrT);
 						const mainT = new MainMessageT(MainContent.SetSigner, setSignerT);
 						const builder = new flatbuffers.Builder(2048);
@@ -441,7 +450,6 @@ export class EngineManager extends BaseBackend {
 						this.postMessage({ serializedMessage: uint8Array }, [uint8Array.buffer]);
 					}
 				}
-				this.getPublicKey();
 				break;
 			}
 		}

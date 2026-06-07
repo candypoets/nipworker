@@ -422,7 +422,7 @@ impl CryptoWorker {
         // Engine listener
         // -------------------------------------------------------------------
         let active_engine = self.active.clone();
-        let to_main_engine = to_main;
+        let to_main_engine = Arc::new(to_main);
         let nip46_tx_engine = self.nip46_tx.clone();
         let to_connections_arc_engine = to_connections_arc.clone();
         spawn_worker(async move {
@@ -518,39 +518,25 @@ impl CryptoWorker {
                                                     *active_engine.borrow_mut() =
                                                         ActiveSigner::Nip46(nip46.clone());
 
-                                                    let nip46_conn = nip46.clone();
-                                                    spawn_worker(async move {
-                                                        match nip46_conn.connect().await {
-                                                            Ok(_) => {
-                                                                match nip46_conn
-                                                                    .get_public_key()
-                                                                    .await
-                                                                {
-                                                                    Ok(pk) => {
-                                                                        info!(
-																			"[CryptoWorker] NIP-46 bunker connected, pubkey: {}",
-																			&pk[..16.min(pk.len())]
-																			);
-                                                                    }
-                                                                    Err(e) => {
-                                                                        warn!(
-																			"[CryptoWorker] NIP-46 bunker get_public_key failed: {}",
-																			e
-																			);
-                                                                    }
-                                                                }
+                                                    match nip46.connect().await {
+                                                        Ok(_) => match nip46.get_public_key().await {
+                                                            Ok(pubkey) => {
+                                                                info!(
+                                                                    "[CryptoWorker] NIP-46 bunker connected, pubkey: {}",
+                                                                    &pubkey[..16.min(pubkey.len())]
+                                                                );
+                                                                Ok(pubkey)
                                                             }
-                                                            Err(e) => {
-                                                                warn!(
-																	"[CryptoWorker] NIP-46 bunker connect failed: {}",
-																	e
-																);
-                                                            }
-                                                        }
-                                                    });
-
-                                                    Ok("NIP-46 bunker signer initialized"
-                                                        .to_string())
+                                                            Err(e) => Err(format!(
+                                                                "NIP-46 bunker get_public_key failed: {}",
+                                                                e
+                                                            )),
+                                                        },
+                                                        Err(e) => Err(format!(
+                                                            "NIP-46 bunker connect failed: {}",
+                                                            e
+                                                        )),
+                                                    }
                                                 }
                                                 Err(e) => Err(e),
                                             }
@@ -589,7 +575,53 @@ impl CryptoWorker {
                                                         client_keys,
                                                     ));
 
-                                                    nip46.start(spawn_worker, None);
+                                                    let nip46_for_discovery = nip46.clone();
+                                                    let to_main_discovery = to_main_engine.clone();
+                                                    let on_discovery = std::rc::Rc::new(
+                                                        move |pk: String| {
+                                                            nip46_for_discovery
+                                                                .update_crypto_remote_pubkey(&pk);
+                                                            let nip46_for_pubkey =
+                                                                nip46_for_discovery.clone();
+                                                            let to_main_pubkey =
+                                                                to_main_discovery.clone();
+                                                            spawn_worker(async move {
+                                                                let raw_json =
+                                                                    match nip46_for_pubkey
+                                                                        .get_public_key()
+                                                                        .await
+                                                                    {
+                                                                        Ok(pubkey) => {
+                                                                            serde_json::json!({
+                                                                                "op": "get_public_key",
+                                                                                "result": pubkey
+                                                                            })
+                                                                            .to_string()
+                                                                        }
+                                                                        Err(e) => {
+                                                                            serde_json::json!({
+                                                                                "op": "get_public_key",
+                                                                                "error": e
+                                                                            })
+                                                                            .to_string()
+                                                                        }
+                                                                    };
+                                                                let resp = serialize_raw_message(
+                                                                    &raw_json,
+                                                                );
+                                                                if let Err(e) =
+                                                                    to_main_pubkey.send(&resp)
+                                                                {
+                                                                    warn!(
+                                                                        "[CryptoWorker] failed to send NIP-46 QR pubkey response to main: {}",
+                                                                        e
+                                                                    );
+                                                                }
+                                                            });
+                                                        },
+                                                    );
+
+                                                    nip46.start(spawn_worker, Some(on_discovery));
                                                     *active_engine.borrow_mut() =
                                                         ActiveSigner::Nip46(nip46.clone());
 

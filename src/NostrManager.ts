@@ -335,41 +335,43 @@ export class NostrManager extends BaseBackend {
 		this.cryptoMainPort.postMessage(uint8Array, [uint8Array.buffer]);
 	}
 
+	private isPubkeyResult(value: unknown): value is string {
+		return typeof value === 'string' && /^[0-9a-f]{64}$/i.test(value);
+	}
+
+	private handleSignerPubkey(pubkey: string, secretKey?: unknown) {
+		this.activePubkey = pubkey;
+		if (this._pendingSession) {
+			this.saveSession(this.activePubkey, this._pendingSession.type, this._pendingSession.payload);
+			this._pendingSession = null;
+		}
+		this.dispatch('auth', {
+			pubkey: this.activePubkey,
+			hasSigner: true,
+			...(secretKey ? { secretKey } : {})
+		});
+	}
+
 	private handleCryptoResponse(msg: any) {
 		if (msg.op === 'get_public_key') {
 			console.log('[main] get_public_key:', msg.result ? 'success' : 'failed', msg.result);
-			if (msg.result) {
-				this.activePubkey = msg.result;
+			const secretKey =
+				this._pendingSession?.type === 'privkey' ? this._pendingSession.payload : undefined;
+			if (this.isPubkeyResult(msg.result)) {
+				this.handleSignerPubkey(msg.result, secretKey);
+				return;
 			}
-			this.dispatch('auth', { pubkey: this.activePubkey, hasSigner: !!msg.result });
+			this.dispatch('auth', { pubkey: this.activePubkey, hasSigner: false });
 		} else if (msg.op === 'set_signer') {
 			console.log('[main] set_signer:', msg.result ? 'success' : 'failed', msg.result);
-			if (msg.result) {
-				this.activePubkey = msg.result;
-				if (this._pendingSession?.type === 'nip46' && this._pendingSession?.payload?.clientSecret) {
-					console.log('[main] NIP-46 session saved for:', this.activePubkey);
-					this.saveSession(this.activePubkey!, 'nip46', {
-						url: this._pendingSession.payload.url,
-						clientSecret: this._pendingSession.payload.clientSecret
-					});
-					this._pendingSession = null;
-				} else if (this._pendingSession) {
-					const secretKey =
-						this._pendingSession?.type === 'privkey' ? this._pendingSession.payload : undefined;
-					this.saveSession(
-						this.activePubkey!,
-						this._pendingSession.type,
-						this._pendingSession.payload
-					);
-					this._pendingSession = null;
-					this.dispatch('auth', {
-						pubkey: this.activePubkey,
-						hasSigner: true,
-						secretKey
-					});
-					return;
-				}
-				this.dispatch('auth', { pubkey: this.activePubkey, hasSigner: true });
+			const secretKey =
+				this._pendingSession?.type === 'privkey' ? this._pendingSession.payload : undefined;
+			if (this.isPubkeyResult(msg.result)) {
+				this.handleSignerPubkey(msg.result, secretKey);
+			} else if (this._pendingSession?.type === 'nip46' && msg.result) {
+				this.getPublicKey();
+			} else if (msg.error) {
+				this.dispatch('auth', { pubkey: null, hasSigner: false });
 			}
 		} else if (msg.op === 'sign_event' && msg.result) {
 			const parsed = JSON.parse(msg.result);
