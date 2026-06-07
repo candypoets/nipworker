@@ -34,7 +34,7 @@ pub struct ProofVerificationPipe {
     name: String,
     verification_running: bool,
     mint_keys_cache: Arc<Mutex<FxHashMap<String, CachedKeys>>>, // cached mint keys
-    mint_key_failures: Arc<Mutex<FxHashMap<String, u64>>>, // mint_url -> retry_after_ms
+    mint_key_failures: Arc<Mutex<FxHashMap<String, u64>>>,      // mint_url -> retry_after_ms
 }
 
 impl ProofVerificationPipe {

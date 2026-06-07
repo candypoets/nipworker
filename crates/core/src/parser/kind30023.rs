@@ -3,7 +3,10 @@ use crate::{
     generated::nostr::*,
     types::{network::Request, Event},
 }; // brings `fb::...` into scope
-use pulldown_cmark::{CodeBlockKind, Event as MarkdownEvent, HeadingLevel, Options, Parser as MarkdownParser, Tag, TagEnd};
+use pulldown_cmark::{
+    CodeBlockKind, Event as MarkdownEvent, HeadingLevel, Options, Parser as MarkdownParser, Tag,
+    TagEnd,
+};
 use regex::Regex;
 
 /// Parsed representation for NIP-23 (kind 30023) long-form content.
@@ -185,7 +188,9 @@ fn parse_article_markdown(content: &str) -> Vec<ArticleBlock> {
                     block.depth = heading_depth(level);
                     block_stack.push(block);
                 }
-                Tag::BlockQuote(_) => block_stack.push(article_block(fb::ArticleBlockType::Blockquote)),
+                Tag::BlockQuote(_) => {
+                    block_stack.push(article_block(fb::ArticleBlockType::Blockquote))
+                }
                 Tag::List(start) => {
                     let mut block = article_block(fb::ArticleBlockType::List);
                     block.ordered = start.is_some();
@@ -209,7 +214,9 @@ fn parse_article_markdown(content: &str) -> Vec<ArticleBlock> {
                     inline.url = Some(dest_url.to_string());
                     inline_stack.push(inline);
                 }
-                Tag::Image { dest_url, title, .. } => {
+                Tag::Image {
+                    dest_url, title, ..
+                } => {
                     let mut inline = article_inline(fb::ArticleInlineType::Image);
                     inline.url = Some(dest_url.to_string());
                     if !title.is_empty() {
@@ -358,9 +365,7 @@ fn append_inline(
 
 fn append_text_to_current_block(block_stack: &mut [ArticleBlock], text: &str) {
     if let Some(block) = block_stack.last_mut() {
-        block.text
-            .get_or_insert_with(String::new)
-            .push_str(text);
+        block.text.get_or_insert_with(String::new).push_str(text);
     }
 }
 
@@ -434,7 +439,10 @@ fn build_article_entity<'a, A: flatbuffers::Allocator + 'a>(
 ) -> flatbuffers::WIPOffset<fb::ArticleEntity<'a>> {
     let entity_value = builder.create_string(&entity.entity);
     let id = entity.id.as_ref().map(|value| builder.create_string(value));
-    let author = entity.author.as_ref().map(|value| builder.create_string(value));
+    let author = entity
+        .author
+        .as_ref()
+        .map(|value| builder.create_string(value));
     let relay_offsets: Vec<_> = entity
         .relays
         .iter()
@@ -462,9 +470,18 @@ fn build_article_inline<'a, A: flatbuffers::Allocator + 'a>(
     inline: &ArticleInline,
     builder: &mut flatbuffers::FlatBufferBuilder<'a, A>,
 ) -> flatbuffers::WIPOffset<fb::ArticleInline<'a>> {
-    let text = inline.text.as_ref().map(|value| builder.create_string(value));
-    let url = inline.url.as_ref().map(|value| builder.create_string(value));
-    let tag = inline.tag.as_ref().map(|value| builder.create_string(value));
+    let text = inline
+        .text
+        .as_ref()
+        .map(|value| builder.create_string(value));
+    let url = inline
+        .url
+        .as_ref()
+        .map(|value| builder.create_string(value));
+    let tag = inline
+        .tag
+        .as_ref()
+        .map(|value| builder.create_string(value));
     let entity = inline
         .entity
         .as_ref()
@@ -497,7 +514,10 @@ fn build_article_block<'a, A: flatbuffers::Allocator + 'a>(
     block: &ArticleBlock,
     builder: &mut flatbuffers::FlatBufferBuilder<'a, A>,
 ) -> flatbuffers::WIPOffset<fb::ArticleBlock<'a>> {
-    let text = block.text.as_ref().map(|value| builder.create_string(value));
+    let text = block
+        .text
+        .as_ref()
+        .map(|value| builder.create_string(value));
     let url = block.url.as_ref().map(|value| builder.create_string(value));
     let language = block
         .language
