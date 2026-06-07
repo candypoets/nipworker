@@ -539,11 +539,15 @@ export class NativeBackend extends BaseBackend {
 				if (msg.result) {
 					this.activePubkey = msg.result;
 					if (this._pendingSession) {
-						this.saveSession(
-							this.activePubkey!,
-							this._pendingSession.type,
-							this._pendingSession.payload
-						);
+						const sessionPayload =
+							this._pendingSession.type === 'nip46' &&
+							typeof msg.bunker_url === 'string' &&
+							msg.bunker_url.startsWith('bunker://') &&
+							this._pendingSession.payload &&
+							typeof this._pendingSession.payload === 'object'
+								? { ...this._pendingSession.payload, url: msg.bunker_url }
+								: this._pendingSession.payload;
+						this.saveSession(this.activePubkey!, this._pendingSession.type, sessionPayload);
 						this._pendingSession = null;
 					}
 				}

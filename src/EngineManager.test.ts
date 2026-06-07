@@ -142,6 +142,46 @@ describe('EngineManager', () => {
 			expect(detail.hasSigner).toBe(true);
 		});
 
+		it('should persist discovered bunker URL after NIP-46 QR auth', () => {
+			const manager = new EngineManager();
+			const setItem = vi.mocked((globalThis as any).localStorage.setItem);
+			setItem.mockClear();
+			(manager as any)._pendingSession = {
+				type: 'nip46',
+				payload: {
+					url: 'nostrconnect://client?relay=wss%3A%2F%2Fr&secret=s',
+					clientSecret: 'secret'
+				}
+			};
+
+			const bunkerUrl =
+				'bunker://abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890?relay=wss%3A%2F%2Fr&secret=s';
+			const workerBytes = buildCryptoRawMessage(
+				JSON.stringify({
+					op: 'get_public_key',
+					result: 'abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890',
+					bunker_url: bunkerUrl
+				})
+			);
+			const data = new Uint8Array(4 + workerBytes.length);
+			const view = new DataView(data.buffer);
+			view.setUint32(0, workerBytes.length, true);
+			data.set(workerBytes, 4);
+
+			(manager as any).handleCryptoMessage(data.buffer);
+
+			const accountsCall = setItem.mock.calls.find(([key]) => key === 'nostr_signer_accounts');
+			expect(accountsCall).toBeDefined();
+			const accounts = JSON.parse(accountsCall![1]);
+			expect(
+				accounts.abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890.payload.url
+			).toBe(bunkerUrl);
+			expect(
+				accounts.abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890.payload
+					.clientSecret
+			).toBe('secret');
+		});
+
 		it('should call _signCB on sign_event success', () => {
 			const manager = new EngineManager();
 			const signHandler = vi.fn();

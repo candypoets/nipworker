@@ -586,6 +586,8 @@ impl CryptoWorker {
                                                             let to_main_pubkey =
                                                                 to_main_discovery.clone();
                                                             spawn_worker(async move {
+                                                                let bunker_url = nip46_for_pubkey
+                                                                    .get_bunker_url();
                                                                 let raw_json =
                                                                     match nip46_for_pubkey
                                                                         .get_public_key()
@@ -594,7 +596,8 @@ impl CryptoWorker {
                                                                         Ok(pubkey) => {
                                                                             serde_json::json!({
                                                                                 "op": "get_public_key",
-                                                                                "result": pubkey
+                                                                                "result": pubkey,
+                                                                                "bunker_url": bunker_url
                                                                             })
                                                                             .to_string()
                                                                         }

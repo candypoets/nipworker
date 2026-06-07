@@ -339,10 +339,27 @@ export class NostrManager extends BaseBackend {
 		return typeof value === 'string' && /^[0-9a-f]{64}$/i.test(value);
 	}
 
-	private handleSignerPubkey(pubkey: string, secretKey?: unknown) {
+	private sessionPayloadForSigner(bunkerUrl?: unknown) {
+		if (
+			this._pendingSession?.type === 'nip46' &&
+			typeof bunkerUrl === 'string' &&
+			bunkerUrl.startsWith('bunker://') &&
+			this._pendingSession.payload &&
+			typeof this._pendingSession.payload === 'object'
+		) {
+			return { ...this._pendingSession.payload, url: bunkerUrl };
+		}
+		return this._pendingSession?.payload;
+	}
+
+	private handleSignerPubkey(pubkey: string, secretKey?: unknown, bunkerUrl?: unknown) {
 		this.activePubkey = pubkey;
 		if (this._pendingSession) {
-			this.saveSession(this.activePubkey, this._pendingSession.type, this._pendingSession.payload);
+			this.saveSession(
+				this.activePubkey,
+				this._pendingSession.type,
+				this.sessionPayloadForSigner(bunkerUrl)
+			);
 			this._pendingSession = null;
 		}
 		this.dispatch('auth', {
@@ -358,7 +375,7 @@ export class NostrManager extends BaseBackend {
 			const secretKey =
 				this._pendingSession?.type === 'privkey' ? this._pendingSession.payload : undefined;
 			if (this.isPubkeyResult(msg.result)) {
-				this.handleSignerPubkey(msg.result, secretKey);
+				this.handleSignerPubkey(msg.result, secretKey, msg.bunker_url);
 				return;
 			}
 			this.dispatch('auth', { pubkey: this.activePubkey, hasSigner: false });
@@ -367,7 +384,7 @@ export class NostrManager extends BaseBackend {
 			const secretKey =
 				this._pendingSession?.type === 'privkey' ? this._pendingSession.payload : undefined;
 			if (this.isPubkeyResult(msg.result)) {
-				this.handleSignerPubkey(msg.result, secretKey);
+				this.handleSignerPubkey(msg.result, secretKey, msg.bunker_url);
 			} else if (this._pendingSession?.type === 'nip46' && msg.result) {
 				this.getPublicKey();
 			} else if (msg.error) {
