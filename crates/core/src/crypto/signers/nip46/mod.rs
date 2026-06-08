@@ -146,7 +146,9 @@ impl Nip46Signer {
             url.push_str(&format!("relay={}", encoded_relay));
         }
         if let Some(secret) = &self.cfg.expected_secret {
-            url.push_str(&format!("&secret={}", secret));
+            let encoded_secret: String =
+                url::form_urlencoded::byte_serialize(secret.as_bytes()).collect();
+            url.push_str(&format!("&secret={}", encoded_secret));
         }
         debug!("[nip46] Generated bunker URL: {}", url);
         Some(url)
@@ -374,5 +376,45 @@ impl Nip46Signer {
 
     fn unix_time_ms() -> f64 {
         crate::platform::now_millis() as f64
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::channel::ChannelError;
+
+    struct NoopSender;
+
+    impl MessageSender for NoopSender {
+        fn send(&self, _bytes: &[u8]) -> Result<(), ChannelError> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn get_bunker_url_percent_encodes_secret() {
+        let (_tx, rx) = mpsc::channel::<Vec<u8>>(1);
+        let signer = Nip46Signer::new(
+            Nip46Config {
+                remote_signer_pubkey: String::new(),
+                relays: vec!["wss://relay.example".to_string()],
+                use_nip44: true,
+                app_name: None,
+                expected_secret: Some("a+b&c=d".to_string()),
+            },
+            Rc::new(RefCell::new(NoopSender)),
+            rx,
+            None,
+        );
+
+        *signer.discovered_remote_pubkey.borrow_mut() =
+            Some("abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890".to_string());
+
+        let url = signer.get_bunker_url().unwrap();
+        assert_eq!(
+            url,
+            "bunker://abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890?relay=wss%3A%2F%2Frelay.example&secret=a%2Bb%26c%3Dd"
+        );
     }
 }

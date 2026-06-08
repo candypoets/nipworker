@@ -283,18 +283,7 @@ fn parse_bunker_url(url: &str) -> Result<BunkerUrl, String> {
 
     let query = parts[1];
     let mut relays = Vec::new();
-    let mut secret = None;
 
-    for pair in query.split('&') {
-        let mut kv = pair.splitn(2, '=');
-        let key = kv.next().unwrap_or("");
-        let value = kv.next().unwrap_or("");
-        let decoded = url::form_urlencoded::byte_serialize(value.as_bytes()).collect::<String>();
-        // Actually form_urlencoded::byte_serialize encodes; we need decode.
-        // Let's use percent_decode instead.
-    }
-
-    // Re-parse with proper decoding
     let params = url::Url::parse(&format!("http://localhost/?{}", query))
         .map_err(|e| format!("Invalid URL parameters: {}", e))?;
 
@@ -309,7 +298,7 @@ fn parse_bunker_url(url: &str) -> Result<BunkerUrl, String> {
         return Err("No relays specified in bunker URL".to_string());
     }
 
-    secret = params.query_pairs().find_map(|(k, v)| {
+    let secret = params.query_pairs().find_map(|(k, v)| {
         if k == "secret" {
             Some(v.to_string())
         } else {
@@ -962,6 +951,36 @@ mod new_tests {
         );
         builder.finish(req, None);
         builder.finished_data().to_vec()
+    }
+
+    #[test]
+    fn test_parse_bunker_url_decodes_secret() {
+        let parsed = super::parse_bunker_url(
+            "bunker://abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890?relay=wss%3A%2F%2Frelay.example&secret=a%2Bb%26c%3Dd",
+        )
+        .unwrap();
+
+        assert_eq!(
+            parsed.remote_pubkey,
+            "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+        );
+        assert_eq!(parsed.relays, vec!["wss://relay.example"]);
+        assert_eq!(parsed.secret.as_deref(), Some("a+b&c=d"));
+    }
+
+    #[test]
+    fn test_parse_nostrconnect_url_decodes_secret() {
+        let parsed = super::parse_nostrconnect_url(
+            "nostrconnect://abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890?relay=wss%3A%2F%2Frelay.example&secret=a%2Bb%26c%3Dd",
+        )
+        .unwrap();
+
+        assert_eq!(
+            parsed.client_pubkey,
+            "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+        );
+        assert_eq!(parsed.relays, vec!["wss://relay.example"]);
+        assert_eq!(parsed.secret, "a+b&c=d");
     }
 
     #[tokio::test]
