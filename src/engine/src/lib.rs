@@ -13,20 +13,20 @@ static INIT: Once = Once::new();
 
 #[wasm_bindgen]
 pub fn init_tracing(level: String) {
-	INIT.call_once(|| {
-		let max_level = match level.to_lowercase().as_str() {
-			"trace" => tracing::Level::TRACE,
-			"debug" => tracing::Level::DEBUG,
-			"info" => tracing::Level::INFO,
-			"warn" => tracing::Level::WARN,
-			"error" => tracing::Level::ERROR,
-			_ => tracing::Level::INFO,
-		};
-		let mut builder = tracing_wasm::WASMLayerConfigBuilder::new();
-		builder.set_max_level(max_level);
-		tracing_wasm::set_as_global_default_with_config(builder.build());
-		console_error_panic_hook::set_once();
-	});
+    INIT.call_once(|| {
+        let max_level = match level.to_lowercase().as_str() {
+            "trace" => tracing::Level::TRACE,
+            "debug" => tracing::Level::DEBUG,
+            "info" => tracing::Level::INFO,
+            "warn" => tracing::Level::WARN,
+            "error" => tracing::Level::ERROR,
+            _ => tracing::Level::INFO,
+        };
+        let mut builder = tracing_wasm::WASMLayerConfigBuilder::new();
+        builder.set_max_level(max_level);
+        tracing_wasm::set_as_global_default_with_config(builder.build());
+        console_error_panic_hook::set_once();
+    });
 }
 
 mod idb_utils;
@@ -37,59 +37,78 @@ mod transport;
 use storage::NostrDbStorage;
 use transport::WebSocketTransport;
 
+fn js_array_to_strings(value: &JsValue) -> Vec<String> {
+    if !js_sys::Array::is_array(value) {
+        return Vec::new();
+    }
+    js_sys::Array::from(value)
+        .iter()
+        .filter_map(|v| v.as_string())
+        .filter(|v| !v.trim().is_empty())
+        .collect()
+}
+
 /// WASM-facing engine worker that hosts the full NostrEngine in a single thread.
 /// Thin wrapper — all orchestration lives in the TypeScript worker.
 #[wasm_bindgen]
 pub struct NipworkerEngine {
-	engine: Rc<NostrEngine>,
+    engine: Rc<NostrEngine>,
 }
 
 #[wasm_bindgen]
 impl NipworkerEngine {
-	/// new(on_event)
-	///
-	/// `on_event`: (subId: string, data: Uint8Array) => void
-	#[wasm_bindgen(constructor)]
-	pub fn new(on_event: js_sys::Function) -> Self {
-		info!("[nipworker-engine] Initializing WASM engine...");
+    /// new(on_event)
+    ///
+    /// `on_event`: (subId: string, data: Uint8Array) => void
+    #[wasm_bindgen(constructor)]
+    pub fn new(
+        on_event: js_sys::Function,
+        default_relays: JsValue,
+        indexer_relays: JsValue,
+    ) -> Self {
+        info!("[nipworker-engine] Initializing WASM engine...");
 
-		let transport = Arc::new(WebSocketTransport::new());
-		let storage = Arc::new(NostrDbStorage::new(8 * 1024 * 1024));
+        let transport = Arc::new(WebSocketTransport::new());
+        let storage = Arc::new(NostrDbStorage::new(
+            8 * 1024 * 1024,
+            js_array_to_strings(&default_relays),
+            js_array_to_strings(&indexer_relays),
+        ));
 
-		// ── Event sink: channel → JS callback ──
-		let (event_tx, mut event_rx) = mpsc::channel::<(String, Vec<u8>)>(256);
-		let cb = on_event.clone();
-		spawn_local(async move {
-			while let Some((sub_id, bytes)) = event_rx.next().await {
-				// Prepend 4-byte LE length so TS can use ArrayBufferReader
-				let mut batched = Vec::with_capacity(4 + bytes.len());
-				batched.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
-				batched.extend_from_slice(&bytes);
-				let arr = Uint8Array::new_with_length(batched.len() as u32);
-				arr.copy_from(&batched);
-				let _ = cb.call2(&JsValue::NULL, &sub_id.into(), &arr.into());
-			}
-		});
+        // ── Event sink: channel → JS callback ──
+        let (event_tx, mut event_rx) = mpsc::channel::<(String, Vec<u8>)>(256);
+        let cb = on_event.clone();
+        spawn_local(async move {
+            while let Some((sub_id, bytes)) = event_rx.next().await {
+                // Prepend 4-byte LE length so TS can use ArrayBufferReader
+                let mut batched = Vec::with_capacity(4 + bytes.len());
+                batched.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
+                batched.extend_from_slice(&bytes);
+                let arr = Uint8Array::new_with_length(batched.len() as u32);
+                arr.copy_from(&batched);
+                let _ = cb.call2(&JsValue::NULL, &sub_id.into(), &arr.into());
+            }
+        });
 
-		let engine = Rc::new(NostrEngine::new(transport, storage, event_tx));
+        let engine = Rc::new(NostrEngine::new(transport, storage, event_tx));
 
-		Self { engine }
-	}
+        Self { engine }
+    }
 
-	/// Dispatch a FlatBuffers MainMessage byte slice to the engine.
-	#[wasm_bindgen(js_name = handleMessage)]
-	pub fn handle_message(&self, bytes: &[u8]) {
-		let engine = self.engine.clone();
-		let bytes = bytes.to_vec();
-		spawn_local(async move {
-			if let Err(e) = engine.handle_message(&bytes).await {
-				tracing::warn!("[nipworker-engine] handle_message error: {}", e);
-			}
-		});
-	}
+    /// Dispatch a FlatBuffers MainMessage byte slice to the engine.
+    #[wasm_bindgen(js_name = handleMessage)]
+    pub fn handle_message(&self, bytes: &[u8]) {
+        let engine = self.engine.clone();
+        let bytes = bytes.to_vec();
+        spawn_local(async move {
+            if let Err(e) = engine.handle_message(&bytes).await {
+                tracing::warn!("[nipworker-engine] handle_message error: {}", e);
+            }
+        });
+    }
 
-	/// Wake the engine (e.g., after returning from background).
-	pub fn wake(&self) {
-		info!("[nipworker-engine] wake called");
-	}
+    /// Wake the engine (e.g., after returning from background).
+    pub fn wake(&self) {
+        info!("[nipworker-engine] wake called");
+    }
 }

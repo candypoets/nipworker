@@ -21,7 +21,7 @@ const memoryStorage = new Map<string, string>();
 let reactNativeBackendInstance: ReactNativeBackend | undefined;
 
 type ByteRuntime = {
-	init(): void;
+	init(config?: NostrManagerConfig): void;
 	handleMessage(bytes: ArrayBuffer): void;
 	setPrivateKey(secret: string): void;
 	deinit(): void;
@@ -97,17 +97,26 @@ const reactNativeBridge: NativeRuntimeBridge = {
 	getModule(): any {
 		const mod = getReactNativeModule();
 		return {
-			init(): void {
+			init(config?: NostrManagerConfig): void {
+				const relayConfig = {
+					defaultRelays: config?.defaultRelays ?? [],
+					indexerRelays: config?.indexerRelays ?? []
+				};
+				const hasRelayConfig =
+					relayConfig.defaultRelays.length > 0 || relayConfig.indexerRelays.length > 0;
+				if (hasRelayConfig && typeof mod.initEngine === 'function') {
+					mod.initEngine(relayConfig.defaultRelays, relayConfig.indexerRelays);
+				}
 				if (typeof mod.installByteRuntime === 'function') {
 					mod.installByteRuntime();
 				}
 				const byteRuntime = getByteRuntime();
 				if (byteRuntime) {
-					byteRuntime.init();
+					byteRuntime.init(relayConfig);
 					return;
 				}
 				if (typeof mod.initEngine === 'function') {
-					mod.initEngine();
+					mod.initEngine(relayConfig.defaultRelays, relayConfig.indexerRelays);
 				} else {
 					mod.init();
 				}
@@ -166,7 +175,7 @@ const reactNativeBridge: NativeRuntimeBridge = {
 				addListener(_eventName: string, listener: (event: any) => void): void {
 					const subscription = turbo?.onData
 						? turbo.onData((event: any) => handleQueuedEvent(listener, event))
-						: emitter.addListener(REACT_NATIVE_EVENT_NAME, (event: any) =>
+						: emitter!.addListener(REACT_NATIVE_EVENT_NAME, (event: any) =>
 								handleQueuedEvent(listener, event)
 							);
 					subscriptions.set(listener, subscription);

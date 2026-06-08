@@ -64,6 +64,14 @@ class NipworkerReactNativeModule(
 		external fun nipworkerInitWithStoragePath(userdata: Long, storagePath: String): Long
 
 		@JvmStatic
+		external fun nipworkerInitWithConfig(
+			userdata: Long,
+			storagePath: String,
+			defaultRelays: String,
+			indexerRelays: String
+		): Long
+
+		@JvmStatic
 		external fun nipworkerHandleMessage(handle: Long, bytes: ByteArray)
 
 		@JvmStatic
@@ -99,18 +107,37 @@ class NipworkerReactNativeModule(
 		// Required by NativeEventEmitter on Android legacy paths.
 	}
 
-	override fun initEngine() {
+	private fun readableArrayToCsv(values: ReadableArray?): String {
+		if (values == null) {
+			return ""
+		}
+		val relays = mutableListOf<String>()
+		for (i in 0 until values.size()) {
+			val relay = values.getString(i)?.trim()
+			if (!relay.isNullOrEmpty() && !relay.contains(",")) {
+				relays.add(relay)
+			}
+		}
+		return relays.joinToString(",")
+	}
+
+	override fun initEngine(defaultRelays: ReadableArray, indexerRelays: ReadableArray) {
 		activeModule = this
 		if (sharedHandle == 0L) {
 			sharedUserdata = nextUserdata.getAndIncrement()
 			val cacheDir = reactContext.filesDir.resolve("nipworker")
-			sharedHandle = nipworkerInitWithStoragePath(sharedUserdata, cacheDir.absolutePath)
+			sharedHandle = nipworkerInitWithConfig(
+				sharedUserdata,
+				cacheDir.absolutePath,
+				readableArrayToCsv(defaultRelays),
+				readableArrayToCsv(indexerRelays)
+			)
 		}
 	}
 
 	@ReactMethod(isBlockingSynchronousMethod = true)
 	override fun installByteRuntime(): Boolean {
-		initEngine()
+		initEngine(Arguments.createArray(), Arguments.createArray())
 		val runtimePtr = reactContext.javaScriptContextHolder?.get() ?: 0L
 		if (runtimePtr == 0L || sharedHandle == 0L) {
 			return false

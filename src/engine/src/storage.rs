@@ -22,12 +22,26 @@ pub struct NostrDbStorage {
 }
 
 impl NostrDbStorage {
-    pub fn new(max_buffer_size: usize) -> Self {
+    pub fn new(
+        max_buffer_size: usize,
+        default_relays: Vec<String>,
+        indexer_relays: Vec<String>,
+    ) -> Self {
+        let default_relays = if default_relays.is_empty() {
+            DEFAULT_RELAYS.iter().map(|s| s.to_string()).collect()
+        } else {
+            default_relays
+        };
+        let indexer_relays = if indexer_relays.is_empty() {
+            INDEXER_RELAYS.iter().map(|s| s.to_string()).collect()
+        } else {
+            indexer_relays
+        };
         let core = CoreNostrDbStorage::new(
             "nipworker".to_string(),
             max_buffer_size,
-            DEFAULT_RELAYS.iter().map(|s| s.to_string()).collect(),
-            INDEXER_RELAYS.iter().map(|s| s.to_string()).collect(),
+            default_relays,
+            indexer_relays,
         );
 
         Self {

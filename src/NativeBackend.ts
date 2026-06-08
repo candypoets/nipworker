@@ -366,7 +366,7 @@ export class NativeBackend extends BaseBackend {
 			eventName: runtimeBridge.eventName
 		};
 		nativeState.instance = this;
-		this.nativeModule.init();
+		this.nativeModule.init(_config);
 		this.setupVisibilityTracking();
 		scheduleMicrotask(() => this.restoreSession());
 		// Auto-register so hooks work without explicit setManager() call

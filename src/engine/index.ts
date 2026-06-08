@@ -55,11 +55,16 @@ function handleWorkerMessage(event: MessageEvent): void {
 	const { type, payload } = event.data;
 
 	if (type === 'init' && payload?.port) {
-		port = payload.port;
-		port.onmessage = handlePortMessage;
+		const initPort = payload.port as MessagePort;
+		port = initPort;
+		initPort.onmessage = handlePortMessage;
 
 		init_tracing(payload.logLevel || 'warn');
-			engine = new NipworkerEngine(forwardEvent);
+		engine = new NipworkerEngine(
+			forwardEvent,
+			payload.defaultRelays || [],
+			payload.indexerRelays || []
+		);
 		(self as any).__engine = engine;
 
 		self.postMessage({ type: 'ready' });

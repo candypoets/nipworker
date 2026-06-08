@@ -31,12 +31,36 @@ const INDEXER_RELAYS: &[&str] = &[
     "wss://profiles.nostr1.com",
 ];
 
-fn new_core_storage(max_buffer_size: usize) -> NostrDbStorage {
+fn split_relay_csv(value: *const c_char) -> Vec<String> {
+    if value.is_null() {
+        return Vec::new();
+    }
+    unsafe { CStr::from_ptr(value) }
+        .to_string_lossy()
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+fn fallback_relays(relays: Vec<String>, fallback: &[&str]) -> Vec<String> {
+    if relays.is_empty() {
+        fallback.iter().map(|s| s.to_string()).collect()
+    } else {
+        relays
+    }
+}
+
+fn new_core_storage(
+    max_buffer_size: usize,
+    default_relays: Vec<String>,
+    indexer_relays: Vec<String>,
+) -> NostrDbStorage {
     NostrDbStorage::new(
         "nipworker".to_string(),
         max_buffer_size,
-        DEFAULT_RELAYS.iter().map(|s| s.to_string()).collect(),
-        INDEXER_RELAYS.iter().map(|s| s.to_string()).collect(),
+        fallback_relays(default_relays, DEFAULT_RELAYS),
+        fallback_relays(indexer_relays, INDEXER_RELAYS),
     )
 }
 
@@ -97,6 +121,23 @@ pub extern "C" fn nipworker_init_with_storage_path(
     userdata: *mut c_void,
     storage_path: *const c_char,
 ) -> *mut c_void {
+    nipworker_init_with_config(
+        callback,
+        userdata,
+        storage_path,
+        std::ptr::null(),
+        std::ptr::null(),
+    )
+}
+
+#[no_mangle]
+pub extern "C" fn nipworker_init_with_config(
+    callback: extern "C" fn(*mut c_void, *const u8, usize),
+    userdata: *mut c_void,
+    storage_path: *const c_char,
+    default_relays: *const c_char,
+    indexer_relays: *const c_char,
+) -> *mut c_void {
     // Initialize tracing subscriber for native builds
     #[cfg(target_vendor = "apple")]
     {
@@ -137,6 +178,8 @@ pub extern "C" fn nipworker_init_with_storage_path(
             Some(PathBuf::from(path))
         }
     };
+    let default_relays = split_relay_csv(default_relays);
+    let indexer_relays = split_relay_csv(indexer_relays);
 
     // Set panic hook so Rust panics are visible instead of silent thread death
     std::panic::set_hook(Box::new(|info| {
@@ -166,12 +209,19 @@ pub extern "C" fn nipworker_init_with_storage_path(
                 move || {
                     if let Some(path) = storage_path.clone() {
                         Arc::new(PersistentNostrDbStorage::new(
-                            new_core_storage(8 * 1024 * 1024),
+                            new_core_storage(
+                                8 * 1024 * 1024,
+                                default_relays.clone(),
+                                indexer_relays.clone(),
+                            ),
                             FileBlobStore::new(path),
                         )) as Arc<dyn nipworker_core::traits::Storage>
                     } else {
-                        Arc::new(new_core_storage(8 * 1024 * 1024))
-                            as Arc<dyn nipworker_core::traits::Storage>
+                        Arc::new(new_core_storage(
+                            8 * 1024 * 1024,
+                            default_relays.clone(),
+                            indexer_relays.clone(),
+                        )) as Arc<dyn nipworker_core::traits::Storage>
                     }
                 },
                 async_event_tx,

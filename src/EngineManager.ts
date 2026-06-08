@@ -51,7 +51,15 @@ export class EngineManager extends BaseBackend {
 		this.enginePort = mainPort.port1;
 
 		this.worker.postMessage(
-			{ type: 'init', payload: { port: mainPort.port2, logLevel: _config.logLevel } },
+			{
+				type: 'init',
+				payload: {
+					port: mainPort.port2,
+					logLevel: _config.logLevel,
+					defaultRelays: _config.defaultRelays,
+					indexerRelays: _config.indexerRelays
+				}
+			},
 			[mainPort.port2]
 		);
 

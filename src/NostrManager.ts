@@ -116,7 +116,9 @@ export class NostrManager extends BaseBackend {
 				payload: {
 					parserPort: parser_cache.port1,
 					connectionsPort: cache_connections.port2,
-					logLevel: config.logLevel
+					logLevel: config.logLevel,
+					defaultRelays: config.defaultRelays,
+					indexerRelays: config.indexerRelays
 				}
 			} as InitCacheMsg,
 			[parser_cache.port1, cache_connections.port2]

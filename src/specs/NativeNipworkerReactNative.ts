@@ -2,7 +2,7 @@ import type { CodegenTypes, TurboModule } from 'react-native';
 import { TurboModuleRegistry } from 'react-native';
 
 export interface Spec extends TurboModule {
-	initEngine(): void;
+	initEngine(defaultRelays: Array<string>, indexerRelays: Array<string>): void;
 	handleMessage(bytes: Array<number>): void;
 	installByteRuntime(): boolean;
 	setPrivateKey(secret: string): void;

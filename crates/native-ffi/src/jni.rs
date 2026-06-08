@@ -28,6 +28,15 @@ extern "C" {
         storage_path: *mut c_void,
     ) -> i64;
 
+    fn impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerInitWithConfig(
+        env: *mut c_void,
+        cls: *mut c_void,
+        userdata: i64,
+        storage_path: *mut c_void,
+        default_relays: *mut c_void,
+        indexer_relays: *mut c_void,
+    ) -> i64;
+
     fn impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerHandleMessage(
         env: *mut c_void,
         cls: *mut c_void,
@@ -160,6 +169,27 @@ pub extern "C" fn Java_com_candypoets_nipworker_reactnative_NipworkerReactNative
             cls,
             userdata,
             storage_path,
+        )
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerInitWithConfig(
+    env: *mut c_void,
+    cls: *mut c_void,
+    userdata: i64,
+    storage_path: *mut c_void,
+    default_relays: *mut c_void,
+    indexer_relays: *mut c_void,
+) -> i64 {
+    unsafe {
+        impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerInitWithConfig(
+            env,
+            cls,
+            userdata,
+            storage_path,
+            default_relays,
+            indexer_relays,
         )
     }
 }

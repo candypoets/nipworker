@@ -25,6 +25,13 @@ extern void* nipworker_init_with_storage_path(
     void* userdata,
     const char* storage_path
 );
+extern void* nipworker_init_with_config(
+    void (*callback)(void* userdata, const uint8_t* ptr, size_t len),
+    void* userdata,
+    const char* storage_path,
+    const char* default_relays,
+    const char* indexer_relays
+);
 extern void nipworker_handle_message(void* handle, const uint8_t* ptr, size_t len);
 extern void nipworker_set_private_key(void* handle, const char* ptr);
 extern void nipworker_deinit(void* handle);
@@ -63,6 +70,14 @@ impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerInit(
 JNIEXPORT jlong JNICALL
 impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerInitWithStoragePath(
     JNIEnv* env, jclass cls, jlong userdata, jstring storage_path);
+JNIEXPORT jlong JNICALL
+impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerInitWithConfig(
+    JNIEnv* env,
+    jclass cls,
+    jlong userdata,
+    jstring storage_path,
+    jstring default_relays,
+    jstring indexer_relays);
 JNIEXPORT void JNICALL
 impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerHandleMessage(
     JNIEnv* env, jclass cls, jlong handle, jbyteArray bytes);
@@ -189,18 +204,54 @@ impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipwor
     jlong userdata,
     jstring storage_path
 ) {
+    return impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerInitWithConfig(
+        env,
+        cls,
+        userdata,
+        storage_path,
+        NULL,
+        NULL
+    );
+}
+
+JNI_USED
+JNIEXPORT jlong JNICALL
+impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerInitWithConfig(
+    JNIEnv* env,
+    jclass cls,
+    jlong userdata,
+    jstring storage_path,
+    jstring default_relays,
+    jstring indexer_relays
+) {
     ensure_jni_cache(env, cls);
     const char* cpath = NULL;
+    const char* cdefault_relays = NULL;
+    const char* cindexer_relays = NULL;
     if (storage_path != NULL) {
         cpath = (*env)->GetStringUTFChars(env, storage_path, NULL);
     }
-    void* handle = nipworker_init_with_storage_path(
+    if (default_relays != NULL) {
+        cdefault_relays = (*env)->GetStringUTFChars(env, default_relays, NULL);
+    }
+    if (indexer_relays != NULL) {
+        cindexer_relays = (*env)->GetStringUTFChars(env, indexer_relays, NULL);
+    }
+    void* handle = nipworker_init_with_config(
         native_callback,
         (void*)(uintptr_t)userdata,
-        cpath
+        cpath,
+        cdefault_relays,
+        cindexer_relays
     );
     if (storage_path != NULL && cpath != NULL) {
         (*env)->ReleaseStringUTFChars(env, storage_path, cpath);
+    }
+    if (default_relays != NULL && cdefault_relays != NULL) {
+        (*env)->ReleaseStringUTFChars(env, default_relays, cdefault_relays);
+    }
+    if (indexer_relays != NULL && cindexer_relays != NULL) {
+        (*env)->ReleaseStringUTFChars(env, indexer_relays, cindexer_relays);
     }
     return (jlong)handle;
 }

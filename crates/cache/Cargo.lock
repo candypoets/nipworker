@@ -628,6 +628,7 @@ name = "nipworker-cache"
 version = "0.1.0"
 dependencies = [
  "console_error_panic_hook",
+ "js-sys",
  "nipworker-core",
  "tracing",
  "tracing-wasm",

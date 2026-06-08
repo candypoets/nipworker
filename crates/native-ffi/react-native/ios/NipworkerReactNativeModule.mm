@@ -22,6 +22,7 @@
 extern "C" {
 void* nipworker_init(void (*callback)(void* userdata, const uint8_t* ptr, size_t len), void* userdata);
 void* nipworker_init_with_storage_path(void (*callback)(void* userdata, const uint8_t* ptr, size_t len), void* userdata, const char* storage_path);
+void* nipworker_init_with_config(void (*callback)(void* userdata, const uint8_t* ptr, size_t len), void* userdata, const char* storage_path, const char* default_relays, const char* indexer_relays);
 void nipworker_handle_message(void* handle, const uint8_t* ptr, size_t len);
 void nipworker_set_private_key(void* handle, const char* ptr);
 void nipworker_deinit(void* handle);
@@ -38,7 +39,8 @@ static void* NipworkerEngineHandle = NULL;
 static NSHashTable<NipworkerReactNativeModule*>* NipworkerListenerModules;
 
 static void NipworkerReactNativeCallbackForwarder(void* userdata, const uint8_t* ptr, size_t len);
-static void* NipworkerGetEngineHandle(void* userdata);
+static void* NipworkerGetEngineHandle(void* userdata, NSArray<NSString*>* defaultRelays, NSArray<NSString*>* indexerRelays);
+static void* NipworkerGetEngineHandleDefault(void* userdata);
 static void NipworkerNotifyQueuedPacket(void);
 static NSString* NipworkerStorageDirectory(void);
 
@@ -59,18 +61,40 @@ static std::vector<std::vector<uint8_t>> NipworkerDrainPackets() {
 	return packets;
 }
 
-static void* NipworkerGetEngineHandle(void* userdata) {
+static NSString* NipworkerRelayCSV(NSArray<NSString*>* relays) {
+	NSMutableArray<NSString*>* clean = [NSMutableArray array];
+	for (NSString* relay in relays ?: @[]) {
+		if (![relay isKindOfClass:[NSString class]]) {
+			continue;
+		}
+		NSString* trimmed = [relay stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+		if (trimmed.length > 0 && [trimmed rangeOfString:@","].location == NSNotFound) {
+			[clean addObject:trimmed];
+		}
+	}
+	return [clean componentsJoinedByString:@","];
+}
+
+static void* NipworkerGetEngineHandle(void* userdata, NSArray<NSString*>* defaultRelays, NSArray<NSString*>* indexerRelays) {
 	@synchronized ([NipworkerReactNativeModule class]) {
 		if (!NipworkerEngineHandle) {
 			NSString* path = NipworkerStorageDirectory();
-			NipworkerEngineHandle = nipworker_init_with_storage_path(
+			NSString* defaultRelayCSV = NipworkerRelayCSV(defaultRelays);
+			NSString* indexerRelayCSV = NipworkerRelayCSV(indexerRelays);
+			NipworkerEngineHandle = nipworker_init_with_config(
 				NipworkerReactNativeCallbackForwarder,
 				userdata,
-				[path UTF8String]
+				[path UTF8String],
+				[defaultRelayCSV UTF8String],
+				[indexerRelayCSV UTF8String]
 			);
 		}
 		return NipworkerEngineHandle;
 	}
+}
+
+static void* NipworkerGetEngineHandleDefault(void* userdata) {
+	return NipworkerGetEngineHandle(userdata, @[], @[]);
 }
 
 static NSString* NipworkerStorageDirectory(void) {
@@ -275,12 +299,12 @@ RCT_EXPORT_MODULE(NipworkerReactNativeModule)
 	}
 }
 
-RCT_REMAP_METHOD(init, initEngine) {
-	self.engineHandle = NipworkerGetEngineHandle((__bridge void*)self);
+RCT_EXPORT_METHOD(initEngine:(NSArray<NSString *> *)defaultRelays indexerRelays:(NSArray<NSString *> *)indexerRelays) {
+	self.engineHandle = NipworkerGetEngineHandle((__bridge void*)self, defaultRelays, indexerRelays);
 }
 
 RCT_EXPORT_BLOCKING_SYNCHRONOUS_METHOD(installByteRuntime) {
-	self.engineHandle = NipworkerGetEngineHandle((__bridge void*)self);
+	self.engineHandle = NipworkerGetEngineHandleDefault((__bridge void*)self);
 	if (NipworkerByteRuntimeInstalled.load()) {
 		self.byteRuntimeInstalled = YES;
 		self.byteRuntimeAddress = NipworkerByteRuntimeAddress;
@@ -361,7 +385,7 @@ RCT_EXPORT_BLOCKING_SYNCHRONOUS_METHOD(removeStorageItem:(NSString *)key) {
 - (void)installJSIBindingsWithRuntime:(facebook::jsi::Runtime &)runtime
                           callInvoker:(const std::shared_ptr<facebook::react::CallInvoker> &)callInvoker {
 	if (!self.engineHandle) {
-		self.engineHandle = NipworkerGetEngineHandle((__bridge void*)self);
+		self.engineHandle = NipworkerGetEngineHandleDefault((__bridge void*)self);
 	}
 	if (self.byteRuntimeInstalled && self.byteRuntimeAddress == &runtime) {
 		return;
