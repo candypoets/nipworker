@@ -221,6 +221,23 @@ impl SubscriptionManager {
                             let _max_total_npubs = config.max_total_npubs();
                             PipeType::NpubLimiter(NpubLimiterPipe::new(kind, limit_per_npub))
                         }
+                        fb::PipeConfig::ChatLimiterPipeConfig => {
+                            let config = pipe_config.config_as_chat_limiter_pipe_config().unwrap();
+                            let own_pubkey = config.own_pubkey().to_string();
+                            let limit_per_chat = config.limit_per_chat();
+                            let max_chats = config.max_chats();
+                            let kinds: Vec<u16> = config
+                                .kinds()
+                                .map(|v| v.iter().map(|k| k as u16).collect())
+                                .unwrap_or_default();
+
+                            PipeType::ChatLimiter(ChatLimiterPipe::new(
+                                own_pubkey,
+                                limit_per_chat,
+                                max_chats,
+                                kinds,
+                            ))
+                        }
                         fb::PipeConfig::MuteFilterPipeConfig => {
                             let config = pipe_config.config_as_mute_filter_pipe_config().unwrap();
 

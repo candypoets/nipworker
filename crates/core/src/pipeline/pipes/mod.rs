@@ -1,3 +1,4 @@
+mod chat_limiter;
 mod counter;
 mod kind_filter;
 mod mute;
@@ -7,6 +8,7 @@ mod proof_verification;
 mod save_to_db;
 mod serialize_events;
 
+pub use chat_limiter::ChatLimiterPipe;
 pub use counter::CounterPipe;
 pub use kind_filter::KindFilterPipe;
 pub use mute::{MuteCriteria, MuteFilterPipe};

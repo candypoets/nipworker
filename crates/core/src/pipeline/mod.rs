@@ -96,6 +96,7 @@ pub enum PipeType {
     SerializeEvents(SerializeEventsPipe),
     ProofVerification(ProofVerificationPipe),
     Counter(CounterPipe),
+    ChatLimiter(ChatLimiterPipe),
     KindFilter(KindFilterPipe),
     NpubLimiter(NpubLimiterPipe),
     MuteFilter(MuteFilterPipe),
@@ -109,6 +110,7 @@ impl PipeType {
             PipeType::SerializeEvents(pipe) => pipe.process(event).await,
             PipeType::ProofVerification(pipe) => pipe.process(event).await,
             PipeType::Counter(pipe) => pipe.process(event).await,
+            PipeType::ChatLimiter(pipe) => pipe.process(event).await,
             PipeType::KindFilter(pipe) => pipe.process(event).await,
             PipeType::NpubLimiter(pipe) => pipe.process(event).await,
             PipeType::MuteFilter(pipe) => pipe.process(event).await,
@@ -132,6 +134,9 @@ impl PipeType {
             PipeType::Counter(pipe) => {
                 <CounterPipe as Pipe>::process_cached_batch(pipe, messages).await
             }
+            PipeType::ChatLimiter(pipe) => {
+                <ChatLimiterPipe as Pipe>::process_cached_batch(pipe, messages).await
+            }
             PipeType::KindFilter(pipe) => {
                 <KindFilterPipe as Pipe>::process_cached_batch(pipe, messages).await
             }
@@ -151,6 +156,7 @@ impl PipeType {
             PipeType::SerializeEvents(pipe) => pipe.name(),
             PipeType::ProofVerification(pipe) => pipe.name(),
             PipeType::Counter(pipe) => pipe.name(),
+            PipeType::ChatLimiter(pipe) => pipe.name(),
             PipeType::KindFilter(pipe) => pipe.name(),
             PipeType::NpubLimiter(pipe) => pipe.name(),
             PipeType::MuteFilter(pipe) => pipe.name(),
@@ -164,6 +170,7 @@ impl PipeType {
             PipeType::SerializeEvents(pipe) => pipe.can_direct_output(),
             PipeType::ProofVerification(pipe) => pipe.can_direct_output(),
             PipeType::Counter(pipe) => pipe.can_direct_output(),
+            PipeType::ChatLimiter(pipe) => pipe.can_direct_output(),
             PipeType::KindFilter(pipe) => pipe.can_direct_output(),
             PipeType::NpubLimiter(pipe) => pipe.can_direct_output(),
             PipeType::MuteFilter(pipe) => pipe.can_direct_output(),
@@ -177,6 +184,7 @@ impl PipeType {
             PipeType::SerializeEvents(pipe) => pipe.run_for_cached_events(),
             PipeType::ProofVerification(pipe) => pipe.run_for_cached_events(),
             PipeType::Counter(pipe) => pipe.run_for_cached_events(),
+            PipeType::ChatLimiter(pipe) => pipe.run_for_cached_events(),
             PipeType::KindFilter(pipe) => pipe.run_for_cached_events(),
             PipeType::NpubLimiter(pipe) => pipe.run_for_cached_events(),
             PipeType::MuteFilter(pipe) => pipe.run_for_cached_events(),
@@ -190,6 +198,7 @@ impl PipeType {
             PipeType::SerializeEvents(pipe) => pipe.flush(),
             PipeType::ProofVerification(pipe) => pipe.flush(),
             PipeType::Counter(pipe) => pipe.flush(),
+            PipeType::ChatLimiter(pipe) => pipe.flush(),
             PipeType::KindFilter(pipe) => pipe.flush(),
             PipeType::NpubLimiter(pipe) => pipe.flush(),
             PipeType::MuteFilter(pipe) => pipe.flush(),
@@ -203,6 +212,7 @@ impl PipeType {
             PipeType::SerializeEvents(pipe) => pipe.on_eose(),
             PipeType::ProofVerification(pipe) => pipe.on_eose(),
             PipeType::Counter(pipe) => pipe.on_eose(),
+            PipeType::ChatLimiter(pipe) => pipe.on_eose(),
             PipeType::KindFilter(pipe) => pipe.on_eose(),
             PipeType::NpubLimiter(pipe) => pipe.on_eose(),
             PipeType::MuteFilter(pipe) => pipe.on_eose(),
