@@ -13,6 +13,7 @@ export { CacheInputMessage, CacheInputMessageT } from './fb/cache-input-message.
 export { CacheRequest, CacheRequestT } from './fb/cache-request.js';
 export { CacheResponse, CacheResponseT } from './fb/cache-response.js';
 export { CashuData, CashuDataT } from './fb/cashu-data.js';
+export { ChatLimiterPipeConfig, ChatLimiterPipeConfigT } from './fb/chat-limiter-pipe-config.js';
 export { CodeData, CodeDataT } from './fb/code-data.js';
 export { ConnectionStatus, ConnectionStatusT } from './fb/connection-status.js';
 export { Contact, ContactT } from './fb/contact.js';

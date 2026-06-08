@@ -27,6 +27,14 @@ table NpubLimiterPipeConfig {
   max_total_npubs: uint;      // Max total npubs to track
 }
 
+// Configuration for ChatLimiterPipe
+table ChatLimiterPipeConfig {
+  own_pubkey: string (required); // User's pubkey; own messages are keyed by recipient p-tag
+  limit_per_chat: uint = 5;      // Max initial events per chat before timestamp gate applies
+  max_chats: uint = 5000;        // Max chat IDs to track
+  kinds: [ushort];              // Optional kinds to limit; empty means all kinds
+}
+
 // Configuration for SaveToDbPipe - no parameters needed
 table SaveToDbPipeConfig {
   // Empty - uses shared database instance
@@ -56,6 +64,7 @@ union PipeConfig {
   KindFilterPipeConfig,
   CounterPipeConfig,
   NpubLimiterPipeConfig,
+  ChatLimiterPipeConfig,
   SaveToDbPipeConfig,
   SerializeEventsPipeConfig,
   ProofVerificationPipeConfig,
