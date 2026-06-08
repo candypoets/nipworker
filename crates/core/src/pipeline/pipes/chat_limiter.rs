@@ -19,12 +19,7 @@ pub struct ChatLimiterPipe {
 }
 
 impl ChatLimiterPipe {
-    pub fn new(
-        own_pubkey: String,
-        limit_per_chat: u32,
-        max_chats: u32,
-        kinds: Vec<u16>,
-    ) -> Self {
+    pub fn new(own_pubkey: String, limit_per_chat: u32, max_chats: u32, kinds: Vec<u16>) -> Self {
         let limit_per_chat = limit_per_chat.max(1);
         let max_chats = max_chats.max(1) as usize;
         let kinds = kinds.into_iter().collect();
@@ -64,8 +59,7 @@ impl ChatLimiterPipe {
             return Some(author);
         }
 
-        let tags = event.tags()?;
-        tags.iter().find_map(|tag| {
+        event.tags().iter().find_map(|tag| {
             let items = tag.items()?;
             if items.len() >= 2 && items.get(0) == "p" {
                 Some(items.get(1).to_string())
@@ -155,15 +149,13 @@ impl Pipe for ChatLimiterPipe {
                     } else {
                         let author = event.pubkey().to_string();
                         let chat_id = if author == self.own_pubkey {
-                            event.tags().and_then(|tags| {
-                                tags.iter().find_map(|tag| {
-                                    let items = tag.items()?;
-                                    if items.len() >= 2 && items.get(0) == "p" {
-                                        Some(items.get(1).to_string())
-                                    } else {
-                                        None
-                                    }
-                                })
+                            event.tags().iter().find_map(|tag| {
+                                let items = tag.items()?;
+                                if items.len() >= 2 && items.get(0) == "p" {
+                                    Some(items.get(1).to_string())
+                                } else {
+                                    None
+                                }
                             })
                         } else {
                             Some(author)
