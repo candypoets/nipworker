@@ -1,3 +1,4 @@
+use crate::generated::nostr::fb::Request;
 use crate::storage::db::sharded_storage::{ShardId, ShardedRingBufferStorage};
 use crate::storage::NostrDbStorage;
 use crate::traits::{Storage, StorageError};
@@ -131,5 +132,9 @@ impl<B: BlobStore> Storage for PersistentNostrDbStorage<B> {
     async fn initialize(&self) -> Result<(), StorageError> {
         self.core.initialize().await?;
         self.hydrate_from_blob_store().await
+    }
+
+    fn get_relays(&self, request: &Request<'_>) -> Option<Vec<String>> {
+        self.core.get_relays(request)
     }
 }

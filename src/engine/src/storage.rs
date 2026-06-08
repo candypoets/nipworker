@@ -14,7 +14,7 @@ const INDEXER_RELAYS: &[&str] = &[
     "wss://user.kindpag.es",
     "wss://relay.nos.social",
     "wss://purplepag.es",
-    "wss://relay.nostr.band",
+    "wss://profiles.nostr1.com",
 ];
 
 pub struct NostrDbStorage {

@@ -230,6 +230,8 @@ impl CacheWorker {
                             .relays()
                             .map(|r| (0..r.len()).map(|j| r.get(j).to_string()).collect())
                             .filter(|v: &Vec<String>| !v.is_empty())
+                            .or_else(|| self._storage.get_relays(&fb_req))
+                            .filter(|v: &Vec<String>| !v.is_empty())
                             .unwrap_or_else(|| {
                                 DEFAULT_RELAYS.iter().map(|s| s.to_string()).collect()
                             });

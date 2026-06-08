@@ -239,6 +239,10 @@ impl Storage for NostrDbStorage {
             .map_err(|e| StorageError::Other(format!("NostrDB initialize failed: {}", e)))?;
         Ok(())
     }
+
+    fn get_relays(&self, request: &Request<'_>) -> Option<Vec<String>> {
+        Some(self.db.get_relays(request))
+    }
 }
 
 impl NostrDbStorage {

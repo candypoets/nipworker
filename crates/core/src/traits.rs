@@ -43,6 +43,13 @@ pub trait Storage {
     ) -> Result<Vec<Vec<u8>>, StorageError>;
     async fn persist(&self, event_bytes: &[u8]) -> Result<(), StorageError>;
     async fn initialize(&self) -> Result<(), StorageError>;
+
+    fn get_relays(
+        &self,
+        _request: &crate::generated::nostr::fb::Request<'_>,
+    ) -> Option<Vec<String>> {
+        None
+    }
 }
 
 #[async_trait(?Send)]
