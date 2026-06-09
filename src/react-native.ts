@@ -7,7 +7,7 @@
  *   import { createNostrManager } from '@candypoets/nipworker/react-native';
  */
 
-import { NativeEventEmitter, NativeModules } from 'react-native';
+import { AppState, NativeEventEmitter, NativeModules, type AppStateStatus } from 'react-native';
 
 import { NativeBackend, type NativeRuntimeBridge } from './NativeBackend';
 import { getManager, setManager, setGlobalManager } from './manager';
@@ -23,6 +23,7 @@ let reactNativeBackendInstance: ReactNativeBackend | undefined;
 type ByteRuntime = {
 	init(config?: NostrManagerConfig): void;
 	handleMessage(bytes: ArrayBuffer): void;
+	wake(): void;
 	setPrivateKey(secret: string): void;
 	deinit(): void;
 	drain(): ArrayBuffer[];
@@ -130,6 +131,16 @@ const reactNativeBridge: NativeRuntimeBridge = {
 				}
 				mod.handleMessage(Array.from(exact));
 			},
+			wake(): void {
+				const byteRuntime = getByteRuntime();
+				if (byteRuntime && typeof byteRuntime.wake === 'function') {
+					byteRuntime.wake();
+					return;
+				}
+				if (typeof mod.wake === 'function') {
+					mod.wake();
+				}
+			},
 			setPrivateKey(secret: string): void {
 				const byteRuntime = getByteRuntime();
 				if (byteRuntime) {
@@ -219,8 +230,24 @@ const reactNativeBridge: NativeRuntimeBridge = {
 };
 
 export class ReactNativeBackend extends NativeBackend {
+	private appStateSubscription: { remove: () => void } | undefined;
+	private appState = AppState.currentState;
+
 	constructor(config: NostrManagerConfig = {}) {
 		super(config, reactNativeBridge);
+		this.appStateSubscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
+			const wasBackgrounded = this.appState === 'background' || this.appState === 'inactive';
+			this.appState = nextState;
+			if (wasBackgrounded && nextState === 'active') {
+				this.wakeNative();
+			}
+		});
+	}
+
+	override deinit(): void {
+		this.appStateSubscription?.remove();
+		this.appStateSubscription = undefined;
+		super.deinit();
 	}
 }
 

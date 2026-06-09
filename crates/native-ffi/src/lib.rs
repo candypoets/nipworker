@@ -67,6 +67,7 @@ fn new_core_storage(
 /// Commands sent to the engine thread
 enum EngineCommand {
     HandleMessage(Vec<u8>),
+    Wake,
 }
 
 struct NipworkerState {
@@ -255,6 +256,9 @@ pub extern "C" fn nipworker_init_with_config(
                             }
                         });
                     }
+                    EngineCommand::Wake => {
+                        engine.wake();
+                    }
                 }
             }
         });
@@ -269,6 +273,22 @@ pub extern "C" fn nipworker_init_with_config(
         }),
     });
     Box::into_raw(handle) as *mut c_void
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn nipworker_wake(handle: *mut c_void) {
+    if handle.is_null() {
+        return;
+    }
+    let handle = unsafe { &*(handle as *mut NipworkerHandle) };
+    if let Ok(state) = handle.state.lock() {
+        if state.destroyed {
+            return;
+        }
+        if let Some(ref tx) = state.cmd_tx {
+            let _ = tx.send(EngineCommand::Wake);
+        }
+    }
 }
 
 #[no_mangle]

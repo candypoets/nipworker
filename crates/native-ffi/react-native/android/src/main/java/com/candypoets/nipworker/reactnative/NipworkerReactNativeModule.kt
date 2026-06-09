@@ -78,6 +78,9 @@ class NipworkerReactNativeModule(
 		external fun nipworkerSetPrivateKey(handle: Long, secret: String)
 
 		@JvmStatic
+		external fun nipworkerWake(handle: Long)
+
+		@JvmStatic
 		external fun nipworkerDeinit(handle: Long)
 
 		@JvmStatic
@@ -153,6 +156,13 @@ class NipworkerReactNativeModule(
 				data[i] = (bytes.getInt(i) and 0xff).toByte()
 			}
 			nipworkerHandleMessage(sharedHandle, data)
+		}
+	}
+
+	@ReactMethod
+	override fun wake() {
+		if (sharedHandle != 0L) {
+			nipworkerWake(sharedHandle)
 		}
 	}
 

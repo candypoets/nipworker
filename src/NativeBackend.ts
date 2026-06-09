@@ -381,9 +381,15 @@ export class NativeBackend extends BaseBackend {
 				wasHidden = true;
 			} else if (wasHidden) {
 				wasHidden = false;
-				// TODO: native engine wake not yet implemented via FFI
+				this.wakeNative();
 			}
 		});
+	}
+
+	protected wakeNative(): void {
+		if (typeof this.nativeModule?.wake === 'function') {
+			this.nativeModule.wake();
+		}
 	}
 
 	isDeinitialized(): boolean {

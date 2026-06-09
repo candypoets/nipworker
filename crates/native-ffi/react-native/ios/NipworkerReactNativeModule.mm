@@ -25,6 +25,7 @@ void* nipworker_init_with_storage_path(void (*callback)(void* userdata, const ui
 void* nipworker_init_with_config(void (*callback)(void* userdata, const uint8_t* ptr, size_t len), void* userdata, const char* storage_path, const char* default_relays, const char* indexer_relays);
 void nipworker_handle_message(void* handle, const uint8_t* ptr, size_t len);
 void nipworker_set_private_key(void* handle, const char* ptr);
+void nipworker_wake(void* handle);
 void nipworker_deinit(void* handle);
 void nipworker_free_bytes(uint8_t* ptr, size_t len);
 }
@@ -189,6 +190,19 @@ static void NipworkerInstallByteRuntime(facebook::jsi::Runtime& runtime, void* e
 	);
 	byteRuntime.setProperty(
 		runtime,
+		"wake",
+		facebook::jsi::Function::createFromHostFunction(
+			runtime,
+			facebook::jsi::PropNameID::forAscii(runtime, "wake"),
+			0,
+			[engineHandle](facebook::jsi::Runtime&, const facebook::jsi::Value&, const facebook::jsi::Value*, size_t) {
+				nipworker_wake(engineHandle);
+				return facebook::jsi::Value::undefined();
+			}
+		)
+	);
+	byteRuntime.setProperty(
+		runtime,
 		"deinit",
 		facebook::jsi::Function::createFromHostFunction(
 			runtime,
@@ -342,6 +356,12 @@ RCT_EXPORT_METHOD(handleMessage:(NSArray<NSNumber *> *)bytes) {
 RCT_EXPORT_METHOD(setPrivateKey:(NSString *)secret) {
 	if (self.engineHandle && secret) {
 		nipworker_set_private_key(self.engineHandle, [secret UTF8String]);
+	}
+}
+
+RCT_EXPORT_METHOD(wake) {
+	if (self.engineHandle) {
+		nipworker_wake(self.engineHandle);
 	}
 }
 

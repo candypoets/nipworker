@@ -34,6 +34,7 @@ extern void* nipworker_init_with_config(
 );
 extern void nipworker_handle_message(void* handle, const uint8_t* ptr, size_t len);
 extern void nipworker_set_private_key(void* handle, const char* ptr);
+extern void nipworker_wake(void* handle);
 extern void nipworker_deinit(void* handle);
 extern void nipworker_free_bytes(uint8_t* ptr, size_t len);
 
@@ -291,6 +292,17 @@ impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerSetPrivateK
     nipworker_set_private_key((void*)handle, cstr);
 
     (*env)->ReleaseStringUTFChars(env, secret, cstr);
+}
+
+JNI_USED
+JNIEXPORT void JNICALL
+impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerWake(
+    JNIEnv* env,
+    jclass cls,
+    jlong handle
+) {
+    if (handle == 0) return;
+    nipworker_wake((void*)handle);
 }
 
 JNI_USED

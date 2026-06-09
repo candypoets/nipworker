@@ -57,6 +57,12 @@ extern "C" {
         handle: i64,
     );
 
+    fn impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerWake(
+        env: *mut c_void,
+        cls: *mut c_void,
+        handle: i64,
+    );
+
     fn impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerFreeBytes(
         env: *mut c_void,
         cls: *mut c_void,
@@ -232,6 +238,17 @@ pub extern "C" fn Java_com_candypoets_nipworker_reactnative_NipworkerReactNative
         impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerDeinit(
             env, cls, handle,
         )
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerWake(
+    env: *mut c_void,
+    cls: *mut c_void,
+    handle: i64,
+) {
+    unsafe {
+        impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerWake(env, cls, handle)
     }
 }
 

@@ -5,6 +5,7 @@ export interface Spec extends TurboModule {
 	initEngine(defaultRelays: Array<string>, indexerRelays: Array<string>): void;
 	handleMessage(bytes: Array<number>): void;
 	installByteRuntime(): boolean;
+	wake(): void;
 	setPrivateKey(secret: string): void;
 	getStorageItem(key: string): string | null;
 	setStorageItem(key: string, value: string): boolean;
