@@ -1,7 +1,18 @@
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import { NativeBackend } from './NativeBackend';
 import * as flatbuffers from 'flatbuffers';
-import { WorkerMessage, MessageType, Raw, Message } from './generated/nostr/fb';
+import {
+	WorkerMessage,
+	MessageType,
+	Raw,
+	Message,
+	MainMessage,
+	MainContent,
+	SetSigner,
+	SignerType,
+	Nip46BunkerT,
+	Nip46QRT
+} from './generated/nostr/fb';
 
 const mockNativeModule = {
 	init: vi.fn(),
@@ -257,6 +268,48 @@ describe('NativeBackend', () => {
 			const detail = authHandler.mock.calls[0][0].detail;
 			expect(detail.pubkey).toBeNull();
 			expect(detail.hasSigner).toBe(false);
+		});
+	});
+
+	describe('setSigner', () => {
+		it('packs NIP-46 bunker signer fields for the native engine', () => {
+			const backend = new NativeBackend();
+
+			backend.setSigner('nip46', {
+				url: 'bunker://remote?relay=wss%3A%2F%2Fr',
+				clientSecret: 'secret'
+			});
+
+			const sent = mockNativeModule.handleMessage.mock.calls[
+				mockNativeModule.handleMessage.mock.calls.length - 1
+			][0] as ArrayBuffer;
+			const main = MainMessage.getRootAsMainMessage(new flatbuffers.ByteBuffer(new Uint8Array(sent)));
+			expect(main.contentType()).toBe(MainContent.SetSigner);
+			const setSigner = main.content(new SetSigner())!;
+			expect(setSigner.signerTypeType()).toBe(SignerType.Nip46Bunker);
+			const unpacked = setSigner.unpack().signerType as Nip46BunkerT;
+			expect(unpacked.bunkerUrl).toBe('bunker://remote?relay=wss%3A%2F%2Fr');
+			expect(unpacked.clientSecret).toBe('secret');
+		});
+
+		it('packs NIP-46 QR signer fields for the native engine', () => {
+			const backend = new NativeBackend();
+
+			backend.setSigner('nip46', {
+				url: 'nostrconnect://client?relay=wss%3A%2F%2Fr&secret=s',
+				clientSecret: 'secret'
+			});
+
+			const sent = mockNativeModule.handleMessage.mock.calls[
+				mockNativeModule.handleMessage.mock.calls.length - 1
+			][0] as ArrayBuffer;
+			const main = MainMessage.getRootAsMainMessage(new flatbuffers.ByteBuffer(new Uint8Array(sent)));
+			expect(main.contentType()).toBe(MainContent.SetSigner);
+			const setSigner = main.content(new SetSigner())!;
+			expect(setSigner.signerTypeType()).toBe(SignerType.Nip46QR);
+			const unpacked = setSigner.unpack().signerType as Nip46QRT;
+			expect(unpacked.nostrconnectUrl).toBe('nostrconnect://client?relay=wss%3A%2F%2Fr&secret=s');
+			expect(unpacked.clientSecret).toBe('secret');
 		});
 	});
 });

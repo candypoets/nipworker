@@ -9,6 +9,8 @@ import {
 	MainMessageT,
 	MessageType,
 	MuteFilterPipeConfigT,
+	Nip46BunkerT,
+	Nip46QRT,
 	ParsePipeConfigT,
 	PipeConfig,
 	PipelineConfigT,
@@ -19,8 +21,10 @@ import {
 	RequestT,
 	SaveToDbPipeConfigT,
 	SerializeEventsPipeConfigT,
+	SetSignerT,
 	SignEventT,
 	SignedEvent,
+	SignerType,
 	StringVec,
 	StringVecT,
 	SubscribeT,
@@ -707,9 +711,28 @@ export class NativeBackend extends BaseBackend {
 				this.dispatch('auth', { pubkey: null, hasSigner: false });
 				break;
 			case 'nip46': {
-				// TODO: native engine does not yet expose a proxy signer callback.
-				console.warn('[NativeBackend] NIP-46 is not yet supported in the native backend');
-				this.dispatch('auth', { pubkey: null, hasSigner: false });
+				const nip46Payload = payload as { url: string; clientSecret: string } | undefined;
+				const url = nip46Payload?.url || '';
+				const clientSecret = nip46Payload?.clientSecret;
+				if (url.startsWith('bunker://')) {
+					const bunkerT = new Nip46BunkerT(url, clientSecret);
+					const setSignerT = new SetSignerT(SignerType.Nip46Bunker, bunkerT);
+					const mainT = new MainMessageT(MainContent.SetSigner, setSignerT);
+					const builder = new flatbuffers.Builder(2048);
+					builder.finish(mainT.pack(builder));
+					this.postMessage(builder.asUint8Array());
+				} else if (url.startsWith('nostrconnect://')) {
+					const qrT = new Nip46QRT(url, clientSecret);
+					const setSignerT = new SetSignerT(SignerType.Nip46QR, qrT);
+					const mainT = new MainMessageT(MainContent.SetSigner, setSignerT);
+					const builder = new flatbuffers.Builder(2048);
+					builder.finish(mainT.pack(builder));
+					this.postMessage(builder.asUint8Array());
+				} else {
+					console.error('[NativeBackend] Unknown NIP-46 URL format:', url);
+					this._pendingSession = null;
+					this.dispatch('auth', { pubkey: null, hasSigner: false });
+				}
 				break;
 			}
 		}
