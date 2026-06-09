@@ -49,6 +49,26 @@ pub struct ConnectionsWorker {
     connections: Arc<RwLock<HashMap<String, Arc<RelayConnection>>>>,
 }
 
+pub struct ConnectionsHandle {
+    connections: Arc<RwLock<HashMap<String, Arc<RelayConnection>>>>,
+}
+
+impl ConnectionsHandle {
+    pub fn wake_all(&self) {
+        let connections: Vec<Arc<RelayConnection>> =
+            self.connections.read().unwrap().values().cloned().collect();
+
+        info!(
+            count = connections.len(),
+            "[ConnectionsWorker] waking all relay connections"
+        );
+
+        for conn in connections {
+            conn.wake();
+        }
+    }
+}
+
 impl ConnectionsWorker {
     pub fn new(transport: Arc<dyn RelayTransport>) -> Self {
         Self {
@@ -64,7 +84,11 @@ impl ConnectionsWorker {
         mut from_cache: Box<dyn WorkerChannel>,
         mut from_crypto: Box<dyn WorkerChannel>,
         to_crypto: Box<dyn MessageSender>,
-    ) {
+    ) -> ConnectionsHandle {
+        let handle = ConnectionsHandle {
+            connections: self.connections.clone(),
+        };
+
         // Bridge multiple callback clones into the single MessageSender
         let (parser_tx, mut parser_rx) = futures::channel::mpsc::unbounded::<Vec<u8>>();
         spawn_worker(async move {
@@ -289,6 +313,8 @@ impl ConnectionsWorker {
             }
             info!("[ConnectionsWorker] crypto loop exiting");
         });
+
+        handle
     }
 }
 
@@ -496,6 +522,7 @@ mod tests {
 
     async fn setup() -> (
         Arc<MockRelayTransport>,
+        ConnectionsHandle,
         TokioWorkerChannel,
         TokioWorkerChannel,
         TokioWorkerChannel,
@@ -510,7 +537,7 @@ mod tests {
         let transport = Arc::new(MockRelayTransport::new());
         let worker = ConnectionsWorker::new(transport.clone());
 
-        worker.run(
+        let handle = worker.run(
             Box::new(parser_worker),
             parser_out_worker.clone_sender(),
             Box::new(cache_worker),
@@ -520,6 +547,7 @@ mod tests {
 
         (
             transport,
+            handle,
             parser_test,
             parser_out_test,
             cache_test,
@@ -532,7 +560,7 @@ mod tests {
         let local = LocalSet::new();
         local
 				.run_until(async {
-					let (transport, parser_test, _parser_out_test, _cache_test, _crypto_test) = setup().await;
+                    let (transport, _worker, parser_test, _parser_out_test, _cache_test, _crypto_test) = setup().await;
 
 					let msg = build_raw_worker_message("wss://r", "hello");
 					parser_test.send(&msg).await.unwrap();
@@ -558,7 +586,7 @@ mod tests {
         let local = LocalSet::new();
         local
             .run_until(async {
-                let (transport, parser_test, _parser_out_test, _cache_test, _crypto_test) =
+                let (transport, _worker, parser_test, _parser_out_test, _cache_test, _crypto_test) =
                     setup().await;
 
                 let msg = build_nostr_event_worker_message("wss://r");
@@ -595,7 +623,7 @@ mod tests {
         let local = LocalSet::new();
         local
             .run_until(async {
-                let (transport, parser_test, _parser_out_test, _cache_test, _crypto_test) =
+                let (transport, _worker, parser_test, _parser_out_test, _cache_test, _crypto_test) =
                     setup().await;
 
                 let msg = build_close_worker_message("wss://r");
@@ -618,7 +646,7 @@ mod tests {
         let local = LocalSet::new();
         local
 				.run_until(async {
-					let (transport, _parser_test, _parser_out_test, cache_test, _crypto_test) = setup().await;
+					let (transport, _worker, _parser_test, _parser_out_test, cache_test, _crypto_test) = setup().await;
 
 					let envelope = serde_json::json!({
 						"relays": ["wss://r"],
@@ -644,11 +672,52 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_wake_all_wakes_existing_connections() {
+        let local = LocalSet::new();
+        local
+            .run_until(async {
+                let (transport, handle, _parser_test, _parser_out_test, cache_test, _crypto_test) =
+                    setup().await;
+
+                let req_frame = r#"["REQ","s1",{}]"#;
+                let envelope = serde_json::json!({
+                    "relays": ["wss://r"],
+                    "frames": [req_frame]
+                });
+                let bytes = serde_json::to_vec(&envelope).unwrap();
+                cache_test.send(&bytes).await.unwrap();
+                tokio::task::yield_now().await;
+                tokio::task::yield_now().await;
+                tokio::task::yield_now().await;
+
+                handle.wake_all();
+                tokio::task::yield_now().await;
+                tokio::task::yield_now().await;
+                tokio::task::yield_now().await;
+                tokio::task::yield_now().await;
+
+                let calls = transport.calls();
+                let disconnects = calls
+                    .iter()
+                    .filter(|c| matches!(c, Call::Disconnect(url) if url == "wss://r"))
+                    .count();
+                let sends = calls
+                    .iter()
+                    .filter(|c| matches!(c, Call::Send(url, frame) if url == "wss://r" && frame == req_frame))
+                    .count();
+
+                assert!(disconnects >= 1, "wake_all should wake existing relay connections");
+                assert!(sends >= 2, "wake_all should replay active relay REQ frames");
+            })
+            .await;
+    }
+
+    #[tokio::test]
     async fn test_crypto_envelope_forwards_nip46_frames() {
         let local = LocalSet::new();
         local
             .run_until(async {
-                let (transport, _parser_test, _parser_out_test, _cache_test, crypto_test) =
+                let (transport, _worker, _parser_test, _parser_out_test, _cache_test, crypto_test) =
                     setup().await;
 
                 let envelope = serde_json::json!({
@@ -688,8 +757,14 @@ mod tests {
         let local = LocalSet::new();
         local
             .run_until(async {
-                let (transport, parser_test, mut parser_out_test, _cache_test, mut crypto_test) =
-                    setup().await;
+                let (
+                    transport,
+                    _worker,
+                    parser_test,
+                    mut parser_out_test,
+                    _cache_test,
+                    mut crypto_test,
+                ) = setup().await;
 
                 let trigger = build_raw_worker_message("wss://r", "trigger");
                 parser_test.send(&trigger).await.unwrap();
@@ -730,7 +805,7 @@ mod tests {
         let local = LocalSet::new();
         local
             .run_until(async {
-                let (transport, _parser_test, _parser_out_test, cache_test, _crypto_test) =
+                let (transport, _worker, _parser_test, _parser_out_test, cache_test, _crypto_test) =
                     setup().await;
                 transport.set_connect_result(Err(TransportError::Other("fail".to_string())));
 
@@ -767,8 +842,14 @@ mod tests {
         let local = LocalSet::new();
         local
             .run_until(async {
-                let (transport, parser_test, mut parser_out_test, _cache_test, _crypto_test) =
-                    setup().await;
+                let (
+                    transport,
+                    _worker,
+                    parser_test,
+                    mut parser_out_test,
+                    _cache_test,
+                    _crypto_test,
+                ) = setup().await;
 
                 // Trigger callback registration by sending any message for the URL
                 let trigger = build_raw_worker_message("wss://r", "trigger");
@@ -795,8 +876,14 @@ mod tests {
         let local = LocalSet::new();
         local
             .run_until(async {
-                let (transport, parser_test, mut parser_out_test, _cache_test, _crypto_test) =
-                    setup().await;
+                let (
+                    transport,
+                    _worker,
+                    parser_test,
+                    mut parser_out_test,
+                    _cache_test,
+                    _crypto_test,
+                ) = setup().await;
 
                 // Trigger callback registration by sending any message for the URL
                 let trigger = build_raw_worker_message("wss://r", "trigger");
@@ -833,8 +920,14 @@ mod tests {
         let local = LocalSet::new();
         local
             .run_until(async {
-                let (transport, parser_test, mut parser_out_test, _cache_test, _crypto_test) =
-                    setup().await;
+                let (
+                    transport,
+                    _worker,
+                    parser_test,
+                    mut parser_out_test,
+                    _cache_test,
+                    _crypto_test,
+                ) = setup().await;
 
                 // Create active connection/registration for URL "wss://r1"
                 let trigger = build_raw_worker_message("wss://r1", "trigger");
@@ -879,7 +972,7 @@ mod tests {
         let local = LocalSet::new();
         local
 				.run_until(async {
-					let (transport, parser_test, _parser_out_test, cache_test, _crypto_test) = setup().await;
+					let (transport, _worker, parser_test, _parser_out_test, cache_test, _crypto_test) = setup().await;
 
 					// Connect and register URL "wss://r1" via cache envelope (which calls connect)
 					let envelope = serde_json::json!({
@@ -934,7 +1027,7 @@ mod tests {
         let local = LocalSet::new();
         local
             .run_until(async {
-                let (transport, _parser_test, _parser_out_test, cache_test, _crypto_test) =
+                let (transport, _worker, _parser_test, _parser_out_test, cache_test, _crypto_test) =
                     setup().await;
 
                 // Make all connects fail (MockRelayTransport uses a single shared result)
@@ -986,8 +1079,14 @@ mod tests {
         let local = LocalSet::new();
         local
             .run_until(async {
-                let (transport, parser_test, mut parser_out_test, _cache_test, _crypto_test) =
-                    setup().await;
+                let (
+                    transport,
+                    _worker,
+                    parser_test,
+                    mut parser_out_test,
+                    _cache_test,
+                    _crypto_test,
+                ) = setup().await;
 
                 // Register a URL with on_status callback by sending any message
                 let trigger = build_raw_worker_message("wss://r1", "trigger");
@@ -1035,7 +1134,7 @@ mod tests {
         let local = LocalSet::new();
         local
 			.run_until(async {
-				let (transport, _parser_test, _parser_out_test, cache_test, mut crypto_test) = setup().await;
+				let (transport, _worker, _parser_test, _parser_out_test, cache_test, mut crypto_test) = setup().await;
 
 				// Send cache envelope with REQ frame to establish connection
 				let envelope = serde_json::json!({

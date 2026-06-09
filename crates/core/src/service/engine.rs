@@ -13,6 +13,8 @@ use crate::traits::{RelayTransport, Storage};
 use crate::types::network::Request;
 use crate::types::nostr::Template;
 use crate::worker::cache_worker::CacheWorker;
+#[cfg(target_arch = "wasm32")]
+use crate::worker::connections_worker::ConnectionsHandle;
 use crate::worker::connections_worker::ConnectionsWorker;
 use crate::worker::crypto_worker::CryptoWorker;
 use crate::worker::parser_worker::ParserWorker;
@@ -27,6 +29,10 @@ pub struct NostrEngine {
     parser_tx: Box<dyn MessageSender>,
     crypto_tx: Box<dyn MessageSender>,
     event_sink: mpsc::Sender<(String, Vec<u8>)>,
+    #[cfg(target_arch = "wasm32")]
+    connections_handle: ConnectionsHandle,
+    #[cfg(not(target_arch = "wasm32"))]
+    connections_wake_tx: Option<tokio::sync::mpsc::UnboundedSender<()>>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -96,13 +102,15 @@ impl NostrEngine {
         );
 
         let connections_worker = ConnectionsWorker::new(transport);
-        connections_worker.run(
+        let connections_handle = connections_worker.run(
             Box::new(parser_conn_ch),
             conn_parser_tx,
             Box::new(conn_cache_ch),
             Box::new(conn_crypto_ch),
             conn_crypto_tx,
         );
+        #[cfg(not(target_arch = "wasm32"))]
+        let _connections_handle = connections_handle;
 
         let cache_worker = CacheWorker::new(storage);
         cache_worker.run(
@@ -165,6 +173,10 @@ impl NostrEngine {
             parser_tx: engine_parser_tx,
             crypto_tx: engine_crypto_tx,
             event_sink,
+            #[cfg(target_arch = "wasm32")]
+            connections_handle,
+            #[cfg(not(target_arch = "wasm32"))]
+            connections_wake_tx: None,
         }
     }
 
@@ -213,15 +225,24 @@ impl NostrEngine {
             );
         });
 
+        let (connections_wake_tx, mut connections_wake_rx) =
+            tokio::sync::mpsc::unbounded_channel::<()>();
+
         spawn_native_local_thread("nipworker-connections", move || {
             let connections_worker = ConnectionsWorker::new(transport_factory());
-            connections_worker.run(
+            let connections_handle = connections_worker.run(
                 Box::new(parser_conn_ch),
                 conn_parser_tx,
                 Box::new(conn_cache_ch),
                 Box::new(conn_crypto_ch),
                 conn_crypto_tx,
             );
+
+            tokio::task::spawn_local(async move {
+                while connections_wake_rx.recv().await.is_some() {
+                    connections_handle.wake_all();
+                }
+            });
         });
 
         spawn_native_local_thread("nipworker-cache", move || {
@@ -281,6 +302,21 @@ impl NostrEngine {
             parser_tx: engine_parser_tx,
             crypto_tx: engine_crypto_tx,
             event_sink,
+            connections_wake_tx: Some(connections_wake_tx),
+        }
+    }
+
+    pub fn wake(&self) {
+        #[cfg(target_arch = "wasm32")]
+        {
+            self.connections_handle.wake_all();
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            if let Some(tx) = &self.connections_wake_tx {
+                let _ = tx.send(());
+            }
         }
     }
 

@@ -9,13 +9,8 @@
 //! - Connection lifecycle management
 //! - Automatic reconnection and cleanup
 
-// pub mod connection;
-// pub mod connection_registry;
 pub mod types;
 
-// Re-export main public API
-// pub use connection::RelayConnection;
-// pub use connection_registry::ConnectionRegistry;
 pub use types::{
     ClientMessage, ConnectionStatus, PublishStatus, RelayError, RelayMessage, RelayResponse,
     SubscriptionStatus,
@@ -23,39 +18,6 @@ pub use types::{
 
 // Re-export nostr types for convenience
 pub use crate::types::nostr::{Event, EventId, Filter, PublicKey};
-
-/// Main entry point for relay operations
-///
-/// # Example
-///
-/// ```rust
-/// use nutscash_crate::types::nostr::relays::{ConnectionRegistry, SubscriptionHandle};
-/// use crate::types::nostr::{Filter, Kind};
-/// use futures::StreamExt;
-///
-/// async fn example() -> Result<(), Box<dyn std::error::Error>> {
-///     let registry = ConnectionRegistry::new();
-///
-///     // Create a subscription
-///     let filter = Filter::new().kinds([Kind::TextNote]).limit(10);
-///     let subscription = registry.subscribe(
-///         "my-sub-1".to_string(),
-///         vec![filter],
-///         vec!["wss://relay.damus.io".to_string()]
-///     ).await?;
-///
-///     // Listen for events
-///     let mut events = subscription.events();
-///     while let Some(event) = events.next().await {
-///         println!("Received event: {}", event.id);
-///     }
-///
-///     Ok(())
-/// }
-/// ```
-// pub type Registry = ConnectionRegistry;
-
-/// Create a new connection registry instance
 
 /// Utility functions for the relay module
 pub mod utils {

@@ -1,6 +1,6 @@
 /* WASM-based connections worker runtime (dedicated Web Worker, module) */
 
-import init, { start_worker, init_tracing } from '../../crates/connections/pkg/nipworker_connections.js';
+import init, { start_worker, init_tracing, wake_all } from '../../crates/connections/pkg/nipworker_connections.js';
 import wasmUrl from '../../crates/connections/pkg/nipworker_connections_bg.wasm?url';
 
 export type InitConnectionsMsg = {
@@ -41,8 +41,9 @@ self.addEventListener(
 			return;
 		}
 
-		// Wake is a no-op in the new architecture.
 		if (typeof msg === 'object' && msg !== null && msg.type === 'wake') {
+			await ensureWasm();
+			wake_all();
 			return;
 		}
 

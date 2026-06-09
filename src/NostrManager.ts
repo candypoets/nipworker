@@ -309,7 +309,8 @@ export class NostrManager extends BaseBackend {
 	 * Called when returning from background to foreground.
 	 */
 	private wakeWorkers(): void {
-		console.log('[main] Waking workers for foreground reconnection (no-op in new architecture)');
+		console.log('[main] Waking connections worker for foreground reconnection');
+		this.connections.postMessage({ type: 'wake', source: 'visibility' });
 	}
 
 	private postToWorker(message: { serializedMessage?: Uint8Array }) {

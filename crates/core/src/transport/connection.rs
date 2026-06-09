@@ -22,7 +22,7 @@ use futures::channel::mpsc::{self, Receiver, Sender};
 use futures::StreamExt;
 use serde_json::{json, Value};
 use std::cell::RefCell;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::{Arc, RwLock};
 use tracing::warn;
@@ -116,6 +116,7 @@ pub struct RelayConnection {
 
     stats: Arc<RwLock<ConnectionStats>>,
     active_subs: Arc<RwLock<HashSet<String>>>,
+    active_reqs: Arc<RwLock<HashMap<String, Vec<String>>>>,
     backoff_attempts: Arc<RwLock<u32>>,
     next_retry_at_ms: Arc<RwLock<u64>>,
 
@@ -154,6 +155,7 @@ impl RelayConnection {
             transport,
             stats: Arc::new(RwLock::new(ConnectionStats::default())),
             active_subs: Arc::new(RwLock::new(HashSet::new())),
+            active_reqs: Arc::new(RwLock::new(HashMap::new())),
             backoff_attempts: Arc::new(RwLock::new(0)),
             next_retry_at_ms: Arc::new(RwLock::new(0)),
             queue_tx: Arc::new(RwLock::new(Some(tx))),
@@ -372,7 +374,6 @@ impl RelayConnection {
                 match k {
                     "CLOSE" => {
                         if let Some(sub) = parts[1].map(|s| s.trim_matches('"').to_string()) {
-                            // New: use membership instead of a counter
                             {
                                 let mut set = self.active_subs.write().unwrap();
                                 set.remove(&sub);
@@ -381,6 +382,7 @@ impl RelayConnection {
                                     let _ = self.close();
                                 }
                             }
+                            self.active_reqs.write().unwrap().remove(&sub);
                             let raw_closed = format!(r#"["OK","{}","CLOSED"]"#, sub);
                             (self.out_writer)(&self.url, &sub, &raw_closed);
                         }
@@ -388,6 +390,11 @@ impl RelayConnection {
                     "REQ" => {
                         if let Some(sub_id) = parts[1].map(|s| s.trim_matches('"').to_string()) {
                             self.active_subs.write().unwrap().insert(sub_id.clone());
+                            let mut reqs = self.active_reqs.write().unwrap();
+                            let frames = reqs.entry(sub_id.clone()).or_default();
+                            if !frames.iter().any(|frame| frame == text) {
+                                frames.push(text.to_string());
+                            }
                             // optional: keep the synthetic notification
                             let raw_subscribed = format!(r#"["OK","{}","SUBSCRIBED"]"#, sub_id);
                             (self.out_writer)(&self.url, &sub_id, &raw_subscribed);
@@ -537,6 +544,13 @@ impl RelayConnection {
         tracing::info!(relay = %self.url, "Raw incoming: {}", text);
 
         if let Some((kind, sub_id, content)) = parse_incoming_relay_text(text) {
+            if kind == "CLOSED" {
+                if let Some(ref sub_id) = sub_id {
+                    self.active_subs.write().unwrap().remove(sub_id);
+                    self.active_reqs.write().unwrap().remove(sub_id);
+                }
+            }
+
             // Handle NIP-42 authentication state machine on first response
             let content_for_auth = content.as_deref().unwrap_or("");
             self.handle_first_response(&kind, content_for_auth);
@@ -637,6 +651,7 @@ impl RelayConnection {
         if !present {
             return false;
         }
+        self.active_reqs.write().unwrap().remove(sub_id);
 
         // Enqueue CLOSE frame; drainer will send when connected
         let frame = format!(r#"["CLOSE","{}"]"#, sub_id);
@@ -676,30 +691,44 @@ impl RelayConnection {
         Ok(())
     }
 
-    /// Wake up this connection: reset backoff and trigger immediate reconnect if needed.
-    /// Called when app returns from background to foreground.
+    /// Wake up this connection after app foregrounding.
+    ///
+    /// Mobile platforms can leave local websocket state stale after backgrounding, so wake
+    /// conservatively replaces the socket and replays the active REQ frames for this relay.
     pub fn wake(self: &Arc<Self>) {
         tracing::info!(relay = %self.url, status = ?*self.status.read().unwrap(), "[connections][wake] waking connection");
 
-        // Reset backoff to allow immediate reconnection attempt
         self.clear_backoff();
 
-        let status = *self.status.read().unwrap();
-        match status {
-            ConnectionStatus::Connected => {
-                tracing::info!(relay = %self.url, "[connections][wake] already connected, nothing to do");
+        let replay_frames: Vec<String> = self
+            .active_reqs
+            .read()
+            .unwrap()
+            .values()
+            .flat_map(|frames| frames.iter().cloned())
+            .collect();
+
+        let conn = Arc::clone(self);
+        spawn_worker(async move {
+            tracing::info!(
+                relay = %conn.url,
+                replay_count = replay_frames.len(),
+                "[connections][wake] forcing reconnect before replay"
+            );
+            let _ = conn.close();
+            conn.clear_backoff();
+
+            if let Err(e) = conn.connect().await {
+                tracing::warn!(relay = %conn.url, error = ?e, "[connections][wake] reconnect attempt failed");
+                return;
             }
-            _ => {
-                // Trigger reconnection by attempting connect
-                let conn = Arc::clone(self);
-                spawn_worker(async move {
-                    tracing::info!(relay = %conn.url, "[connections][wake] triggering reconnect");
-                    if let Err(e) = conn.connect().await {
-                        tracing::warn!(relay = %conn.url, error = ?e, "[connections][wake] reconnect attempt failed");
-                    }
-                });
+
+            for frame in replay_frames {
+                if let Err(e) = conn.send_raw(&frame) {
+                    tracing::warn!(relay = %conn.url, error = ?e, "[connections][wake] failed to enqueue replay frame");
+                }
             }
-        }
+        });
     }
 
     // ------------------------------------------------------------------
@@ -1575,6 +1604,103 @@ mod tests {
                     .iter()
                     .any(|(_, sub_id, raw)| sub_id == "s1" && raw == r#"["OK","s1","CLOSED"]"#);
                 assert!(closed, "expected synthetic CLOSED notification");
+            })
+            .await;
+    }
+
+    #[tokio::test]
+    async fn test_wake_reconnects_and_replays_active_reqs() {
+        let local = LocalSet::new();
+        local
+            .run_until(async {
+                let transport = Arc::new(MockRelayTransport::new());
+                let (out_writer, status_writer, to_crypto, _out, _status, _crypto) = make_writers();
+
+                let conn = RelayConnection::new(
+                    "wss://r".to_string(),
+                    transport.clone(),
+                    out_writer,
+                    status_writer,
+                    to_crypto,
+                );
+
+                tokio::task::yield_now().await;
+                tokio::task::yield_now().await;
+                tokio::task::yield_now().await;
+
+                let req_frame = r#"["REQ","s1",{}]"#;
+                conn.send_raw(req_frame).unwrap();
+                tokio::task::yield_now().await;
+                tokio::task::yield_now().await;
+                tokio::task::yield_now().await;
+
+                assert!(conn.active_subs.read().unwrap().contains("s1"));
+                assert_eq!(
+                    conn.active_reqs.read().unwrap().get("s1").cloned(),
+                    Some(vec![req_frame.to_string()])
+                );
+
+                conn.wake();
+                tokio::task::yield_now().await;
+                tokio::task::yield_now().await;
+                tokio::task::yield_now().await;
+                tokio::task::yield_now().await;
+
+                let calls = transport.calls();
+                let disconnects = calls
+                    .iter()
+                    .filter(|c| matches!(c, Call::Disconnect(url) if url == "wss://r"))
+                    .count();
+                let sends = calls
+                    .iter()
+                    .filter(|c| matches!(c, Call::Send(url, frame) if url == "wss://r" && frame == req_frame))
+                    .count();
+
+                assert!(disconnects >= 1, "wake should replace the websocket");
+                assert!(sends >= 2, "wake should replay the active REQ frame");
+            })
+            .await;
+    }
+
+    #[tokio::test]
+    async fn test_relay_closed_removes_active_req() {
+        let local = LocalSet::new();
+        local
+            .run_until(async {
+                let transport = Arc::new(MockRelayTransport::new());
+                let (out_writer, status_writer, to_crypto, out, _status, _crypto) = make_writers();
+
+                let conn = RelayConnection::new(
+                    "wss://r".to_string(),
+                    transport.clone(),
+                    out_writer,
+                    status_writer,
+                    to_crypto,
+                );
+
+                tokio::task::yield_now().await;
+                tokio::task::yield_now().await;
+                tokio::task::yield_now().await;
+
+                let req_frame = r#"["REQ","s1",{}]"#;
+                conn.send_raw(req_frame).unwrap();
+                tokio::task::yield_now().await;
+                tokio::task::yield_now().await;
+                tokio::task::yield_now().await;
+
+                assert!(conn.active_subs.read().unwrap().contains("s1"));
+                assert!(conn.active_reqs.read().unwrap().contains_key("s1"));
+
+                transport.invoke_message_callback(
+                    "wss://r",
+                    r#"["CLOSED","s1","blocked: policy"]"#.to_string(),
+                );
+
+                assert!(!conn.active_subs.read().unwrap().contains("s1"));
+                assert!(!conn.active_reqs.read().unwrap().contains_key("s1"));
+                assert!(out.lock().unwrap().iter().any(|(_, sub_id, raw)| {
+                    sub_id == "s1" && raw == r#"["CLOSED","s1","blocked: policy"]"#
+                }));
             })
             .await;
     }

@@ -110,5 +110,6 @@ impl NipworkerEngine {
     /// Wake the engine (e.g., after returning from background).
     pub fn wake(&self) {
         info!("[nipworker-engine] wake called");
+        self.engine.wake();
     }
 }
