@@ -37,6 +37,12 @@ pub struct ListParsed {
     pub people: Vec<String>, // "p" tags: pubkeys
     pub events: Vec<String>,        // "e" tags: event ids
     pub addresses: Vec<Coordinate>, // "a" tags: coordinates (kind:pubkey:d) + optional relay
+    /// Tags not represented by the typed fields above.
+    ///
+    /// This includes NIP-51 list-specific entries such as `relay` for kind 30002,
+    /// `url`, `emoji`, `server`, custom app tags, and private decrypted tags with
+    /// the same shape.
+    pub other_tags: Vec<Vec<String>>,
 }
 
 impl Parser {
@@ -58,123 +64,86 @@ impl Parser {
             ));
         }
 
-        // Metadata
-        let mut d = tag_value(&event.tags, "d");
-        let mut title = tag_value(&event.tags, "title");
-        let mut description =
-            tag_value(&event.tags, "description").or_else(|| tag_value(&event.tags, "summary"));
-        let mut image = tag_value(&event.tags, "image");
-        let mut topics = tag_values(&event.tags, "t");
-
-        // Entries
+        let mut d = None;
+        let mut title = None;
+        let mut description = None;
+        let mut image = None;
+        let mut topics = Vec::new();
         let mut people = Vec::new();
         let mut events_vec = Vec::new();
         let mut addresses = Vec::new();
+        let mut other_tags = Vec::new();
 
-        for tag in &event.tags {
-            if tag.len() < 2 {
-                continue;
-            }
-            match tag[0].as_str() {
-                "p" => {
-                    // ["p", "<pubkey>", <relay?>, ...]
-                    people.push(tag[1].clone());
-                }
-                "e" => {
-                    // ["e", "<event_id>", <relay?>, ...]
-                    events_vec.push(tag[1].clone());
-                }
-                "a" => {
-                    // ["a", "kind:pubkey:d", <relay?>, ...]
-                    if let Some(coord) = parse_coordinate(&tag[1], tag.get(2)) {
-                        addresses.push(coord);
-                    }
-                }
-                _ => {}
-            }
-        }
+        process_list_tags(
+            &event.tags,
+            &mut d,
+            &mut title,
+            &mut description,
+            &mut image,
+            &mut topics,
+            &mut people,
+            &mut events_vec,
+            &mut addresses,
+            &mut other_tags,
+        );
 
-        // Decrypt private content when specified by tags and merge entries parsed like tags
-        if let Some(enc) = tag_value(&event.tags, "encryption").map(|s| s.to_ascii_lowercase()) {
-            if !event.content.trim().is_empty() {
-                let author = event.pubkey.to_hex();
-                let plaintext = if let Some(signer) = &self.signer {
-                    let result = match enc.as_str() {
-                        "nip04" | "nip-04" => {
-                            signer
-                                .nip04_decrypt_between(&author, &author, &event.content)
-                                .await
-                        }
-                        "nip44" | "nip-44" => {
-                            signer
-                                .nip44_decrypt_between(&author, &author, &event.content)
-                                .await
-                        }
-                        _ => Ok(event.content.clone()),
-                    };
-                    match result {
-                        Ok(pt) => pt,
-                        Err(e) => {
-                            warn!(
-                                "Failed to decrypt NIP-51 content: {}, treating as plaintext",
-                                e
-                            );
-                            event.content.clone()
-                        }
+        // Private NIP-51 content is a JSON array shaped like tags.
+        // Prefer explicit encryption tags when present, otherwise use the NIP-51
+        // backward-compatibility signal: NIP-04 ciphertext contains "?iv=",
+        // while current private list content should be NIP-44.
+        if !event.content.trim().is_empty() {
+            let author = event.pubkey.to_hex();
+            let encryption = tag_value(&event.tags, "encryption").map(|s| s.to_ascii_lowercase());
+            let plaintext = if let Some(signer) = &self.signer {
+                let result = match encryption.as_deref() {
+                    Some("nip04") | Some("nip-04") => {
+                        signer
+                            .nip04_decrypt_between(&author, &author, &event.content)
+                            .await
                     }
-                } else {
-                    event.content.clone()
+                    Some("nip44") | Some("nip-44") => {
+                        signer
+                            .nip44_decrypt_between(&author, &author, &event.content)
+                            .await
+                    }
+                    _ if event.content.contains("?iv=") => {
+                        signer
+                            .nip04_decrypt_between(&author, &author, &event.content)
+                            .await
+                    }
+                    _ => {
+                        signer
+                            .nip44_decrypt_between(&author, &author, &event.content)
+                            .await
+                    }
                 };
-
-                if let Ok(decrypted_tags) = parse_tag_arrays_json(&plaintext) {
-                    for tag in decrypted_tags {
-                        if tag.is_empty() {
-                            continue;
-                        }
-                        match tag[0].as_str() {
-                            "p" if tag.len() >= 2 => {
-                                people.push(tag[1].clone());
-                            }
-                            "e" if tag.len() >= 2 => {
-                                events_vec.push(tag[1].clone());
-                            }
-                            "a" if tag.len() >= 2 => {
-                                if let Some(coord) = parse_coordinate(&tag[1], tag.get(2)) {
-                                    addresses.push(coord);
-                                }
-                            }
-                            "t" if tag.len() >= 2 => {
-                                topics.push(tag[1].clone());
-                            }
-                            "title" if tag.len() >= 2 => {
-                                if title.is_none() {
-                                    title = Some(tag[1].clone());
-                                }
-                            }
-                            "summary" if tag.len() >= 2 => {
-                                if description.is_none() {
-                                    description = Some(tag[1].clone());
-                                }
-                            }
-                            "description" if tag.len() >= 2 => {
-                                if description.is_none() {
-                                    description = Some(tag[1].clone());
-                                }
-                            }
-                            "image" if tag.len() >= 2 => {
-                                if image.is_none() {
-                                    image = Some(tag[1].clone());
-                                }
-                            }
-                            "d" if tag.len() >= 2 => {
-                                if d.is_none() {
-                                    d = Some(tag[1].clone());
-                                }
-                            }
-                            _ => {}
-                        }
+                match result {
+                    Ok(pt) => pt,
+                    Err(e) => {
+                        warn!(
+                            "Failed to decrypt NIP-51 content: {}, treating as plaintext",
+                            e
+                        );
+                        event.content.clone()
                     }
                 }
+            } else {
+                event.content.clone()
+            };
+
+            if let Ok(decrypted_tags) = parse_tag_arrays_json(&plaintext) {
+                process_list_tags(
+                    &decrypted_tags,
+                    &mut d,
+                    &mut title,
+                    &mut description,
+                    &mut image,
+                    &mut topics,
+                    &mut people,
+                    &mut events_vec,
+                    &mut addresses,
+                    &mut other_tags,
+                );
             }
         }
 
@@ -188,6 +157,7 @@ impl Parser {
             people,
             events: events_vec,
             addresses,
+            other_tags,
         };
 
         // By default, do not schedule follow-up requests for list parsing.
@@ -341,6 +311,37 @@ pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
         Some(builder.create_vector(&addr_offs))
     };
 
+    let other_tag_offsets: Vec<_> = parsed
+        .other_tags
+        .iter()
+        .filter(|tag| !tag.is_empty())
+        .map(|tag| {
+            let key = builder.create_string(&tag[0]);
+            let values = if tag.len() > 1 {
+                let value_offsets: Vec<_> = tag[1..]
+                    .iter()
+                    .map(|value| builder.create_string(value))
+                    .collect();
+                Some(builder.create_vector(&value_offsets))
+            } else {
+                None
+            };
+            fb::Tag::create(
+                builder,
+                &fb::TagArgs {
+                    key: Some(key),
+                    values,
+                },
+            )
+        })
+        .collect();
+
+    let other_tags = if other_tag_offsets.is_empty() {
+        None
+    } else {
+        Some(builder.create_vector(&other_tag_offsets))
+    };
+
     let args = fb::ListParsedArgs {
         list_kind: parsed.list_kind,
         d,
@@ -351,10 +352,70 @@ pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
         people: people_vec,
         events: events_vec,
         addresses: addresses_vec,
-        other_tags: None,
+        other_tags,
     };
 
     Ok(fb::ListParsed::create(builder, &args))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn process_list_tags(
+    tags: &[Vec<String>],
+    d: &mut Option<String>,
+    title: &mut Option<String>,
+    description: &mut Option<String>,
+    image: &mut Option<String>,
+    topics: &mut Vec<String>,
+    people: &mut Vec<String>,
+    events_vec: &mut Vec<String>,
+    addresses: &mut Vec<Coordinate>,
+    other_tags: &mut Vec<Vec<String>>,
+) {
+    for tag in tags {
+        if tag.is_empty() {
+            continue;
+        }
+
+        match tag[0].as_str() {
+            "p" if tag.len() >= 2 => {
+                people.push(tag[1].clone());
+            }
+            "e" if tag.len() >= 2 => {
+                events_vec.push(tag[1].clone());
+            }
+            "a" if tag.len() >= 2 => {
+                if let Some(coord) = parse_coordinate(&tag[1], tag.get(2)) {
+                    addresses.push(coord);
+                }
+            }
+            "t" if tag.len() >= 2 => {
+                topics.push(tag[1].clone());
+            }
+            "title" if tag.len() >= 2 => {
+                if title.is_none() {
+                    *title = Some(tag[1].clone());
+                }
+            }
+            "summary" | "description" if tag.len() >= 2 => {
+                if description.is_none() {
+                    *description = Some(tag[1].clone());
+                }
+            }
+            "image" if tag.len() >= 2 => {
+                if image.is_none() {
+                    *image = Some(tag[1].clone());
+                }
+            }
+            "d" if tag.len() >= 2 => {
+                if d.is_none() {
+                    *d = Some(tag[1].clone());
+                }
+            }
+            _ => {
+                other_tags.push(tag.clone());
+            }
+        }
+    }
 }
 
 // Parse decrypted JSON that mirrors Nostr tags (array of string arrays), e.g.:
@@ -449,8 +510,71 @@ fn tag_value(tags: &[Vec<String>], key: &str) -> Option<String> {
         .find_map(|t| (t.len() >= 2 && t[0] == key).then(|| t[1].clone()))
 }
 
-fn tag_values(tags: &[Vec<String>], key: &str) -> Vec<String> {
-    tags.iter()
-        .filter_map(|t| (t.len() >= 2 && t[0] == key).then(|| t[1].clone()))
-        .collect()
+#[cfg(test)]
+mod tests {
+    use crate::parser::Parser;
+    use crate::types::nostr::{Event, EventId, PublicKey};
+
+    fn event(tags: Vec<Vec<&str>>, content: &str) -> Event {
+        Event {
+            id: EventId([1; 32]),
+            pubkey: PublicKey([2; 32]),
+            created_at: 0,
+            kind: 30002,
+            tags: tags
+                .into_iter()
+                .map(|tag| tag.into_iter().map(str::to_string).collect())
+                .collect(),
+            content: content.to_string(),
+            sig: "00".to_string(),
+        }
+    }
+
+    #[tokio::test]
+    async fn parses_public_relay_tags_as_other_tags() {
+        let parser = Parser::new(None);
+        let event = event(
+            vec![
+                vec!["d", "admin-relays"],
+                vec!["title", "Admin relays"],
+                vec!["relay", "wss://relay.nuts.cash"],
+            ],
+            "",
+        );
+
+        let (parsed, _) = parser.parse_nip51(&event).await.unwrap();
+
+        assert_eq!(parsed.d.as_deref(), Some("admin-relays"));
+        assert_eq!(
+            parsed.other_tags,
+            vec![vec![
+                "relay".to_string(),
+                "wss://relay.nuts.cash".to_string()
+            ]]
+        );
+    }
+
+    #[tokio::test]
+    async fn merges_private_content_tags_as_same_tag_stream() {
+        let parser = Parser::new(None);
+        let event = event(
+            vec![vec!["d", "admin-relays"]],
+            r#"[["relay","wss://private.nuts.cash"],["t","nuts"],["p","aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]]"#,
+        );
+
+        let (parsed, _) = parser.parse_nip51(&event).await.unwrap();
+
+        assert_eq!(parsed.topics, vec!["nuts".to_string()]);
+        assert_eq!(
+            parsed.people,
+            vec!["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string()]
+        );
+        assert_eq!(
+            parsed.other_tags,
+            vec![vec![
+                "relay".to_string(),
+                "wss://private.nuts.cash".to_string()
+            ]]
+        );
+    }
 }
