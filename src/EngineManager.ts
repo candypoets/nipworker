@@ -213,12 +213,28 @@ export class EngineManager extends BaseBackend {
 	private setupVisibilityTracking(): void {
 		if (typeof document === 'undefined') return;
 		let wasHidden = false;
+		const wakeFromLifecycle = (source: string) => {
+			wasHidden = false;
+			this.worker.postMessage({ type: 'wake', source });
+		};
+
 		document.addEventListener('visibilitychange', () => {
 			if (document.hidden) {
 				wasHidden = true;
+				this.cleanup();
 			} else if (wasHidden) {
-				wasHidden = false;
-				this.worker.postMessage({ type: 'wake', source: 'visibility' });
+				wakeFromLifecycle('visibility');
+			}
+		});
+
+		window.addEventListener('pagehide', () => {
+			wasHidden = true;
+			this.cleanup();
+		});
+
+		window.addEventListener('pageshow', () => {
+			if (wasHidden || document.visibilityState === 'visible') {
+				wakeFromLifecycle('pageshow');
 			}
 		});
 	}

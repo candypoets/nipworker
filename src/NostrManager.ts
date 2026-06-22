@@ -278,28 +278,41 @@ export class NostrManager extends BaseBackend {
 
 	/**
 	 * Track page visibility changes to handle mobile background/foreground transitions.
-	 * When the app returns to foreground, wake up workers to trigger immediate reconnection.
+	 * Cleanup stale subscriptions when hidden, and wake workers when the page becomes active again.
 	 */
 	private setupVisibilityTracking(): void {
 		if (typeof document === 'undefined') return;
 
 		let wasHidden = false;
 		let hiddenTime = 0;
+		const wakeFromLifecycle = (source: string) => {
+			const hiddenDuration = hiddenTime > 0 ? Date.now() - hiddenTime : 0;
+			wasHidden = false;
+			hiddenTime = 0;
+
+			console.log(`[main] App returned to foreground after ${hiddenDuration}ms`);
+			this.wakeWorkers(source);
+		};
 
 		document.addEventListener('visibilitychange', () => {
 			if (document.hidden) {
 				wasHidden = true;
 				hiddenTime = Date.now();
+				this.cleanup();
 			} else if (wasHidden) {
-				// App is returning to foreground
-				const hiddenDuration = Date.now() - hiddenTime;
-				wasHidden = false;
+				wakeFromLifecycle('visibility');
+			}
+		});
 
-				console.log(`[main] App returned to foreground after ${hiddenDuration}ms`);
+		window.addEventListener('pagehide', () => {
+			wasHidden = true;
+			hiddenTime = hiddenTime || Date.now();
+			this.cleanup();
+		});
 
-				// Send wake signal to all workers to trigger immediate reconnection
-				// This bypasses the normal reconnect cooldown for better UX
-				this.wakeWorkers();
+		window.addEventListener('pageshow', () => {
+			if (wasHidden || document.visibilityState === 'visible') {
+				wakeFromLifecycle('pageshow');
 			}
 		});
 	}
@@ -308,9 +321,9 @@ export class NostrManager extends BaseBackend {
 	 * Send wake signal to all workers to trigger immediate reconnection.
 	 * Called when returning from background to foreground.
 	 */
-	private wakeWorkers(): void {
+	private wakeWorkers(source = 'visibility'): void {
 		console.log('[main] Waking connections worker for foreground reconnection');
-		this.connections.postMessage({ type: 'wake', source: 'visibility' });
+		this.connections.postMessage({ type: 'wake', source });
 	}
 
 	private postToWorker(message: { serializedMessage?: Uint8Array }) {
