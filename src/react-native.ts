@@ -236,8 +236,13 @@ export class ReactNativeBackend extends NativeBackend {
 	constructor(config: NostrManagerConfig = {}) {
 		super(config, reactNativeBridge);
 		this.appStateSubscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
+			const wasActive = this.appState === 'active';
 			const wasBackgrounded = this.appState === 'background' || this.appState === 'inactive';
+			const isBackgrounded = nextState === 'background' || nextState === 'inactive';
 			this.appState = nextState;
+			if (wasActive && isBackgrounded) {
+				this.cleanup();
+			}
 			if (wasBackgrounded && nextState === 'active') {
 				this.wakeNative();
 			}

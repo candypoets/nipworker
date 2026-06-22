@@ -7,6 +7,7 @@ import { useSubscription } from './hooks';
 import { Eoce, Message, MessageType, WorkerMessage } from './generated/nostr/fb';
 
 let nativeEventListener: ((event: any) => void) | undefined;
+let appStateListener: ((state: 'active' | 'background' | 'inactive') => void) | undefined;
 const queuedBuffers: ArrayBuffer[] = [];
 
 vi.mock('react-native', () => {
@@ -17,6 +18,7 @@ vi.mock('react-native', () => {
 			(globalThis as any).__nipworkerReactNativeByteRuntime = {
 				init: vi.fn(),
 				handleMessage: vi.fn(),
+				wake: vi.fn(),
 				setPrivateKey: vi.fn(),
 				deinit: vi.fn(),
 				drain: vi.fn(() => queuedBuffers.splice(0))
@@ -42,6 +44,19 @@ vi.mock('react-native', () => {
 	}
 
 	return {
+		AppState: {
+			currentState: 'active',
+			addEventListener: vi.fn(
+				(_eventName: string, listener: (state: 'active' | 'background' | 'inactive') => void) => {
+					appStateListener = listener;
+					return {
+						remove: vi.fn(() => {
+							if (appStateListener === listener) appStateListener = undefined;
+						})
+					};
+				}
+			)
+		},
 		NativeModules: {},
 		NativeEventEmitter,
 		TurboModuleRegistry: {
@@ -84,6 +99,7 @@ function buildNativeFrame(subId: string, payload: Uint8Array): ArrayBuffer {
 describe('react-native byte runtime subscription path', () => {
 	beforeEach(() => {
 		nativeEventListener = undefined;
+		appStateListener = undefined;
 		queuedBuffers.length = 0;
 		delete (globalThis as any).__nipworkerReactNativeByteRuntime;
 	});
@@ -108,5 +124,28 @@ describe('react-native byte runtime subscription path', () => {
 		expect(message.content(new Eoce())?.subscriptionId()).toBe('turbo-sub');
 
 		unsubscribe();
+		manager.deinit();
+	});
+
+	it('runs cleanup when the app backgrounds', () => {
+		const manager = createNostrManager();
+		setManager(manager);
+
+		const unsubscribe = useSubscription(
+			'background-cleanup-sub',
+			[{ kinds: [1], limit: 1 }],
+			vi.fn(),
+			{
+				closeOnEose: true
+			}
+		);
+		const byteRuntime = (globalThis as any).__nipworkerReactNativeByteRuntime;
+		const callsBeforeUnsubscribe = byteRuntime.handleMessage.mock.calls.length;
+
+		unsubscribe();
+		appStateListener?.('background');
+
+		expect(byteRuntime.handleMessage).toHaveBeenCalledTimes(callsBeforeUnsubscribe + 1);
+		manager.deinit();
 	});
 });
