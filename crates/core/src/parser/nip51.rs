@@ -118,32 +118,31 @@ impl Parser {
                     }
                 };
                 match result {
-                    Ok(pt) => pt,
+                    Ok(pt) => Some(pt),
                     Err(e) => {
-                        warn!(
-                            "Failed to decrypt NIP-51 content: {}, treating as plaintext",
-                            e
-                        );
-                        event.content.clone()
+                        warn!("Failed to decrypt NIP-51 content: {}, skipping content", e);
+                        None
                     }
                 }
             } else {
-                event.content.clone()
+                Some(event.content.clone())
             };
 
-            if let Ok(decrypted_tags) = parse_tag_arrays_json(&plaintext) {
-                process_list_tags(
-                    &decrypted_tags,
-                    &mut d,
-                    &mut title,
-                    &mut description,
-                    &mut image,
-                    &mut topics,
-                    &mut people,
-                    &mut events_vec,
-                    &mut addresses,
-                    &mut other_tags,
-                );
+            if let Some(plaintext) = plaintext {
+                if let Ok(decrypted_tags) = parse_tag_arrays_json(&plaintext) {
+                    process_list_tags(
+                        &decrypted_tags,
+                        &mut d,
+                        &mut title,
+                        &mut description,
+                        &mut image,
+                        &mut topics,
+                        &mut people,
+                        &mut events_vec,
+                        &mut addresses,
+                        &mut other_tags,
+                    );
+                }
             }
         }
 
@@ -513,7 +512,73 @@ fn tag_value(tags: &[Vec<String>], key: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use crate::parser::Parser;
+    use crate::traits::{Signer, SignerError};
     use crate::types::nostr::{Event, EventId, PublicKey};
+    use async_trait::async_trait;
+    use std::sync::Arc;
+
+    struct FailingSigner;
+
+    #[async_trait(?Send)]
+    impl Signer for FailingSigner {
+        async fn get_public_key(&self) -> std::result::Result<String, SignerError> {
+            Ok("03".repeat(32))
+        }
+
+        async fn sign_event(&self, _event_json: &str) -> std::result::Result<String, SignerError> {
+            Err(SignerError::Other("not implemented".to_string()))
+        }
+
+        async fn nip04_encrypt(
+            &self,
+            _peer: &str,
+            _plaintext: &str,
+        ) -> std::result::Result<String, SignerError> {
+            Err(SignerError::Other("not implemented".to_string()))
+        }
+
+        async fn nip04_decrypt(
+            &self,
+            _peer: &str,
+            _ciphertext: &str,
+        ) -> std::result::Result<String, SignerError> {
+            Err(SignerError::Other("decrypt failed".to_string()))
+        }
+
+        async fn nip44_encrypt(
+            &self,
+            _peer: &str,
+            _plaintext: &str,
+        ) -> std::result::Result<String, SignerError> {
+            Err(SignerError::Other("not implemented".to_string()))
+        }
+
+        async fn nip44_decrypt(
+            &self,
+            _peer: &str,
+            _ciphertext: &str,
+        ) -> std::result::Result<String, SignerError> {
+            Err(SignerError::Other("decrypt failed".to_string()))
+        }
+
+        async fn nip04_decrypt_between(
+            &self,
+            _sender: &str,
+            _recipient: &str,
+            _ciphertext: &str,
+        ) -> std::result::Result<String, SignerError> {
+            Err(SignerError::Other("decrypt failed".to_string()))
+        }
+
+        async fn nip44_decrypt_between(
+            &self,
+            _sender: &str,
+            _recipient: &str,
+            _ciphertext: &str,
+        ) -> std::result::Result<String, SignerError> {
+            Err(SignerError::Other("decrypt failed".to_string()))
+        }
+    }
 
     fn event(tags: Vec<Vec<&str>>, content: &str) -> Event {
         Event {
@@ -576,5 +641,20 @@ mod tests {
                 "wss://private.nuts.cash".to_string()
             ]]
         );
+    }
+
+    #[tokio::test]
+    async fn skips_content_when_decryption_fails() {
+        let parser = Parser::new(Some(Arc::new(FailingSigner)));
+        let event = event(
+            vec![vec!["d", "admin-relays"]],
+            r#"[["relay","wss://ciphertext-looking-json.invalid"],["t","ciphertext"]]"#,
+        );
+
+        let (parsed, _) = parser.parse_nip51(&event).await.unwrap();
+
+        assert_eq!(parsed.d.as_deref(), Some("admin-relays"));
+        assert!(parsed.topics.is_empty());
+        assert!(parsed.other_tags.is_empty());
     }
 }
