@@ -123,8 +123,12 @@ impl Nip07Signer {
         let my_pubkey = self.get_public_key().await?;
         let peer_hex = if my_pubkey == sender_pubkey_hex {
             recipient_pubkey_hex
-        } else {
+        } else if my_pubkey == recipient_pubkey_hex {
             sender_pubkey_hex
+        } else {
+            return Err(JsValue::from_str(
+                "signer pubkey is not a participant in encrypted content",
+            ));
         };
         self.nip04_decrypt(peer_hex, ciphertext).await
     }
@@ -140,8 +144,12 @@ impl Nip07Signer {
         let my_pubkey = self.get_public_key().await?;
         let peer_hex = if my_pubkey == sender_pubkey_hex {
             recipient_pubkey_hex
-        } else {
+        } else if my_pubkey == recipient_pubkey_hex {
             sender_pubkey_hex
+        } else {
+            return Err(JsValue::from_str(
+                "signer pubkey is not a participant in encrypted content",
+            ));
         };
         self.nip44_decrypt(peer_hex, ciphertext).await
     }

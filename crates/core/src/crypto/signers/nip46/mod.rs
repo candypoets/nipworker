@@ -235,8 +235,10 @@ impl Nip46Signer {
         let upk = self.ensure_user_pubkey().await?;
         let peer_hex = if upk == sender_pubkey_hex {
             recipient_pubkey_hex
-        } else {
+        } else if upk == recipient_pubkey_hex {
             sender_pubkey_hex
+        } else {
+            return Err("signer pubkey is not a participant in encrypted content".to_string());
         };
         self.nip04_decrypt(peer_hex, ciphertext).await
     }
@@ -250,8 +252,10 @@ impl Nip46Signer {
         let upk = self.ensure_user_pubkey().await?;
         let peer_hex = if upk == sender_pubkey_hex {
             recipient_pubkey_hex
-        } else {
+        } else if upk == recipient_pubkey_hex {
             sender_pubkey_hex
+        } else {
+            return Err("signer pubkey is not a participant in encrypted content".to_string());
         };
         self.nip44_decrypt(peer_hex, ciphertext).await
     }

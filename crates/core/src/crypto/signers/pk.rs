@@ -202,32 +202,40 @@ impl PrivateKeySigner {
     /// Chooses the correct peer based on our pubkey and delegates to nip04_decrypt.
     pub fn nip04_decrypt_between(
         &self,
-        _sender_pubkey_hex: &str,
-        _recipient_pubkey_hex: &str,
-        _ciphertext: &str,
+        sender_pubkey_hex: &str,
+        recipient_pubkey_hex: &str,
+        ciphertext: &str,
     ) -> Result<String> {
-        let peer_hex = if self.pubkey_hex == _sender_pubkey_hex {
-            _recipient_pubkey_hex
+        let peer_hex = if self.pubkey_hex == sender_pubkey_hex {
+            recipient_pubkey_hex
+        } else if self.pubkey_hex == recipient_pubkey_hex {
+            sender_pubkey_hex
         } else {
-            _sender_pubkey_hex
+            return Err(SignerError::Other(
+                "signer pubkey is not a participant in encrypted content".to_string(),
+            ));
         };
-        self.nip04_decrypt(peer_hex, _ciphertext)
+        self.nip04_decrypt(peer_hex, ciphertext)
     }
 
     /// NIP-44 decrypt when both participants are provided (sender/recipient).
     /// Chooses the correct peer based on our pubkey and delegates to nip44_decrypt.
     pub fn nip44_decrypt_between(
         &self,
-        _sender_pubkey_hex: &str,
-        _recipient_pubkey_hex: &str,
-        _ciphertext: &str,
+        sender_pubkey_hex: &str,
+        recipient_pubkey_hex: &str,
+        ciphertext: &str,
     ) -> Result<String> {
-        let peer_hex = if self.pubkey_hex == _sender_pubkey_hex {
-            _recipient_pubkey_hex
+        let peer_hex = if self.pubkey_hex == sender_pubkey_hex {
+            recipient_pubkey_hex
+        } else if self.pubkey_hex == recipient_pubkey_hex {
+            sender_pubkey_hex
         } else {
-            _sender_pubkey_hex
+            return Err(SignerError::Other(
+                "signer pubkey is not a participant in encrypted content".to_string(),
+            ));
         };
-        self.nip44_decrypt(peer_hex, _ciphertext)
+        self.nip44_decrypt(peer_hex, ciphertext)
     }
 }
 
