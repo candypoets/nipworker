@@ -2,33 +2,45 @@
 
 /* eslint-disable @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any, @typescript-eslint/no-non-null-assertion */
 
+import { Nip07, Nip07T } from '../../nostr/fb/nip07.js';
+import { Nip46Bunker, Nip46BunkerT } from '../../nostr/fb/nip46-bunker.js';
+import { Nip46QR, Nip46QRT } from '../../nostr/fb/nip46-qr.js';
 import { PrivateKey, PrivateKeyT } from '../../nostr/fb/private-key.js';
 
 
 export enum SignerType {
   NONE = 0,
-  PrivateKey = 1
+  PrivateKey = 1,
+  Nip07 = 2,
+  Nip46Bunker = 3,
+  Nip46QR = 4
 }
 
 export function unionToSignerType(
   type: SignerType,
-  accessor: (obj:PrivateKey) => PrivateKey|null
-): PrivateKey|null {
+  accessor: (obj:Nip07|Nip46Bunker|Nip46QR|PrivateKey) => Nip07|Nip46Bunker|Nip46QR|PrivateKey|null
+): Nip07|Nip46Bunker|Nip46QR|PrivateKey|null {
   switch(SignerType[type]) {
     case 'NONE': return null; 
     case 'PrivateKey': return accessor(new PrivateKey())! as PrivateKey;
+    case 'Nip07': return accessor(new Nip07())! as Nip07;
+    case 'Nip46Bunker': return accessor(new Nip46Bunker())! as Nip46Bunker;
+    case 'Nip46QR': return accessor(new Nip46QR())! as Nip46QR;
     default: return null;
   }
 }
 
 export function unionListToSignerType(
   type: SignerType, 
-  accessor: (index: number, obj:PrivateKey) => PrivateKey|null, 
+  accessor: (index: number, obj:Nip07|Nip46Bunker|Nip46QR|PrivateKey) => Nip07|Nip46Bunker|Nip46QR|PrivateKey|null, 
   index: number
-): PrivateKey|null {
+): Nip07|Nip46Bunker|Nip46QR|PrivateKey|null {
   switch(SignerType[type]) {
     case 'NONE': return null; 
     case 'PrivateKey': return accessor(index, new PrivateKey())! as PrivateKey;
+    case 'Nip07': return accessor(index, new Nip07())! as Nip07;
+    case 'Nip46Bunker': return accessor(index, new Nip46Bunker())! as Nip46Bunker;
+    case 'Nip46QR': return accessor(index, new Nip46QR())! as Nip46QR;
     default: return null;
   }
 }

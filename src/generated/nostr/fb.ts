@@ -2,12 +2,19 @@
 
 /* eslint-disable @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any, @typescript-eslint/no-non-null-assertion */
 
+export { ArticleBlock, ArticleBlockT } from './fb/article-block.js';
+export { ArticleBlockType } from './fb/article-block-type.js';
+export { ArticleEntity, ArticleEntityT } from './fb/article-entity.js';
+export { ArticleInline, ArticleInlineT } from './fb/article-inline.js';
+export { ArticleInlineType } from './fb/article-inline-type.js';
+export { BadgeAwardRecipient, BadgeAwardRecipientT } from './fb/badge-award-recipient.js';
 export { BufferFull, BufferFullT } from './fb/buffer-full.js';
 export { CacheInput } from './fb/cache-input.js';
 export { CacheInputMessage, CacheInputMessageT } from './fb/cache-input-message.js';
 export { CacheRequest, CacheRequestT } from './fb/cache-request.js';
 export { CacheResponse, CacheResponseT } from './fb/cache-response.js';
 export { CashuData, CashuDataT } from './fb/cashu-data.js';
+export { ChatLimiterPipeConfig, ChatLimiterPipeConfigT } from './fb/chat-limiter-pipe-config.js';
 export { CodeData, CodeDataT } from './fb/code-data.js';
 export { ConnectionStatus, ConnectionStatusT } from './fb/connection-status.js';
 export { Contact, ContactT } from './fb/contact.js';
@@ -47,6 +54,7 @@ export { Kind7374Parsed, Kind7374ParsedT } from './fb/kind7374-parsed.js';
 export { Kind7375Parsed, Kind7375ParsedT } from './fb/kind7375-parsed.js';
 export { Kind7376Parsed, Kind7376ParsedT } from './fb/kind7376-parsed.js';
 export { Kind7Parsed, Kind7ParsedT } from './fb/kind7-parsed.js';
+export { Kind8Parsed, Kind8ParsedT } from './fb/kind8-parsed.js';
 export { Kind9321Parsed, Kind9321ParsedT } from './fb/kind9321-parsed.js';
 export { Kind9735Parsed, Kind9735ParsedT } from './fb/kind9735-parsed.js';
 export { KindFilterPipeConfig, KindFilterPipeConfigT } from './fb/kind-filter-pipe-config.js';
@@ -64,8 +72,12 @@ export { MessageType } from './fb/message-type.js';
 export { MintInfo, MintInfoT } from './fb/mint-info.js';
 export { MintProofs, MintProofsT } from './fb/mint-proofs.js';
 export { MuteFilterPipeConfig, MuteFilterPipeConfigT } from './fb/mute-filter-pipe-config.js';
+export { Nip07, Nip07T } from './fb/nip07.js';
+export { Nip46Bunker, Nip46BunkerT } from './fb/nip46-bunker.js';
+export { Nip46QR, Nip46QRT } from './fb/nip46-qr.js';
 export { NostrData, NostrDataT } from './fb/nostr-data.js';
 export { NostrEvent, NostrEventT } from './fb/nostr-event.js';
+export { NpubLimiterKey } from './fb/npub-limiter-key.js';
 export { NpubLimiterPipeConfig, NpubLimiterPipeConfigT } from './fb/npub-limiter-pipe-config.js';
 export { P2PKWitness, P2PKWitnessT } from './fb/p2-pkwitness.js';
 export { ParsePipeConfig, ParsePipeConfigT } from './fb/parse-pipe-config.js';

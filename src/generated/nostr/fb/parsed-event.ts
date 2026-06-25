@@ -24,6 +24,7 @@ import { Kind7374Parsed, Kind7374ParsedT } from '../../nostr/fb/kind7374-parsed.
 import { Kind7375Parsed, Kind7375ParsedT } from '../../nostr/fb/kind7375-parsed.js';
 import { Kind7376Parsed, Kind7376ParsedT } from '../../nostr/fb/kind7376-parsed.js';
 import { Kind7Parsed, Kind7ParsedT } from '../../nostr/fb/kind7-parsed.js';
+import { Kind8Parsed, Kind8ParsedT } from '../../nostr/fb/kind8-parsed.js';
 import { Kind9321Parsed, Kind9321ParsedT } from '../../nostr/fb/kind9321-parsed.js';
 import { Kind9735Parsed, Kind9735ParsedT } from '../../nostr/fb/kind9735-parsed.js';
 import { ListParsed, ListParsedT } from '../../nostr/fb/list-parsed.js';
@@ -258,7 +259,7 @@ constructor(
   public kind: number = 0,
   public createdAt: number = 0,
   public parsedType: ParsedData = ParsedData.NONE,
-  public parsed: Kind0ParsedT|Kind10002ParsedT|Kind10019ParsedT|Kind1018ParsedT|Kind1068ParsedT|Kind1111ParsedT|Kind1311ParsedT|Kind17375ParsedT|Kind17ParsedT|Kind1ParsedT|Kind20ParsedT|Kind22ParsedT|Kind30023ParsedT|Kind3ParsedT|Kind4ParsedT|Kind6ParsedT|Kind7374ParsedT|Kind7375ParsedT|Kind7376ParsedT|Kind7ParsedT|Kind9321ParsedT|Kind9735ParsedT|ListParsedT|PreGenericParsedT|null = null,
+  public parsed: Kind0ParsedT|Kind10002ParsedT|Kind10019ParsedT|Kind1018ParsedT|Kind1068ParsedT|Kind1111ParsedT|Kind1311ParsedT|Kind17375ParsedT|Kind17ParsedT|Kind1ParsedT|Kind20ParsedT|Kind22ParsedT|Kind30023ParsedT|Kind3ParsedT|Kind4ParsedT|Kind6ParsedT|Kind7374ParsedT|Kind7375ParsedT|Kind7376ParsedT|Kind7ParsedT|Kind8ParsedT|Kind9321ParsedT|Kind9735ParsedT|ListParsedT|PreGenericParsedT|null = null,
   public requests: (RequestT)[] = [],
   public relays: (string)[] = [],
   public tags: (StringVecT)[] = []

@@ -13,6 +13,7 @@ import {
 	Kind4Parsed,
 	Kind6Parsed,
 	Kind7Parsed,
+	Kind8Parsed,
 	Kind17Parsed,
 	Kind20Parsed,
 	Kind22Parsed,
@@ -116,6 +117,8 @@ function parsedKind<T>(msg: WorkerMessage, kind: ParsedData): T | null {
 			return ev.parsed(new Kind6Parsed()) as T | null;
 		case ParsedData.Kind7Parsed:
 			return ev.parsed(new Kind7Parsed()) as T | null;
+		case ParsedData.Kind8Parsed:
+			return ev.parsed(new Kind8Parsed()) as T | null;
 		case ParsedData.Kind17Parsed:
 			return ev.parsed(new Kind17Parsed()) as T | null;
 		case ParsedData.Kind20Parsed:
@@ -195,6 +198,13 @@ export function isKind7(msg: WorkerMessage): Kind7Parsed | null {
 export function asKind7(ev: ParsedEvent): Kind7Parsed | null {
 	if (ev.parsedType() !== ParsedData.Kind7Parsed) return null;
 	return ev.parsed(new Kind7Parsed()) ?? null;
+}
+export function isKind8(msg: WorkerMessage): Kind8Parsed | null {
+	return parsedKind<Kind8Parsed>(msg, ParsedData.Kind8Parsed);
+}
+export function asKind8(ev: ParsedEvent): Kind8Parsed | null {
+	if (ev.parsedType() !== ParsedData.Kind8Parsed) return null;
+	return ev.parsed(new Kind8Parsed()) ?? null;
 }
 export function isKind17(msg: WorkerMessage): Kind17Parsed | null {
 	return parsedKind<Kind17Parsed>(msg, ParsedData.Kind17Parsed);

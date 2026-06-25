@@ -99,6 +99,116 @@ jobs:
         if: ${{ steps.check_publish.outputs.should_publish == 'true' }}
         run: npm run build
 
+      # ──────────────────────────────────────────
+      # Wait for native builds and bundle artifacts
+      # ──────────────────────────────────────────
+      - name: Wait for native build workflow
+        if: ${{ steps.check_publish.outputs.should_publish == 'true' }}
+        run: |
+          for i in {1..60}; do
+            RUN_JSON=$(gh run list --workflow=native-build.yml --json databaseId,headSha,conclusion,status --jq ".[] | select(.headSha == \"${GITHUB_SHA}\") | {conclusion,status}" | head -1)
+            CONCLUSION=$(echo "$RUN_JSON" | jq -r '.conclusion // empty')
+            STATUS=$(echo "$RUN_JSON" | jq -r '.status // empty')
+
+            if [ "$CONCLUSION" == "success" ]; then
+              echo "Native build succeeded"
+              exit 0
+            elif [ "$CONCLUSION" == "failure" ] || [ "$CONCLUSION" == "cancelled" ]; then
+              echo "Native build failed: $CONCLUSION"
+              exit 1
+            fi
+            echo "Waiting for native build... status=$STATUS ($i/60)"
+            sleep 10
+          done
+          echo "Timed out waiting for native build"
+          exit 1
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download native artifacts
+        if: ${{ steps.check_publish.outputs.should_publish == 'true' }}
+        uses: dawidd6/action-download-artifact@v3
+        with:
+          workflow: native-build.yml
+          commit: ${{ github.sha }}
+          path: ./prebuilt-temp
+
+      - name: Organize native artifacts
+        if: ${{ steps.check_publish.outputs.should_publish == 'true' }}
+        run: |
+          rm -rf crates/native-ffi/android/src/main/jniLibs
+          rm -rf crates/native-ffi/ios/NipworkerNativeFFI.xcframework
+
+          if [ -d "prebuilt-temp/android-jniLibs" ]; then
+            mkdir -p crates/native-ffi/android/src/main
+            mv prebuilt-temp/android-jniLibs/jniLibs crates/native-ffi/android/src/main/
+          else
+            echo "Missing android-jniLibs artifact"
+            exit 1
+          fi
+
+          if [ -d "prebuilt-temp/ios-xcframework" ]; then
+            mv prebuilt-temp/ios-xcframework/NipworkerNativeFFI.xcframework crates/native-ffi/ios/
+          else
+            echo "Missing ios-xcframework artifact"
+            exit 1
+          fi
+
+          if [ -d "prebuilt-temp/linux-host" ]; then
+            mkdir -p prebuilt/linux
+            mv prebuilt-temp/linux-host/* prebuilt/linux/
+          fi
+
+          rm -rf prebuilt-temp
+          echo "=== React Native native artifacts ==="
+          find crates/native-ffi/android/src/main/jniLibs -type f | sort
+          find crates/native-ffi/ios/NipworkerNativeFFI.xcframework -type f | sort
+
+      - name: Verify React Native native artifacts
+        if: ${{ steps.check_publish.outputs.should_publish == 'true' }}
+        run: |
+          set -euo pipefail
+
+          for abi in arm64-v8a armeabi-v7a x86 x86_64; do
+            test -f "crates/native-ffi/android/src/main/jniLibs/${abi}/libnipworker_native_ffi.so"
+          done
+          test -f crates/native-ffi/ios/NipworkerNativeFFI.xcframework/ios-arm64/libnipworker_native_ffi.a
+          test -f crates/native-ffi/ios/NipworkerNativeFFI.xcframework/ios-arm64_x86_64-simulator/libnipworker_native_ffi.a
+
+          if find crates/native-ffi/android/src/main/jniLibs crates/native-ffi/ios/NipworkerNativeFFI.xcframework -type f \( -name '*.so' -o -name '*.a' \) -print0 \
+            | xargs -0 strings \
+            | grep -q 'fetch_mint_keys_from_network not available'; then
+            echo "Native artifacts contain stale proof key fetch stub"
+            exit 1
+          fi
+
+          node -e '
+            const fs = require("fs");
+            const files = require("./package.json").files;
+            const required = [
+              "crates/native-ffi/android/src/main/jniLibs/arm64-v8a/libnipworker_native_ffi.so",
+              "crates/native-ffi/android/src/main/jniLibs/armeabi-v7a/libnipworker_native_ffi.so",
+              "crates/native-ffi/android/src/main/jniLibs/x86/libnipworker_native_ffi.so",
+              "crates/native-ffi/android/src/main/jniLibs/x86_64/libnipworker_native_ffi.so",
+              "crates/native-ffi/ios/NipworkerNativeFFI.xcframework/ios-arm64/libnipworker_native_ffi.a",
+              "crates/native-ffi/ios/NipworkerNativeFFI.xcframework/ios-arm64_x86_64-simulator/libnipworker_native_ffi.a",
+            ];
+            const missing = required.filter((path) => !fs.existsSync(path));
+            if (missing.length) {
+              console.error("Missing native artifacts:\\n" + missing.join("\\n"));
+              process.exit(1);
+            }
+            const packageRoots = [
+              "crates/native-ffi/android/src/main/jniLibs",
+              "crates/native-ffi/ios/NipworkerNativeFFI.xcframework",
+            ];
+            const missingRoots = packageRoots.filter((root) => !files.includes(root));
+            if (missingRoots.length) {
+              console.error("package.json files does not include native artifact roots:\\n" + missingRoots.join("\\n"));
+              process.exit(1);
+            }
+          '
+
       # Publish package to npm
       - name: Publish package to npm
         if: ${{ steps.check_publish.outputs.should_publish == 'true' }}
@@ -107,18 +217,11 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{secrets.NPM_TOKEN}}
 
-      # Create GitHub Release (only if publish succeeded)
-      - name: Create GitHub Release
+      # Update GitHub Release with npm info (native-build.yml creates the release)
+      - name: Update GitHub Release body
         if: ${{ steps.publish.outcome == 'success' }}
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ github.ref_name }}
-          name: Release ${{ github.ref_name }}
-          generate_release_notes: true
-          body: |
-            🚀 **Release ${{ github.ref_name }}**
-
-            ## 📦 Published Package
-            - **[@candypoets/nipworker](https://www.npmjs.com/package/@candypoets/nipworker)** - `${{ github.ref_name }}`
+        run: |
+          gh release edit "${GITHUB_REF_NAME}" \
+            --notes "🚀 **Release ${{ github.ref_name }}**\n\n## 📦 Published Package\n- **[@candypoets/nipworker](https://www.npmjs.com/package/@candypoets/nipworker)** - ${{ github.ref_name }}\n\n$(gh release view "${GITHUB_REF_NAME}" --json body -q '.body')"
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

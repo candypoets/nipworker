@@ -12,5 +12,7 @@ export type InitConnectionsMsg = {
 		parserPort: MessagePort;
 		cryptoPort: MessagePort;
 		proxy?: ProxyConfig;
+		/** Log level for the Rust WASM worker */
+		logLevel?: string;
 	};
 };

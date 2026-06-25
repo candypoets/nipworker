@@ -1,0 +1,287 @@
+use crate::channel::MessageSender;
+use crate::generated::nostr::fb;
+use crate::nostr_error::NostrError;
+use crate::parser::Parser;
+use crate::pipeline::pipes::*;
+use crate::pipeline::{PipeType, Pipeline};
+use crate::types::network::Request;
+
+use rustc_hash::FxHashMap;
+
+type Result<T> = std::result::Result<T, NostrError>;
+use std::sync::Arc;
+
+use async_lock::Semaphore;
+
+pub struct SubscriptionManager {
+    parser: Arc<Parser>,
+    relay_hints: FxHashMap<String, Vec<String>>,
+
+    // Async semaphore for concurrency limiting
+    semaphore: Arc<Semaphore>,
+}
+
+impl SubscriptionManager {
+    pub fn new(parser: Arc<Parser>) -> Self {
+        Self {
+            parser,
+            relay_hints: FxHashMap::default(),
+
+            // Allow 36 concurrent process_subscription calls
+            semaphore: Arc::new(Semaphore::new(36)),
+        }
+    }
+
+    // Acquire one concurrency slot.
+    async fn acquire_permit(&self) -> async_lock::SemaphoreGuardArc {
+        self.semaphore.acquire_arc().await
+    }
+
+    pub async fn process_subscription(
+        &self,
+        subscription_id: &String,
+        to_cache: Arc<dyn MessageSender>,
+        _requests: Vec<Request>,
+        config: &fb::SubscriptionConfig<'_>,
+    ) -> Result<Pipeline> {
+        // Acquire concurrency permit (released automatically when this fn returns)
+        let _permit = self.acquire_permit().await;
+
+        // Create pipeline based on config
+        let pipeline = self.build_pipeline(config.pipeline(), to_cache, subscription_id.clone())?;
+
+        // let (network_requests, events) =
+        //     match self.cache_processor.process_local_requests(_requests).await {
+        //         Ok((network_requests, events)) => (network_requests, events),
+        //         Err(e) => {
+        //             error!(
+        //                 "Failed to process local requests for subscription {}: {}",
+        //                 subscription_id, e
+        //             );
+        //             return Err(NostrError::Other(format!(
+        //                 "Failed to process local requests: {}",
+        //                 e
+        //             )));
+        //         }
+        //     };
+
+        // Process cached events through cache-capable pipes first, then write originals
+        // if !events.is_empty() {
+        //     for event_batch in events {
+        //         let cache_outputs = pipeline.process_cached_batch(&event_batch).await?;
+        //         for out in cache_outputs {
+        //             match SharedBufferManager::write_to_buffer(&shared_buffer, &out).await {
+        //                 Ok(true) => {
+        //                     // Buffer is full: signal EOCE and return early.
+        //                     SharedBufferManager::send_eoce(&shared_buffer).await;
+        //                     post_worker_message(&JsValue::from_str(subscription_id));
+        //                     // return Ok((pipeline, FxHashMap::default()));
+        //                 }
+        //                 Ok(false) => {
+        //                     // Written successfully, continue
+        //                 }
+        //                 Err(_) => {
+        //                     // Malformed/invalid state; keep behavior minimal (ignore and continue)
+        //                     // You could log or handle differently if desired.
+        //                 }
+        //             }
+        //         }
+        //     }
+        // }
+
+        // SharedBufferManager::send_eoce(&shared_buffer).await;
+
+        // post_worker_message(&JsValue::from_str(subscription_id));
+
+        // let relay_filters = self.group_requests_by_relay(&network_requests)?;
+
+        return Ok(pipeline);
+    }
+
+    // fn group_requests_by_relay(
+    //     &self,
+    //     requests: &Vec<Request>,
+    // ) -> Result<FxHashMap<String, Vec<Filter>>> {
+    //     let mut relay_filters_map: FxHashMap<String, Vec<Filter>> = FxHashMap::default();
+
+    //     for request in requests {
+    //         let relays = self.get_request_relays(request)?;
+    //         // Convert the request to a filter
+    //         let filter = request.to_filter()?;
+
+    //         // Add the filter to each relay in the request
+    //         for relay_url in relays {
+    //             if let Err(e) = validate_relay_url(&relay_url) {
+    //                 warn!("Invalid relay URL {}: {}, skipping", relay_url, e);
+    //                 continue;
+    //             }
+    //             relay_filters_map
+    //                 .entry(normalize_relay_url(&relay_url))
+    //                 .or_insert_with(Vec::new)
+    //                 .push(filter.clone());
+    //         }
+    //     }
+
+    //     Ok(relay_filters_map)
+    // }
+
+    // fn get_request_relays(&self, request: &Request) -> Result<Vec<String>> {
+    //     let filter = request.to_filter()?;
+    //     if request.relays.is_empty() {
+    //         let pubkey = match filter.authors.as_ref() {
+    //             Some(authors) => {
+    //                 if !authors.is_empty() {
+    //                     authors.iter().next().unwrap().to_string()
+    //                 } else {
+    //                     String::new()
+    //                 }
+    //             }
+    //             None => String::new(),
+    //         };
+
+    //         let kind = match filter.kinds.as_ref() {
+    //             Some(kinds) => {
+    //                 if !kinds.is_empty() {
+    //                     *kinds.iter().next().unwrap()
+    //                 } else {
+    //                     0
+    //                 }
+    //             }
+    //             None => 0,
+    //         };
+
+    //         let relays = self.database.find_relay_candidates(kind, &pubkey, &false);
+
+    //         // Limit to maximum of 8 relays, or use request's max_relay if set
+    //         let limit = if request.max_relays == 0 {
+    //             8
+    //         } else {
+    //             request.max_relays
+    //         };
+
+    //         let relays_to_add: Vec<String> =
+    //             relays.into_iter().take(limit.try_into().unwrap()).collect();
+
+    //         return Ok(relays_to_add);
+    //     }
+
+    //     Ok(request.relays.clone())
+    // }
+
+    fn build_pipeline(
+        &self,
+        pipeline_config: Option<fb::PipelineConfig<'_>>,
+        to_cache: Arc<dyn MessageSender>,
+        subscription_id: String,
+    ) -> Result<Pipeline> {
+        match pipeline_config {
+            Some(config) => {
+                let mut pipes: Vec<PipeType> = Vec::new();
+                for pipe_config in config.pipes() {
+                    let config_type = pipe_config.config_type();
+                    let pipe = match config_type {
+                        fb::PipeConfig::ParsePipeConfig => {
+                            PipeType::Parse(ParsePipe::new(self.parser.clone()))
+                        }
+                        fb::PipeConfig::SaveToDbPipeConfig => {
+                            PipeType::SaveToDb(SaveToDbPipe::new(to_cache.clone()))
+                        }
+                        fb::PipeConfig::SerializeEventsPipeConfig => PipeType::SerializeEvents(
+                            SerializeEventsPipe::new(subscription_id.clone()),
+                        ),
+                        fb::PipeConfig::ProofVerificationPipeConfig => {
+                            let config = pipe_config
+                                .config_as_proof_verification_pipe_config()
+                                .unwrap();
+                            // max_proofs: usize, check_interval_secs: u64
+                            let max_proofs = config.max_proofs() as usize;
+
+                            PipeType::ProofVerification(ProofVerificationPipe::new(max_proofs))
+                        }
+                        fb::PipeConfig::CounterPipeConfig => {
+                            let config = pipe_config.config_as_counter_pipe_config().unwrap();
+
+                            let kinds: Vec<u16> = config.kinds().iter().map(|k| k as u16).collect();
+
+                            let _pubkey = config.pubkey();
+
+                            let pubkey = config.pubkey().to_string();
+
+                            PipeType::Counter(CounterPipe::new(kinds, pubkey))
+                        }
+                        fb::PipeConfig::KindFilterPipeConfig => {
+                            let config = pipe_config.config_as_kind_filter_pipe_config().unwrap();
+                            let kinds: Vec<u16> = config.kinds().iter().map(|k| k as u16).collect();
+                            PipeType::KindFilter(KindFilterPipe::new(kinds))
+                        }
+                        fb::PipeConfig::NpubLimiterPipeConfig => {
+                            let config = pipe_config.config_as_npub_limiter_pipe_config().unwrap();
+                            let kind = config.kind();
+                            let limit_per_npub = config.limit_per_npub();
+                            let _max_total_npubs = config.max_total_npubs();
+                            let key_by = config.key_by().into();
+                            PipeType::NpubLimiter(NpubLimiterPipe::new(kind, limit_per_npub, key_by))
+                        }
+                        fb::PipeConfig::ChatLimiterPipeConfig => {
+                            let config = pipe_config.config_as_chat_limiter_pipe_config().unwrap();
+                            let own_pubkey = config.own_pubkey().to_string();
+                            let limit_per_chat = config.limit_per_chat();
+                            let max_chats = config.max_chats();
+                            let kinds: Vec<u16> = config
+                                .kinds()
+                                .map(|v| v.iter().map(|k| k as u16).collect())
+                                .unwrap_or_default();
+
+                            PipeType::ChatLimiter(ChatLimiterPipe::new(
+                                own_pubkey,
+                                limit_per_chat,
+                                max_chats,
+                                kinds,
+                            ))
+                        }
+                        fb::PipeConfig::MuteFilterPipeConfig => {
+                            let config = pipe_config.config_as_mute_filter_pipe_config().unwrap();
+
+                            let pubkeys: Vec<String> = config
+                                .pubkeys()
+                                .map(|v| v.iter().map(|s| s.to_string()).collect())
+                                .unwrap_or_default();
+                            let hashtags: Vec<String> = config
+                                .hashtags()
+                                .map(|v| v.iter().map(|s| s.to_string()).collect())
+                                .unwrap_or_default();
+                            let words: Vec<String> = config
+                                .words()
+                                .map(|v| v.iter().map(|s| s.to_string()).collect())
+                                .unwrap_or_default();
+                            let event_ids: Vec<String> = config
+                                .event_ids()
+                                .map(|v| v.iter().map(|s| s.to_string()).collect())
+                                .unwrap_or_default();
+
+                            PipeType::MuteFilter(MuteFilterPipe::new(MuteCriteria::new(
+                                pubkeys, hashtags, words, event_ids,
+                            )))
+                        }
+                        _ => {
+                            return Err(NostrError::Other(format!(
+                                "Unknown pipe config type: {:?}",
+                                config_type
+                            )))
+                        }
+                    };
+                    pipes.push(pipe);
+                }
+                if pipes.is_empty() {
+                    Pipeline::default(self.parser.clone(), to_cache.clone(), subscription_id)
+                } else {
+                    Pipeline::new(pipes, subscription_id)
+                }
+            }
+            None => {
+                // Use default pipeline
+                Pipeline::default(self.parser.clone(), to_cache.clone(), subscription_id)
+            }
+        }
+    }
+}

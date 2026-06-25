@@ -4,6 +4,9 @@
 
 import * as flatbuffers from 'flatbuffers';
 
+import { Nip07, Nip07T } from '../../nostr/fb/nip07.js';
+import { Nip46Bunker, Nip46BunkerT } from '../../nostr/fb/nip46-bunker.js';
+import { Nip46QR, Nip46QRT } from '../../nostr/fb/nip46-qr.js';
 import { PrivateKey, PrivateKeyT } from '../../nostr/fb/private-key.js';
 import { SignerType, unionToSignerType, unionListToSignerType } from '../../nostr/fb/signer-type.js';
 
@@ -86,7 +89,7 @@ unpackTo(_o: SetSignerT): void {
 export class SetSignerT implements flatbuffers.IGeneratedObject {
 constructor(
   public signerTypeType: SignerType = SignerType.NONE,
-  public signerType: PrivateKeyT|null = null
+  public signerType: Nip07T|Nip46BunkerT|Nip46QRT|PrivateKeyT|null = null
 ){}
 
 

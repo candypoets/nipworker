@@ -4,6 +4,7 @@
 
 import * as flatbuffers from 'flatbuffers';
 
+import { NpubLimiterKey } from '../../nostr/fb/npub-limiter-key.js';
 
 
 export class NpubLimiterPipeConfig implements flatbuffers.IUnpackableObject<NpubLimiterPipeConfigT> {
@@ -39,8 +40,13 @@ maxTotalNpubs():number {
   return offset ? this.bb!.readUint32(this.bb_pos + offset) : 0;
 }
 
+keyBy():NpubLimiterKey {
+  const offset = this.bb!.__offset(this.bb_pos, 10);
+  return offset ? this.bb!.readUint8(this.bb_pos + offset) : NpubLimiterKey.Author;
+}
+
 static startNpubLimiterPipeConfig(builder:flatbuffers.Builder) {
-  builder.startObject(3);
+  builder.startObject(4);
 }
 
 static addKind(builder:flatbuffers.Builder, kind:number) {
@@ -55,16 +61,21 @@ static addMaxTotalNpubs(builder:flatbuffers.Builder, maxTotalNpubs:number) {
   builder.addFieldInt32(2, maxTotalNpubs, 0);
 }
 
+static addKeyBy(builder:flatbuffers.Builder, keyBy:NpubLimiterKey) {
+  builder.addFieldInt8(3, keyBy, NpubLimiterKey.Author);
+}
+
 static endNpubLimiterPipeConfig(builder:flatbuffers.Builder):flatbuffers.Offset {
   const offset = builder.endObject();
   return offset;
 }
 
-static createNpubLimiterPipeConfig(builder:flatbuffers.Builder, kind:number, limitPerNpub:number, maxTotalNpubs:number):flatbuffers.Offset {
+static createNpubLimiterPipeConfig(builder:flatbuffers.Builder, kind:number, limitPerNpub:number, maxTotalNpubs:number, keyBy:NpubLimiterKey):flatbuffers.Offset {
   NpubLimiterPipeConfig.startNpubLimiterPipeConfig(builder);
   NpubLimiterPipeConfig.addKind(builder, kind);
   NpubLimiterPipeConfig.addLimitPerNpub(builder, limitPerNpub);
   NpubLimiterPipeConfig.addMaxTotalNpubs(builder, maxTotalNpubs);
+  NpubLimiterPipeConfig.addKeyBy(builder, keyBy);
   return NpubLimiterPipeConfig.endNpubLimiterPipeConfig(builder);
 }
 
@@ -72,7 +83,8 @@ unpack(): NpubLimiterPipeConfigT {
   return new NpubLimiterPipeConfigT(
     this.kind(),
     this.limitPerNpub(),
-    this.maxTotalNpubs()
+    this.maxTotalNpubs(),
+    this.keyBy()
   );
 }
 
@@ -81,6 +93,7 @@ unpackTo(_o: NpubLimiterPipeConfigT): void {
   _o.kind = this.kind();
   _o.limitPerNpub = this.limitPerNpub();
   _o.maxTotalNpubs = this.maxTotalNpubs();
+  _o.keyBy = this.keyBy();
 }
 }
 
@@ -88,7 +101,8 @@ export class NpubLimiterPipeConfigT implements flatbuffers.IGeneratedObject {
 constructor(
   public kind: number = 0,
   public limitPerNpub: number = 0,
-  public maxTotalNpubs: number = 0
+  public maxTotalNpubs: number = 0,
+  public keyBy: NpubLimiterKey = NpubLimiterKey.Author
 ){}
 
 
@@ -96,7 +110,8 @@ pack(builder:flatbuffers.Builder): flatbuffers.Offset {
   return NpubLimiterPipeConfig.createNpubLimiterPipeConfig(builder,
     this.kind,
     this.limitPerNpub,
-    this.maxTotalNpubs
+    this.maxTotalNpubs,
+    this.keyBy
   );
 }
 }

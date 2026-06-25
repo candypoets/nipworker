@@ -1,5 +1,5 @@
 import { generateSecretKey, getPublicKey } from 'nostr-tools';
-import { getManager } from '.';
+import { getManager } from './manager';
 
 export { ConnectionTracker } from './lib/ConnectionTracker';
 

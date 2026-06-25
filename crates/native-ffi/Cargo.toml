@@ -1,0 +1,34 @@
+[package]
+name = "nipworker-native-ffi"
+version = "0.96.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+nipworker-core = { path = "../core", features = ["parser", "cache", "connections", "crypto"] }
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros", "net"] }
+futures = { version = "0.3", default-features = false, features = ["std"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-oslog = "0.3"
+android_logger = "0.14"
+log = "0.4"
+tracing-log = "0.2"
+flatbuffers = "25.2.10"
+serde_json = "1"
+
+# Native WebSocket client
+tungstenite = "0.24"
+url = "2.5"
+hex = "0.4.3"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+webpki-roots = "0.26"
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
+
+[build-dependencies]
+cc = "1"
+
+[dependencies.async-trait]
+version = "0.1"

@@ -14,4 +14,5 @@ table Kind30023Parsed {
   published_at: ulong;  // "published_at" tag (unix seconds; 0 if absent)
   naddr: string;        // convenience: "30023:<pubkey_hex>:<d>"
   content: string;      // markdown body of the article
+  article_blocks: [ArticleBlock]; // markdown-first parsed document blocks
 }

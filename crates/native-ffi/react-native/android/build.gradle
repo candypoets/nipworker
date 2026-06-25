@@ -1,0 +1,73 @@
+plugins {
+	id 'com.android.library'
+	id 'org.jetbrains.kotlin.android'
+	id 'com.facebook.react'
+}
+
+def resolveReactNativeDirectory() {
+	def reactNativePackage = providers.exec {
+		workingDir(rootDir)
+		commandLine("node", "--print", "require.resolve('react-native/package.json')")
+	}.standardOutput.asText.get().trim()
+	return file(reactNativePackage).parentFile
+}
+
+static def toPlatformFileString(String path) {
+	return org.gradle.internal.os.OperatingSystem.current().isWindows()
+		? path.replace(File.separatorChar, '/' as char)
+		: path
+}
+
+def reactNativeRootDir = resolveReactNativeDirectory()
+def packageRootDir = file("../../../..")
+
+react {
+	root = packageRootDir
+	jsRootDir = file("${packageRootDir}/src/specs")
+	libraryName = "NipworkerReactNativeSpec"
+	codegenJavaPackageName = "com.candypoets.nipworker.reactnative"
+}
+
+android {
+	namespace 'com.candypoets.nipworker.reactnative'
+	compileSdk rootProject.ext.has('compileSdkVersion') ? rootProject.ext.compileSdkVersion : 35
+
+	buildFeatures {
+		prefab true
+	}
+
+	sourceSets {
+		main {
+			java.srcDirs += ["$buildDir/generated/source/codegen/java"]
+		}
+	}
+
+	defaultConfig {
+		minSdk rootProject.ext.has('minSdkVersion') ? rootProject.ext.minSdkVersion : 23
+		consumerProguardFiles 'consumer-rules.pro'
+
+		externalNativeBuild {
+			cmake {
+				arguments "-DANDROID_STL=c++_shared",
+					"-DREACT_NATIVE_DIR=${toPlatformFileString(reactNativeRootDir.path)}"
+				cppFlags '-std=c++17 -fexceptions -frtti'
+			}
+		}
+	}
+
+	externalNativeBuild {
+		cmake {
+			path 'CMakeLists.txt'
+		}
+	}
+
+	sourceSets {
+		main {
+			jniLibs.srcDir '../../android/src/main/jniLibs'
+		}
+	}
+}
+
+dependencies {
+	implementation 'com.facebook.react:react-android'
+}

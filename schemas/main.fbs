@@ -21,10 +21,24 @@ table CounterPipeConfig {
 }
 
 // Configuration for NpubLimiterPipe
+enum NpubLimiterKey:ubyte {
+  Author = 0,
+  PTag = 1
+}
+
 table NpubLimiterPipeConfig {
   kind: ushort;               // Kind to limit
   limit_per_npub: uint;       // Max events per npub
   max_total_npubs: uint;      // Max total npubs to track
+  key_by: NpubLimiterKey = Author; // Event field used as the limiter key
+}
+
+// Configuration for ChatLimiterPipe
+table ChatLimiterPipeConfig {
+  own_pubkey: string (required); // User's pubkey; own messages are keyed by recipient p-tag
+  limit_per_chat: uint = 5;      // Max initial events per chat before timestamp gate applies
+  max_chats: uint = 5000;        // Max chat IDs to track
+  kinds: [ushort];              // Optional kinds to limit; empty means all kinds
 }
 
 // Configuration for SaveToDbPipe - no parameters needed
@@ -56,6 +70,7 @@ union PipeConfig {
   KindFilterPipeConfig,
   CounterPipeConfig,
   NpubLimiterPipeConfig,
+  ChatLimiterPipeConfig,
   SaveToDbPipeConfig,
   SerializeEventsPipeConfig,
   ProofVerificationPipeConfig,
@@ -96,6 +111,8 @@ table SubscriptionConfig {
   // If set, this subscription is a pagination of the given subscription ID.
   // The pipeline state (including deduplication) will be cloned from the original subscription.
   pagination: string;
+  // If true, only return events from cache without hitting the network.
+  cache_only: bool = false;
 }
 
 table Subscribe {

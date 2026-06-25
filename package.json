@@ -1,114 +1,173 @@
 {
-  "name": "@candypoets/nipworker",
-  "version": "0.96.0",
-  "description": "Nostr client library with worker-based architecture using Rust WASM",
-  "type": "module",
-  "module": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "default": "./dist/index.js"
-    },
-    "./hooks": {
-      "types": "./dist/hooks.d.ts",
-      "import": "./dist/hooks.js",
-      "default": "./dist/hooks.js"
-    },
-    "./utils": {
-      "types": "./dist/utils.d.ts",
-      "import": "./dist/utils.js",
-      "default": "./dist/utils.js"
-    },
-    "./proxy": {
-      "types": "./dist/proxy/index.d.ts",
-      "import": "./dist/proxy/index.js",
-      "default": "./dist/proxy/index.js"
-    },
-    "./proxy/server": {
-      "types": "./dist/proxy/server.d.ts",
-      "import": "./dist/proxy/server.js",
-      "default": "./dist/proxy/server.js"
-    },
-    "./proxy/vite": {
-      "types": "./dist/proxy/vite.d.ts",
-      "import": "./dist/proxy/vite.js",
-      "default": "./dist/proxy/vite.js"
-    }
-  },
-  "files": [
-    "dist",
-    "README.md"
-  ],
-  "scripts": {
-    "build": "npm-run-all --parallel build:connections build:cache build:parser build:crypto && vite build",
-    "build:crates": "npm-run-all --parallel build:connections build:cache build:parser build:crypto",
-    "build:connections": "wasm-pack build ./src/connections --release --target web",
-    "build:cache": "wasm-pack build ./src/cache --release --target web",
-    "build:parser": "wasm-pack build ./src/parser --release --target web",
-    "build:crypto": "wasm-pack build ./src/crypto --release --target web",
-    "flatc": "npm run flatc:rust && npm run flatc:ts",
-    "flatc:rust": "flatc --rust --gen-object-api --gen-all --filename-suffix '' -o ./src/shared/src/generated ./schemas/message.fbs",
-    "flatc:ts": "flatc --ts --gen-object-api --gen-all --filename-suffix '' -o ./src/generated ./schemas/message.fbs",
-    "build:types": "tsc --emitDeclarationOnly --outDir dist",
-    "prepublishOnly": "npm run build",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:ui": "vitest --ui"
-  },
-  "keywords": [
-    "nostr",
-    "protocol",
-    "web-worker",
-    "wasm",
-    "rust"
-  ],
-  "author": "So Tachi <sotachi@proton.me>",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/candypoets/nipworker.git",
-    "directory": "packages/nipworker"
-  },
-  "bugs": {
-    "url": "https://github.com/candypoets/nipworker/issues"
-  },
-  "homepage": "https://github.com/candypoets/nipworker#readme",
-  "peerDependencies": {
-    "flatbuffers": "^25.2.10",
-    "vite": "^5.0.0 || ^6.0.0",
-    "ws": "^8.0.0"
-  },
-  "peerDependenciesMeta": {
-    "vite": {
-      "optional": true
-    },
-    "ws": {
-      "optional": true
-    }
-  },
-  "devDependencies": {
-    "@types/node": "^20.19.17",
-    "@types/ws": "^8.5.12",
-    "@vitest/ui": "^4.0.18",
-    "esbuild": "^0.27.4",
-    "npm-run-all": "^4.1.5",
-    "prettier": "^3.6.2",
-    "typescript": "^5.0.0",
-    "vite": "^5.0.0",
-    "vite-plugin-dts": "^3.0.0",
-    "vite-plugin-static-copy": "^3.1.1",
-    "vite-plugin-top-level-await": "^1.6.0",
-    "vite-plugin-wasm": "^3.0.0",
-    "vitest": "^4.0.18"
-  },
-  "dependencies": {
-    "nostr-tools": "^2.0.0",
-    "socks-proxy-agent": "^9.0.0",
-    "ws": "^8.0.0"
-  },
-  "engines": {
-    "node": ">=18.0.0"
-  }
+	"name": "@candypoets/nipworker",
+	"version": "0.96.0",
+	"description": "Nostr client library with worker-based architecture using Rust WASM",
+	"type": "module",
+	"module": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js",
+			"default": "./dist/index.js"
+		},
+		"./hooks": {
+			"types": "./dist/hooks.d.ts",
+			"import": "./dist/hooks.js",
+			"default": "./dist/hooks.js"
+		},
+		"./utils": {
+			"types": "./dist/utils.d.ts",
+			"import": "./dist/utils.js",
+			"default": "./dist/utils.js"
+		},
+		"./proxy": {
+			"types": "./dist/proxy/index.d.ts",
+			"import": "./dist/proxy/index.js",
+			"default": "./dist/proxy/index.js"
+		},
+		"./proxy/server": {
+			"types": "./dist/proxy/server.d.ts",
+			"import": "./dist/proxy/server.js",
+			"default": "./dist/proxy/server.js"
+		},
+		"./proxy/vite": {
+			"types": "./dist/proxy/vite.d.ts",
+			"import": "./dist/proxy/vite.js",
+			"default": "./dist/proxy/vite.js"
+		},
+		"./native": {
+			"types": "./dist/native.d.ts",
+			"import": "./dist/native.js",
+			"default": "./dist/native.js"
+		},
+		"./react-native": {
+			"types": "./dist/react-native.d.ts",
+			"import": "./dist/react-native.js",
+			"default": "./dist/react-native.js"
+		},
+		"./engine": {
+			"types": "./dist/engine.d.ts",
+			"import": "./dist/engine.js",
+			"default": "./dist/engine.js"
+		},
+		"./legacy": {
+			"types": "./dist/legacy.d.ts",
+			"import": "./dist/legacy.js",
+			"default": "./dist/legacy.js"
+		}
+	},
+	"files": [
+		"dist",
+		"src/specs",
+		"prebuilt",
+		"react-native.config.cjs",
+		"react-native.config.ts",
+		"NipworkerReactNative.podspec",
+		"crates/native-ffi/android/src/main/jniLibs",
+		"crates/native-ffi/ios/NipworkerNativeFFI.xcframework",
+		"crates/native-ffi/react-native/android/build.gradle",
+		"crates/native-ffi/react-native/android/CMakeLists.txt",
+		"crates/native-ffi/react-native/android/consumer-rules.pro",
+		"crates/native-ffi/react-native/android/src",
+		"crates/native-ffi/react-native/ios",
+		"README.md"
+	],
+	"codegenConfig": {
+		"name": "NipworkerReactNativeSpec",
+		"type": "modules",
+		"jsSrcsDir": "src/specs",
+		"android": {
+			"javaPackageName": "com.candypoets.nipworker.reactnative"
+		},
+		"ios": {
+			"modules": {
+				"NipworkerReactNativeModule": {
+					"className": "NipworkerReactNativeModule"
+				}
+			}
+		}
+	},
+	"scripts": {
+		"build": "npm-run-all --parallel build:connections build:cache build:parser build:crypto build:engine && vite build",
+		"build:crates": "npm-run-all --parallel build:connections build:cache build:parser build:crypto build:engine",
+		"build:engine": "wasm-pack build ./src/engine --release --target web",
+		"build:connections": "wasm-pack build ./crates/connections --release --target web",
+		"build:cache": "wasm-pack build ./crates/cache --release --target web",
+		"build:parser": "wasm-pack build ./crates/parser --release --target web",
+		"build:crypto": "wasm-pack build ./crates/crypto --release --target web",
+		"flatc": "npm run flatc:rust && npm run flatc:ts",
+		"flatc:rust": "flatc --rust --gen-object-api --gen-all --filename-suffix '' -o ./crates/core/src/generated ./schemas/message.fbs",
+		"flatc:ts": "flatc --ts --gen-object-api --gen-all --filename-suffix '' -o ./src/generated ./schemas/message.fbs",
+		"build:types": "tsc --emitDeclarationOnly --outDir dist",
+		"prepublishOnly": "npm run build",
+		"test": "vitest run",
+		"test:watch": "vitest",
+		"test:ui": "vitest --ui",
+		"test:e2e": "playwright test"
+	},
+	"keywords": [
+		"nostr",
+		"protocol",
+		"web-worker",
+		"wasm",
+		"rust"
+	],
+	"author": "So Tachi <sotachi@proton.me>",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/candypoets/nipworker.git",
+		"directory": "packages/nipworker"
+	},
+	"bugs": {
+		"url": "https://github.com/candypoets/nipworker/issues"
+	},
+	"homepage": "https://github.com/candypoets/nipworker#readme",
+	"peerDependencies": {
+		"flatbuffers": "^25.2.10",
+		"react-native": ">=0.72",
+		"vite": "^5.0.0 || ^6.0.0",
+		"ws": "^8.0.0"
+	},
+	"peerDependenciesMeta": {
+		"vite": {
+			"optional": true
+		},
+		"ws": {
+			"optional": true
+		},
+		"react-native": {
+			"optional": true
+		}
+	},
+	"devDependencies": {
+		"@lynx-js/react": "^0.119.0",
+		"@lynx-js/types": "^3.7.0",
+		"@playwright/test": "^1.59.1",
+		"@types/node": "^20.19.17",
+		"@types/ws": "^8.5.12",
+		"@vitest/ui": "^4.0.18",
+		"esbuild": "^0.27.4",
+		"jsdom": "^29.0.2",
+		"koffi": "^2.16.1",
+		"npm-run-all": "^4.1.5",
+		"prettier": "^3.6.2",
+		"typescript": "^5.0.0",
+		"vite": "^5.0.0",
+		"vite-plugin-dts": "^3.0.0",
+		"vite-plugin-static-copy": "^3.1.1",
+		"vite-plugin-top-level-await": "^1.6.0",
+		"vite-plugin-wasm": "^3.0.0",
+		"vitest": "^4.0.18"
+	},
+	"dependencies": {
+		"@babel/runtime": "^7.29.7",
+		"nostr-tools": "^2.0.0",
+		"socks-proxy-agent": "^9.0.0",
+		"ws": "^8.0.0"
+	},
+	"engines": {
+		"node": ">=18.0.0"
+	}
 }

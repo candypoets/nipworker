@@ -1,7 +1,8 @@
 import { Event, EventTemplate } from 'nostr-tools';
 import { ArrayBufferReader } from 'src/lib/ArrayBufferReader';
 import { WorkerMessage } from './generated/nostr/fb';
-import { RequestObject, getManager, type SubscriptionConfig } from '.';
+import { RequestObject, getManager, type SubscriptionConfig } from './manager';
+import { scheduleMicrotask } from './lib/scheduleMicrotask';
 // Re-export type guard utilities for hooks users
 export {
 	isParsedEvent,
@@ -97,7 +98,7 @@ export function useSubscription(
 		if (!running) return;
 		if (scheduled) return;
 		scheduled = true;
-		queueMicrotask(() => {
+		scheduleMicrotask(() => {
 			scheduled = false;
 			processEvents();
 		});
@@ -179,7 +180,7 @@ export function usePublish(
 
 	if (options.trackStatus) {
 		getManager().addEventListener(`publish:${pubId}`, processEvents);
-		queueMicrotask(processEvents);
+		scheduleMicrotask(processEvents);
 	}
 
 	return unsubscribe;

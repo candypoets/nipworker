@@ -2,6 +2,7 @@
 
 /* eslint-disable @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any, @typescript-eslint/no-non-null-assertion */
 
+import { ChatLimiterPipeConfig, ChatLimiterPipeConfigT } from '../../nostr/fb/chat-limiter-pipe-config.js';
 import { CounterPipeConfig, CounterPipeConfigT } from '../../nostr/fb/counter-pipe-config.js';
 import { KindFilterPipeConfig, KindFilterPipeConfigT } from '../../nostr/fb/kind-filter-pipe-config.js';
 import { MuteFilterPipeConfig, MuteFilterPipeConfigT } from '../../nostr/fb/mute-filter-pipe-config.js';
@@ -18,22 +19,24 @@ export enum PipeConfig {
   KindFilterPipeConfig = 2,
   CounterPipeConfig = 3,
   NpubLimiterPipeConfig = 4,
-  SaveToDbPipeConfig = 5,
-  SerializeEventsPipeConfig = 6,
-  ProofVerificationPipeConfig = 7,
-  MuteFilterPipeConfig = 8
+  ChatLimiterPipeConfig = 5,
+  SaveToDbPipeConfig = 6,
+  SerializeEventsPipeConfig = 7,
+  ProofVerificationPipeConfig = 8,
+  MuteFilterPipeConfig = 9
 }
 
 export function unionToPipeConfig(
   type: PipeConfig,
-  accessor: (obj:CounterPipeConfig|KindFilterPipeConfig|MuteFilterPipeConfig|NpubLimiterPipeConfig|ParsePipeConfig|ProofVerificationPipeConfig|SaveToDbPipeConfig|SerializeEventsPipeConfig) => CounterPipeConfig|KindFilterPipeConfig|MuteFilterPipeConfig|NpubLimiterPipeConfig|ParsePipeConfig|ProofVerificationPipeConfig|SaveToDbPipeConfig|SerializeEventsPipeConfig|null
-): CounterPipeConfig|KindFilterPipeConfig|MuteFilterPipeConfig|NpubLimiterPipeConfig|ParsePipeConfig|ProofVerificationPipeConfig|SaveToDbPipeConfig|SerializeEventsPipeConfig|null {
+  accessor: (obj:ChatLimiterPipeConfig|CounterPipeConfig|KindFilterPipeConfig|MuteFilterPipeConfig|NpubLimiterPipeConfig|ParsePipeConfig|ProofVerificationPipeConfig|SaveToDbPipeConfig|SerializeEventsPipeConfig) => ChatLimiterPipeConfig|CounterPipeConfig|KindFilterPipeConfig|MuteFilterPipeConfig|NpubLimiterPipeConfig|ParsePipeConfig|ProofVerificationPipeConfig|SaveToDbPipeConfig|SerializeEventsPipeConfig|null
+): ChatLimiterPipeConfig|CounterPipeConfig|KindFilterPipeConfig|MuteFilterPipeConfig|NpubLimiterPipeConfig|ParsePipeConfig|ProofVerificationPipeConfig|SaveToDbPipeConfig|SerializeEventsPipeConfig|null {
   switch(PipeConfig[type]) {
     case 'NONE': return null; 
     case 'ParsePipeConfig': return accessor(new ParsePipeConfig())! as ParsePipeConfig;
     case 'KindFilterPipeConfig': return accessor(new KindFilterPipeConfig())! as KindFilterPipeConfig;
     case 'CounterPipeConfig': return accessor(new CounterPipeConfig())! as CounterPipeConfig;
     case 'NpubLimiterPipeConfig': return accessor(new NpubLimiterPipeConfig())! as NpubLimiterPipeConfig;
+    case 'ChatLimiterPipeConfig': return accessor(new ChatLimiterPipeConfig())! as ChatLimiterPipeConfig;
     case 'SaveToDbPipeConfig': return accessor(new SaveToDbPipeConfig())! as SaveToDbPipeConfig;
     case 'SerializeEventsPipeConfig': return accessor(new SerializeEventsPipeConfig())! as SerializeEventsPipeConfig;
     case 'ProofVerificationPipeConfig': return accessor(new ProofVerificationPipeConfig())! as ProofVerificationPipeConfig;
@@ -44,15 +47,16 @@ export function unionToPipeConfig(
 
 export function unionListToPipeConfig(
   type: PipeConfig, 
-  accessor: (index: number, obj:CounterPipeConfig|KindFilterPipeConfig|MuteFilterPipeConfig|NpubLimiterPipeConfig|ParsePipeConfig|ProofVerificationPipeConfig|SaveToDbPipeConfig|SerializeEventsPipeConfig) => CounterPipeConfig|KindFilterPipeConfig|MuteFilterPipeConfig|NpubLimiterPipeConfig|ParsePipeConfig|ProofVerificationPipeConfig|SaveToDbPipeConfig|SerializeEventsPipeConfig|null, 
+  accessor: (index: number, obj:ChatLimiterPipeConfig|CounterPipeConfig|KindFilterPipeConfig|MuteFilterPipeConfig|NpubLimiterPipeConfig|ParsePipeConfig|ProofVerificationPipeConfig|SaveToDbPipeConfig|SerializeEventsPipeConfig) => ChatLimiterPipeConfig|CounterPipeConfig|KindFilterPipeConfig|MuteFilterPipeConfig|NpubLimiterPipeConfig|ParsePipeConfig|ProofVerificationPipeConfig|SaveToDbPipeConfig|SerializeEventsPipeConfig|null, 
   index: number
-): CounterPipeConfig|KindFilterPipeConfig|MuteFilterPipeConfig|NpubLimiterPipeConfig|ParsePipeConfig|ProofVerificationPipeConfig|SaveToDbPipeConfig|SerializeEventsPipeConfig|null {
+): ChatLimiterPipeConfig|CounterPipeConfig|KindFilterPipeConfig|MuteFilterPipeConfig|NpubLimiterPipeConfig|ParsePipeConfig|ProofVerificationPipeConfig|SaveToDbPipeConfig|SerializeEventsPipeConfig|null {
   switch(PipeConfig[type]) {
     case 'NONE': return null; 
     case 'ParsePipeConfig': return accessor(index, new ParsePipeConfig())! as ParsePipeConfig;
     case 'KindFilterPipeConfig': return accessor(index, new KindFilterPipeConfig())! as KindFilterPipeConfig;
     case 'CounterPipeConfig': return accessor(index, new CounterPipeConfig())! as CounterPipeConfig;
     case 'NpubLimiterPipeConfig': return accessor(index, new NpubLimiterPipeConfig())! as NpubLimiterPipeConfig;
+    case 'ChatLimiterPipeConfig': return accessor(index, new ChatLimiterPipeConfig())! as ChatLimiterPipeConfig;
     case 'SaveToDbPipeConfig': return accessor(index, new SaveToDbPipeConfig())! as SaveToDbPipeConfig;
     case 'SerializeEventsPipeConfig': return accessor(index, new SerializeEventsPipeConfig())! as SerializeEventsPipeConfig;
     case 'ProofVerificationPipeConfig': return accessor(index, new ProofVerificationPipeConfig())! as ProofVerificationPipeConfig;

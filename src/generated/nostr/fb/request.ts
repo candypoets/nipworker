@@ -128,8 +128,13 @@ maxRelays():number {
   return offset ? this.bb!.readUint16(this.bb_pos + offset) : 0;
 }
 
+cacheOnly():boolean {
+  const offset = this.bb!.__offset(this.bb_pos, 30);
+  return offset ? !!this.bb!.readInt8(this.bb_pos + offset) : false;
+}
+
 static startRequest(builder:flatbuffers.Builder) {
-  builder.startObject(13);
+  builder.startObject(14);
 }
 
 static addIds(builder:flatbuffers.Builder, idsOffset:flatbuffers.Offset) {
@@ -249,12 +254,16 @@ static addMaxRelays(builder:flatbuffers.Builder, maxRelays:number) {
   builder.addFieldInt16(12, maxRelays, 0);
 }
 
+static addCacheOnly(builder:flatbuffers.Builder, cacheOnly:boolean) {
+  builder.addFieldInt8(13, +cacheOnly, +false);
+}
+
 static endRequest(builder:flatbuffers.Builder):flatbuffers.Offset {
   const offset = builder.endObject();
   return offset;
 }
 
-static createRequest(builder:flatbuffers.Builder, idsOffset:flatbuffers.Offset, authorsOffset:flatbuffers.Offset, kindsOffset:flatbuffers.Offset, tagsOffset:flatbuffers.Offset, limit:number, since:number, until:number, searchOffset:flatbuffers.Offset, relaysOffset:flatbuffers.Offset, closeOnEose:boolean, cacheFirst:boolean, noCache:boolean, maxRelays:number):flatbuffers.Offset {
+static createRequest(builder:flatbuffers.Builder, idsOffset:flatbuffers.Offset, authorsOffset:flatbuffers.Offset, kindsOffset:flatbuffers.Offset, tagsOffset:flatbuffers.Offset, limit:number, since:number, until:number, searchOffset:flatbuffers.Offset, relaysOffset:flatbuffers.Offset, closeOnEose:boolean, cacheFirst:boolean, noCache:boolean, maxRelays:number, cacheOnly:boolean):flatbuffers.Offset {
   Request.startRequest(builder);
   Request.addIds(builder, idsOffset);
   Request.addAuthors(builder, authorsOffset);
@@ -269,6 +278,7 @@ static createRequest(builder:flatbuffers.Builder, idsOffset:flatbuffers.Offset, 
   Request.addCacheFirst(builder, cacheFirst);
   Request.addNoCache(builder, noCache);
   Request.addMaxRelays(builder, maxRelays);
+  Request.addCacheOnly(builder, cacheOnly);
   return Request.endRequest(builder);
 }
 
@@ -286,7 +296,8 @@ unpack(): RequestT {
     this.closeOnEose(),
     this.cacheFirst(),
     this.noCache(),
-    this.maxRelays()
+    this.maxRelays(),
+    this.cacheOnly()
   );
 }
 
@@ -305,6 +316,7 @@ unpackTo(_o: RequestT): void {
   _o.cacheFirst = this.cacheFirst();
   _o.noCache = this.noCache();
   _o.maxRelays = this.maxRelays();
+  _o.cacheOnly = this.cacheOnly();
 }
 }
 
@@ -322,7 +334,8 @@ constructor(
   public closeOnEose: boolean = false,
   public cacheFirst: boolean = false,
   public noCache: boolean = false,
-  public maxRelays: number = 0
+  public maxRelays: number = 0,
+  public cacheOnly: boolean = false
 ){}
 
 
@@ -347,7 +360,8 @@ pack(builder:flatbuffers.Builder): flatbuffers.Offset {
     this.closeOnEose,
     this.cacheFirst,
     this.noCache,
-    this.maxRelays
+    this.maxRelays,
+    this.cacheOnly
   );
 }
 }
