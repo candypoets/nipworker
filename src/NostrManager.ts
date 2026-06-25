@@ -72,11 +72,11 @@ export class NostrManager extends BaseBackend {
 		const useProxyConnections = !!config.proxy;
 		// Keep literal paths so Vite can statically rewrite worker URLs in production builds.
 		const connectionURL = useProxyConnections
-			? new URL('./connections/proxy.ts', import.meta.url)
-			: new URL('./connections/index.ts', import.meta.url);
-		const cacheURL = new URL('./cache/index.ts', import.meta.url);
-		const parserURL = new URL('./parser/index.ts', import.meta.url);
-		const cryptoURL = new URL('./crypto/index.ts', import.meta.url);
+			? new URL('./connections/proxy.js', import.meta.url)
+			: new URL('./connections/index.js', import.meta.url);
+		const cacheURL = new URL('./cache/index.js', import.meta.url);
+		const parserURL = new URL('./parser/index.js', import.meta.url);
+		const cryptoURL = new URL('./crypto/index.js', import.meta.url);
 		console.log('constructing crates');
 		this.connections = new Worker(connectionURL, { type: 'module' });
 		this.cache = new Worker(cacheURL, { type: 'module' });
