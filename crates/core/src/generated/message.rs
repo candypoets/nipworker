@@ -1410,6 +1410,95 @@ pub mod nostr {
             since = "2.0.0",
             note = "Use associated constants instead. This will no longer be generated in 2021."
         )]
+        pub const ENUM_MIN_NPUB_LIMITER_KEY: u8 = 0;
+        #[deprecated(
+            since = "2.0.0",
+            note = "Use associated constants instead. This will no longer be generated in 2021."
+        )]
+        pub const ENUM_MAX_NPUB_LIMITER_KEY: u8 = 1;
+        #[deprecated(
+            since = "2.0.0",
+            note = "Use associated constants instead. This will no longer be generated in 2021."
+        )]
+        #[allow(non_camel_case_types)]
+        pub const ENUM_VALUES_NPUB_LIMITER_KEY: [NpubLimiterKey; 2] =
+            [NpubLimiterKey::Author, NpubLimiterKey::PTag];
+
+        #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+        #[repr(transparent)]
+        pub struct NpubLimiterKey(pub u8);
+        #[allow(non_upper_case_globals)]
+        impl NpubLimiterKey {
+            pub const Author: Self = Self(0);
+            pub const PTag: Self = Self(1);
+
+            pub const ENUM_MIN: u8 = 0;
+            pub const ENUM_MAX: u8 = 1;
+            pub const ENUM_VALUES: &'static [Self] = &[Self::Author, Self::PTag];
+            /// Returns the variant's name or "" if unknown.
+            pub fn variant_name(self) -> Option<&'static str> {
+                match self {
+                    Self::Author => Some("Author"),
+                    Self::PTag => Some("PTag"),
+                    _ => None,
+                }
+            }
+        }
+        impl ::core::fmt::Debug for NpubLimiterKey {
+            fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
+                if let Some(name) = self.variant_name() {
+                    f.write_str(name)
+                } else {
+                    f.write_fmt(format_args!("<UNKNOWN {:?}>", self.0))
+                }
+            }
+        }
+        impl<'a> ::flatbuffers::Follow<'a> for NpubLimiterKey {
+            type Inner = Self;
+            #[inline]
+            unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+                let b = unsafe { ::flatbuffers::read_scalar_at::<u8>(buf, loc) };
+                Self(b)
+            }
+        }
+
+        impl ::flatbuffers::Push for NpubLimiterKey {
+            type Output = NpubLimiterKey;
+            #[inline]
+            unsafe fn push(&self, dst: &mut [u8], _written_len: usize) {
+                unsafe { ::flatbuffers::emplace_scalar::<u8>(dst, self.0) };
+            }
+        }
+
+        impl ::flatbuffers::EndianScalar for NpubLimiterKey {
+            type Scalar = u8;
+            #[inline]
+            fn to_little_endian(self) -> u8 {
+                self.0.to_le()
+            }
+            #[inline]
+            #[allow(clippy::wrong_self_convention)]
+            fn from_little_endian(v: u8) -> Self {
+                let b = u8::from_le(v);
+                Self(b)
+            }
+        }
+
+        impl<'a> ::flatbuffers::Verifiable for NpubLimiterKey {
+            #[inline]
+            fn run_verifier(
+                v: &mut ::flatbuffers::Verifier,
+                pos: usize,
+            ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
+                u8::run_verifier(v, pos)
+            }
+        }
+
+        impl ::flatbuffers::SimpleToVerifyInSlice for NpubLimiterKey {}
+        #[deprecated(
+            since = "2.0.0",
+            note = "Use associated constants instead. This will no longer be generated in 2021."
+        )]
         pub const ENUM_MIN_PIPE_CONFIG: u8 = 0;
         #[deprecated(
             since = "2.0.0",
@@ -2440,13 +2529,14 @@ pub mod nostr {
             note = "Use associated constants instead. This will no longer be generated in 2021."
         )]
         #[allow(non_camel_case_types)]
-        pub const ENUM_VALUES_PARSED_DATA_UNION: [ParsedDataUnion; 25] = [
+        pub const ENUM_VALUES_PARSED_DATA_UNION: [ParsedDataUnion; 26] = [
             ParsedDataUnion::Kind0Parsed,
             ParsedDataUnion::Kind1Parsed,
             ParsedDataUnion::Kind3Parsed,
             ParsedDataUnion::Kind4Parsed,
             ParsedDataUnion::Kind6Parsed,
             ParsedDataUnion::Kind7Parsed,
+            ParsedDataUnion::Kind8Parsed,
             ParsedDataUnion::Kind17Parsed,
             ParsedDataUnion::Kind20Parsed,
             ParsedDataUnion::Kind22Parsed,
@@ -2479,6 +2569,7 @@ pub mod nostr {
             pub const Kind4Parsed: Self = Self(4);
             pub const Kind6Parsed: Self = Self(6);
             pub const Kind7Parsed: Self = Self(7);
+            pub const Kind8Parsed: Self = Self(8);
             pub const Kind17Parsed: Self = Self(17);
             pub const Kind20Parsed: Self = Self(20);
             pub const Kind22Parsed: Self = Self(22);
@@ -2508,6 +2599,7 @@ pub mod nostr {
                 Self::Kind4Parsed,
                 Self::Kind6Parsed,
                 Self::Kind7Parsed,
+                Self::Kind8Parsed,
                 Self::Kind17Parsed,
                 Self::Kind20Parsed,
                 Self::Kind22Parsed,
@@ -2537,6 +2629,7 @@ pub mod nostr {
                     Self::Kind4Parsed => Some("Kind4Parsed"),
                     Self::Kind6Parsed => Some("Kind6Parsed"),
                     Self::Kind7Parsed => Some("Kind7Parsed"),
+                    Self::Kind8Parsed => Some("Kind8Parsed"),
                     Self::Kind17Parsed => Some("Kind17Parsed"),
                     Self::Kind20Parsed => Some("Kind20Parsed"),
                     Self::Kind22Parsed => Some("Kind22Parsed"),
@@ -2620,13 +2713,13 @@ pub mod nostr {
             since = "2.0.0",
             note = "Use associated constants instead. This will no longer be generated in 2021."
         )]
-        pub const ENUM_MAX_PARSED_DATA: u8 = 24;
+        pub const ENUM_MAX_PARSED_DATA: u8 = 25;
         #[deprecated(
             since = "2.0.0",
             note = "Use associated constants instead. This will no longer be generated in 2021."
         )]
         #[allow(non_camel_case_types)]
-        pub const ENUM_VALUES_PARSED_DATA: [ParsedData; 25] = [
+        pub const ENUM_VALUES_PARSED_DATA: [ParsedData; 26] = [
             ParsedData::NONE,
             ParsedData::Kind0Parsed,
             ParsedData::Kind1Parsed,
@@ -2634,6 +2727,7 @@ pub mod nostr {
             ParsedData::Kind4Parsed,
             ParsedData::Kind6Parsed,
             ParsedData::Kind7Parsed,
+            ParsedData::Kind8Parsed,
             ParsedData::Kind17Parsed,
             ParsedData::Kind20Parsed,
             ParsedData::Kind22Parsed,
@@ -2666,27 +2760,28 @@ pub mod nostr {
             pub const Kind4Parsed: Self = Self(4);
             pub const Kind6Parsed: Self = Self(5);
             pub const Kind7Parsed: Self = Self(6);
-            pub const Kind17Parsed: Self = Self(7);
-            pub const Kind20Parsed: Self = Self(8);
-            pub const Kind22Parsed: Self = Self(9);
-            pub const Kind1111Parsed: Self = Self(10);
-            pub const Kind1311Parsed: Self = Self(11);
-            pub const Kind1068Parsed: Self = Self(12);
-            pub const Kind1018Parsed: Self = Self(13);
-            pub const Kind10002Parsed: Self = Self(14);
-            pub const Kind10019Parsed: Self = Self(15);
-            pub const Kind17375Parsed: Self = Self(16);
-            pub const Kind7374Parsed: Self = Self(17);
-            pub const Kind7375Parsed: Self = Self(18);
-            pub const Kind7376Parsed: Self = Self(19);
-            pub const Kind9321Parsed: Self = Self(20);
-            pub const Kind9735Parsed: Self = Self(21);
-            pub const Kind30023Parsed: Self = Self(22);
-            pub const ListParsed: Self = Self(23);
-            pub const PreGenericParsed: Self = Self(24);
+            pub const Kind8Parsed: Self = Self(7);
+            pub const Kind17Parsed: Self = Self(8);
+            pub const Kind20Parsed: Self = Self(9);
+            pub const Kind22Parsed: Self = Self(10);
+            pub const Kind1111Parsed: Self = Self(11);
+            pub const Kind1311Parsed: Self = Self(12);
+            pub const Kind1068Parsed: Self = Self(13);
+            pub const Kind1018Parsed: Self = Self(14);
+            pub const Kind10002Parsed: Self = Self(15);
+            pub const Kind10019Parsed: Self = Self(16);
+            pub const Kind17375Parsed: Self = Self(17);
+            pub const Kind7374Parsed: Self = Self(18);
+            pub const Kind7375Parsed: Self = Self(19);
+            pub const Kind7376Parsed: Self = Self(20);
+            pub const Kind9321Parsed: Self = Self(21);
+            pub const Kind9735Parsed: Self = Self(22);
+            pub const Kind30023Parsed: Self = Self(23);
+            pub const ListParsed: Self = Self(24);
+            pub const PreGenericParsed: Self = Self(25);
 
             pub const ENUM_MIN: u8 = 0;
-            pub const ENUM_MAX: u8 = 24;
+            pub const ENUM_MAX: u8 = 25;
             pub const ENUM_VALUES: &'static [Self] = &[
                 Self::NONE,
                 Self::Kind0Parsed,
@@ -2695,6 +2790,7 @@ pub mod nostr {
                 Self::Kind4Parsed,
                 Self::Kind6Parsed,
                 Self::Kind7Parsed,
+                Self::Kind8Parsed,
                 Self::Kind17Parsed,
                 Self::Kind20Parsed,
                 Self::Kind22Parsed,
@@ -2724,6 +2820,7 @@ pub mod nostr {
                     Self::Kind4Parsed => Some("Kind4Parsed"),
                     Self::Kind6Parsed => Some("Kind6Parsed"),
                     Self::Kind7Parsed => Some("Kind7Parsed"),
+                    Self::Kind8Parsed => Some("Kind8Parsed"),
                     Self::Kind17Parsed => Some("Kind17Parsed"),
                     Self::Kind20Parsed => Some("Kind20Parsed"),
                     Self::Kind22Parsed => Some("Kind22Parsed"),
@@ -2810,6 +2907,7 @@ pub mod nostr {
             Kind4Parsed(alloc::boxed::Box<Kind4ParsedT>),
             Kind6Parsed(alloc::boxed::Box<Kind6ParsedT>),
             Kind7Parsed(alloc::boxed::Box<Kind7ParsedT>),
+            Kind8Parsed(alloc::boxed::Box<Kind8ParsedT>),
             Kind17Parsed(alloc::boxed::Box<Kind17ParsedT>),
             Kind20Parsed(alloc::boxed::Box<Kind20ParsedT>),
             Kind22Parsed(alloc::boxed::Box<Kind22ParsedT>),
@@ -2844,6 +2942,7 @@ pub mod nostr {
                     Self::Kind4Parsed(_) => ParsedData::Kind4Parsed,
                     Self::Kind6Parsed(_) => ParsedData::Kind6Parsed,
                     Self::Kind7Parsed(_) => ParsedData::Kind7Parsed,
+                    Self::Kind8Parsed(_) => ParsedData::Kind8Parsed,
                     Self::Kind17Parsed(_) => ParsedData::Kind17Parsed,
                     Self::Kind20Parsed(_) => ParsedData::Kind20Parsed,
                     Self::Kind22Parsed(_) => ParsedData::Kind22Parsed,
@@ -2876,6 +2975,7 @@ pub mod nostr {
                     Self::Kind4Parsed(v) => Some(v.pack(fbb).as_union_value()),
                     Self::Kind6Parsed(v) => Some(v.pack(fbb).as_union_value()),
                     Self::Kind7Parsed(v) => Some(v.pack(fbb).as_union_value()),
+                    Self::Kind8Parsed(v) => Some(v.pack(fbb).as_union_value()),
                     Self::Kind17Parsed(v) => Some(v.pack(fbb).as_union_value()),
                     Self::Kind20Parsed(v) => Some(v.pack(fbb).as_union_value()),
                     Self::Kind22Parsed(v) => Some(v.pack(fbb).as_union_value()),
@@ -3065,6 +3165,35 @@ pub mod nostr {
             /// If the union variant matches, return a mutable reference to the Kind7ParsedT.
             pub fn as_kind_7_parsed_mut(&mut self) -> Option<&mut Kind7ParsedT> {
                 if let Self::Kind7Parsed(v) = self {
+                    Some(v.as_mut())
+                } else {
+                    None
+                }
+            }
+            /// If the union variant matches, return the owned Kind8ParsedT, setting the union to NONE.
+            pub fn take_kind_8_parsed(&mut self) -> Option<alloc::boxed::Box<Kind8ParsedT>> {
+                if let Self::Kind8Parsed(_) = self {
+                    let v = ::core::mem::replace(self, Self::NONE);
+                    if let Self::Kind8Parsed(w) = v {
+                        Some(w)
+                    } else {
+                        unreachable!()
+                    }
+                } else {
+                    None
+                }
+            }
+            /// If the union variant matches, return a reference to the Kind8ParsedT.
+            pub fn as_kind_8_parsed(&self) -> Option<&Kind8ParsedT> {
+                if let Self::Kind8Parsed(v) = self {
+                    Some(v.as_ref())
+                } else {
+                    None
+                }
+            }
+            /// If the union variant matches, return a mutable reference to the Kind8ParsedT.
+            pub fn as_kind_8_parsed_mut(&mut self) -> Option<&mut Kind8ParsedT> {
+                if let Self::Kind8Parsed(v) = self {
                     Some(v.as_mut())
                 } else {
                     None
@@ -13387,6 +13516,7 @@ pub mod nostr {
             pub const VT_KIND: ::flatbuffers::VOffsetT = 4;
             pub const VT_LIMIT_PER_NPUB: ::flatbuffers::VOffsetT = 6;
             pub const VT_MAX_TOTAL_NPUBS: ::flatbuffers::VOffsetT = 8;
+            pub const VT_KEY_BY: ::flatbuffers::VOffsetT = 10;
 
             #[inline]
             pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
@@ -13406,6 +13536,7 @@ pub mod nostr {
                 builder.add_max_total_npubs(args.max_total_npubs);
                 builder.add_limit_per_npub(args.limit_per_npub);
                 builder.add_kind(args.kind);
+                builder.add_key_by(args.key_by);
                 builder.finish()
             }
 
@@ -13413,10 +13544,12 @@ pub mod nostr {
                 let kind = self.kind();
                 let limit_per_npub = self.limit_per_npub();
                 let max_total_npubs = self.max_total_npubs();
+                let key_by = self.key_by();
                 NpubLimiterPipeConfigT {
                     kind,
                     limit_per_npub,
                     max_total_npubs,
+                    key_by,
                 }
             }
 
@@ -13453,6 +13586,20 @@ pub mod nostr {
                         .unwrap()
                 }
             }
+            #[inline]
+            pub fn key_by(&self) -> NpubLimiterKey {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe {
+                    self._tab
+                        .get::<NpubLimiterKey>(
+                            NpubLimiterPipeConfig::VT_KEY_BY,
+                            Some(NpubLimiterKey::Author),
+                        )
+                        .unwrap()
+                }
+            }
         }
 
         impl ::flatbuffers::Verifiable for NpubLimiterPipeConfig<'_> {
@@ -13465,6 +13612,7 @@ pub mod nostr {
                     .visit_field::<u16>("kind", Self::VT_KIND, false)?
                     .visit_field::<u32>("limit_per_npub", Self::VT_LIMIT_PER_NPUB, false)?
                     .visit_field::<u32>("max_total_npubs", Self::VT_MAX_TOTAL_NPUBS, false)?
+                    .visit_field::<NpubLimiterKey>("key_by", Self::VT_KEY_BY, false)?
                     .finish();
                 Ok(())
             }
@@ -13473,6 +13621,7 @@ pub mod nostr {
             pub kind: u16,
             pub limit_per_npub: u32,
             pub max_total_npubs: u32,
+            pub key_by: NpubLimiterKey,
         }
         impl<'a> Default for NpubLimiterPipeConfigArgs {
             #[inline]
@@ -13481,6 +13630,7 @@ pub mod nostr {
                     kind: 0,
                     limit_per_npub: 0,
                     max_total_npubs: 0,
+                    key_by: NpubLimiterKey::Author,
                 }
             }
         }
@@ -13512,6 +13662,14 @@ pub mod nostr {
                 );
             }
             #[inline]
+            pub fn add_key_by(&mut self, key_by: NpubLimiterKey) {
+                self.fbb_.push_slot::<NpubLimiterKey>(
+                    NpubLimiterPipeConfig::VT_KEY_BY,
+                    key_by,
+                    NpubLimiterKey::Author,
+                );
+            }
+            #[inline]
             pub fn new(
                 _fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
             ) -> NpubLimiterPipeConfigBuilder<'a, 'b, A> {
@@ -13534,6 +13692,7 @@ pub mod nostr {
                 ds.field("kind", &self.kind());
                 ds.field("limit_per_npub", &self.limit_per_npub());
                 ds.field("max_total_npubs", &self.max_total_npubs());
+                ds.field("key_by", &self.key_by());
                 ds.finish()
             }
         }
@@ -13543,6 +13702,7 @@ pub mod nostr {
             pub kind: u16,
             pub limit_per_npub: u32,
             pub max_total_npubs: u32,
+            pub key_by: NpubLimiterKey,
         }
         impl Default for NpubLimiterPipeConfigT {
             fn default() -> Self {
@@ -13550,6 +13710,7 @@ pub mod nostr {
                     kind: 0,
                     limit_per_npub: 0,
                     max_total_npubs: 0,
+                    key_by: NpubLimiterKey::Author,
                 }
             }
         }
@@ -13561,12 +13722,14 @@ pub mod nostr {
                 let kind = self.kind;
                 let limit_per_npub = self.limit_per_npub;
                 let max_total_npubs = self.max_total_npubs;
+                let key_by = self.key_by;
                 NpubLimiterPipeConfig::create(
                     _fbb,
                     &NpubLimiterPipeConfigArgs {
                         kind,
                         limit_per_npub,
                         max_total_npubs,
+                        key_by,
                     },
                 )
             }
@@ -19765,6 +19928,503 @@ pub mod nostr {
                         event_kind,
                         emoji,
                         target_coordinates,
+                    },
+                )
+            }
+        }
+        pub enum BadgeAwardRecipientOffset {}
+        #[derive(Copy, Clone, PartialEq)]
+
+        pub struct BadgeAwardRecipient<'a> {
+            pub _tab: ::flatbuffers::Table<'a>,
+        }
+
+        impl<'a> ::flatbuffers::Follow<'a> for BadgeAwardRecipient<'a> {
+            type Inner = BadgeAwardRecipient<'a>;
+            #[inline]
+            unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+                Self {
+                    _tab: unsafe { ::flatbuffers::Table::new(buf, loc) },
+                }
+            }
+        }
+
+        impl<'a> BadgeAwardRecipient<'a> {
+            pub const VT_PUBKEY: ::flatbuffers::VOffsetT = 4;
+            pub const VT_RELAY: ::flatbuffers::VOffsetT = 6;
+
+            #[inline]
+            pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
+                BadgeAwardRecipient { _tab: table }
+            }
+            #[allow(unused_mut)]
+            pub fn create<
+                'bldr: 'args,
+                'args: 'mut_bldr,
+                'mut_bldr,
+                A: ::flatbuffers::Allocator + 'bldr,
+            >(
+                _fbb: &'mut_bldr mut ::flatbuffers::FlatBufferBuilder<'bldr, A>,
+                args: &'args BadgeAwardRecipientArgs<'args>,
+            ) -> ::flatbuffers::WIPOffset<BadgeAwardRecipient<'bldr>> {
+                let mut builder = BadgeAwardRecipientBuilder::new(_fbb);
+                if let Some(x) = args.relay {
+                    builder.add_relay(x);
+                }
+                if let Some(x) = args.pubkey {
+                    builder.add_pubkey(x);
+                }
+                builder.finish()
+            }
+
+            pub fn unpack(&self) -> BadgeAwardRecipientT {
+                let pubkey = {
+                    let x = self.pubkey();
+                    alloc::string::ToString::to_string(x)
+                };
+                let relay = self.relay().map(|x| alloc::string::ToString::to_string(x));
+                BadgeAwardRecipientT { pubkey, relay }
+            }
+
+            #[inline]
+            pub fn pubkey(&self) -> &'a str {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe {
+                    self._tab
+                        .get::<::flatbuffers::ForwardsUOffset<&str>>(
+                            BadgeAwardRecipient::VT_PUBKEY,
+                            None,
+                        )
+                        .unwrap()
+                }
+            }
+            #[inline]
+            pub fn relay(&self) -> Option<&'a str> {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe {
+                    self._tab.get::<::flatbuffers::ForwardsUOffset<&str>>(
+                        BadgeAwardRecipient::VT_RELAY,
+                        None,
+                    )
+                }
+            }
+        }
+
+        impl ::flatbuffers::Verifiable for BadgeAwardRecipient<'_> {
+            #[inline]
+            fn run_verifier(
+                v: &mut ::flatbuffers::Verifier,
+                pos: usize,
+            ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
+                v.visit_table(pos)?
+                    .visit_field::<::flatbuffers::ForwardsUOffset<&str>>(
+                        "pubkey",
+                        Self::VT_PUBKEY,
+                        true,
+                    )?
+                    .visit_field::<::flatbuffers::ForwardsUOffset<&str>>(
+                        "relay",
+                        Self::VT_RELAY,
+                        false,
+                    )?
+                    .finish();
+                Ok(())
+            }
+        }
+        pub struct BadgeAwardRecipientArgs<'a> {
+            pub pubkey: Option<::flatbuffers::WIPOffset<&'a str>>,
+            pub relay: Option<::flatbuffers::WIPOffset<&'a str>>,
+        }
+        impl<'a> Default for BadgeAwardRecipientArgs<'a> {
+            #[inline]
+            fn default() -> Self {
+                BadgeAwardRecipientArgs {
+                    pubkey: None, // required field
+                    relay: None,
+                }
+            }
+        }
+
+        pub struct BadgeAwardRecipientBuilder<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> {
+            fbb_: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
+            start_: ::flatbuffers::WIPOffset<::flatbuffers::TableUnfinishedWIPOffset>,
+        }
+        impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> BadgeAwardRecipientBuilder<'a, 'b, A> {
+            #[inline]
+            pub fn add_pubkey(&mut self, pubkey: ::flatbuffers::WIPOffset<&'b str>) {
+                self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(
+                    BadgeAwardRecipient::VT_PUBKEY,
+                    pubkey,
+                );
+            }
+            #[inline]
+            pub fn add_relay(&mut self, relay: ::flatbuffers::WIPOffset<&'b str>) {
+                self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(
+                    BadgeAwardRecipient::VT_RELAY,
+                    relay,
+                );
+            }
+            #[inline]
+            pub fn new(
+                _fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
+            ) -> BadgeAwardRecipientBuilder<'a, 'b, A> {
+                let start = _fbb.start_table();
+                BadgeAwardRecipientBuilder {
+                    fbb_: _fbb,
+                    start_: start,
+                }
+            }
+            #[inline]
+            pub fn finish(self) -> ::flatbuffers::WIPOffset<BadgeAwardRecipient<'a>> {
+                let o = self.fbb_.end_table(self.start_);
+                self.fbb_
+                    .required(o, BadgeAwardRecipient::VT_PUBKEY, "pubkey");
+                ::flatbuffers::WIPOffset::new(o.value())
+            }
+        }
+
+        impl ::core::fmt::Debug for BadgeAwardRecipient<'_> {
+            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                let mut ds = f.debug_struct("BadgeAwardRecipient");
+                ds.field("pubkey", &self.pubkey());
+                ds.field("relay", &self.relay());
+                ds.finish()
+            }
+        }
+        #[non_exhaustive]
+        #[derive(Debug, Clone, PartialEq)]
+        pub struct BadgeAwardRecipientT {
+            pub pubkey: alloc::string::String,
+            pub relay: Option<alloc::string::String>,
+        }
+        impl Default for BadgeAwardRecipientT {
+            fn default() -> Self {
+                Self {
+                    pubkey: alloc::string::ToString::to_string(""),
+                    relay: None,
+                }
+            }
+        }
+        impl BadgeAwardRecipientT {
+            pub fn pack<'b, A: ::flatbuffers::Allocator + 'b>(
+                &self,
+                _fbb: &mut ::flatbuffers::FlatBufferBuilder<'b, A>,
+            ) -> ::flatbuffers::WIPOffset<BadgeAwardRecipient<'b>> {
+                let pubkey = Some({
+                    let x = &self.pubkey;
+                    _fbb.create_string(x)
+                });
+                let relay = self.relay.as_ref().map(|x| _fbb.create_string(x));
+                BadgeAwardRecipient::create(_fbb, &BadgeAwardRecipientArgs { pubkey, relay })
+            }
+        }
+        pub enum Kind8ParsedOffset {}
+        #[derive(Copy, Clone, PartialEq)]
+
+        pub struct Kind8Parsed<'a> {
+            pub _tab: ::flatbuffers::Table<'a>,
+        }
+
+        impl<'a> ::flatbuffers::Follow<'a> for Kind8Parsed<'a> {
+            type Inner = Kind8Parsed<'a>;
+            #[inline]
+            unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+                Self {
+                    _tab: unsafe { ::flatbuffers::Table::new(buf, loc) },
+                }
+            }
+        }
+
+        impl<'a> Kind8Parsed<'a> {
+            pub const VT_BADGE_ADDRESS: ::flatbuffers::VOffsetT = 4;
+            pub const VT_BADGE_RELAY: ::flatbuffers::VOffsetT = 6;
+            pub const VT_RECIPIENTS: ::flatbuffers::VOffsetT = 8;
+            pub const VT_CONTENT: ::flatbuffers::VOffsetT = 10;
+
+            #[inline]
+            pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
+                Kind8Parsed { _tab: table }
+            }
+            #[allow(unused_mut)]
+            pub fn create<
+                'bldr: 'args,
+                'args: 'mut_bldr,
+                'mut_bldr,
+                A: ::flatbuffers::Allocator + 'bldr,
+            >(
+                _fbb: &'mut_bldr mut ::flatbuffers::FlatBufferBuilder<'bldr, A>,
+                args: &'args Kind8ParsedArgs<'args>,
+            ) -> ::flatbuffers::WIPOffset<Kind8Parsed<'bldr>> {
+                let mut builder = Kind8ParsedBuilder::new(_fbb);
+                if let Some(x) = args.content {
+                    builder.add_content(x);
+                }
+                if let Some(x) = args.recipients {
+                    builder.add_recipients(x);
+                }
+                if let Some(x) = args.badge_relay {
+                    builder.add_badge_relay(x);
+                }
+                if let Some(x) = args.badge_address {
+                    builder.add_badge_address(x);
+                }
+                builder.finish()
+            }
+
+            pub fn unpack(&self) -> Kind8ParsedT {
+                let badge_address = {
+                    let x = self.badge_address();
+                    alloc::string::ToString::to_string(x)
+                };
+                let badge_relay = self
+                    .badge_relay()
+                    .map(|x| alloc::string::ToString::to_string(x));
+                let recipients = {
+                    let x = self.recipients();
+                    x.iter().map(|t| t.unpack()).collect()
+                };
+                let content = self
+                    .content()
+                    .map(|x| alloc::string::ToString::to_string(x));
+                Kind8ParsedT {
+                    badge_address,
+                    badge_relay,
+                    recipients,
+                    content,
+                }
+            }
+
+            #[inline]
+            pub fn badge_address(&self) -> &'a str {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe {
+                    self._tab
+                        .get::<::flatbuffers::ForwardsUOffset<&str>>(
+                            Kind8Parsed::VT_BADGE_ADDRESS,
+                            None,
+                        )
+                        .unwrap()
+                }
+            }
+            #[inline]
+            pub fn badge_relay(&self) -> Option<&'a str> {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe {
+                    self._tab.get::<::flatbuffers::ForwardsUOffset<&str>>(
+                        Kind8Parsed::VT_BADGE_RELAY,
+                        None,
+                    )
+                }
+            }
+            #[inline]
+            pub fn recipients(
+                &self,
+            ) -> ::flatbuffers::Vector<'a, ::flatbuffers::ForwardsUOffset<BadgeAwardRecipient<'a>>>
+            {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe {
+                    self._tab
+                        .get::<::flatbuffers::ForwardsUOffset<
+                            ::flatbuffers::Vector<
+                                'a,
+                                ::flatbuffers::ForwardsUOffset<BadgeAwardRecipient>,
+                            >,
+                        >>(Kind8Parsed::VT_RECIPIENTS, None)
+                        .unwrap()
+                }
+            }
+            #[inline]
+            pub fn content(&self) -> Option<&'a str> {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe {
+                    self._tab
+                        .get::<::flatbuffers::ForwardsUOffset<&str>>(Kind8Parsed::VT_CONTENT, None)
+                }
+            }
+        }
+
+        impl ::flatbuffers::Verifiable for Kind8Parsed<'_> {
+            #[inline]
+            fn run_verifier(
+                v: &mut ::flatbuffers::Verifier,
+                pos: usize,
+            ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
+                v.visit_table(pos)?
+                    .visit_field::<::flatbuffers::ForwardsUOffset<&str>>(
+                        "badge_address",
+                        Self::VT_BADGE_ADDRESS,
+                        true,
+                    )?
+                    .visit_field::<::flatbuffers::ForwardsUOffset<&str>>(
+                        "badge_relay",
+                        Self::VT_BADGE_RELAY,
+                        false,
+                    )?
+                    .visit_field::<::flatbuffers::ForwardsUOffset<
+                        ::flatbuffers::Vector<
+                            '_,
+                            ::flatbuffers::ForwardsUOffset<BadgeAwardRecipient>,
+                        >,
+                    >>("recipients", Self::VT_RECIPIENTS, true)?
+                    .visit_field::<::flatbuffers::ForwardsUOffset<&str>>(
+                        "content",
+                        Self::VT_CONTENT,
+                        false,
+                    )?
+                    .finish();
+                Ok(())
+            }
+        }
+        pub struct Kind8ParsedArgs<'a> {
+            pub badge_address: Option<::flatbuffers::WIPOffset<&'a str>>,
+            pub badge_relay: Option<::flatbuffers::WIPOffset<&'a str>>,
+            pub recipients: Option<
+                ::flatbuffers::WIPOffset<
+                    ::flatbuffers::Vector<
+                        'a,
+                        ::flatbuffers::ForwardsUOffset<BadgeAwardRecipient<'a>>,
+                    >,
+                >,
+            >,
+            pub content: Option<::flatbuffers::WIPOffset<&'a str>>,
+        }
+        impl<'a> Default for Kind8ParsedArgs<'a> {
+            #[inline]
+            fn default() -> Self {
+                Kind8ParsedArgs {
+                    badge_address: None, // required field
+                    badge_relay: None,
+                    recipients: None, // required field
+                    content: None,
+                }
+            }
+        }
+
+        pub struct Kind8ParsedBuilder<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> {
+            fbb_: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
+            start_: ::flatbuffers::WIPOffset<::flatbuffers::TableUnfinishedWIPOffset>,
+        }
+        impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> Kind8ParsedBuilder<'a, 'b, A> {
+            #[inline]
+            pub fn add_badge_address(&mut self, badge_address: ::flatbuffers::WIPOffset<&'b str>) {
+                self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(
+                    Kind8Parsed::VT_BADGE_ADDRESS,
+                    badge_address,
+                );
+            }
+            #[inline]
+            pub fn add_badge_relay(&mut self, badge_relay: ::flatbuffers::WIPOffset<&'b str>) {
+                self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(
+                    Kind8Parsed::VT_BADGE_RELAY,
+                    badge_relay,
+                );
+            }
+            #[inline]
+            pub fn add_recipients(
+                &mut self,
+                recipients: ::flatbuffers::WIPOffset<
+                    ::flatbuffers::Vector<
+                        'b,
+                        ::flatbuffers::ForwardsUOffset<BadgeAwardRecipient<'b>>,
+                    >,
+                >,
+            ) {
+                self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(
+                    Kind8Parsed::VT_RECIPIENTS,
+                    recipients,
+                );
+            }
+            #[inline]
+            pub fn add_content(&mut self, content: ::flatbuffers::WIPOffset<&'b str>) {
+                self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(
+                    Kind8Parsed::VT_CONTENT,
+                    content,
+                );
+            }
+            #[inline]
+            pub fn new(
+                _fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
+            ) -> Kind8ParsedBuilder<'a, 'b, A> {
+                let start = _fbb.start_table();
+                Kind8ParsedBuilder {
+                    fbb_: _fbb,
+                    start_: start,
+                }
+            }
+            #[inline]
+            pub fn finish(self) -> ::flatbuffers::WIPOffset<Kind8Parsed<'a>> {
+                let o = self.fbb_.end_table(self.start_);
+                self.fbb_
+                    .required(o, Kind8Parsed::VT_BADGE_ADDRESS, "badge_address");
+                self.fbb_
+                    .required(o, Kind8Parsed::VT_RECIPIENTS, "recipients");
+                ::flatbuffers::WIPOffset::new(o.value())
+            }
+        }
+
+        impl ::core::fmt::Debug for Kind8Parsed<'_> {
+            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                let mut ds = f.debug_struct("Kind8Parsed");
+                ds.field("badge_address", &self.badge_address());
+                ds.field("badge_relay", &self.badge_relay());
+                ds.field("recipients", &self.recipients());
+                ds.field("content", &self.content());
+                ds.finish()
+            }
+        }
+        #[non_exhaustive]
+        #[derive(Debug, Clone, PartialEq)]
+        pub struct Kind8ParsedT {
+            pub badge_address: alloc::string::String,
+            pub badge_relay: Option<alloc::string::String>,
+            pub recipients: alloc::vec::Vec<BadgeAwardRecipientT>,
+            pub content: Option<alloc::string::String>,
+        }
+        impl Default for Kind8ParsedT {
+            fn default() -> Self {
+                Self {
+                    badge_address: alloc::string::ToString::to_string(""),
+                    badge_relay: None,
+                    recipients: Default::default(),
+                    content: None,
+                }
+            }
+        }
+        impl Kind8ParsedT {
+            pub fn pack<'b, A: ::flatbuffers::Allocator + 'b>(
+                &self,
+                _fbb: &mut ::flatbuffers::FlatBufferBuilder<'b, A>,
+            ) -> ::flatbuffers::WIPOffset<Kind8Parsed<'b>> {
+                let badge_address = Some({
+                    let x = &self.badge_address;
+                    _fbb.create_string(x)
+                });
+                let badge_relay = self.badge_relay.as_ref().map(|x| _fbb.create_string(x));
+                let recipients = Some({
+                    let x = &self.recipients;
+                    let w: alloc::vec::Vec<_> = x.iter().map(|t| t.pack(_fbb)).collect();
+                    _fbb.create_vector(&w)
+                });
+                let content = self.content.as_ref().map(|x| _fbb.create_string(x));
+                Kind8Parsed::create(
+                    _fbb,
+                    &Kind8ParsedArgs {
+                        badge_address,
+                        badge_relay,
+                        recipients,
+                        content,
                     },
                 )
             }
@@ -30712,6 +31372,11 @@ pub mod nostr {
                             .expect("Invalid union table, expected `ParsedData::Kind7Parsed`.")
                             .unpack(),
                     )),
+                    ParsedData::Kind8Parsed => ParsedDataT::Kind8Parsed(alloc::boxed::Box::new(
+                        self.parsed_as_kind_8_parsed()
+                            .expect("Invalid union table, expected `ParsedData::Kind8Parsed`.")
+                            .unpack(),
+                    )),
                     ParsedData::Kind17Parsed => ParsedDataT::Kind17Parsed(alloc::boxed::Box::new(
                         self.parsed_as_kind_17_parsed()
                             .expect("Invalid union table, expected `ParsedData::Kind17Parsed`.")
@@ -31084,6 +31749,21 @@ pub mod nostr {
 
             #[inline]
             #[allow(non_snake_case)]
+            pub fn parsed_as_kind_8_parsed(&self) -> Option<Kind8Parsed<'a>> {
+                if self.parsed_type() == ParsedData::Kind8Parsed {
+                    self.parsed().map(|t| {
+                        // Safety:
+                        // Created from a valid Table for this object
+                        // Which contains a valid union in this slot
+                        unsafe { Kind8Parsed::init_from_table(t) }
+                    })
+                } else {
+                    None
+                }
+            }
+
+            #[inline]
+            #[allow(non_snake_case)]
             pub fn parsed_as_kind_17_parsed(&self) -> Option<Kind17Parsed<'a>> {
                 if self.parsed_type() == ParsedData::Kind17Parsed {
                     self.parsed().map(|t| {
@@ -31372,6 +32052,7 @@ pub mod nostr {
           ParsedData::Kind4Parsed => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<Kind4Parsed>>("ParsedData::Kind4Parsed", pos),
           ParsedData::Kind6Parsed => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<Kind6Parsed>>("ParsedData::Kind6Parsed", pos),
           ParsedData::Kind7Parsed => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<Kind7Parsed>>("ParsedData::Kind7Parsed", pos),
+          ParsedData::Kind8Parsed => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<Kind8Parsed>>("ParsedData::Kind8Parsed", pos),
           ParsedData::Kind17Parsed => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<Kind17Parsed>>("ParsedData::Kind17Parsed", pos),
           ParsedData::Kind20Parsed => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<Kind20Parsed>>("ParsedData::Kind20Parsed", pos),
           ParsedData::Kind22Parsed => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<Kind22Parsed>>("ParsedData::Kind22Parsed", pos),
@@ -31599,6 +32280,16 @@ pub mod nostr {
                     }
                     ParsedData::Kind7Parsed => {
                         if let Some(x) = self.parsed_as_kind_7_parsed() {
+                            ds.field("parsed", &x)
+                        } else {
+                            ds.field(
+                                "parsed",
+                                &"InvalidFlatbuffer: Union discriminant does not match value.",
+                            )
+                        }
+                    }
+                    ParsedData::Kind8Parsed => {
+                        if let Some(x) = self.parsed_as_kind_8_parsed() {
                             ds.field("parsed", &x)
                         } else {
                             ds.field(

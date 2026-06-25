@@ -8,7 +8,7 @@ use crate::parser::{
     Kind0Parsed, Kind10002Parsed, Kind10019Parsed, Kind1018Parsed, Kind1068Parsed, Kind1111Parsed,
     Kind1311Parsed, Kind17375Parsed, Kind17Parsed, Kind1Parsed, Kind20Parsed, Kind22Parsed,
     Kind30023Parsed, Kind3Parsed, Kind4Parsed, Kind6Parsed, Kind7374Parsed, Kind7375Parsed,
-    Kind7376Parsed, Kind7Parsed, Kind9321Parsed, Kind9735Parsed,
+    Kind7376Parsed, Kind7Parsed, Kind8Parsed, Kind9321Parsed, Kind9735Parsed,
 };
 
 /// Strongly typed parsed data for different event kinds
@@ -19,6 +19,7 @@ pub enum ParsedData {
     Kind4(Kind4Parsed),
     Kind6(Kind6Parsed),
     Kind7(Kind7Parsed),
+    Kind8(Kind8Parsed),
     Kind17(Kind17Parsed),
     Kind20(Kind20Parsed),
     Kind22(Kind22Parsed),
@@ -77,6 +78,10 @@ impl ParsedData {
             ParsedData::Kind7(data) => {
                 let offset = crate::parser::kind7::build_flatbuffer(data, builder)?;
                 Ok((fb::ParsedData::Kind7Parsed, offset.as_union_value()))
+            }
+            ParsedData::Kind8(data) => {
+                let offset = crate::parser::kind8::build_flatbuffer(data, builder)?;
+                Ok((fb::ParsedData::Kind8Parsed, offset.as_union_value()))
             }
             ParsedData::Kind17(data) => {
                 let offset = crate::parser::kind17::build_flatbuffer(data, builder)?;

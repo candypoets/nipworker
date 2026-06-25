@@ -27,6 +27,7 @@ pub mod kind7;
 pub mod kind7374;
 pub mod kind7375;
 pub mod kind7376;
+pub mod kind8;
 pub mod kind9321;
 pub mod kind9735;
 pub mod nip51;
@@ -55,6 +56,7 @@ pub use kind7::{Emoji, Kind7Parsed, ReactionType};
 pub use kind7374::Kind7374Parsed;
 pub use kind7375::Kind7375Parsed;
 pub use kind7376::{HistoryTag, Kind7376Parsed};
+pub use kind8::{BadgeAwardRecipient, Kind8Parsed};
 pub use kind9321::Kind9321Parsed;
 pub use kind9735::{Kind9735Parsed, ZapRequest};
 pub use nip51::{Coordinate, ListParsed};
@@ -116,6 +118,10 @@ impl Parser {
             7 => {
                 let (parsed, requests) = self.parse_kind_7(&event)?;
                 (Some(ParsedData::Kind7(parsed)), requests)
+            }
+            8 => {
+                let (parsed, requests) = self.parse_kind_8(&event)?;
+                (Some(ParsedData::Kind8(parsed)), requests)
             }
             17 => {
                 let (parsed, requests) = self.parse_kind_17(&event)?;
@@ -241,6 +247,47 @@ impl Parser {
             17375 => self.prepare_kind_17375(template).await,
             _ if is_nip51 => self.prepare_nip51(template).await,
             _ => self.sign_template(template).await,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parser_types::parsed_event::ParsedData;
+    use crate::types::nostr::{EventId, PublicKey};
+
+    #[tokio::test]
+    async fn parses_kind8_badge_award() {
+        let parser = Parser::new(None);
+        let event = Event {
+            id: EventId([1; 32]),
+            pubkey: PublicKey([2; 32]),
+            created_at: 1_700_000_000,
+            kind: 8,
+            tags: vec![
+                vec![
+                    "a".to_string(),
+                    format!("30009:{}:developer", hex::encode([2; 32])),
+                ],
+                vec!["p".to_string(), hex::encode([3; 32])],
+            ],
+            content: String::new(),
+            sig: hex::encode([4; 64]),
+        };
+
+        let parsed = parser.parse(event).await.expect("kind 8 should parse");
+
+        match parsed.parsed {
+            Some(ParsedData::Kind8(data)) => {
+                assert_eq!(
+                    data.badge_address,
+                    format!("30009:{}:developer", hex::encode([2; 32]))
+                );
+                assert_eq!(data.recipients.len(), 1);
+                assert_eq!(data.recipients[0].pubkey, hex::encode([3; 32]));
+            }
+            _ => panic!("kind 8 should use Kind8Parsed"),
         }
     }
 }

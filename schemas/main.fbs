@@ -21,10 +21,16 @@ table CounterPipeConfig {
 }
 
 // Configuration for NpubLimiterPipe
+enum NpubLimiterKey:ubyte {
+  Author = 0,
+  PTag = 1
+}
+
 table NpubLimiterPipeConfig {
   kind: ushort;               // Kind to limit
   limit_per_npub: uint;       // Max events per npub
   max_total_npubs: uint;      // Max total npubs to track
+  key_by: NpubLimiterKey = Author; // Event field used as the limiter key
 }
 
 // Configuration for ChatLimiterPipe

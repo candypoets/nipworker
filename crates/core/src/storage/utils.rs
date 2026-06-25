@@ -940,6 +940,46 @@ fn build_kind9735<'a>(
     )
 }
 
+fn build_badge_award_recipients<'a>(
+    builder: &mut FlatBufferBuilder<'a>,
+    recipients: flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<fb::BadgeAwardRecipient<'_>>>,
+) -> WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<fb::BadgeAwardRecipient<'a>>>> {
+    let mut offs = Vec::with_capacity(recipients.len());
+    for i in 0..recipients.len() {
+        let recipient = recipients.get(i);
+        let pubkey = builder.create_string(recipient.pubkey());
+        let relay = recipient.relay().map(|relay| builder.create_string(relay));
+        offs.push(fb::BadgeAwardRecipient::create(
+            builder,
+            &fb::BadgeAwardRecipientArgs {
+                pubkey: Some(pubkey),
+                relay,
+            },
+        ));
+    }
+    builder.create_vector(&offs)
+}
+
+fn build_kind8<'a>(
+    builder: &mut FlatBufferBuilder<'a>,
+    v: fb::Kind8Parsed<'_>,
+) -> WIPOffset<fb::Kind8Parsed<'a>> {
+    let badge_address = builder.create_string(v.badge_address());
+    let badge_relay = v.badge_relay().map(|relay| builder.create_string(relay));
+    let recipients = build_badge_award_recipients(builder, v.recipients());
+    let content = v.content().map(|content| builder.create_string(content));
+
+    fb::Kind8Parsed::create(
+        builder,
+        &fb::Kind8ParsedArgs {
+            badge_address: Some(badge_address),
+            badge_relay,
+            recipients: Some(recipients),
+            content,
+        },
+    )
+}
+
 fn build_parsed_union<'a>(
     builder: &mut FlatBufferBuilder<'a>,
     pe: fb::ParsedEvent<'_>,
@@ -977,6 +1017,11 @@ fn build_parsed_union<'a>(
             let v = pe.parsed_as_kind_7_parsed().unwrap();
             let off = build_kind7(builder, v);
             (fb::ParsedData::Kind7Parsed, Some(off.as_union_value()))
+        }
+        fb::ParsedData::Kind8Parsed => {
+            let v = pe.parsed_as_kind_8_parsed().unwrap();
+            let off = build_kind8(builder, v);
+            (fb::ParsedData::Kind8Parsed, Some(off.as_union_value()))
         }
         fb::ParsedData::Kind17Parsed => {
             let v = pe.parsed_as_kind_17_parsed().unwrap();

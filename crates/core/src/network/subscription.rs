@@ -219,7 +219,8 @@ impl SubscriptionManager {
                             let kind = config.kind();
                             let limit_per_npub = config.limit_per_npub();
                             let _max_total_npubs = config.max_total_npubs();
-                            PipeType::NpubLimiter(NpubLimiterPipe::new(kind, limit_per_npub))
+                            let key_by = config.key_by().into();
+                            PipeType::NpubLimiter(NpubLimiterPipe::new(kind, limit_per_npub, key_by))
                         }
                         fb::PipeConfig::ChatLimiterPipeConfig => {
                             let config = pipe_config.config_as_chat_limiter_pipe_config().unwrap();

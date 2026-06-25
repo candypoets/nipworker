@@ -1,5 +1,12 @@
 use super::super::*;
+use crate::generated::nostr::fb;
 use rustc_hash::FxHashMap;
+
+#[derive(Clone, Copy)]
+pub enum NpubLimiterKey {
+    Author,
+    PTag,
+}
 
 struct NpubTracker {
     last_forwarded_timestamp: Option<u64>,
@@ -9,17 +16,35 @@ struct NpubTracker {
 pub struct NpubLimiterPipe {
     kind: u16,
     limit_per_npub: u32,
+    key_by: NpubLimiterKey,
     npub_trackers: FxHashMap<String, NpubTracker>,
     name: String,
 }
 
 impl NpubLimiterPipe {
-    pub fn new(kind: u16, limit_per_npub: u32) -> Self {
+    pub fn new(kind: u16, limit_per_npub: u32, key_by: NpubLimiterKey) -> Self {
+        let key_name = match key_by {
+            NpubLimiterKey::Author => "author",
+            NpubLimiterKey::PTag => "p",
+        };
         Self {
-            name: format!("NpubLimiter(kind:{}, limit:{})", kind, limit_per_npub),
+            name: format!(
+                "NpubLimiter(kind:{}, limit:{}, key:{})",
+                kind, limit_per_npub, key_name
+            ),
             kind,
             limit_per_npub,
+            key_by,
             npub_trackers: FxHashMap::default(),
+        }
+    }
+}
+
+impl From<fb::NpubLimiterKey> for NpubLimiterKey {
+    fn from(value: fb::NpubLimiterKey) -> Self {
+        match value {
+            fb::NpubLimiterKey::PTag => Self::PTag,
+            _ => Self::Author,
         }
     }
 }
@@ -35,18 +60,11 @@ impl Pipe for NpubLimiterPipe {
             return Ok(PipeOutput::Drop);
         };
 
-        // Get kind, pubkey, and timestamp from the nostr event
+        // Get kind, limiter key, and timestamp from the nostr event
         let kind = nostr_event.kind;
-        let mut pubkey = nostr_event.pubkey.to_string();
-        let created_at = nostr_event.created_at;
-
-        // Only process events of the specified kind
-        if kind != self.kind {
-            return Ok(PipeOutput::Drop);
-        }
-
-        if kind == 4 {
-            let recipient = nostr_event
+        let limiter_key = match self.key_by {
+            NpubLimiterKey::Author => nostr_event.pubkey.to_string(),
+            NpubLimiterKey::PTag => nostr_event
                 .tags
                 .iter()
                 .find_map(|tag| {
@@ -56,8 +74,17 @@ impl Pipe for NpubLimiterPipe {
                         None
                     }
                 })
-                .unwrap_or_default();
-            pubkey = format!("{}{}", pubkey.clone(), recipient);
+                .unwrap_or_default(),
+        };
+        let created_at = nostr_event.created_at;
+
+        // Only process events of the specified kind
+        if kind != self.kind {
+            return Ok(PipeOutput::Drop);
+        }
+
+        if limiter_key.is_empty() {
+            return Ok(PipeOutput::Drop);
         }
 
         // Prevent memory explosion by limiting total tracked npubs
@@ -71,7 +98,7 @@ impl Pipe for NpubLimiterPipe {
         // Get or create npub tracker
         let tracker = self
             .npub_trackers
-            .entry(pubkey.clone())
+            .entry(limiter_key)
             .or_insert_with(|| NpubTracker {
                 last_forwarded_timestamp: None,
                 forwarded_count: 0,

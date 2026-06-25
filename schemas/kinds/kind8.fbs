@@ -1,0 +1,13 @@
+namespace nostr.fb;
+
+table BadgeAwardRecipient {
+  pubkey: string (required);
+  relay: string;
+}
+
+table Kind8Parsed {
+  badge_address: string (required);
+  badge_relay: string;
+  recipients: [BadgeAwardRecipient] (required);
+  content: string;
+}
