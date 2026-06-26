@@ -15,6 +15,7 @@ jobs:
     env:
       NODE_OPTIONS: '--max-old-space-size=4096'
       CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+      SKIP_NATIVE_BUILD: 'true'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -103,7 +104,7 @@ jobs:
       # Wait for native builds and bundle artifacts
       # ──────────────────────────────────────────
       - name: Wait for native build workflow
-        if: ${{ steps.check_publish.outputs.should_publish == 'true' }}
+        if: ${{ steps.check_publish.outputs.should_publish == 'true' && env.SKIP_NATIVE_BUILD != 'true' }}
         run: |
           for i in {1..60}; do
             RUN_JSON=$(gh run list --workflow=native-build.yml --json databaseId,headSha,conclusion,status --jq ".[] | select(.headSha == \"${GITHUB_SHA}\") | {conclusion,status}" | head -1)
@@ -126,7 +127,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Download native artifacts
-        if: ${{ steps.check_publish.outputs.should_publish == 'true' }}
+        if: ${{ steps.check_publish.outputs.should_publish == 'true' && env.SKIP_NATIVE_BUILD != 'true' }}
         uses: dawidd6/action-download-artifact@v3
         with:
           workflow: native-build.yml
@@ -134,7 +135,7 @@ jobs:
           path: ./prebuilt-temp
 
       - name: Organize native artifacts
-        if: ${{ steps.check_publish.outputs.should_publish == 'true' }}
+        if: ${{ steps.check_publish.outputs.should_publish == 'true' && env.SKIP_NATIVE_BUILD != 'true' }}
         run: |
           rm -rf crates/native-ffi/android/src/main/jniLibs
           rm -rf crates/native-ffi/ios/NipworkerNativeFFI.xcframework
@@ -165,7 +166,7 @@ jobs:
           find crates/native-ffi/ios/NipworkerNativeFFI.xcframework -type f | sort
 
       - name: Verify React Native native artifacts
-        if: ${{ steps.check_publish.outputs.should_publish == 'true' }}
+        if: ${{ steps.check_publish.outputs.should_publish == 'true' && env.SKIP_NATIVE_BUILD != 'true' }}
         run: |
           set -euo pipefail
 
