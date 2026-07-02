@@ -1,11 +1,15 @@
 use nipworker_core::{
     channel::{WasmWorkerChannel, WorkerChannel},
-    storage::NostrDbStorage,
+    storage::{NostrDbStorage, PersistentNostrDbStorage},
     worker::cache_worker::CacheWorker,
 };
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
 use web_sys::MessagePort;
+
+mod opfs_blob_store;
+
+use opfs_blob_store::OpfsBlobStore;
 
 use std::sync::Once;
 
@@ -84,11 +88,15 @@ pub fn start_worker(
         }
     };
 
-    let storage = Arc::new(NostrDbStorage::new(
+    let core_storage = NostrDbStorage::new(
         "nipworker".to_string(),
         8 * 1024 * 1024,
         default_relays,
         indexer_relays,
+    );
+    let storage = Arc::new(PersistentNostrDbStorage::new(
+        core_storage,
+        OpfsBlobStore::new("nipworker".to_string()),
     ));
 
     let worker = CacheWorker::new(storage);

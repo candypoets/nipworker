@@ -627,12 +627,14 @@ dependencies = [
 name = "nipworker-cache"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "console_error_panic_hook",
  "js-sys",
  "nipworker-core",
  "tracing",
  "tracing-wasm",
  "wasm-bindgen",
+ "wasm-bindgen-futures",
  "web-sys",
 ]
 

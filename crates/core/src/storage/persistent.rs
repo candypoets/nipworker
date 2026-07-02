@@ -1,4 +1,5 @@
 use crate::generated::nostr::fb::Request;
+use crate::platform::now_millis;
 use crate::storage::db::sharded_storage::{ShardId, ShardedRingBufferStorage};
 use crate::storage::NostrDbStorage;
 use crate::traits::{Storage, StorageError};
@@ -6,7 +7,6 @@ use crate::types::nostr::Filter;
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Mutex;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 const SYNC_INTERVAL_MS: u64 = 30_000;
 
@@ -56,10 +56,7 @@ impl<B> PersistentNostrDbStorage<B> {
     }
 
     fn now_ms() -> u64 {
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(0)
+        now_millis()
     }
 
     fn should_sync(&self) -> bool {
