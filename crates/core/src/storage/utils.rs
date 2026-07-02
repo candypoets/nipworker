@@ -89,6 +89,24 @@ fn build_event_pointer<'a>(
     )
 }
 
+fn build_address_pointer<'a>(
+    builder: &mut FlatBufferBuilder<'a>,
+    ap: fb::AddressPointer<'_>,
+) -> WIPOffset<fb::AddressPointer<'a>> {
+    let pubkey = builder.create_string(ap.pubkey());
+    let d = builder.create_string(ap.d());
+    let relays = ap.relays().map(|rv| build_string_vector(builder, rv));
+    fb::AddressPointer::create(
+        builder,
+        &fb::AddressPointerArgs {
+            kind: ap.kind(),
+            pubkey: Some(pubkey),
+            d: Some(d),
+            relays,
+        },
+    )
+}
+
 fn build_emoji<'a>(
     builder: &mut FlatBufferBuilder<'a>,
     e: fb::Emoji<'_>,
@@ -648,17 +666,24 @@ fn build_kind1<'a>(
     let shortened_content = v
         .shortened_content()
         .map(|sv| build_content_block_vector(builder, sv));
-    let quotes = v.quotes().map(|pv| {
+    let profile_mentions = v.profile_mentions().map(|pv| {
         let mut offs = Vec::with_capacity(pv.len());
         for i in 0..pv.len() {
             offs.push(build_profile_pointer(builder, pv.get(i)));
         }
         builder.create_vector(&offs)
     });
-    let mentions = v.mentions().map(|ev| {
+    let event_refs = v.event_refs().map(|ev| {
         let mut offs = Vec::with_capacity(ev.len());
         for i in 0..ev.len() {
             offs.push(build_event_pointer(builder, ev.get(i)));
+        }
+        builder.create_vector(&offs)
+    });
+    let address_refs = v.address_refs().map(|av| {
+        let mut offs = Vec::with_capacity(av.len());
+        for i in 0..av.len() {
+            offs.push(build_address_pointer(builder, av.get(i)));
         }
         builder.create_vector(&offs)
     });
@@ -670,8 +695,9 @@ fn build_kind1<'a>(
         &fb::Kind1ParsedArgs {
             parsed_content: Some(parsed_content),
             shortened_content,
-            quotes,
-            mentions,
+            profile_mentions,
+            event_refs,
+            address_refs,
             reply,
             root,
         },

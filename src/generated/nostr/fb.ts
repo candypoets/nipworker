@@ -2,6 +2,7 @@
 
 /* eslint-disable @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any, @typescript-eslint/no-non-null-assertion */
 
+export { AddressPointer, AddressPointerT } from './fb/address-pointer.js';
 export { ArticleBlock, ArticleBlockT } from './fb/article-block.js';
 export { ArticleBlockType } from './fb/article-block-type.js';
 export { ArticleEntity, ArticleEntityT } from './fb/article-entity.js';

@@ -8810,6 +8810,284 @@ pub mod nostr {
                 )
             }
         }
+        pub enum AddressPointerOffset {}
+        #[derive(Copy, Clone, PartialEq)]
+
+        pub struct AddressPointer<'a> {
+            pub _tab: ::flatbuffers::Table<'a>,
+        }
+
+        impl<'a> ::flatbuffers::Follow<'a> for AddressPointer<'a> {
+            type Inner = AddressPointer<'a>;
+            #[inline]
+            unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+                Self {
+                    _tab: unsafe { ::flatbuffers::Table::new(buf, loc) },
+                }
+            }
+        }
+
+        impl<'a> AddressPointer<'a> {
+            pub const VT_KIND: ::flatbuffers::VOffsetT = 4;
+            pub const VT_PUBKEY: ::flatbuffers::VOffsetT = 6;
+            pub const VT_D: ::flatbuffers::VOffsetT = 8;
+            pub const VT_RELAYS: ::flatbuffers::VOffsetT = 10;
+
+            #[inline]
+            pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
+                AddressPointer { _tab: table }
+            }
+            #[allow(unused_mut)]
+            pub fn create<
+                'bldr: 'args,
+                'args: 'mut_bldr,
+                'mut_bldr,
+                A: ::flatbuffers::Allocator + 'bldr,
+            >(
+                _fbb: &'mut_bldr mut ::flatbuffers::FlatBufferBuilder<'bldr, A>,
+                args: &'args AddressPointerArgs<'args>,
+            ) -> ::flatbuffers::WIPOffset<AddressPointer<'bldr>> {
+                let mut builder = AddressPointerBuilder::new(_fbb);
+                builder.add_kind(args.kind);
+                if let Some(x) = args.relays {
+                    builder.add_relays(x);
+                }
+                if let Some(x) = args.d {
+                    builder.add_d(x);
+                }
+                if let Some(x) = args.pubkey {
+                    builder.add_pubkey(x);
+                }
+                builder.finish()
+            }
+
+            pub fn unpack(&self) -> AddressPointerT {
+                let kind = self.kind();
+                let pubkey = {
+                    let x = self.pubkey();
+                    alloc::string::ToString::to_string(x)
+                };
+                let d = {
+                    let x = self.d();
+                    alloc::string::ToString::to_string(x)
+                };
+                let relays = self.relays().map(|x| {
+                    x.iter()
+                        .map(|s| alloc::string::ToString::to_string(s))
+                        .collect()
+                });
+                AddressPointerT {
+                    kind,
+                    pubkey,
+                    d,
+                    relays,
+                }
+            }
+
+            #[inline]
+            pub fn kind(&self) -> u64 {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe {
+                    self._tab
+                        .get::<u64>(AddressPointer::VT_KIND, Some(0))
+                        .unwrap()
+                }
+            }
+            #[inline]
+            pub fn pubkey(&self) -> &'a str {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe {
+                    self._tab
+                        .get::<::flatbuffers::ForwardsUOffset<&str>>(
+                            AddressPointer::VT_PUBKEY,
+                            None,
+                        )
+                        .unwrap()
+                }
+            }
+            #[inline]
+            pub fn d(&self) -> &'a str {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe {
+                    self._tab
+                        .get::<::flatbuffers::ForwardsUOffset<&str>>(AddressPointer::VT_D, None)
+                        .unwrap()
+                }
+            }
+            #[inline]
+            pub fn relays(
+                &self,
+            ) -> Option<::flatbuffers::Vector<'a, ::flatbuffers::ForwardsUOffset<&'a str>>>
+            {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe {
+                    self._tab.get::<::flatbuffers::ForwardsUOffset<
+                        ::flatbuffers::Vector<'a, ::flatbuffers::ForwardsUOffset<&'a str>>,
+                    >>(AddressPointer::VT_RELAYS, None)
+                }
+            }
+        }
+
+        impl ::flatbuffers::Verifiable for AddressPointer<'_> {
+            #[inline]
+            fn run_verifier(
+                v: &mut ::flatbuffers::Verifier,
+                pos: usize,
+            ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
+                v.visit_table(pos)?
+                    .visit_field::<u64>("kind", Self::VT_KIND, false)?
+                    .visit_field::<::flatbuffers::ForwardsUOffset<&str>>(
+                        "pubkey",
+                        Self::VT_PUBKEY,
+                        true,
+                    )?
+                    .visit_field::<::flatbuffers::ForwardsUOffset<&str>>("d", Self::VT_D, true)?
+                    .visit_field::<::flatbuffers::ForwardsUOffset<
+                        ::flatbuffers::Vector<'_, ::flatbuffers::ForwardsUOffset<&'_ str>>,
+                    >>("relays", Self::VT_RELAYS, false)?
+                    .finish();
+                Ok(())
+            }
+        }
+        pub struct AddressPointerArgs<'a> {
+            pub kind: u64,
+            pub pubkey: Option<::flatbuffers::WIPOffset<&'a str>>,
+            pub d: Option<::flatbuffers::WIPOffset<&'a str>>,
+            pub relays: Option<
+                ::flatbuffers::WIPOffset<
+                    ::flatbuffers::Vector<'a, ::flatbuffers::ForwardsUOffset<&'a str>>,
+                >,
+            >,
+        }
+        impl<'a> Default for AddressPointerArgs<'a> {
+            #[inline]
+            fn default() -> Self {
+                AddressPointerArgs {
+                    kind: 0,
+                    pubkey: None, // required field
+                    d: None,      // required field
+                    relays: None,
+                }
+            }
+        }
+
+        pub struct AddressPointerBuilder<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> {
+            fbb_: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
+            start_: ::flatbuffers::WIPOffset<::flatbuffers::TableUnfinishedWIPOffset>,
+        }
+        impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> AddressPointerBuilder<'a, 'b, A> {
+            #[inline]
+            pub fn add_kind(&mut self, kind: u64) {
+                self.fbb_.push_slot::<u64>(AddressPointer::VT_KIND, kind, 0);
+            }
+            #[inline]
+            pub fn add_pubkey(&mut self, pubkey: ::flatbuffers::WIPOffset<&'b str>) {
+                self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(
+                    AddressPointer::VT_PUBKEY,
+                    pubkey,
+                );
+            }
+            #[inline]
+            pub fn add_d(&mut self, d: ::flatbuffers::WIPOffset<&'b str>) {
+                self.fbb_
+                    .push_slot_always::<::flatbuffers::WIPOffset<_>>(AddressPointer::VT_D, d);
+            }
+            #[inline]
+            pub fn add_relays(
+                &mut self,
+                relays: ::flatbuffers::WIPOffset<
+                    ::flatbuffers::Vector<'b, ::flatbuffers::ForwardsUOffset<&'b str>>,
+                >,
+            ) {
+                self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(
+                    AddressPointer::VT_RELAYS,
+                    relays,
+                );
+            }
+            #[inline]
+            pub fn new(
+                _fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
+            ) -> AddressPointerBuilder<'a, 'b, A> {
+                let start = _fbb.start_table();
+                AddressPointerBuilder {
+                    fbb_: _fbb,
+                    start_: start,
+                }
+            }
+            #[inline]
+            pub fn finish(self) -> ::flatbuffers::WIPOffset<AddressPointer<'a>> {
+                let o = self.fbb_.end_table(self.start_);
+                self.fbb_.required(o, AddressPointer::VT_PUBKEY, "pubkey");
+                self.fbb_.required(o, AddressPointer::VT_D, "d");
+                ::flatbuffers::WIPOffset::new(o.value())
+            }
+        }
+
+        impl ::core::fmt::Debug for AddressPointer<'_> {
+            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                let mut ds = f.debug_struct("AddressPointer");
+                ds.field("kind", &self.kind());
+                ds.field("pubkey", &self.pubkey());
+                ds.field("d", &self.d());
+                ds.field("relays", &self.relays());
+                ds.finish()
+            }
+        }
+        #[non_exhaustive]
+        #[derive(Debug, Clone, PartialEq)]
+        pub struct AddressPointerT {
+            pub kind: u64,
+            pub pubkey: alloc::string::String,
+            pub d: alloc::string::String,
+            pub relays: Option<alloc::vec::Vec<alloc::string::String>>,
+        }
+        impl Default for AddressPointerT {
+            fn default() -> Self {
+                Self {
+                    kind: 0,
+                    pubkey: alloc::string::ToString::to_string(""),
+                    d: alloc::string::ToString::to_string(""),
+                    relays: None,
+                }
+            }
+        }
+        impl AddressPointerT {
+            pub fn pack<'b, A: ::flatbuffers::Allocator + 'b>(
+                &self,
+                _fbb: &mut ::flatbuffers::FlatBufferBuilder<'b, A>,
+            ) -> ::flatbuffers::WIPOffset<AddressPointer<'b>> {
+                let kind = self.kind;
+                let pubkey = Some({
+                    let x = &self.pubkey;
+                    _fbb.create_string(x)
+                });
+                let d = Some({
+                    let x = &self.d;
+                    _fbb.create_string(x)
+                });
+                let relays = self.relays.as_ref().map(|x| {
+                    let w: alloc::vec::Vec<_> = x.iter().map(|s| _fbb.create_string(s)).collect();
+                    _fbb.create_vector(&w)
+                });
+                AddressPointer::create(
+                    _fbb,
+                    &AddressPointerArgs {
+                        kind,
+                        pubkey,
+                        d,
+                        relays,
+                    },
+                )
+            }
+        }
         pub enum RelayInfoOffset {}
         #[derive(Copy, Clone, PartialEq)]
 
@@ -18588,10 +18866,11 @@ pub mod nostr {
         impl<'a> Kind1Parsed<'a> {
             pub const VT_PARSED_CONTENT: ::flatbuffers::VOffsetT = 4;
             pub const VT_SHORTENED_CONTENT: ::flatbuffers::VOffsetT = 6;
-            pub const VT_QUOTES: ::flatbuffers::VOffsetT = 8;
-            pub const VT_MENTIONS: ::flatbuffers::VOffsetT = 10;
-            pub const VT_REPLY: ::flatbuffers::VOffsetT = 12;
-            pub const VT_ROOT: ::flatbuffers::VOffsetT = 14;
+            pub const VT_PROFILE_MENTIONS: ::flatbuffers::VOffsetT = 8;
+            pub const VT_EVENT_REFS: ::flatbuffers::VOffsetT = 10;
+            pub const VT_ADDRESS_REFS: ::flatbuffers::VOffsetT = 12;
+            pub const VT_REPLY: ::flatbuffers::VOffsetT = 14;
+            pub const VT_ROOT: ::flatbuffers::VOffsetT = 16;
 
             #[inline]
             pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
@@ -18614,11 +18893,14 @@ pub mod nostr {
                 if let Some(x) = args.reply {
                     builder.add_reply(x);
                 }
-                if let Some(x) = args.mentions {
-                    builder.add_mentions(x);
+                if let Some(x) = args.address_refs {
+                    builder.add_address_refs(x);
                 }
-                if let Some(x) = args.quotes {
-                    builder.add_quotes(x);
+                if let Some(x) = args.event_refs {
+                    builder.add_event_refs(x);
+                }
+                if let Some(x) = args.profile_mentions {
+                    builder.add_profile_mentions(x);
                 }
                 if let Some(x) = args.shortened_content {
                     builder.add_shortened_content(x);
@@ -18637,19 +18919,23 @@ pub mod nostr {
                 let shortened_content = self
                     .shortened_content()
                     .map(|x| x.iter().map(|t| t.unpack()).collect());
-                let quotes = self
-                    .quotes()
+                let profile_mentions = self
+                    .profile_mentions()
                     .map(|x| x.iter().map(|t| t.unpack()).collect());
-                let mentions = self
-                    .mentions()
+                let event_refs = self
+                    .event_refs()
+                    .map(|x| x.iter().map(|t| t.unpack()).collect());
+                let address_refs = self
+                    .address_refs()
                     .map(|x| x.iter().map(|t| t.unpack()).collect());
                 let reply = self.reply().map(|x| alloc::boxed::Box::new(x.unpack()));
                 let root = self.root().map(|x| alloc::boxed::Box::new(x.unpack()));
                 Kind1ParsedT {
                     parsed_content,
                     shortened_content,
-                    quotes,
-                    mentions,
+                    profile_mentions,
+                    event_refs,
+                    address_refs,
                     reply,
                     root,
                 }
@@ -18686,7 +18972,7 @@ pub mod nostr {
                 }
             }
             #[inline]
-            pub fn quotes(
+            pub fn profile_mentions(
                 &self,
             ) -> Option<::flatbuffers::Vector<'a, ::flatbuffers::ForwardsUOffset<ProfilePointer<'a>>>>
             {
@@ -18696,11 +18982,11 @@ pub mod nostr {
                 unsafe {
                     self._tab.get::<::flatbuffers::ForwardsUOffset<
                         ::flatbuffers::Vector<'a, ::flatbuffers::ForwardsUOffset<ProfilePointer>>,
-                    >>(Kind1Parsed::VT_QUOTES, None)
+                    >>(Kind1Parsed::VT_PROFILE_MENTIONS, None)
                 }
             }
             #[inline]
-            pub fn mentions(
+            pub fn event_refs(
                 &self,
             ) -> Option<::flatbuffers::Vector<'a, ::flatbuffers::ForwardsUOffset<EventPointer<'a>>>>
             {
@@ -18710,7 +18996,21 @@ pub mod nostr {
                 unsafe {
                     self._tab.get::<::flatbuffers::ForwardsUOffset<
                         ::flatbuffers::Vector<'a, ::flatbuffers::ForwardsUOffset<EventPointer>>,
-                    >>(Kind1Parsed::VT_MENTIONS, None)
+                    >>(Kind1Parsed::VT_EVENT_REFS, None)
+                }
+            }
+            #[inline]
+            pub fn address_refs(
+                &self,
+            ) -> Option<::flatbuffers::Vector<'a, ::flatbuffers::ForwardsUOffset<AddressPointer<'a>>>>
+            {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe {
+                    self._tab.get::<::flatbuffers::ForwardsUOffset<
+                        ::flatbuffers::Vector<'a, ::flatbuffers::ForwardsUOffset<AddressPointer>>,
+                    >>(Kind1Parsed::VT_ADDRESS_REFS, None)
                 }
             }
             #[inline]
@@ -18756,10 +19056,13 @@ pub mod nostr {
                     >>("shortened_content", Self::VT_SHORTENED_CONTENT, false)?
                     .visit_field::<::flatbuffers::ForwardsUOffset<
                         ::flatbuffers::Vector<'_, ::flatbuffers::ForwardsUOffset<ProfilePointer>>,
-                    >>("quotes", Self::VT_QUOTES, false)?
+                    >>("profile_mentions", Self::VT_PROFILE_MENTIONS, false)?
                     .visit_field::<::flatbuffers::ForwardsUOffset<
                         ::flatbuffers::Vector<'_, ::flatbuffers::ForwardsUOffset<EventPointer>>,
-                    >>("mentions", Self::VT_MENTIONS, false)?
+                    >>("event_refs", Self::VT_EVENT_REFS, false)?
+                    .visit_field::<::flatbuffers::ForwardsUOffset<
+                        ::flatbuffers::Vector<'_, ::flatbuffers::ForwardsUOffset<AddressPointer>>,
+                    >>("address_refs", Self::VT_ADDRESS_REFS, false)?
                     .visit_field::<::flatbuffers::ForwardsUOffset<EventPointer>>(
                         "reply",
                         Self::VT_REPLY,
@@ -18785,14 +19088,19 @@ pub mod nostr {
                     ::flatbuffers::Vector<'a, ::flatbuffers::ForwardsUOffset<ContentBlock<'a>>>,
                 >,
             >,
-            pub quotes: Option<
+            pub profile_mentions: Option<
                 ::flatbuffers::WIPOffset<
                     ::flatbuffers::Vector<'a, ::flatbuffers::ForwardsUOffset<ProfilePointer<'a>>>,
                 >,
             >,
-            pub mentions: Option<
+            pub event_refs: Option<
                 ::flatbuffers::WIPOffset<
                     ::flatbuffers::Vector<'a, ::flatbuffers::ForwardsUOffset<EventPointer<'a>>>,
+                >,
+            >,
+            pub address_refs: Option<
+                ::flatbuffers::WIPOffset<
+                    ::flatbuffers::Vector<'a, ::flatbuffers::ForwardsUOffset<AddressPointer<'a>>>,
                 >,
             >,
             pub reply: Option<::flatbuffers::WIPOffset<EventPointer<'a>>>,
@@ -18804,8 +19112,9 @@ pub mod nostr {
                 Kind1ParsedArgs {
                     parsed_content: None, // required field
                     shortened_content: None,
-                    quotes: None,
-                    mentions: None,
+                    profile_mentions: None,
+                    event_refs: None,
+                    address_refs: None,
                     reply: None,
                     root: None,
                 }
@@ -18842,27 +19151,39 @@ pub mod nostr {
                 );
             }
             #[inline]
-            pub fn add_quotes(
+            pub fn add_profile_mentions(
                 &mut self,
-                quotes: ::flatbuffers::WIPOffset<
+                profile_mentions: ::flatbuffers::WIPOffset<
                     ::flatbuffers::Vector<'b, ::flatbuffers::ForwardsUOffset<ProfilePointer<'b>>>,
                 >,
             ) {
                 self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(
-                    Kind1Parsed::VT_QUOTES,
-                    quotes,
+                    Kind1Parsed::VT_PROFILE_MENTIONS,
+                    profile_mentions,
                 );
             }
             #[inline]
-            pub fn add_mentions(
+            pub fn add_event_refs(
                 &mut self,
-                mentions: ::flatbuffers::WIPOffset<
+                event_refs: ::flatbuffers::WIPOffset<
                     ::flatbuffers::Vector<'b, ::flatbuffers::ForwardsUOffset<EventPointer<'b>>>,
                 >,
             ) {
                 self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(
-                    Kind1Parsed::VT_MENTIONS,
-                    mentions,
+                    Kind1Parsed::VT_EVENT_REFS,
+                    event_refs,
+                );
+            }
+            #[inline]
+            pub fn add_address_refs(
+                &mut self,
+                address_refs: ::flatbuffers::WIPOffset<
+                    ::flatbuffers::Vector<'b, ::flatbuffers::ForwardsUOffset<AddressPointer<'b>>>,
+                >,
+            ) {
+                self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(
+                    Kind1Parsed::VT_ADDRESS_REFS,
+                    address_refs,
                 );
             }
             #[inline]
@@ -18905,8 +19226,9 @@ pub mod nostr {
                 let mut ds = f.debug_struct("Kind1Parsed");
                 ds.field("parsed_content", &self.parsed_content());
                 ds.field("shortened_content", &self.shortened_content());
-                ds.field("quotes", &self.quotes());
-                ds.field("mentions", &self.mentions());
+                ds.field("profile_mentions", &self.profile_mentions());
+                ds.field("event_refs", &self.event_refs());
+                ds.field("address_refs", &self.address_refs());
                 ds.field("reply", &self.reply());
                 ds.field("root", &self.root());
                 ds.finish()
@@ -18917,8 +19239,9 @@ pub mod nostr {
         pub struct Kind1ParsedT {
             pub parsed_content: alloc::vec::Vec<ContentBlockT>,
             pub shortened_content: Option<alloc::vec::Vec<ContentBlockT>>,
-            pub quotes: Option<alloc::vec::Vec<ProfilePointerT>>,
-            pub mentions: Option<alloc::vec::Vec<EventPointerT>>,
+            pub profile_mentions: Option<alloc::vec::Vec<ProfilePointerT>>,
+            pub event_refs: Option<alloc::vec::Vec<EventPointerT>>,
+            pub address_refs: Option<alloc::vec::Vec<AddressPointerT>>,
             pub reply: Option<alloc::boxed::Box<EventPointerT>>,
             pub root: Option<alloc::boxed::Box<EventPointerT>>,
         }
@@ -18927,8 +19250,9 @@ pub mod nostr {
                 Self {
                     parsed_content: Default::default(),
                     shortened_content: None,
-                    quotes: None,
-                    mentions: None,
+                    profile_mentions: None,
+                    event_refs: None,
+                    address_refs: None,
                     reply: None,
                     root: None,
                 }
@@ -18948,11 +19272,15 @@ pub mod nostr {
                     let w: alloc::vec::Vec<_> = x.iter().map(|t| t.pack(_fbb)).collect();
                     _fbb.create_vector(&w)
                 });
-                let quotes = self.quotes.as_ref().map(|x| {
+                let profile_mentions = self.profile_mentions.as_ref().map(|x| {
                     let w: alloc::vec::Vec<_> = x.iter().map(|t| t.pack(_fbb)).collect();
                     _fbb.create_vector(&w)
                 });
-                let mentions = self.mentions.as_ref().map(|x| {
+                let event_refs = self.event_refs.as_ref().map(|x| {
+                    let w: alloc::vec::Vec<_> = x.iter().map(|t| t.pack(_fbb)).collect();
+                    _fbb.create_vector(&w)
+                });
+                let address_refs = self.address_refs.as_ref().map(|x| {
                     let w: alloc::vec::Vec<_> = x.iter().map(|t| t.pack(_fbb)).collect();
                     _fbb.create_vector(&w)
                 });
@@ -18963,8 +19291,9 @@ pub mod nostr {
                     &Kind1ParsedArgs {
                         parsed_content,
                         shortened_content,
-                        quotes,
-                        mentions,
+                        profile_mentions,
+                        event_refs,
+                        address_refs,
                         reply,
                         root,
                     },

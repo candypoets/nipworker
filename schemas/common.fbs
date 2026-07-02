@@ -159,6 +159,13 @@ table EventPointer {
   kind: ulong;
 }
 
+table AddressPointer {
+  kind: ulong;
+  pubkey: string (required);
+  d: string (required);
+  relays: [string];
+}
+
 table RelayInfo {
   url: string (required);
   read: bool;

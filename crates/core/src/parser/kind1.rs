@@ -11,6 +11,7 @@ use crate::{
     generated::nostr::*,
     types::{network::Request, nostr, Event},
 };
+use rustc_hash::FxHashMap;
 
 pub struct ProfilePointer {
     pub public_key: String,
@@ -24,11 +25,19 @@ pub struct EventPointer {
     pub kind: Option<u64>,
 }
 
+pub struct AddressPointer {
+    pub kind: u64,
+    pub pubkey: String,
+    pub d: String,
+    pub relays: Vec<String>,
+}
+
 pub struct Kind1Parsed {
     pub parsed_content: Vec<ContentBlock>,
     pub shortened_content: Vec<ContentBlock>,
-    pub quotes: Vec<ProfilePointer>,
-    pub mentions: Vec<EventPointer>,
+    pub profile_mentions: Vec<ProfilePointer>,
+    pub event_refs: Vec<EventPointer>,
+    pub address_refs: Vec<AddressPointer>,
     pub reply: Option<EventPointer>,
     pub root: Option<EventPointer>,
 }
@@ -38,6 +47,29 @@ fn should_use_shortened_content(
     shortened_blocks: &[ContentBlock],
 ) -> bool {
     !shortened_blocks.is_empty() && shortened_blocks != parsed_blocks
+}
+
+fn relay_hints_for_tag_value(tags: &[Vec<String>], tag_names: &[&str], value: &str) -> Vec<String> {
+    let mut relays = Vec::new();
+    for tag in tags {
+        if tag.len() >= 3 && tag_names.contains(&tag[0].as_str()) && tag[1] == value {
+            push_unique_relay(&mut relays, &tag[2]);
+        }
+    }
+    relays
+}
+
+fn merge_relays(mut primary: Vec<String>, fallback: Vec<String>) -> Vec<String> {
+    for relay in fallback {
+        push_unique_relay(&mut primary, &relay);
+    }
+    primary
+}
+
+fn push_unique_relay(relays: &mut Vec<String>, relay: &str) {
+    if !relay.is_empty() && !relays.iter().any(|existing| existing == relay) {
+        relays.push(relay.to_string());
+    }
 }
 
 impl Parser {
@@ -50,8 +82,9 @@ impl Parser {
         let mut parsed = Kind1Parsed {
             parsed_content: Vec::new(),
             shortened_content: Vec::new(),
-            quotes: Vec::new(),
-            mentions: Vec::new(),
+            profile_mentions: Vec::new(),
+            event_refs: Vec::new(),
+            address_refs: Vec::new(),
             reply: None,
             root: None,
         };
@@ -82,8 +115,10 @@ impl Parser {
 
         // Parse references using NIP-27 (nostr: URIs and bech32 entities)
         // For now, we'll parse them manually from content
-        parsed.quotes = self.extract_profile_mentions(&event.content, &mut requests);
-        parsed.mentions = self.extract_event_mentions(&event.content, &mut requests);
+        parsed.profile_mentions =
+            self.extract_profile_mentions(&event.content, &event.tags, &mut requests);
+        parsed.event_refs = self.extract_event_refs(&event.content, &event.tags, &mut requests);
+        parsed.address_refs = self.extract_address_refs(&event.content, &mut requests);
 
         // Extract reply and root using NIP-10
         parsed.reply = self.get_immediate_parent(&event.tags);
@@ -169,10 +204,11 @@ impl Parser {
     fn extract_profile_mentions(
         &self,
         content: &str,
+        tags: &[Vec<String>],
         requests: &mut Vec<Request>,
     ) -> Vec<ProfilePointer> {
         use regex::Regex;
-        let mut quotes = Vec::new();
+        let mut profile_mentions = Vec::new();
 
         // Look for nostr:npub... or npub... patterns
         let profile_regex = Regex::new(r"(?:nostr:)?(npub1[a-z0-9]+)").unwrap();
@@ -181,23 +217,22 @@ impl Parser {
             if let Some(npub) = caps.get(1) {
                 if let Ok(decoded) = nostr::nips::nip19::FromBech32::from_bech32(npub.as_str()) {
                     if let nostr::nips::nip19::Nip19::Pubkey(pubkey) = decoded {
-                        let pointer = ProfilePointer {
-                            public_key: pubkey.to_string(),
-                            relays: Vec::new(),
-                        };
+                        let public_key = pubkey.to_string();
+                        let relays = relay_hints_for_tag_value(tags, &["p"], &public_key);
+                        let pointer = ProfilePointer { public_key, relays };
 
                         // Add request for this profile
                         requests.push(Request {
                             authors: vec![pointer.public_key.clone()],
                             kinds: vec![0],
                             limit: Some(1),
-                            relays: Vec::new(),
+                            relays: pointer.relays.clone(),
                             close_on_eose: true,
                             cache_first: true,
                             ..Default::default()
                         });
 
-                        quotes.push(pointer);
+                        profile_mentions.push(pointer);
                     }
                 }
             }
@@ -211,42 +246,45 @@ impl Parser {
                 if let Ok(decoded) = nostr::nips::nip19::FromBech32::from_bech32(nprofile.as_str())
                 {
                     if let nostr::nips::nip19::Nip19::Profile(profile) = decoded {
-                        let pointer = ProfilePointer {
-                            public_key: profile.public_key.to_string(),
-                            relays: profile
+                        let public_key = profile.public_key.to_string();
+                        let relays = merge_relays(
+                            profile
                                 .relays
                                 .into_iter()
                                 .map(|url| url.to_string())
                                 .collect(),
-                        };
+                            relay_hints_for_tag_value(tags, &["p"], &public_key),
+                        );
+                        let pointer = ProfilePointer { public_key, relays };
 
                         // Add request for this profile
                         requests.push(Request {
                             authors: vec![pointer.public_key.clone()],
                             kinds: vec![0],
                             limit: Some(1),
-                            relays: vec![],
+                            relays: pointer.relays.clone(),
                             close_on_eose: true,
                             cache_first: true,
                             ..Default::default()
                         });
 
-                        quotes.push(pointer);
+                        profile_mentions.push(pointer);
                     }
                 }
             }
         }
 
-        quotes
+        profile_mentions
     }
 
-    fn extract_event_mentions(
+    fn extract_event_refs(
         &self,
         content: &str,
+        tags: &[Vec<String>],
         requests: &mut Vec<Request>,
     ) -> Vec<EventPointer> {
         use regex::Regex;
-        let mut mentions = Vec::new();
+        let mut event_refs = Vec::new();
 
         // Look for nostr:note... or note... patterns
         let note_regex = Regex::new(r"(?:nostr:)?(note1[a-z0-9]+)").unwrap();
@@ -256,12 +294,13 @@ impl Parser {
                 if let Ok(decoded) = nostr::nips::nip19::FromBech32::from_bech32(note.as_str()) {
                     if let nostr::nips::nip19::Nip19::EventId(event_id) = decoded {
                         let id = event_id.to_string();
+                        let relays = relay_hints_for_tag_value(tags, &["e", "q"], &id);
 
                         // Add request for this event
                         requests.push(Request {
                             ids: vec![id.clone()],
                             limit: Some(3), // increase the limit to provide with a bigger buffer
-                            relays: vec![],
+                            relays: relays.clone(),
                             close_on_eose: true,
                             cache_first: true,
                             ..Default::default()
@@ -269,11 +308,11 @@ impl Parser {
 
                         let pointer = EventPointer {
                             id,
-                            relays: Vec::new(),
+                            relays,
                             author: None,
                             kind: None,
                         };
-                        mentions.push(pointer);
+                        event_refs.push(pointer);
                     }
                 }
             }
@@ -288,12 +327,20 @@ impl Parser {
                     if let nostr::nips::nip19::Nip19::Event(event) = decoded {
                         let id = event.event_id.to_string();
                         let author = event.author.map(|pk| pk.to_string());
+                        let relays = merge_relays(
+                            event
+                                .relays
+                                .into_iter()
+                                .map(|url| url.to_string())
+                                .collect(),
+                            relay_hints_for_tag_value(tags, &["e", "q"], &id),
+                        );
 
                         // Add request for this event
                         requests.push(Request {
                             ids: vec![id.clone()],
                             limit: Some(3), // increase the limit to provide with a bigger buffer
-                            relays: vec![],
+                            relays: relays.clone(),
                             close_on_eose: true,
                             cache_first: true,
                             ..Default::default()
@@ -301,21 +348,68 @@ impl Parser {
 
                         let pointer = EventPointer {
                             id,
-                            relays: event
-                                .relays
-                                .into_iter()
-                                .map(|url| url.to_string())
-                                .collect(),
+                            relays,
                             author,
                             kind: None,
                         };
-                        mentions.push(pointer);
+                        event_refs.push(pointer);
                     }
                 }
             }
         }
 
-        mentions
+        event_refs
+    }
+
+    fn extract_address_refs(
+        &self,
+        content: &str,
+        requests: &mut Vec<Request>,
+    ) -> Vec<AddressPointer> {
+        use regex::Regex;
+        let mut address_refs = Vec::new();
+
+        let naddr_regex = Regex::new(r"(?:nostr:)?(naddr1[a-z0-9]+)").unwrap();
+
+        for caps in naddr_regex.captures_iter(content) {
+            if let Some(naddr) = caps.get(1) {
+                if let Ok(decoded) = nostr::nips::nip19::FromBech32::from_bech32(naddr.as_str()) {
+                    if let nostr::nips::nip19::Nip19::Coordinate(coord) = decoded {
+                        let pubkey = coord.public_key.to_string();
+                        let d = coord.identifier;
+                        let relays: Vec<String> = coord
+                            .relays
+                            .into_iter()
+                            .map(|url| url.to_string())
+                            .collect();
+
+                        let pointer = AddressPointer {
+                            kind: coord.kind as u64,
+                            pubkey: pubkey.clone(),
+                            d: d.clone(),
+                            relays: relays.clone(),
+                        };
+
+                        let mut tags = FxHashMap::default();
+                        tags.insert("#d".to_string(), vec![d]);
+                        requests.push(Request {
+                            authors: vec![pubkey],
+                            kinds: vec![coord.kind as i32],
+                            tags,
+                            limit: Some(1),
+                            relays,
+                            close_on_eose: true,
+                            cache_first: true,
+                            ..Default::default()
+                        });
+
+                        address_refs.push(pointer);
+                    }
+                }
+            }
+        }
+
+        address_refs
     }
 }
 
@@ -369,11 +463,11 @@ pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
         Some(builder.create_vector(&shortened_content_offsets))
     };
 
-    // Build quotes (ProfilePointer)
-    let mut quotes_offsets = Vec::new();
-    for quote in &parsed.quotes {
-        let public_key = builder.create_string(&quote.public_key);
-        let relays_offsets: Vec<_> = quote
+    // Build profile mentions (ProfilePointer)
+    let mut profile_mentions_offsets = Vec::new();
+    for mention in &parsed.profile_mentions {
+        let public_key = builder.create_string(&mention.public_key);
+        let relays_offsets: Vec<_> = mention
             .relays
             .iter()
             .map(|r| builder.create_string(r))
@@ -389,19 +483,19 @@ pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
             relays,
         };
         let profile_pointer_offset = fb::ProfilePointer::create(builder, &profile_pointer_args);
-        quotes_offsets.push(profile_pointer_offset);
+        profile_mentions_offsets.push(profile_pointer_offset);
     }
-    let quotes_vector = if quotes_offsets.is_empty() {
+    let profile_mentions_vector = if profile_mentions_offsets.is_empty() {
         None
     } else {
-        Some(builder.create_vector(&quotes_offsets))
+        Some(builder.create_vector(&profile_mentions_offsets))
     };
 
-    // Build mentions (EventPointer)
-    let mut mentions_offsets = Vec::new();
-    for mention in &parsed.mentions {
-        let id = builder.create_string(&mention.id);
-        let relays_offsets: Vec<_> = mention
+    // Build event refs (EventPointer)
+    let mut event_refs_offsets = Vec::new();
+    for event_ref in &parsed.event_refs {
+        let id = builder.create_string(&event_ref.id);
+        let relays_offsets: Vec<_> = event_ref
             .relays
             .iter()
             .map(|r| builder.create_string(r))
@@ -411,21 +505,52 @@ pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
         } else {
             Some(builder.create_vector(&relays_offsets))
         };
-        let author = mention.author.as_ref().map(|a| builder.create_string(a));
+        let author = event_ref.author.as_ref().map(|a| builder.create_string(a));
 
         let event_pointer_args = fb::EventPointerArgs {
             id: Some(id),
             relays,
             author,
-            kind: mention.kind.unwrap_or(0),
+            kind: event_ref.kind.unwrap_or(0),
         };
         let event_pointer_offset = fb::EventPointer::create(builder, &event_pointer_args);
-        mentions_offsets.push(event_pointer_offset);
+        event_refs_offsets.push(event_pointer_offset);
     }
-    let mentions_vector = if mentions_offsets.is_empty() {
+    let event_refs_vector = if event_refs_offsets.is_empty() {
         None
     } else {
-        Some(builder.create_vector(&mentions_offsets))
+        Some(builder.create_vector(&event_refs_offsets))
+    };
+
+    // Build address refs (AddressPointer)
+    let mut address_refs_offsets = Vec::new();
+    for address_ref in &parsed.address_refs {
+        let pubkey = builder.create_string(&address_ref.pubkey);
+        let d = builder.create_string(&address_ref.d);
+        let relays_offsets: Vec<_> = address_ref
+            .relays
+            .iter()
+            .map(|r| builder.create_string(r))
+            .collect();
+        let relays = if relays_offsets.is_empty() {
+            None
+        } else {
+            Some(builder.create_vector(&relays_offsets))
+        };
+
+        let address_pointer_args = fb::AddressPointerArgs {
+            kind: address_ref.kind,
+            pubkey: Some(pubkey),
+            d: Some(d),
+            relays,
+        };
+        let address_pointer_offset = fb::AddressPointer::create(builder, &address_pointer_args);
+        address_refs_offsets.push(address_pointer_offset);
+    }
+    let address_refs_vector = if address_refs_offsets.is_empty() {
+        None
+    } else {
+        Some(builder.create_vector(&address_refs_offsets))
     };
 
     // Build reply EventPointer
@@ -479,8 +604,9 @@ pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
     let args = fb::Kind1ParsedArgs {
         parsed_content: Some(parsed_content_vector),
         shortened_content: shortened_content_vector,
-        quotes: quotes_vector,
-        mentions: mentions_vector,
+        profile_mentions: profile_mentions_vector,
+        event_refs: event_refs_vector,
+        address_refs: address_refs_vector,
         reply,
         root,
     };
@@ -530,6 +656,72 @@ mod tests {
         let shortened: Vec<ContentBlock> = Vec::new();
 
         assert!(!should_use_shortened_content(&parsed, &shortened));
+    }
+
+    #[test]
+    fn test_relay_hints_for_tag_value_extracts_matching_p_tag_relays() {
+        let pubkey = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let tags = vec![
+            vec![
+                "p".to_string(),
+                pubkey.to_string(),
+                "wss://relay.example".to_string(),
+            ],
+            vec![
+                "p".to_string(),
+                "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string(),
+                "wss://other.example".to_string(),
+            ],
+        ];
+
+        assert_eq!(
+            relay_hints_for_tag_value(&tags, &["p"], pubkey),
+            vec!["wss://relay.example".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_relay_hints_for_tag_value_extracts_matching_e_and_q_tag_relays() {
+        let event_id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let tags = vec![
+            vec![
+                "e".to_string(),
+                event_id.to_string(),
+                "wss://e.example".to_string(),
+            ],
+            vec![
+                "q".to_string(),
+                event_id.to_string(),
+                "wss://q.example".to_string(),
+            ],
+            vec!["q".to_string(), event_id.to_string(), String::new()],
+        ];
+
+        assert_eq!(
+            relay_hints_for_tag_value(&tags, &["e", "q"], event_id),
+            vec!["wss://e.example".to_string(), "wss://q.example".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_merge_relays_keeps_nip19_relays_and_adds_tag_hints() {
+        assert_eq!(
+            merge_relays(
+                vec![
+                    "wss://nprofile.example".to_string(),
+                    "wss://same.example".to_string()
+                ],
+                vec![
+                    "wss://same.example".to_string(),
+                    "wss://tag.example".to_string()
+                ],
+            ),
+            vec![
+                "wss://nprofile.example".to_string(),
+                "wss://same.example".to_string(),
+                "wss://tag.example".to_string(),
+            ]
+        );
     }
 }
 

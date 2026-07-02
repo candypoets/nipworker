@@ -4,6 +4,7 @@
 
 import * as flatbuffers from 'flatbuffers';
 
+import { AddressPointer, AddressPointerT } from '../../nostr/fb/address-pointer.js';
 import { ContentBlock, ContentBlockT } from '../../nostr/fb/content-block.js';
 import { EventPointer, EventPointerT } from '../../nostr/fb/event-pointer.js';
 import { ProfilePointer, ProfilePointerT } from '../../nostr/fb/profile-pointer.js';
@@ -47,38 +48,48 @@ shortenedContentLength():number {
   return offset ? this.bb!.__vector_len(this.bb_pos + offset) : 0;
 }
 
-quotes(index: number, obj?:ProfilePointer):ProfilePointer|null {
+profileMentions(index: number, obj?:ProfilePointer):ProfilePointer|null {
   const offset = this.bb!.__offset(this.bb_pos, 8);
   return offset ? (obj || new ProfilePointer()).__init(this.bb!.__indirect(this.bb!.__vector(this.bb_pos + offset) + index * 4), this.bb!) : null;
 }
 
-quotesLength():number {
+profileMentionsLength():number {
   const offset = this.bb!.__offset(this.bb_pos, 8);
   return offset ? this.bb!.__vector_len(this.bb_pos + offset) : 0;
 }
 
-mentions(index: number, obj?:EventPointer):EventPointer|null {
+eventRefs(index: number, obj?:EventPointer):EventPointer|null {
   const offset = this.bb!.__offset(this.bb_pos, 10);
   return offset ? (obj || new EventPointer()).__init(this.bb!.__indirect(this.bb!.__vector(this.bb_pos + offset) + index * 4), this.bb!) : null;
 }
 
-mentionsLength():number {
+eventRefsLength():number {
   const offset = this.bb!.__offset(this.bb_pos, 10);
   return offset ? this.bb!.__vector_len(this.bb_pos + offset) : 0;
 }
 
-reply(obj?:EventPointer):EventPointer|null {
+addressRefs(index: number, obj?:AddressPointer):AddressPointer|null {
   const offset = this.bb!.__offset(this.bb_pos, 12);
-  return offset ? (obj || new EventPointer()).__init(this.bb!.__indirect(this.bb_pos + offset), this.bb!) : null;
+  return offset ? (obj || new AddressPointer()).__init(this.bb!.__indirect(this.bb!.__vector(this.bb_pos + offset) + index * 4), this.bb!) : null;
 }
 
-root(obj?:EventPointer):EventPointer|null {
+addressRefsLength():number {
+  const offset = this.bb!.__offset(this.bb_pos, 12);
+  return offset ? this.bb!.__vector_len(this.bb_pos + offset) : 0;
+}
+
+reply(obj?:EventPointer):EventPointer|null {
   const offset = this.bb!.__offset(this.bb_pos, 14);
   return offset ? (obj || new EventPointer()).__init(this.bb!.__indirect(this.bb_pos + offset), this.bb!) : null;
 }
 
+root(obj?:EventPointer):EventPointer|null {
+  const offset = this.bb!.__offset(this.bb_pos, 16);
+  return offset ? (obj || new EventPointer()).__init(this.bb!.__indirect(this.bb_pos + offset), this.bb!) : null;
+}
+
 static startKind1Parsed(builder:flatbuffers.Builder) {
-  builder.startObject(6);
+  builder.startObject(7);
 }
 
 static addParsedContent(builder:flatbuffers.Builder, parsedContentOffset:flatbuffers.Offset) {
@@ -113,11 +124,11 @@ static startShortenedContentVector(builder:flatbuffers.Builder, numElems:number)
   builder.startVector(4, numElems, 4);
 }
 
-static addQuotes(builder:flatbuffers.Builder, quotesOffset:flatbuffers.Offset) {
-  builder.addFieldOffset(2, quotesOffset, 0);
+static addProfileMentions(builder:flatbuffers.Builder, profileMentionsOffset:flatbuffers.Offset) {
+  builder.addFieldOffset(2, profileMentionsOffset, 0);
 }
 
-static createQuotesVector(builder:flatbuffers.Builder, data:flatbuffers.Offset[]):flatbuffers.Offset {
+static createProfileMentionsVector(builder:flatbuffers.Builder, data:flatbuffers.Offset[]):flatbuffers.Offset {
   builder.startVector(4, data.length, 4);
   for (let i = data.length - 1; i >= 0; i--) {
     builder.addOffset(data[i]!);
@@ -125,15 +136,15 @@ static createQuotesVector(builder:flatbuffers.Builder, data:flatbuffers.Offset[]
   return builder.endVector();
 }
 
-static startQuotesVector(builder:flatbuffers.Builder, numElems:number) {
+static startProfileMentionsVector(builder:flatbuffers.Builder, numElems:number) {
   builder.startVector(4, numElems, 4);
 }
 
-static addMentions(builder:flatbuffers.Builder, mentionsOffset:flatbuffers.Offset) {
-  builder.addFieldOffset(3, mentionsOffset, 0);
+static addEventRefs(builder:flatbuffers.Builder, eventRefsOffset:flatbuffers.Offset) {
+  builder.addFieldOffset(3, eventRefsOffset, 0);
 }
 
-static createMentionsVector(builder:flatbuffers.Builder, data:flatbuffers.Offset[]):flatbuffers.Offset {
+static createEventRefsVector(builder:flatbuffers.Builder, data:flatbuffers.Offset[]):flatbuffers.Offset {
   builder.startVector(4, data.length, 4);
   for (let i = data.length - 1; i >= 0; i--) {
     builder.addOffset(data[i]!);
@@ -141,16 +152,32 @@ static createMentionsVector(builder:flatbuffers.Builder, data:flatbuffers.Offset
   return builder.endVector();
 }
 
-static startMentionsVector(builder:flatbuffers.Builder, numElems:number) {
+static startEventRefsVector(builder:flatbuffers.Builder, numElems:number) {
+  builder.startVector(4, numElems, 4);
+}
+
+static addAddressRefs(builder:flatbuffers.Builder, addressRefsOffset:flatbuffers.Offset) {
+  builder.addFieldOffset(4, addressRefsOffset, 0);
+}
+
+static createAddressRefsVector(builder:flatbuffers.Builder, data:flatbuffers.Offset[]):flatbuffers.Offset {
+  builder.startVector(4, data.length, 4);
+  for (let i = data.length - 1; i >= 0; i--) {
+    builder.addOffset(data[i]!);
+  }
+  return builder.endVector();
+}
+
+static startAddressRefsVector(builder:flatbuffers.Builder, numElems:number) {
   builder.startVector(4, numElems, 4);
 }
 
 static addReply(builder:flatbuffers.Builder, replyOffset:flatbuffers.Offset) {
-  builder.addFieldOffset(4, replyOffset, 0);
+  builder.addFieldOffset(5, replyOffset, 0);
 }
 
 static addRoot(builder:flatbuffers.Builder, rootOffset:flatbuffers.Offset) {
-  builder.addFieldOffset(5, rootOffset, 0);
+  builder.addFieldOffset(6, rootOffset, 0);
 }
 
 static endKind1Parsed(builder:flatbuffers.Builder):flatbuffers.Offset {
@@ -164,8 +191,9 @@ unpack(): Kind1ParsedT {
   return new Kind1ParsedT(
     this.bb!.createObjList<ContentBlock, ContentBlockT>(this.parsedContent.bind(this), this.parsedContentLength()),
     this.bb!.createObjList<ContentBlock, ContentBlockT>(this.shortenedContent.bind(this), this.shortenedContentLength()),
-    this.bb!.createObjList<ProfilePointer, ProfilePointerT>(this.quotes.bind(this), this.quotesLength()),
-    this.bb!.createObjList<EventPointer, EventPointerT>(this.mentions.bind(this), this.mentionsLength()),
+    this.bb!.createObjList<ProfilePointer, ProfilePointerT>(this.profileMentions.bind(this), this.profileMentionsLength()),
+    this.bb!.createObjList<EventPointer, EventPointerT>(this.eventRefs.bind(this), this.eventRefsLength()),
+    this.bb!.createObjList<AddressPointer, AddressPointerT>(this.addressRefs.bind(this), this.addressRefsLength()),
     (this.reply() !== null ? this.reply()!.unpack() : null),
     (this.root() !== null ? this.root()!.unpack() : null)
   );
@@ -175,8 +203,9 @@ unpack(): Kind1ParsedT {
 unpackTo(_o: Kind1ParsedT): void {
   _o.parsedContent = this.bb!.createObjList<ContentBlock, ContentBlockT>(this.parsedContent.bind(this), this.parsedContentLength());
   _o.shortenedContent = this.bb!.createObjList<ContentBlock, ContentBlockT>(this.shortenedContent.bind(this), this.shortenedContentLength());
-  _o.quotes = this.bb!.createObjList<ProfilePointer, ProfilePointerT>(this.quotes.bind(this), this.quotesLength());
-  _o.mentions = this.bb!.createObjList<EventPointer, EventPointerT>(this.mentions.bind(this), this.mentionsLength());
+  _o.profileMentions = this.bb!.createObjList<ProfilePointer, ProfilePointerT>(this.profileMentions.bind(this), this.profileMentionsLength());
+  _o.eventRefs = this.bb!.createObjList<EventPointer, EventPointerT>(this.eventRefs.bind(this), this.eventRefsLength());
+  _o.addressRefs = this.bb!.createObjList<AddressPointer, AddressPointerT>(this.addressRefs.bind(this), this.addressRefsLength());
   _o.reply = (this.reply() !== null ? this.reply()!.unpack() : null);
   _o.root = (this.root() !== null ? this.root()!.unpack() : null);
 }
@@ -186,8 +215,9 @@ export class Kind1ParsedT implements flatbuffers.IGeneratedObject {
 constructor(
   public parsedContent: (ContentBlockT)[] = [],
   public shortenedContent: (ContentBlockT)[] = [],
-  public quotes: (ProfilePointerT)[] = [],
-  public mentions: (EventPointerT)[] = [],
+  public profileMentions: (ProfilePointerT)[] = [],
+  public eventRefs: (EventPointerT)[] = [],
+  public addressRefs: (AddressPointerT)[] = [],
   public reply: EventPointerT|null = null,
   public root: EventPointerT|null = null
 ){}
@@ -196,16 +226,18 @@ constructor(
 pack(builder:flatbuffers.Builder): flatbuffers.Offset {
   const parsedContent = Kind1Parsed.createParsedContentVector(builder, builder.createObjectOffsetList(this.parsedContent));
   const shortenedContent = Kind1Parsed.createShortenedContentVector(builder, builder.createObjectOffsetList(this.shortenedContent));
-  const quotes = Kind1Parsed.createQuotesVector(builder, builder.createObjectOffsetList(this.quotes));
-  const mentions = Kind1Parsed.createMentionsVector(builder, builder.createObjectOffsetList(this.mentions));
+  const profileMentions = Kind1Parsed.createProfileMentionsVector(builder, builder.createObjectOffsetList(this.profileMentions));
+  const eventRefs = Kind1Parsed.createEventRefsVector(builder, builder.createObjectOffsetList(this.eventRefs));
+  const addressRefs = Kind1Parsed.createAddressRefsVector(builder, builder.createObjectOffsetList(this.addressRefs));
   const reply = (this.reply !== null ? this.reply!.pack(builder) : 0);
   const root = (this.root !== null ? this.root!.pack(builder) : 0);
 
   Kind1Parsed.startKind1Parsed(builder);
   Kind1Parsed.addParsedContent(builder, parsedContent);
   Kind1Parsed.addShortenedContent(builder, shortenedContent);
-  Kind1Parsed.addQuotes(builder, quotes);
-  Kind1Parsed.addMentions(builder, mentions);
+  Kind1Parsed.addProfileMentions(builder, profileMentions);
+  Kind1Parsed.addEventRefs(builder, eventRefs);
+  Kind1Parsed.addAddressRefs(builder, addressRefs);
   Kind1Parsed.addReply(builder, reply);
   Kind1Parsed.addRoot(builder, root);
 

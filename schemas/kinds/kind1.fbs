@@ -5,8 +5,9 @@ namespace nostr.fb;
 table Kind1Parsed {
   parsed_content: [ContentBlock] (required);
   shortened_content: [ContentBlock];
-  quotes: [ProfilePointer];
-  mentions: [EventPointer];
+  profile_mentions: [ProfilePointer];
+  event_refs: [EventPointer];
+  address_refs: [AddressPointer];
   reply: EventPointer;
   root: EventPointer;
 }
