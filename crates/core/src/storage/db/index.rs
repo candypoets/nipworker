@@ -2,8 +2,7 @@ use crate::generated::nostr::fb::{self, NostrEvent, ParsedEvent, Request, Worker
 use crate::platform::now_millis;
 use crate::storage::db::sharded_storage::ShardedRingBufferStorage;
 use crate::storage::db::types::{
-    intersect_event_sets, DatabaseConfig, DatabaseError, DatabaseIndexes, EventStorage,
-    QueryFilter, QueryResult,
+    DatabaseConfig, DatabaseError, DatabaseIndexes, EventStorage, QueryFilter, QueryResult,
 };
 use rustc_hash::{FxHashMap, FxHashSet};
 
@@ -267,7 +266,13 @@ impl<S: EventStorage> NostrDB<S> {
     ) -> Result<()> {
         let event_id = parsed.id().to_string();
         // Avoid re-storing duplicates (common when cached events re-enter pipelines with SaveToDb).
-        if let Some(existing_offset) = self.indexes.events_by_id.borrow().get(&event_id).cloned() {
+        if let Some(existing_offset) = self
+            .indexes
+            .events_by_id
+            .borrow()
+            .get(&event_id)
+            .map(|record| record.offset)
+        {
             // Only skip when the indexed offset still points to a readable event.
             // Offsets can become stale after ring-buffer eviction.
             if self.storage.get_event(existing_offset)?.is_some() {
@@ -301,7 +306,13 @@ impl<S: EventStorage> NostrDB<S> {
     ) -> Result<()> {
         let event_id = event.id().to_string();
         // Avoid re-storing duplicates (common when cached events re-enter pipelines with SaveToDb).
-        if let Some(existing_offset) = self.indexes.events_by_id.borrow().get(&event_id).cloned() {
+        if let Some(existing_offset) = self
+            .indexes
+            .events_by_id
+            .borrow()
+            .get(&event_id)
+            .map(|record| record.offset)
+        {
             // Only skip when the indexed offset still points to a readable event.
             // Offsets can become stale after ring-buffer eviction.
             if self.storage.get_event(existing_offset)?.is_some() {
@@ -611,12 +622,7 @@ impl<S: EventStorage> NostrDB<S> {
     /// Add an event to all relevant indexes
     fn index_parsed_event(&self, event: ParsedEvent<'_>, offset: u64) {
         let event_id = event.id();
-
-        // Primary
-        self.indexes
-            .events_by_id
-            .borrow_mut()
-            .insert(event_id.to_string(), offset);
+        let event_key = self.indexes.upsert_event_record(event_id, offset);
 
         // Kind
         self.indexes
@@ -624,7 +630,7 @@ impl<S: EventStorage> NostrDB<S> {
             .borrow_mut()
             .entry(event.kind())
             .or_insert_with(FxHashSet::default)
-            .insert(event_id.to_string());
+            .insert(event_key);
 
         // Pubkey
         self.indexes
@@ -632,7 +638,7 @@ impl<S: EventStorage> NostrDB<S> {
             .borrow_mut()
             .entry(event.pubkey().to_string())
             .or_insert_with(FxHashSet::default)
-            .insert(event_id.to_string());
+            .insert(event_key);
 
         // Tags
         let tags = event.tags();
@@ -649,7 +655,7 @@ impl<S: EventStorage> NostrDB<S> {
                                 .borrow_mut()
                                 .entry(tag_value.to_string())
                                 .or_insert_with(FxHashSet::default)
-                                .insert(event_id.to_string());
+                                .insert(event_key);
                         }
                         "E" => {
                             // Uppercase E - NIP-22 "E" tag (event id reference)
@@ -658,7 +664,7 @@ impl<S: EventStorage> NostrDB<S> {
                                 .borrow_mut()
                                 .entry(tag_value.to_string())
                                 .or_insert_with(FxHashSet::default)
-                                .insert(event_id.to_string());
+                                .insert(event_key);
                         }
                         "p" => {
                             self.indexes
@@ -666,7 +672,7 @@ impl<S: EventStorage> NostrDB<S> {
                                 .borrow_mut()
                                 .entry(tag_value.to_string())
                                 .or_insert_with(FxHashSet::default)
-                                .insert(event_id.to_string());
+                                .insert(event_key);
                         }
                         "P" => {
                             // Uppercase P - NIP-22 "P" tag (pubkey reference)
@@ -675,7 +681,7 @@ impl<S: EventStorage> NostrDB<S> {
                                 .borrow_mut()
                                 .entry(tag_value.to_string())
                                 .or_insert_with(FxHashSet::default)
-                                .insert(event_id.to_string());
+                                .insert(event_key);
                         }
                         "a" => {
                             self.indexes
@@ -683,7 +689,7 @@ impl<S: EventStorage> NostrDB<S> {
                                 .borrow_mut()
                                 .entry(tag_value.to_string())
                                 .or_insert_with(FxHashSet::default)
-                                .insert(event_id.to_string());
+                                .insert(event_key);
                         }
                         "d" => {
                             self.indexes
@@ -691,7 +697,7 @@ impl<S: EventStorage> NostrDB<S> {
                                 .borrow_mut()
                                 .entry(tag_value.to_string())
                                 .or_insert_with(FxHashSet::default)
-                                .insert(event_id.to_string());
+                                .insert(event_key);
                         }
                         "q" => {
                             // q tag (quote/citation)
@@ -700,7 +706,7 @@ impl<S: EventStorage> NostrDB<S> {
                                 .borrow_mut()
                                 .entry(tag_value.to_string())
                                 .or_insert_with(FxHashSet::default)
-                                .insert(event_id.to_string());
+                                .insert(event_key);
                         }
                         _ => {}
                     }
@@ -711,12 +717,7 @@ impl<S: EventStorage> NostrDB<S> {
 
     fn index_nostr_event(&self, event: NostrEvent<'_>, offset: u64) {
         let event_id = event.id();
-
-        // Primary
-        self.indexes
-            .events_by_id
-            .borrow_mut()
-            .insert(event_id.to_string(), offset);
+        let event_key = self.indexes.upsert_event_record(event_id, offset);
 
         // Kind
         self.indexes
@@ -724,7 +725,7 @@ impl<S: EventStorage> NostrDB<S> {
             .borrow_mut()
             .entry(event.kind())
             .or_insert_with(FxHashSet::default)
-            .insert(event_id.to_string());
+            .insert(event_key);
 
         // Pubkey
         self.indexes
@@ -732,7 +733,7 @@ impl<S: EventStorage> NostrDB<S> {
             .borrow_mut()
             .entry(event.pubkey().to_string())
             .or_insert_with(FxHashSet::default)
-            .insert(event_id.to_string());
+            .insert(event_key);
 
         // Tags
         let tags = event.tags();
@@ -749,7 +750,7 @@ impl<S: EventStorage> NostrDB<S> {
                                 .borrow_mut()
                                 .entry(tag_value.to_string())
                                 .or_insert_with(FxHashSet::default)
-                                .insert(event_id.to_string());
+                                .insert(event_key);
                         }
                         "E" => {
                             // Uppercase E - NIP-22 "E" tag (event id reference)
@@ -758,7 +759,7 @@ impl<S: EventStorage> NostrDB<S> {
                                 .borrow_mut()
                                 .entry(tag_value.to_string())
                                 .or_insert_with(FxHashSet::default)
-                                .insert(event_id.to_string());
+                                .insert(event_key);
                         }
                         "p" => {
                             self.indexes
@@ -766,7 +767,7 @@ impl<S: EventStorage> NostrDB<S> {
                                 .borrow_mut()
                                 .entry(tag_value.to_string())
                                 .or_insert_with(FxHashSet::default)
-                                .insert(event_id.to_string());
+                                .insert(event_key);
                         }
                         "P" => {
                             // Uppercase P - NIP-22 "P" tag (pubkey reference)
@@ -775,7 +776,7 @@ impl<S: EventStorage> NostrDB<S> {
                                 .borrow_mut()
                                 .entry(tag_value.to_string())
                                 .or_insert_with(FxHashSet::default)
-                                .insert(event_id.to_string());
+                                .insert(event_key);
                         }
                         "a" => {
                             self.indexes
@@ -783,7 +784,7 @@ impl<S: EventStorage> NostrDB<S> {
                                 .borrow_mut()
                                 .entry(tag_value.to_string())
                                 .or_insert_with(FxHashSet::default)
-                                .insert(event_id.to_string());
+                                .insert(event_key);
                         }
                         "d" => {
                             self.indexes
@@ -791,7 +792,7 @@ impl<S: EventStorage> NostrDB<S> {
                                 .borrow_mut()
                                 .entry(tag_value.to_string())
                                 .or_insert_with(FxHashSet::default)
-                                .insert(event_id.to_string());
+                                .insert(event_key);
                         }
                         "q" => {
                             // q tag (quote/citation)
@@ -800,7 +801,7 @@ impl<S: EventStorage> NostrDB<S> {
                                 .borrow_mut()
                                 .entry(tag_value.to_string())
                                 .or_insert_with(FxHashSet::default)
-                                .insert(event_id.to_string());
+                                .insert(event_key);
                         }
                         _ => {}
                     }
@@ -809,9 +810,53 @@ impl<S: EventStorage> NostrDB<S> {
         }
     }
 
+    fn dedup_strings(values: &mut Option<Vec<String>>) {
+        if let Some(values) = values {
+            if values.len() < 2 {
+                return;
+            }
+            let mut seen = FxHashSet::default();
+            values.retain(|value| seen.insert(value.clone()));
+        }
+    }
+
+    fn dedup_kinds(values: &mut Option<Vec<u16>>) {
+        if let Some(values) = values {
+            if values.len() < 2 {
+                return;
+            }
+            let mut seen = FxHashSet::default();
+            values.retain(|value| seen.insert(*value));
+        }
+    }
+
+    #[allow(non_snake_case)]
+    fn normalize_query_filter(filter: &mut QueryFilter) {
+        Self::dedup_strings(&mut filter.ids);
+        Self::dedup_strings(&mut filter.authors);
+        Self::dedup_kinds(&mut filter.kinds);
+        Self::dedup_strings(&mut filter.e_tags);
+        Self::dedup_strings(&mut filter.E_tags);
+        Self::dedup_strings(&mut filter.p_tags);
+        Self::dedup_strings(&mut filter.P_tags);
+        Self::dedup_strings(&mut filter.a_tags);
+        Self::dedup_strings(&mut filter.d_tags);
+        Self::dedup_strings(&mut filter.q_tags);
+    }
+
     #[allow(non_snake_case)]
     pub fn query_events_with_filter(&self, filter: QueryFilter) -> Result<QueryResult> {
+        self.query_events_with_filter_inner(filter, true)
+    }
+
+    #[allow(non_snake_case)]
+    fn query_events_with_filter_inner(
+        &self,
+        mut filter: QueryFilter,
+        sort_results: bool,
+    ) -> Result<QueryResult> {
         let start_time = now_millis();
+        Self::normalize_query_filter(&mut filter);
 
         // Start with candidate sets from indexed fields
         let mut candidate_sets = Vec::new();
@@ -820,10 +865,19 @@ impl<S: EventStorage> NostrDB<S> {
         // Filter by IDs (most specific)
         if let Some(ids) = &filter.ids {
             let mut id_set = FxHashSet::default();
+            let events_by_id = self.indexes.events_by_id.borrow();
             for id in ids {
-                if self.indexes.events_by_id.borrow().contains_key(id) {
-                    id_set.insert(id.clone());
+                if let Some(record) = events_by_id.get(id) {
+                    id_set.insert(record.key);
                 }
+            }
+            if id_set.is_empty() {
+                return Ok(QueryResult {
+                    events: Vec::new(),
+                    total_found: 0,
+                    has_more: false,
+                    query_time_ms: now_millis() - start_time,
+                });
             }
             candidate_sets.push(id_set);
             use_full_scan = false;
@@ -832,10 +886,19 @@ impl<S: EventStorage> NostrDB<S> {
         // Filter by kinds
         if let Some(kinds) = &filter.kinds {
             let mut kind_events = FxHashSet::default();
+            let events_by_kind = self.indexes.events_by_kind.borrow();
             for kind in kinds {
-                if let Some(event_ids) = self.indexes.events_by_kind.borrow().get(kind) {
+                if let Some(event_ids) = events_by_kind.get(kind) {
                     kind_events.extend(event_ids.iter().cloned());
                 }
+            }
+            if kind_events.is_empty() {
+                return Ok(QueryResult {
+                    events: Vec::new(),
+                    total_found: 0,
+                    has_more: false,
+                    query_time_ms: now_millis() - start_time,
+                });
             }
             candidate_sets.push(kind_events);
             use_full_scan = false;
@@ -844,10 +907,19 @@ impl<S: EventStorage> NostrDB<S> {
         // Filter by authors
         if let Some(authors) = &filter.authors {
             let mut author_events = FxHashSet::default();
+            let events_by_pubkey = self.indexes.events_by_pubkey.borrow();
             for author in authors {
-                if let Some(event_ids) = self.indexes.events_by_pubkey.borrow().get(author) {
+                if let Some(event_ids) = events_by_pubkey.get(author) {
                     author_events.extend(event_ids.iter().cloned());
                 }
+            }
+            if author_events.is_empty() {
+                return Ok(QueryResult {
+                    events: Vec::new(),
+                    total_found: 0,
+                    has_more: false,
+                    query_time_ms: now_millis() - start_time,
+                });
             }
             candidate_sets.push(author_events);
             use_full_scan = false;
@@ -856,10 +928,19 @@ impl<S: EventStorage> NostrDB<S> {
         // Filter by e_tags
         if let Some(e_tags) = &filter.e_tags {
             let mut tag_events = FxHashSet::default();
+            let events_by_e_tag = self.indexes.events_by_e_tag.borrow();
             for tag in e_tags {
-                if let Some(event_ids) = self.indexes.events_by_e_tag.borrow().get(tag) {
+                if let Some(event_ids) = events_by_e_tag.get(tag) {
                     tag_events.extend(event_ids.iter().cloned());
                 }
+            }
+            if tag_events.is_empty() {
+                return Ok(QueryResult {
+                    events: Vec::new(),
+                    total_found: 0,
+                    has_more: false,
+                    query_time_ms: now_millis() - start_time,
+                });
             }
             candidate_sets.push(tag_events);
             use_full_scan = false;
@@ -868,10 +949,19 @@ impl<S: EventStorage> NostrDB<S> {
         // Filter by E_tags (uppercase - NIP-22)
         if let Some(E_tags) = &filter.E_tags {
             let mut tag_events = FxHashSet::default();
+            let events_by_E_tag = self.indexes.events_by_E_tag.borrow();
             for tag in E_tags {
-                if let Some(event_ids) = self.indexes.events_by_E_tag.borrow().get(tag) {
+                if let Some(event_ids) = events_by_E_tag.get(tag) {
                     tag_events.extend(event_ids.iter().cloned());
                 }
+            }
+            if tag_events.is_empty() {
+                return Ok(QueryResult {
+                    events: Vec::new(),
+                    total_found: 0,
+                    has_more: false,
+                    query_time_ms: now_millis() - start_time,
+                });
             }
             candidate_sets.push(tag_events);
             use_full_scan = false;
@@ -880,10 +970,19 @@ impl<S: EventStorage> NostrDB<S> {
         // Filter by p_tags
         if let Some(p_tags) = &filter.p_tags {
             let mut tag_events = FxHashSet::default();
+            let events_by_p_tag = self.indexes.events_by_p_tag.borrow();
             for tag in p_tags {
-                if let Some(event_ids) = self.indexes.events_by_p_tag.borrow().get(tag) {
+                if let Some(event_ids) = events_by_p_tag.get(tag) {
                     tag_events.extend(event_ids.iter().cloned());
                 }
+            }
+            if tag_events.is_empty() {
+                return Ok(QueryResult {
+                    events: Vec::new(),
+                    total_found: 0,
+                    has_more: false,
+                    query_time_ms: now_millis() - start_time,
+                });
             }
             candidate_sets.push(tag_events);
             use_full_scan = false;
@@ -892,10 +991,19 @@ impl<S: EventStorage> NostrDB<S> {
         // Filter by P_tags (uppercase - NIP-22)
         if let Some(P_tags) = &filter.P_tags {
             let mut tag_events = FxHashSet::default();
+            let events_by_P_tag = self.indexes.events_by_P_tag.borrow();
             for tag in P_tags {
-                if let Some(event_ids) = self.indexes.events_by_P_tag.borrow().get(tag) {
+                if let Some(event_ids) = events_by_P_tag.get(tag) {
                     tag_events.extend(event_ids.iter().cloned());
                 }
+            }
+            if tag_events.is_empty() {
+                return Ok(QueryResult {
+                    events: Vec::new(),
+                    total_found: 0,
+                    has_more: false,
+                    query_time_ms: now_millis() - start_time,
+                });
             }
             candidate_sets.push(tag_events);
             use_full_scan = false;
@@ -904,10 +1012,19 @@ impl<S: EventStorage> NostrDB<S> {
         // Filter by a_tags
         if let Some(a_tags) = &filter.a_tags {
             let mut tag_events = FxHashSet::default();
+            let events_by_a_tag = self.indexes.events_by_a_tag.borrow();
             for tag in a_tags {
-                if let Some(event_ids) = self.indexes.events_by_a_tag.borrow().get(tag) {
+                if let Some(event_ids) = events_by_a_tag.get(tag) {
                     tag_events.extend(event_ids.iter().cloned());
                 }
+            }
+            if tag_events.is_empty() {
+                return Ok(QueryResult {
+                    events: Vec::new(),
+                    total_found: 0,
+                    has_more: false,
+                    query_time_ms: now_millis() - start_time,
+                });
             }
             candidate_sets.push(tag_events);
             use_full_scan = false;
@@ -916,10 +1033,19 @@ impl<S: EventStorage> NostrDB<S> {
         // Filter by d_tags
         if let Some(d_tags) = &filter.d_tags {
             let mut tag_events = FxHashSet::default();
+            let events_by_d_tag = self.indexes.events_by_d_tag.borrow();
             for tag in d_tags {
-                if let Some(event_ids) = self.indexes.events_by_d_tag.borrow().get(tag) {
+                if let Some(event_ids) = events_by_d_tag.get(tag) {
                     tag_events.extend(event_ids.iter().cloned());
                 }
+            }
+            if tag_events.is_empty() {
+                return Ok(QueryResult {
+                    events: Vec::new(),
+                    total_found: 0,
+                    has_more: false,
+                    query_time_ms: now_millis() - start_time,
+                });
             }
             candidate_sets.push(tag_events);
             use_full_scan = false;
@@ -928,93 +1054,93 @@ impl<S: EventStorage> NostrDB<S> {
         // Filter by q_tags (quote/citation)
         if let Some(q_tags) = &filter.q_tags {
             let mut tag_events = FxHashSet::default();
+            let events_by_q_tag = self.indexes.events_by_q_tag.borrow();
             for tag in q_tags {
-                if let Some(event_ids) = self.indexes.events_by_q_tag.borrow().get(tag) {
+                if let Some(event_ids) = events_by_q_tag.get(tag) {
                     tag_events.extend(event_ids.iter().cloned());
                 }
+            }
+            if tag_events.is_empty() {
+                return Ok(QueryResult {
+                    events: Vec::new(),
+                    total_found: 0,
+                    has_more: false,
+                    query_time_ms: now_millis() - start_time,
+                });
             }
             candidate_sets.push(tag_events);
             use_full_scan = false;
         }
 
-        // Get final candidate set
-        let candidate_ids = if use_full_scan {
-            // No indexed filters, scan all events
-            self.indexes.events_by_id.borrow().keys().cloned().collect()
-        } else if candidate_sets.is_empty() {
-            FxHashSet::default()
-        } else {
-            // Intersect all candidate sets
-            let candidate_refs: Vec<&FxHashSet<String>> = candidate_sets.iter().collect();
-            intersect_event_sets(candidate_refs)
-        };
-
         // Apply non-indexed filters and collect results
         let mut results = Vec::new();
-        for event_id in candidate_ids {
-            // Clone the event to avoid holding the borrow
-            if let Some(offset) = self.indexes.events_by_id.borrow().get(&event_id).cloned() {
-                if let Ok(Some(b)) = self.storage.get_event(offset) {
-                    if let Some(event) = Self::extract_parsed_event(&b) {
-                        // Time range filters
-                        if let Some(since) = filter.since {
-                            if event.created_at() < since as u32 {
-                                continue;
-                            }
+        let events_by_key = self.indexes.events_by_key.borrow();
+
+        let mut process_offset = |offset: u64| {
+            if let Ok(Some(b)) = self.storage.get_event(offset) {
+                if let Some(event) = Self::extract_parsed_event(&b) {
+                    let created_at = event.created_at();
+                    // Time range filters
+                    if let Some(since) = filter.since {
+                        if created_at < since as u32 {
+                            return;
                         }
+                    }
 
-                        if let Some(until) = filter.until {
-                            if event.created_at() > until as u32 {
-                                continue;
-                            }
+                    if let Some(until) = filter.until {
+                        if created_at > until as u32 {
+                            return;
                         }
+                    }
 
-                        // Search filter
-                        // if let Some(search) = &search_lower {
-                        //     if !event.content().to_lowercase().contains(search) {
-                        //         continue;
-                        //     }
-                        // }
-
-                        // Store the underlying bytes (event borrowing b prevents moving b)
-                        results.push(b);
-                    } else if let Some(n) = Self::extract_nostr_event(&b) {
-                        // Time range filters for NostrEvent
-                        if let Some(since) = filter.since {
-                            if (n.created_at().max(0) as u32) < since as u32 {
-                                continue;
-                            }
+                    // Store the underlying bytes (event borrowing b prevents moving b)
+                    results.push((created_at, b));
+                } else if let Some(n) = Self::extract_nostr_event(&b) {
+                    let created_at = n.created_at().max(0) as u32;
+                    // Time range filters for NostrEvent
+                    if let Some(since) = filter.since {
+                        if created_at < since as u32 {
+                            return;
                         }
+                    }
 
-                        if let Some(until) = filter.until {
-                            if (n.created_at().max(0) as u32) > until as u32 {
-                                continue;
-                            }
+                    if let Some(until) = filter.until {
+                        if created_at > until as u32 {
+                            return;
                         }
+                    }
 
-                        // Search filter
-                        // if let Some(search) = &search_lower {
-                        //     if !n.content().to_lowercase().contains(search) {
-                        //         continue;
-                        //     }
-                        // }
+                    // Store the underlying bytes
+                    results.push((created_at, b));
+                }
+            }
+        };
 
-                        // Store the underlying bytes
-                        results.push(b);
+        if use_full_scan {
+            for offset in events_by_key.values().copied() {
+                process_offset(offset);
+            }
+        } else {
+            candidate_sets.sort_by_key(|set| set.len());
+            if let Some((driver_set, remaining_sets)) = candidate_sets.split_first() {
+                for event_key in driver_set {
+                    if !remaining_sets.iter().all(|set| set.contains(event_key)) {
+                        continue;
+                    }
+                    if let Some(offset) = events_by_key.get(event_key).copied() {
+                        process_offset(offset);
                     }
                 }
             }
         }
+        drop(events_by_key);
 
         let total_found = results.len();
 
-        // Sort by created_at (newest first) — pre-extract to avoid O(n log n) flatbuffer parses
-        let mut with_time: Vec<(u32, Vec<u8>)> = results
-            .into_iter()
-            .map(|b| (Self::extract_created_at(&b).unwrap_or_default(), b))
-            .collect();
-        with_time.sort_by(|a, b| b.0.cmp(&a.0));
-        let mut results: Vec<Vec<u8>> = with_time.into_iter().map(|(_, b)| b).collect();
+        if sort_results {
+            results.sort_by(|a, b| b.0.cmp(&a.0));
+        }
+        let mut results: Vec<Vec<u8>> = results.into_iter().map(|(_, b)| b).collect();
 
         // Apply limit
         let has_more = if let Some(limit) = filter.limit {
@@ -1077,7 +1203,16 @@ impl<S: EventStorage> NostrDB<S> {
                     continue;
                 }
 
-                let result = match self.query_events(&req) {
+                let filter = match Self::query_filter_from_fb_request(&req) {
+                    Ok(filter) => filter,
+                    Err(e) => {
+                        warn!("query filter conversion failed for request {}: {}", i, e);
+                        remaining_indices.push(i);
+                        continue;
+                    }
+                };
+
+                let result = match self.query_events_with_filter_inner(filter, false) {
                     Ok(r) => r,
                     Err(e) => {
                         warn!("query_events failed for request {}: {}", i, e);
@@ -1114,7 +1249,12 @@ impl<S: EventStorage> NostrDB<S> {
 
     /// Get a single event by ID
     pub fn get_event(&self, id: &str) -> Option<Vec<u8>> {
-        let offset = self.indexes.events_by_id.borrow().get(id).cloned()?;
+        let offset = self
+            .indexes
+            .events_by_id
+            .borrow()
+            .get(id)
+            .map(|record| record.offset)?;
 
         self.storage.get_event(offset).ok().flatten()
     }

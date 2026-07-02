@@ -122,17 +122,29 @@ pub trait EventStorage {
     fn as_any(&self) -> &dyn std::any::Any;
 }
 
+pub type EventKey = u32;
+
+#[derive(Debug, Clone, Copy)]
+pub struct EventRecord {
+    pub key: EventKey,
+    pub offset: u64,
+}
+
 /// Index types for efficient querying (concurrent)
-pub type EventIdIndex = Rc<RefCell<FxHashMap<String, u64>>>;
-pub type KindIndex = Rc<RefCell<FxHashMap<u16, FxHashSet<String>>>>;
-pub type PubkeyIndex = Rc<RefCell<FxHashMap<String, FxHashSet<String>>>>;
-pub type TagIndex = Rc<RefCell<FxHashMap<String, FxHashSet<String>>>>;
+pub type EventIdIndex = Rc<RefCell<FxHashMap<String, EventRecord>>>;
+pub type EventKeyIndex = Rc<RefCell<FxHashMap<EventKey, u64>>>;
+pub type KindIndex = Rc<RefCell<FxHashMap<u16, FxHashSet<EventKey>>>>;
+pub type PubkeyIndex = Rc<RefCell<FxHashMap<String, FxHashSet<EventKey>>>>;
+pub type TagIndex = Rc<RefCell<FxHashMap<String, FxHashSet<EventKey>>>>;
 
 /// Database indexes for fast querying (concurrent)
 #[allow(non_snake_case)]
 pub struct DatabaseIndexes {
     /// Primary index: event_id -> event
     pub events_by_id: EventIdIndex,
+    /// Internal query index: compact event key -> storage offset
+    pub events_by_key: EventKeyIndex,
+    next_event_key: Rc<RefCell<EventKey>>,
     /// Secondary indexes
     pub events_by_kind: KindIndex,
     pub events_by_pubkey: PubkeyIndex,
@@ -150,6 +162,8 @@ impl DatabaseIndexes {
     pub fn new() -> Self {
         Self {
             events_by_id: Rc::new(RefCell::new(FxHashMap::default())),
+            events_by_key: Rc::new(RefCell::new(FxHashMap::default())),
+            next_event_key: Rc::new(RefCell::new(0)),
             events_by_kind: Rc::new(RefCell::new(FxHashMap::default())),
             events_by_pubkey: Rc::new(RefCell::new(FxHashMap::default())),
             events_by_e_tag: Rc::new(RefCell::new(FxHashMap::default())),
@@ -165,6 +179,8 @@ impl DatabaseIndexes {
     /// Clear all indexes
     pub fn clear(&self) {
         self.events_by_id.borrow_mut().clear();
+        self.events_by_key.borrow_mut().clear();
+        *self.next_event_key.borrow_mut() = 0;
         self.events_by_kind.borrow_mut().clear();
         self.events_by_pubkey.borrow_mut().clear();
         self.events_by_e_tag.borrow_mut().clear();
@@ -180,34 +196,23 @@ impl DatabaseIndexes {
     pub fn event_count(&self) -> usize {
         self.events_by_id.borrow().len()
     }
-}
 
-/// Intersection helper for HashSets
-pub fn intersect_event_sets(sets: Vec<&FxHashSet<String>>) -> FxHashSet<String> {
-    if sets.is_empty() {
-        return FxHashSet::default();
-    }
-
-    if sets.len() == 1 {
-        return sets[0].clone();
-    }
-
-    let mut result = sets[0].clone();
-    for set in sets.iter().skip(1) {
-        result = result.intersection(set).cloned().collect();
-        if result.is_empty() {
-            break;
+    pub fn upsert_event_record(&self, event_id: &str, offset: u64) -> EventKey {
+        let mut events_by_id = self.events_by_id.borrow_mut();
+        if let Some(record) = events_by_id.get_mut(event_id) {
+            record.offset = offset;
+            self.events_by_key.borrow_mut().insert(record.key, offset);
+            return record.key;
         }
-    }
 
-    result
-}
+        let mut next_event_key = self.next_event_key.borrow_mut();
+        let key = *next_event_key;
+        *next_event_key = next_event_key
+            .checked_add(1)
+            .expect("event key space exhausted");
 
-/// Union helper for HashSets
-pub fn union_event_sets(sets: Vec<&FxHashSet<String>>) -> FxHashSet<String> {
-    let mut result = FxHashSet::default();
-    for set in sets {
-        result.extend(set.iter().cloned());
+        events_by_id.insert(event_id.to_string(), EventRecord { key, offset });
+        self.events_by_key.borrow_mut().insert(key, offset);
+        key
     }
-    result
 }
