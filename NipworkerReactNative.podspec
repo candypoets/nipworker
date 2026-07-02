@@ -1,6 +1,10 @@
+require 'json'
+
+package = JSON.parse(File.read(File.join(__dir__, 'package.json')))
+
 Pod::Spec.new do |s|
   s.name           = 'NipworkerReactNative'
-  s.version        = '0.96.0'
+  s.version        = package['version']
   s.summary        = 'NIPWorker React Native native module'
   s.description    = 'Rust Nostr engine exposed as a React Native native module'
   s.homepage       = 'https://github.com/candypoets/nipworker'
