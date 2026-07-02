@@ -163,8 +163,7 @@ export abstract class BaseBackend {
 	}
 
 	public unsubscribe(subscriptionId: string): void {
-		const subId = subscriptionId.length < 64 ? subscriptionId : this.createShortId(subscriptionId);
-		const subscription = this.subscriptions.get(subId);
+		const subscription = this.subscriptions.get(subscriptionId);
 		if (subscription) {
 			subscription.refCount--;
 		}

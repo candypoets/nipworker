@@ -59,7 +59,7 @@ function handleWorkerMessage(event: MessageEvent): void {
 		port = initPort;
 		initPort.onmessage = handlePortMessage;
 
-		init_tracing(payload.logLevel || 'warn');
+		init_tracing(payload.logLevel || 'error');
 		engine = new NipworkerEngine(
 			forwardEvent,
 			payload.defaultRelays || [],

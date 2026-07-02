@@ -93,6 +93,7 @@ impl NostrEngine {
         let parser_worker = ParserWorker::new(
             parser.clone(),
             Arc::from(parser_cache_ch.clone_sender()),
+            Arc::from(conn_parser_ch.clone_sender()),
             from_parser_ch.clone_sender(),
         );
         parser_worker.run(
@@ -216,6 +217,7 @@ impl NostrEngine {
             let parser_worker = ParserWorker::new(
                 parser,
                 Arc::from(parser_cache_ch.clone_sender()),
+                Arc::from(conn_parser_ch.clone_sender()),
                 from_parser_ch.clone_sender(),
             );
             parser_worker.run(

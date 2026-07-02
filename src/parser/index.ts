@@ -34,7 +34,7 @@ self.addEventListener('message', async (evt: MessageEvent<InitParserMsg | { type
 	if (msg?.type === 'init') {
 		await ensureWasm();
 		const { connectionsPort, cachePort, cryptoPort, mainPort, logLevel } = msg.payload;
-		init_tracing(logLevel || 'warn');
+		init_tracing(logLevel || 'error');
 		start_worker(mainPort, connectionsPort, cachePort, cryptoPort);
 		return;
 	}

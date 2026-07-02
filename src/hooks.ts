@@ -65,7 +65,6 @@ export function useSubscription(
 	let running = true;
 	let hasUnsubscribed = false;
 	let hasSubscribed = false;
-	subId = getManager().createShortId(subId);
 
 	// Reentrancy/coalescing flags
 	let scheduled = false;

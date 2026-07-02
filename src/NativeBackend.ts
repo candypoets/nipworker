@@ -593,7 +593,7 @@ export class NativeBackend extends BaseBackend {
 		requests: RequestObject[],
 		options: SubscriptionConfig
 	): ArrayBuffer {
-		const subId = this.createShortId(subscriptionId);
+		const subId = subscriptionId;
 		const existing = this.subscriptions.get(subId);
 		if (existing) {
 			existing.refCount++;

@@ -43,6 +43,7 @@ type DispatchTask = (usize, ShardTask);
 
 pub struct ParserWorker {
     to_cache: Arc<dyn MessageSender>,
+    to_connections: Arc<dyn MessageSender>,
     to_main: Box<dyn MessageSender>,
     publish_manager: PublishManager,
     subscription_manager: SubscriptionManager,
@@ -54,12 +55,14 @@ impl ParserWorker {
     pub fn new(
         parser: Arc<Parser>,
         to_cache: Arc<dyn MessageSender>,
+        to_connections: Arc<dyn MessageSender>,
         to_main: Box<dyn MessageSender>,
     ) -> Self {
         let publish_manager = PublishManager::new(parser.clone());
         let subscription_manager = SubscriptionManager::new(parser.clone());
         Self {
             to_cache,
+            to_connections,
             to_main,
             publish_manager,
             subscription_manager,
@@ -705,6 +708,24 @@ impl ParserWorker {
     }
 
     pub async fn close_subscription(&self, subscription_id: String) -> NostrResult<()> {
+        let frame = serde_json::json!(["CLOSE", &subscription_id]).to_string();
+        let mut builder = FlatBufferBuilder::new();
+        let sid = builder.create_string(&subscription_id);
+        let raw_str = builder.create_string(&frame);
+        let raw = fb::Raw::create(&mut builder, &fb::RawArgs { raw: Some(raw_str) });
+        let wm = fb::WorkerMessage::create(
+            &mut builder,
+            &fb::WorkerMessageArgs {
+                sub_id: Some(sid),
+                url: None,
+                type_: fb::MessageType::Raw,
+                content_type: fb::Message::Raw,
+                content: Some(raw.as_union_value()),
+            },
+        );
+        builder.finish(wm, None);
+        let _ = self.to_connections.send(builder.finished_data());
+
         if let Ok(mut w) = self.subscriptions.write() {
             w.remove(&subscription_id);
         }
@@ -1050,6 +1071,41 @@ mod tests {
         builder.finished_data().to_vec()
     }
 
+    fn build_publish_message(publish_id: &str, optimistic_subids: Vec<String>) -> Vec<u8> {
+        let mut builder = FlatBufferBuilder::new();
+        let publish_id_offset = builder.create_string(publish_id);
+        let template = fb::TemplateT {
+            kind: 1,
+            created_at: 1_700_000_000,
+            content: "optimistic note".to_string(),
+            tags: vec![],
+        };
+        let template_offset = template.pack(&mut builder);
+        let relays = builder.create_vector::<flatbuffers::WIPOffset<&str>>(&[]);
+        let optimistic_offsets: Vec<_> = optimistic_subids
+            .iter()
+            .map(|sub_id| builder.create_string(sub_id))
+            .collect();
+        let optimistic_vec = builder.create_vector(&optimistic_offsets);
+
+        let publish_args = fb::PublishArgs {
+            publish_id: Some(publish_id_offset),
+            template: Some(template_offset),
+            relays: Some(relays),
+            optimistic_subids: Some(optimistic_vec),
+        };
+        let publish_offset = fb::Publish::create(&mut builder, &publish_args);
+
+        let main_args = fb::MainMessageArgs {
+            content_type: fb::MainContent::Publish,
+            content: Some(publish_offset.as_union_value()),
+        };
+        let main_msg = fb::MainMessage::create(&mut builder, &main_args);
+        builder.finish(main_msg, None);
+
+        builder.finished_data().to_vec()
+    }
+
     // Helper: Build a Raw WorkerMessage
     fn build_raw_worker_message(sub_id: &str, url: &str, raw_text: &str) -> Vec<u8> {
         let mut builder = FlatBufferBuilder::new();
@@ -1162,7 +1218,12 @@ mod tests {
                 });
 
                 let parser = Arc::new(Parser::new(None));
-                let worker = ParserWorker::new(parser, capture_port, from_parser_ch.clone_sender());
+                let worker = ParserWorker::new(
+                    parser,
+                    capture_port.clone(),
+                    capture_port,
+                    from_parser_ch.clone_sender(),
+                );
 
                 let (from_engine_tx, from_engine_rx) =
                     tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
@@ -1235,6 +1296,86 @@ mod tests {
             .await;
     }
 
+    #[cfg(feature = "crypto")]
+    #[tokio::test]
+    async fn test_optimistic_publish_matches_subscription_subset_id() {
+        let local = tokio::task::LocalSet::new();
+        local
+            .run_until(async {
+                let (mut to_main_ch, from_parser_ch) = FuturesWorkerChannel::new_pair();
+                let (to_cache_a, _to_cache_b) = TokioWorkerChannel::new_pair();
+
+                let (cache_capture_tx, mut cache_capture_rx) =
+                    tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+
+                let capture_port: Arc<dyn MessageSender> = Arc::new(CaptureMessageSender {
+                    inner: Arc::from(to_cache_a.clone_sender()),
+                    capture: cache_capture_tx,
+                });
+
+                let signer = crate::crypto::signers::PrivateKeySigner::new(
+                    "f7e69dd87239da6a828fb9a2fbf481b5b9e147edb848497620e8dc6f5ec10a0a",
+                )
+                .expect("private key signer");
+                let parser = Arc::new(Parser::new(Some(Arc::new(signer))));
+                let worker = ParserWorker::new(
+                    parser,
+                    capture_port.clone(),
+                    capture_port,
+                    from_parser_ch.clone_sender(),
+                );
+
+                let (from_engine_tx, from_engine_rx) =
+                    tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+                let from_engine = Box::new(MockWorkerChannel {
+                    sender: from_engine_tx.clone(),
+                    receiver: Arc::new(Mutex::new(from_engine_rx)),
+                });
+
+                let (conn_tx, conn_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+                let from_connections = Box::new(MockWorkerChannel {
+                    sender: conn_tx,
+                    receiver: Arc::new(Mutex::new(conn_rx)),
+                });
+
+                let (cache_tx, cache_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+                let from_cache = Box::new(MockWorkerChannel {
+                    sender: cache_tx,
+                    receiver: Arc::new(Mutex::new(cache_rx)),
+                });
+
+                tokio::task::spawn_local(async move {
+                    worker.run(from_engine, from_connections, from_cache);
+                });
+
+                let note_pubkey = "a".repeat(64);
+                let optimistic_subset = format!("f_{}", note_pubkey);
+                let full_sub_id = format!("{}_{}", optimistic_subset, 7);
+
+                let sub_msg = build_subscribe_message(&full_sub_id, vec![]);
+                from_engine_tx.send(sub_msg).unwrap();
+                let _ = cache_capture_rx
+                    .recv()
+                    .await
+                    .expect("cache capture channel closed");
+
+                let publish_msg = build_publish_message("pub_subset", vec![optimistic_subset]);
+                from_engine_tx.send(publish_msg).unwrap();
+
+                let bytes =
+                    tokio::time::timeout(tokio::time::Duration::from_secs(2), to_main_ch.recv())
+                        .await
+                        .expect("timeout waiting for optimistic update")
+                        .expect("to_main channel closed");
+                let (sub_id, data) = decode_tagged(&bytes).expect("decode failed");
+                assert_eq!(sub_id, full_sub_id);
+
+                let wm = flatbuffers::root::<fb::WorkerMessage>(&data).unwrap();
+                assert_eq!(wm.type_(), fb::MessageType::ParsedNostrEvent);
+            })
+            .await;
+    }
+
     #[tokio::test]
     async fn test_partial_eose_some_relays_slow() {
         let local = tokio::task::LocalSet::new();
@@ -1250,7 +1391,7 @@ mod tests {
             });
 
             let parser = Arc::new(Parser::new(None));
-            let worker = ParserWorker::new(parser, capture_port, from_parser_ch.clone_sender());
+            let worker = ParserWorker::new(parser, capture_port.clone(), capture_port, from_parser_ch.clone_sender());
 
             let subscriptions = worker.subscriptions.clone();
 
@@ -1329,7 +1470,7 @@ mod tests {
             });
 
             let parser = Arc::new(Parser::new(None));
-            let worker = ParserWorker::new(parser, capture_port, from_parser_ch.clone_sender());
+            let worker = ParserWorker::new(parser, capture_port.clone(), capture_port, from_parser_ch.clone_sender());
 
             let (from_engine_tx, from_engine_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
             let from_engine = Box::new(MockWorkerChannel {
@@ -1406,7 +1547,12 @@ mod tests {
                 });
 
                 let parser = Arc::new(Parser::new(None));
-                let worker = ParserWorker::new(parser, capture_port, from_parser_ch.clone_sender());
+                let worker = ParserWorker::new(
+                    parser,
+                    capture_port.clone(),
+                    capture_port,
+                    from_parser_ch.clone_sender(),
+                );
 
                 let subscriptions = worker.subscriptions.clone();
 
@@ -1484,7 +1630,7 @@ mod tests {
             });
 
             let parser = Arc::new(Parser::new(None));
-            let worker = ParserWorker::new(parser, capture_port, from_parser_ch.clone_sender());
+            let worker = ParserWorker::new(parser, capture_port.clone(), capture_port, from_parser_ch.clone_sender());
 
             let subscriptions = worker.subscriptions.clone();
 

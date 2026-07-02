@@ -32,7 +32,7 @@ self.addEventListener('message', async (evt: MessageEvent<InitCacheMsg | { type:
 	if (msg?.type === 'init') {
 		await ensureWasm();
 		const { parserPort, connectionsPort, logLevel, defaultRelays, indexerRelays } = msg.payload;
-		init_tracing(logLevel || 'warn');
+		init_tracing(logLevel || 'error');
 		start_worker(parserPort, connectionsPort, defaultRelays || [], indexerRelays || []);
 		return;
 	}

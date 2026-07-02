@@ -6,7 +6,7 @@ use crate::transport::connection::RelayConnection;
 use crate::transport::fb_utils::{build_worker_message, serialize_connection_status};
 use futures::StreamExt;
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::{Arc, RwLock};
 use tracing::{info, warn};
@@ -17,7 +17,102 @@ struct Envelope {
     frames: Vec<String>,
 }
 
-fn send_envelope(bytes: &[u8], source: &str, get_conn: &dyn Fn(&str) -> Arc<RelayConnection>) {
+fn relay_safe_sub_id(input: &str) -> String {
+    if input.len() < 64 {
+        return input.to_string();
+    }
+
+    let mut hash: i32 = 0;
+    for unit in input.encode_utf16() {
+        hash = hash
+            .wrapping_shl(5)
+            .wrapping_sub(hash)
+            .wrapping_add(unit as i32);
+    }
+    let mut value = hash.unsigned_abs();
+    if value == 0 {
+        return "0".to_string();
+    }
+    let mut chars = Vec::new();
+    while value > 0 {
+        let digit = (value % 36) as u8;
+        let ch = if digit < 10 {
+            (b'0' + digit) as char
+        } else {
+            (b'a' + digit - 10) as char
+        };
+        chars.push(ch);
+        value /= 36;
+    }
+    chars.iter().rev().take(63).collect()
+}
+
+fn encode_relay_frame(
+    frame: &str,
+    full_to_relay: &Rc<RefCell<HashMap<String, String>>>,
+    relay_to_full: &Rc<RefCell<HashMap<String, String>>>,
+) -> String {
+    let Ok(mut value) = serde_json::from_str::<serde_json::Value>(frame) else {
+        return frame.to_string();
+    };
+    let Some(arr) = value.as_array_mut() else {
+        return frame.to_string();
+    };
+    let Some(kind) = arr.first().and_then(|v| v.as_str()) else {
+        return frame.to_string();
+    };
+    if kind != "REQ" && kind != "CLOSE" {
+        return frame.to_string();
+    }
+    let Some(full_sub_id) = arr.get(1).and_then(|v| v.as_str()).map(str::to_string) else {
+        return frame.to_string();
+    };
+
+    let relay_sub_id = relay_safe_sub_id(&full_sub_id);
+    if relay_sub_id != full_sub_id {
+        full_to_relay
+            .borrow_mut()
+            .insert(full_sub_id.clone(), relay_sub_id.clone());
+        relay_to_full
+            .borrow_mut()
+            .insert(relay_sub_id.clone(), full_sub_id);
+        arr[1] = serde_json::Value::String(relay_sub_id);
+        serde_json::to_string(&value).unwrap_or_else(|_| frame.to_string())
+    } else {
+        frame.to_string()
+    }
+}
+
+fn decode_relay_sub_id(
+    sub_id: &str,
+    relay_to_full: &Rc<RefCell<HashMap<String, String>>>,
+) -> String {
+    relay_to_full
+        .borrow()
+        .get(sub_id)
+        .cloned()
+        .unwrap_or_else(|| sub_id.to_string())
+}
+
+fn relay_frame_state(frame: &str) -> Option<(String, String)> {
+    let value = serde_json::from_str::<serde_json::Value>(frame).ok()?;
+    let arr = value.as_array()?;
+    let kind = arr.first()?.as_str()?.to_string();
+    if kind != "REQ" && kind != "CLOSE" {
+        return None;
+    }
+    let sub_id = arr.get(1)?.as_str()?.to_string();
+    Some((kind, sub_id))
+}
+
+fn send_envelope(
+    bytes: &[u8],
+    source: &str,
+    get_conn: &dyn Fn(&str) -> Arc<RelayConnection>,
+    full_to_relay: &Rc<RefCell<HashMap<String, String>>>,
+    relay_to_full: &Rc<RefCell<HashMap<String, String>>>,
+    sub_relays: &Rc<RefCell<HashMap<String, HashSet<String>>>>,
+) {
     let env: Envelope = match serde_json::from_slice(bytes) {
         Ok(e) => e,
         Err(_) => {
@@ -34,11 +129,35 @@ fn send_envelope(bytes: &[u8], source: &str, get_conn: &dyn Fn(&str) -> Arc<Rela
         }
         let conn = get_conn(relay);
         for frame in &env.frames {
-            if let Err(e) = conn.send_raw(frame) {
+            if let Some((kind, sub_id)) = relay_frame_state(frame) {
+                if kind == "REQ" {
+                    sub_relays
+                        .borrow_mut()
+                        .entry(sub_id)
+                        .or_default()
+                        .insert(relay.clone());
+                }
+            }
+            let relay_frame = encode_relay_frame(frame, full_to_relay, relay_to_full);
+            if let Err(e) = conn.send_raw(&relay_frame) {
                 warn!(
                     "[ConnectionsWorker] send_raw failed for {} from {}: {:?}",
                     relay, source, e
                 );
+            }
+            if let Some((kind, sub_id)) = relay_frame_state(frame) {
+                if kind == "CLOSE" {
+                    let should_remove =
+                        if let Some(relays) = sub_relays.borrow_mut().get_mut(&sub_id) {
+                            relays.remove(relay);
+                            relays.is_empty()
+                        } else {
+                            false
+                        };
+                    if should_remove {
+                        sub_relays.borrow_mut().remove(&sub_id);
+                    }
+                }
             }
         }
     }
@@ -88,6 +207,9 @@ impl ConnectionsWorker {
         let handle = ConnectionsHandle {
             connections: self.connections.clone(),
         };
+        let full_to_relay_sub_ids = Rc::new(RefCell::new(HashMap::<String, String>::new()));
+        let relay_to_full_sub_ids = Rc::new(RefCell::new(HashMap::<String, String>::new()));
+        let sub_relays = Rc::new(RefCell::new(HashMap::<String, HashSet<String>>::new()));
 
         // Bridge multiple callback clones into the single MessageSender
         let (parser_tx, mut parser_rx) = futures::channel::mpsc::unbounded::<Vec<u8>>();
@@ -106,6 +228,7 @@ impl ConnectionsWorker {
             let connections = self.connections.clone();
             let parser_tx = parser_tx.clone();
             let to_crypto_rc = to_crypto_rc.clone();
+            let relay_to_full_sub_ids = relay_to_full_sub_ids.clone();
             move |url: &str| {
                 {
                     let map = connections.read().unwrap();
@@ -119,14 +242,16 @@ impl ConnectionsWorker {
                 let tx_status = parser_tx.clone();
                 let transport = transport.clone();
                 let to_crypto_messages = to_crypto_rc.clone();
+                let relay_to_full_sub_ids = relay_to_full_sub_ids.clone();
 
                 let out_writer: Rc<dyn Fn(&str, &str, &str)> =
                     Rc::new(move |url: &str, sub_id: &str, msg: &str| {
+                        let full_sub_id = decode_relay_sub_id(sub_id, &relay_to_full_sub_ids);
                         let mut fbb = flatbuffers::FlatBufferBuilder::new();
-                        let wm = build_worker_message(&mut fbb, sub_id, url, msg);
+                        let wm = build_worker_message(&mut fbb, &full_sub_id, url, msg);
                         fbb.finish(wm, None);
                         let bytes = fbb.finished_data().to_vec();
-                        if sub_id.starts_with("n46:") {
+                        if full_sub_id.starts_with("n46:") {
                             let _ = to_crypto_messages.send(&bytes);
                         } else {
                             let _ = tx_msg.unbounded_send(bytes);
@@ -169,6 +294,9 @@ impl ConnectionsWorker {
         // This loop exists for future architecture changes and is tested but not exercised in production.
         let get_conn_parser = get_or_create_connection.clone();
         let connections_parser = self.connections.clone();
+        let full_to_relay_parser = full_to_relay_sub_ids.clone();
+        let relay_to_full_parser = relay_to_full_sub_ids.clone();
+        let sub_relays_parser = sub_relays.clone();
         spawn_worker(async move {
             info!("[ConnectionsWorker] parser loop started");
             loop {
@@ -190,7 +318,30 @@ impl ConnectionsWorker {
                                     let text = raw.raw();
                                     if !text.is_empty() && !url.is_empty() {
                                         let conn = get_conn_parser(url);
-                                        let _ = conn.send_raw(text);
+                                        let relay_text = encode_relay_frame(
+                                            text,
+                                            &full_to_relay_parser,
+                                            &relay_to_full_parser,
+                                        );
+                                        let _ = conn.send_raw(&relay_text);
+                                    } else if !text.is_empty() {
+                                        if let Some((kind, sub_id)) = relay_frame_state(text) {
+                                            if kind == "CLOSE" {
+                                                let relays = sub_relays_parser
+                                                    .borrow_mut()
+                                                    .remove(&sub_id)
+                                                    .unwrap_or_default();
+                                                for relay in relays {
+                                                    let conn = get_conn_parser(&relay);
+                                                    let relay_text = encode_relay_frame(
+                                                        text,
+                                                        &full_to_relay_parser,
+                                                        &relay_to_full_parser,
+                                                    );
+                                                    let _ = conn.send_raw(&relay_text);
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -259,12 +410,22 @@ impl ConnectionsWorker {
 
         // Loop for envelopes from cache (e.g. REQ frames)
         let get_conn_cache = get_or_create_connection.clone();
+        let full_to_relay_cache = full_to_relay_sub_ids.clone();
+        let relay_to_full_cache = relay_to_full_sub_ids.clone();
+        let sub_relays_cache = sub_relays.clone();
         spawn_worker(async move {
             info!("[ConnectionsWorker] cache loop started");
             loop {
                 match from_cache.recv().await {
                     Ok(bytes) => {
-                        send_envelope(&bytes, "cache", &get_conn_cache);
+                        send_envelope(
+                            &bytes,
+                            "cache",
+                            &get_conn_cache,
+                            &full_to_relay_cache,
+                            &relay_to_full_cache,
+                            &sub_relays_cache,
+                        );
                     }
                     Err(_) => break,
                 }
@@ -275,6 +436,9 @@ impl ConnectionsWorker {
         // Loop for crypto traffic: NIP-46 relay envelopes and NIP-42 AUTH signed events.
         let connections_crypto = self.connections.clone();
         let get_conn_crypto = get_or_create_connection.clone();
+        let full_to_relay_crypto = full_to_relay_sub_ids.clone();
+        let relay_to_full_crypto = relay_to_full_sub_ids.clone();
+        let sub_relays_crypto = sub_relays.clone();
         spawn_worker(async move {
             info!("[ConnectionsWorker] crypto loop started");
             loop {
@@ -283,7 +447,14 @@ impl ConnectionsWorker {
                         let resp = match flatbuffers::root::<fb::SignerResponse>(&bytes) {
                             Ok(r) => r,
                             Err(_) => {
-                                send_envelope(&bytes, "crypto", &get_conn_crypto);
+                                send_envelope(
+                                    &bytes,
+                                    "crypto",
+                                    &get_conn_crypto,
+                                    &full_to_relay_crypto,
+                                    &relay_to_full_crypto,
+                                    &sub_relays_crypto,
+                                );
                                 continue;
                             }
                         };
@@ -669,6 +840,66 @@ mod tests {
 					);
 				})
 				.await;
+    }
+
+    #[tokio::test]
+    async fn test_parser_close_fans_out_to_subscription_relays() {
+        let local = LocalSet::new();
+        local
+			.run_until(async {
+				let (transport, _worker, parser_test, _parser_out_test, cache_test, _crypto_test) =
+					setup().await;
+
+				let envelope = serde_json::json!({
+					"relays": ["wss://r1", "wss://r2"],
+					"frames": [r#"["REQ","s1",{}]"#]
+				});
+				let bytes = serde_json::to_vec(&envelope).unwrap();
+				cache_test.send(&bytes).await.unwrap();
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+
+				let msg = build_raw_worker_message("", r#"["CLOSE","s1"]"#);
+				parser_test.send(&msg).await.unwrap();
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+				tokio::task::yield_now().await;
+
+				let calls = transport.calls();
+				assert!(
+					calls
+						.iter()
+						.any(|c| matches!(c, Call::Send(url, frame) if url == "wss://r1" && frame == r#"["CLOSE","s1"]"#)),
+					"r1 did not receive CLOSE"
+				);
+				assert!(
+					calls
+						.iter()
+						.any(|c| matches!(c, Call::Send(url, frame) if url == "wss://r2" && frame == r#"["CLOSE","s1"]"#)),
+					"r2 did not receive CLOSE"
+				);
+			})
+			.await;
+    }
+
+    #[test]
+    fn test_long_subscription_ids_are_encoded_for_relay_and_decoded_for_app() {
+        let full_to_relay = Rc::new(RefCell::new(HashMap::<String, String>::new()));
+        let relay_to_full = Rc::new(RefCell::new(HashMap::<String, String>::new()));
+        let full_sub_id = format!("f_{}_{}", "a".repeat(64), "counter");
+        let frame = serde_json::json!(["REQ", full_sub_id, {}]).to_string();
+
+        let relay_frame = encode_relay_frame(&frame, &full_to_relay, &relay_to_full);
+        let parsed: serde_json::Value = serde_json::from_str(&relay_frame).unwrap();
+        let relay_sub_id = parsed[1].as_str().unwrap();
+
+        assert!(relay_sub_id.len() < 64);
+        assert_ne!(relay_sub_id, full_sub_id);
+        assert_eq!(
+            decode_relay_sub_id(relay_sub_id, &relay_to_full),
+            full_sub_id
+        );
     }
 
     #[tokio::test]

@@ -153,7 +153,6 @@ export class NostrManager extends BaseBackend {
 					if (cs) {
 						const url = cs.relayUrl() || '';
 						const status = cs.status() || '';
-						console.log('[main] ConnectionStatus:', status, url);
 						if (url && status) {
 							this.relayStatuses.set(url, { status, timestamp: Date.now() });
 							this.dispatch('relay:status', { status, url });
@@ -203,7 +202,7 @@ export class NostrManager extends BaseBackend {
 				return;
 			}
 
-			console.log('[main] no subscription or publish found for subId:', subId);
+			return;
 		};
 
 		// connectionsMainPort is no longer used for relay status in the new architecture
@@ -468,7 +467,7 @@ export class NostrManager extends BaseBackend {
 		requests: RequestObject[],
 		options: SubscriptionConfig
 	): ArrayBuffer {
-		const subId = this.createShortId(subscriptionId);
+		const subId = subscriptionId;
 		const existingSubscription = this.subscriptions.get(subId);
 		if (existingSubscription) {
 			existingSubscription.refCount++;
