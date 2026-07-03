@@ -34,6 +34,7 @@ type CryptoSender = Rc<RefCell<dyn Fn(&[u8])>>;
 const RECONNECT_RETRY_DELAY_MS: u64 = 30_000;
 const HEALTHY_RETRY_DELAYS_MS: [u32; 3] = [200, 800, 2_000];
 const COLD_START_RETRY_DELAYS_MS: [u32; 1] = [200];
+const AUTH_REQUEST_ID_MASK: u64 = 0x8000_0000_0000_0000;
 
 fn normalize_token(token: &str) -> String {
     let t = token.trim();
@@ -389,6 +390,7 @@ impl RelayConnection {
                     }
                     "REQ" => {
                         if let Some(sub_id) = parts[1].map(|s| s.trim_matches('"').to_string()) {
+                            self.shadow_pre_auth_req(text);
                             self.active_subs.write().unwrap().insert(sub_id.clone());
                             let mut reqs = self.active_reqs.write().unwrap();
                             let frames = reqs.entry(sub_id.clone()).or_default();
@@ -461,6 +463,25 @@ impl RelayConnection {
         } else {
             tracing::error!(relay = %self.url, "No queue sender available");
             Err(RelayError::ConnectionClosed)
+        }
+    }
+
+    fn shadow_pre_auth_req(&self, text: &str) {
+        let should_shadow = {
+            let state = self.auth_state.read().unwrap();
+            matches!(
+                *state,
+                AuthState::Unknown | AuthState::Required { .. } | AuthState::Pending
+            )
+        };
+
+        if !should_shadow {
+            return;
+        }
+
+        let mut queue = self.pre_auth_queue.write().unwrap();
+        if !queue.iter().any(|frame| frame == text) {
+            queue.push(text.to_string());
         }
     }
 
@@ -801,10 +822,10 @@ impl RelayConnection {
             let mut id = self.next_auth_id.write().unwrap();
             let current = *id;
             *id += 1;
-            current | 0x8000_0000_0000_0000 // Mark as auth request
+            current | AUTH_REQUEST_ID_MASK
         };
 
-        let created_at = now_millis();
+        let created_at = now_millis() / 1000;
 
         let payload = json!({
             "challenge": challenge,
@@ -867,26 +888,48 @@ impl RelayConnection {
         tracing::info!(relay = %self.url, ?old_state, "[connections][AUTH] State changed to Pending (waiting for relay OK)");
     }
 
-    /// Set authenticated state.
-    ///
-    /// Frames are sent optimistically, so we do NOT replay any shadow queue here
-    /// (avoids duplicate sends on relays that don't require auth).
+    /// Set authenticated state and replay any optimistic REQ shadow copies after AUTH succeeds.
     fn set_authenticated(&self) {
         let old_state = {
             let mut state = self.auth_state.write().unwrap();
             std::mem::replace(&mut *state, AuthState::Authenticated)
         };
 
-        let dropped_shadow = {
-            let queue = std::mem::take(&mut *self.pre_auth_queue.write().unwrap());
-            queue.len()
-        };
+        let replay_shadow = matches!(old_state, AuthState::Pending);
+        let shadow_frames = std::mem::take(&mut *self.pre_auth_queue.write().unwrap());
+        let shadow_count = shadow_frames.len();
+
+        if replay_shadow {
+            tracing::info!(
+                relay = %self.url,
+                frame_count = shadow_count,
+                "[connections][AUTH] Auth required; replaying buffered REQ frames"
+            );
+            if let Some(tx) = self.queue_tx.read().unwrap().as_ref() {
+                for frame in shadow_frames {
+                    if let Err(e) = tx.clone().try_send(frame) {
+                        tracing::warn!(
+                            relay = %self.url,
+                            error = ?e,
+                            "[connections][AUTH] Failed to replay pre-auth REQ frame"
+                        );
+                    }
+                }
+            } else if shadow_count > 0 {
+                tracing::warn!(
+                    relay = %self.url,
+                    shadow_count,
+                    "[connections][AUTH] No queue sender available for pre-auth replay"
+                );
+            }
+        }
 
         tracing::info!(
             relay = %self.url,
             ?old_state,
-            dropped_shadow,
-            "[connections][AUTH] Relay is now AUTHENTICATED (no replay; optimistic mode)"
+            replay_shadow,
+            shadow_count,
+            "[connections][AUTH] Relay is now AUTHENTICATED"
         );
     }
 
@@ -1314,6 +1357,91 @@ mod tests {
 				}
 			})
 			.await;
+    }
+
+    #[tokio::test]
+    async fn test_auth_success_replays_pre_auth_reqs() {
+        let local = LocalSet::new();
+        local
+            .run_until(async {
+                let transport = Arc::new(MockRelayTransport::new());
+                let (out_writer, status_writer, to_crypto, _out, _status, _crypto) = make_writers();
+
+                let conn = RelayConnection::new(
+                    "wss://r".to_string(),
+                    transport.clone(),
+                    out_writer,
+                    status_writer,
+                    to_crypto,
+                );
+
+                tokio::task::yield_now().await;
+                tokio::task::yield_now().await;
+                tokio::task::yield_now().await;
+
+                let req_frame = r#"["REQ","s1",{}]"#;
+                conn.send_raw(req_frame).unwrap();
+
+                tokio::task::yield_now().await;
+                tokio::task::yield_now().await;
+                tokio::task::yield_now().await;
+
+                let req_sends_before_auth = transport
+                    .calls()
+                    .iter()
+                    .filter(|c| {
+                        matches!(c, Call::Send(url, frame) if url == "wss://r" && frame == req_frame)
+                    })
+                    .count();
+                assert_eq!(
+                    req_sends_before_auth, 1,
+                    "expected optimistic REQ send before AUTH"
+                );
+                assert_eq!(
+                    conn.pre_auth_queue.read().unwrap().as_slice(),
+                    &[req_frame.to_string()],
+                    "expected REQ shadow copy while auth state is unknown"
+                );
+
+                transport.invoke_message_callback(
+                    "wss://r",
+                    r#"["AUTH","challenge123"]"#.to_string(),
+                );
+                tokio::task::yield_now().await;
+
+                let signed_event = r#"{"id":"abc","pubkey":"pk","created_at":123,"kind":22242,"tags":[["challenge","challenge123"],["relay","wss://r"]],"content":"","sig":"sig"}"#;
+                conn.process_signed_auth(signed_event);
+
+                tokio::task::yield_now().await;
+                tokio::task::yield_now().await;
+                tokio::task::yield_now().await;
+
+                transport.invoke_message_callback(
+                    "wss://r",
+                    r#"["OK","auth-id","true"]"#.to_string(),
+                );
+
+                tokio::task::yield_now().await;
+                tokio::task::yield_now().await;
+                tokio::task::yield_now().await;
+
+                let req_sends_after_auth = transport
+                    .calls()
+                    .iter()
+                    .filter(|c| {
+                        matches!(c, Call::Send(url, frame) if url == "wss://r" && frame == req_frame)
+                    })
+                    .count();
+                assert_eq!(
+                    req_sends_after_auth, 2,
+                    "expected pre-auth REQ to be replayed after AUTH acceptance"
+                );
+                assert!(
+                    conn.pre_auth_queue.read().unwrap().is_empty(),
+                    "expected pre-auth queue to be drained"
+                );
+            })
+            .await;
     }
 
     #[tokio::test]

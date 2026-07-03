@@ -467,14 +467,6 @@ export class NativeBackend extends BaseBackend {
 			return;
 		}
 
-		console.warn(
-			'[NativeBackend] Dropping native message for unknown subId=' +
-				subId +
-				', subscriptions=' +
-				this.subscriptions.size +
-				', publishes=' +
-				this.publishes.size
-		);
 		if (typeof globalThis !== 'undefined') {
 			const diag = (globalThis as any).__nipworker_native_diag;
 			if (diag) diag.lastMissingSubId = subId;

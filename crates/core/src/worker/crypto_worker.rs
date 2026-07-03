@@ -43,6 +43,30 @@ fn verify_proof_and_return_y_point(_payload: &str) -> Result<String, String> {
     Err("proof verification requires the crypto feature".to_string())
 }
 
+fn auth_payload_to_template(payload: &str) -> Result<(String, String), String> {
+    let parsed: serde_json::Value =
+        serde_json::from_str(payload).map_err(|e| format!("invalid auth payload: {}", e))?;
+    let challenge = parsed["challenge"]
+        .as_str()
+        .ok_or_else(|| "auth payload missing challenge".to_string())?;
+    let relay = parsed["relay"]
+        .as_str()
+        .ok_or_else(|| "auth payload missing relay".to_string())?;
+    let created_at = parsed["created_at"]
+        .as_u64()
+        .ok_or_else(|| "auth payload missing created_at".to_string())?;
+
+    let template = serde_json::json!({
+        "kind": 22242,
+        "content": "",
+        "tags": [["relay", relay], ["challenge", challenge]],
+        "created_at": created_at
+    })
+    .to_string();
+
+    Ok((template, relay.to_string()))
+}
+
 // ---------------------------------------------------------------------------
 // ActiveSigner: enum that holds whichever signer is currently active.
 // Cloning the enum clones the *reference* (Rc/Arc) so the borrow on the
@@ -793,26 +817,33 @@ impl CryptoWorker {
                         let signer = active_connections.borrow().clone();
 
                         let result: Result<String, String> = match req.op() {
-                            fb::SignerOp::AuthEvent => match signer.sign_event(payload).await {
-                                Ok(signed) => {
-                                    if let Ok(parsed) =
-                                        serde_json::from_str::<serde_json::Value>(payload)
-                                    {
-                                        let relay_url =
-                                            parsed["relay"].as_str().unwrap_or("").to_string();
-                                        Ok(serde_json::json!({"event": signed, "relay": relay_url})
-                                            .to_string())
-                                    } else {
-                                        Ok(signed)
-                                    }
+                            fb::SignerOp::AuthEvent => match auth_payload_to_template(payload) {
+                                Ok((template, relay_url)) => {
+                                    info!(
+                                        relay = %relay_url,
+                                        request_id,
+                                        "[CryptoWorker][AUTH] Signing NIP-42 auth event"
+                                    );
+                                    signer.sign_event(&template).await.map(|signed| {
+                                        serde_json::json!({"event": signed, "relay": relay_url})
+                                            .to_string()
+                                    })
                                 }
-                                Err(e) => Err(e.to_string()),
+                                Err(e) => Err(e),
                             },
                             _ => Err(format!(
                                 "unsupported SignerOp from connections: {:?}",
                                 req.op()
                             )),
                         };
+
+                        if let Err(ref e) = result {
+                            warn!(
+                                request_id,
+                                error = %e,
+                                "[CryptoWorker][AUTH] Failed to sign NIP-42 auth event"
+                            );
+                        }
 
                         let resp = serialize_signer_response(request_id, result);
                         if let Err(e) = to_connections_arc_connections.send(&resp) {
@@ -981,6 +1012,31 @@ mod new_tests {
         );
         assert_eq!(parsed.relays, vec!["wss://relay.example"]);
         assert_eq!(parsed.secret, "a+b&c=d");
+    }
+
+    #[test]
+    fn test_auth_payload_to_template_builds_nip42_event_template() {
+        let payload = serde_json::json!({
+            "challenge": "challenge123",
+            "relay": "wss://relay.example",
+            "created_at": 12345
+        })
+        .to_string();
+
+        let (template, relay) = super::auth_payload_to_template(&payload).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&template).unwrap();
+
+        assert_eq!(relay, "wss://relay.example");
+        assert_eq!(parsed["kind"], 22242);
+        assert_eq!(parsed["content"], "");
+        assert_eq!(parsed["created_at"], 12345);
+        assert_eq!(
+            parsed["tags"],
+            serde_json::json!([
+                ["relay", "wss://relay.example"],
+                ["challenge", "challenge123"]
+            ])
+        );
     }
 
     #[tokio::test]
