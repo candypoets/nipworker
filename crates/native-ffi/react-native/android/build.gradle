@@ -70,4 +70,5 @@ android {
 
 dependencies {
 	implementation 'com.facebook.react:react-android'
+	api 'com.google.flatbuffers:flatbuffers-java:25.2.10'
 }

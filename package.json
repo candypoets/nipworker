@@ -71,6 +71,8 @@
     "crates/native-ffi/react-native/android/consumer-rules.pro",
     "crates/native-ffi/react-native/android/src",
     "crates/native-ffi/react-native/ios",
+    "swift/Package.swift",
+    "swift/Sources/NipworkerSwift",
     "README.md"
   ],
   "codegenConfig": {
@@ -96,9 +98,12 @@
     "build:cache": "wasm-pack build ./crates/cache --release --target web",
     "build:parser": "wasm-pack build ./crates/parser --release --target web",
     "build:crypto": "wasm-pack build ./crates/crypto --release --target web",
-    "flatc": "npm run flatc:rust && npm run flatc:ts",
+    "flatc": "npm run flatc:rust && npm run flatc:ts && npm run flatc:java",
     "flatc:rust": "flatc --rust --gen-object-api --gen-all --filename-suffix '' -o ./crates/core/src/generated ./schemas/message.fbs",
     "flatc:ts": "flatc --ts --gen-object-api --gen-all --filename-suffix '' -o ./src/generated ./schemas/message.fbs",
+    "flatc:swift": "npm run flatc:swift:raw && node ./scripts/postprocess-flatc-swift.mjs ./swift/Sources/NipworkerSwift/Generated/message_generated.swift && swift build --package-path swift",
+    "flatc:swift:raw": "flatc --swift --gen-all --filename-suffix '_generated' -o ./swift/Sources/NipworkerSwift/Generated ./schemas/message.fbs",
+    "flatc:java": "flatc --java --gen-all --filename-suffix '' -o ./crates/native-ffi/react-native/android/src/main/java ./schemas/message.fbs && perl -pi -e 's/FLATBUFFERS_25_12_19/FLATBUFFERS_25_2_10/g' ./crates/native-ffi/react-native/android/src/main/java/nostr/fb/*.java",
     "build:types": "tsc --emitDeclarationOnly --outDir dist",
     "prepublishOnly": "npm run build",
     "test": "vitest run",
