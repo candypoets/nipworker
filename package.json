@@ -91,8 +91,11 @@
     }
   },
   "scripts": {
-    "build": "npm-run-all --parallel build:connections build:cache build:parser build:crypto build:engine && vite build",
+    "build": "npm-run-all --parallel build:connections build:cache build:parser build:crypto build:engine build:native:android build:native:ios && vite build",
     "build:crates": "npm-run-all --parallel build:connections build:cache build:parser build:crypto build:engine",
+    "build:native:android": "cd crates/native-ffi/android && ./build-android-aar.sh",
+    "build:native:ios": "cd crates/native-ffi/ios && ./build-ios.sh",
+    "build:native": "npm-run-all --parallel build:native:android build:native:ios",
     "build:engine": "wasm-pack build ./src/engine --release --target web",
     "build:connections": "wasm-pack build ./crates/connections --release --target web",
     "build:cache": "wasm-pack build ./crates/cache --release --target web",

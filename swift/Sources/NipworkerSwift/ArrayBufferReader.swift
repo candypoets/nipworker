@@ -7,16 +7,26 @@ import Foundation
 public final class SubscriptionBuffer {
     public let pointer: UnsafeMutableRawPointer
     public let capacity: Int
+    private let ownsMemory: Bool
 
     public init(capacity: Int) {
         self.pointer = .allocate(byteCount: capacity, alignment: MemoryLayout<UInt32>.alignment)
         self.capacity = capacity
+        self.ownsMemory = true
         // Initialize write position to 4 (right after header)
         pointer.storeBytes(of: UInt32(4).littleEndian, toByteOffset: 0, as: UInt32.self)
     }
 
+    public init(pointer: UnsafeMutableRawPointer, capacity: Int) {
+        self.pointer = pointer
+        self.capacity = capacity
+        self.ownsMemory = false
+    }
+
     deinit {
-        pointer.deallocate()
+        if ownsMemory {
+            pointer.deallocate()
+        }
     }
 }
 

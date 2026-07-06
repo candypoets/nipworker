@@ -32,30 +32,20 @@ static void NipworkerCallbackForwarder(void* userdata, const uint8_t* ptr, size_
 
 	NSString *base64 = [data base64EncodedStringWithOptions:0];
 
-	// Parse subId from payload for logging: [4-byte len][subId][4-byte len][payload]
-	NSString *subId = @"unknown";
-	if (data.length >= 4) {
-		uint32_t subIdLen = 0;
-		[data getBytes:&subIdLen length:4];
-		if (subIdLen > 0 && 4 + subIdLen <= data.length) {
-			NSData *subIdData = [data subdataWithRange:NSMakeRange(4, subIdLen)];
-			subId = [[NSString alloc] initWithData:subIdData encoding:NSUTF8StringEncoding];
-		}
-	}
-	NSLog(@"[Nipworker] forwarding event to GlobalEventEmitter, len=%zu, subId=%@", len, subId);
+	NSLog(@"[Nipworker] forwarding event to GlobalEventEmitter, len=%zu", len);
 
 	// Always dispatch to main queue: Lynx global events must be sent from the
 	// main thread, and the Rust callback runs on a background Tokio thread.
 	dispatch_async(dispatch_get_main_queue(), ^{
 		if (module.context) {
 			[module.context sendGlobalEvent:@"NipworkerEvent"
-								 withParams:@[@{
-									 @"v": @1,
-									 @"encoding": @"base64",
-									 @"data": base64
-								 }]];
+																											 withParams:@[@{
+																																				 @"v": @1,
+																																				 @"encoding": @"base64",
+																																				 @"data": base64
+																																			 }]];
 		} else {
-			NSLog(@"[Nipworker] WARNING: context unavailable, event dropped (subId=%@)", subId);
+			NSLog(@"[Nipworker] WARNING: context unavailable, event dropped");
 		}
 	});
 }

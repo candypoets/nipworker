@@ -26,3 +26,48 @@ func nipworker_deinit(_ handle: UnsafeMutableRawPointer?)
 
 @_silgen_name("nipworker_free_bytes")
 func nipworker_free_bytes(_ ptr: UnsafeMutablePointer<UInt8>?, _ len: Int)
+
+@_silgen_name("nipworker_register_subscription")
+func nipworker_register_subscription(
+    _ handle: UnsafeMutableRawPointer?,
+    _ subId: UnsafePointer<Int8>?,
+    _ bufferSize: Int
+) -> Bool
+
+@_silgen_name("nipworker_register_publish_buffer")
+func nipworker_register_publish_buffer(
+    _ handle: UnsafeMutableRawPointer?,
+    _ publishId: UnsafePointer<Int8>?,
+    _ bufferSize: Int
+) -> Bool
+
+@_silgen_name("nipworker_retain_subscription")
+func nipworker_retain_subscription(
+    _ handle: UnsafeMutableRawPointer?,
+    _ subId: UnsafePointer<Int8>?
+) -> Bool
+
+@_silgen_name("nipworker_release_subscription")
+func nipworker_release_subscription(
+    _ handle: UnsafeMutableRawPointer?,
+    _ subId: UnsafePointer<Int8>?
+)
+
+@_silgen_name("nipworker_subscription_buffer_ptr")
+func nipworker_subscription_buffer_ptr(
+    _ handle: UnsafeMutableRawPointer?,
+    _ subId: UnsafePointer<Int8>?
+) -> UnsafeMutablePointer<UInt8>?
+
+@_silgen_name("nipworker_subscription_buffer_len")
+func nipworker_subscription_buffer_len(
+    _ handle: UnsafeMutableRawPointer?,
+    _ subId: UnsafePointer<Int8>?
+) -> Int
+
+@_silgen_name("nipworker_cleanup_subscriptions")
+func nipworker_cleanup_subscriptions(_ handle: UnsafeMutableRawPointer?)
+
+@_silgen_name("nipworker_react_native_shared_handle")
+@_weakLinked
+func nipworker_react_native_shared_handle() -> UnsafeMutableRawPointer?

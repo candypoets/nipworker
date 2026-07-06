@@ -43,6 +43,11 @@ struct TsfnState {
     napi_threadsafe_function tsfn;
 };
 
+struct CallbackPacket {
+    uint8_t* data;
+    size_t len;
+};
+
 static void call_js_cb(napi_env env, napi_value js_callback, void* context, void* data) {
     (void)context;
 
@@ -50,34 +55,29 @@ static void call_js_cb(napi_env env, napi_value js_callback, void* context, void
         return;
     }
 
-    // Data layout from Rust: [sub_id_len:4][sub_id][payload_len:4][payload]
-    uint8_t* packet = static_cast<uint8_t*>(data);
-    uint32_t sub_id_len = 0;
-    std::memcpy(&sub_id_len, packet, sizeof(uint32_t));
-
-    size_t offset = sizeof(uint32_t);
-    if (offset + sub_id_len + sizeof(uint32_t) > 0xFFFFFF) {
-        // Sanity check failed
-        nipworker_free_bytes(packet, 0);
+    // Data layout from Rust is now raw FlatBuffer bytes.
+    CallbackPacket* packet = static_cast<CallbackPacket*>(data);
+    if (packet == nullptr || packet->data == nullptr || packet->len == 0) {
+        if (packet != nullptr) {
+            delete packet;
+        }
         return;
     }
-
-    uint32_t payload_len = 0;
-    std::memcpy(&payload_len, packet + offset + sub_id_len, sizeof(uint32_t));
-
-    size_t total_len = sizeof(uint32_t) + sub_id_len + sizeof(uint32_t) + payload_len;
 
     // Create ArrayBuffer for payload only
     napi_value arraybuffer;
     uint8_t* js_buf = nullptr;
+    const size_t payload_len = packet->len;
     napi_status s = napi_create_arraybuffer(env, payload_len, reinterpret_cast<void**>(&js_buf), &arraybuffer);
     if (s != napi_ok || js_buf == nullptr) {
-        nipworker_free_bytes(packet, static_cast<size_t>(total_len));
+        nipworker_free_bytes(packet->data, packet->len);
+        delete packet;
         return;
     }
 
-    std::memcpy(js_buf, packet + sizeof(uint32_t) + sub_id_len + sizeof(uint32_t), payload_len);
-    nipworker_free_bytes(packet, static_cast<size_t>(total_len));
+    std::memcpy(js_buf, packet->data, payload_len);
+    nipworker_free_bytes(packet->data, packet->len);
+    delete packet;
 
     // Invoke JS callback(ArrayBuffer)
     napi_value undefined;
@@ -92,14 +92,24 @@ static void native_callback(void* userdata, const uint8_t* ptr, size_t len) {
         return;
     }
 
+    auto* packet = new (std::nothrow) CallbackPacket{
+        const_cast<uint8_t*>(ptr),
+        len,
+    };
+    if (packet == nullptr) {
+        nipworker_free_bytes(const_cast<uint8_t*>(ptr), len);
+        return;
+    }
+
     napi_status s = napi_call_threadsafe_function(
         state->tsfn,
-        const_cast<uint8_t*>(ptr), // ownership transferred to JS thread
+        static_cast<void*>(packet),
         napi_tsfn_nonblocking);
 
     if (s != napi_ok) {
         // Queue full or shutting down — free the buffer ourselves
         nipworker_free_bytes(const_cast<uint8_t*>(ptr), len);
+        delete packet;
     }
 }
 

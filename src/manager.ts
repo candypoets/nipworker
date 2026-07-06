@@ -37,6 +37,7 @@ export interface NostrManagerLike {
 		defaultRelays?: string[],
 		optimisticSubIds?: string[]
 	): ArrayBuffer;
+	releasePublish?(publish_id: string): void;
 	setSigner(name: string, payload?: string | { url: string; clientSecret: string }): void;
 	setNip46Bunker(bunkerUrl: string, clientSecret?: string): void;
 	setNip46QR(nostrconnectUrl: string, clientSecret?: string): void;

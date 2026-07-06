@@ -28,10 +28,19 @@ void nipworker_set_private_key(void* handle, const char* ptr);
 void nipworker_wake(void* handle);
 void nipworker_deinit(void* handle);
 void nipworker_free_bytes(uint8_t* ptr, size_t len);
+bool nipworker_register_subscription(void* handle, const char* sub_id, size_t buffer_size);
+bool nipworker_register_publish_buffer(void* handle, const char* publish_id, size_t buffer_size);
+bool nipworker_retain_subscription(void* handle, const char* sub_id);
+void nipworker_release_subscription(void* handle, const char* sub_id);
+uint8_t* nipworker_subscription_buffer_ptr(void* handle, const char* sub_id);
+size_t nipworker_subscription_buffer_len(void* handle, const char* sub_id);
+void nipworker_cleanup_subscriptions(void* handle);
 }
 
 static NSString * const NipworkerEventName = @"NipworkerEvent";
 static NSString * const NipworkerStoragePrefix = @"nipworker.";
+NSNotificationName const NipworkerRuntimeDataNotification = @"NipworkerRuntimeDataNotification";
+NSString * const NipworkerRuntimeDataKey = @"data";
 static std::mutex NipworkerQueuedPacketsMutex;
 static std::vector<std::vector<uint8_t>> NipworkerQueuedPackets;
 static std::atomic_bool NipworkerByteRuntimeInstalled(false);
@@ -109,6 +118,10 @@ static NSString* NipworkerStorageDirectory(void) {
 	return [dirURL path];
 }
 
+void *nipworker_react_native_shared_handle(void) {
+	return NipworkerGetEngineHandleDefault(NULL);
+}
+
 static void NipworkerNotifyQueuedPacket(void) {
 	dispatch_async(dispatch_get_main_queue(), ^{
 		NSArray<NipworkerReactNativeModule*>* listeners = nil;
@@ -138,6 +151,23 @@ public:
 
 private:
 	std::vector<uint8_t> bytes_;
+};
+
+class NipworkerExternalMutableBuffer final : public facebook::jsi::MutableBuffer {
+public:
+	NipworkerExternalMutableBuffer(uint8_t* ptr, size_t len) : ptr_(ptr), len_(len) {}
+
+	size_t size() const override {
+		return len_;
+	}
+
+	uint8_t* data() override {
+		return ptr_;
+	}
+
+private:
+	uint8_t* ptr_;
+	size_t len_;
 };
 
 static void NipworkerInstallByteRuntime(facebook::jsi::Runtime& runtime, void* engineHandle) {
@@ -203,6 +233,109 @@ static void NipworkerInstallByteRuntime(facebook::jsi::Runtime& runtime, void* e
 	);
 	byteRuntime.setProperty(
 		runtime,
+		"registerSubscription",
+		facebook::jsi::Function::createFromHostFunction(
+			runtime,
+			facebook::jsi::PropNameID::forAscii(runtime, "registerSubscription"),
+			2,
+			[engineHandle](facebook::jsi::Runtime& runtime, const facebook::jsi::Value&, const facebook::jsi::Value* args, size_t count) {
+				if (count < 2 || !args[0].isString() || !args[1].isNumber()) {
+					return facebook::jsi::Value(false);
+				}
+				std::string subId = args[0].asString(runtime).utf8(runtime);
+				auto bufferSize = static_cast<size_t>(args[1].asNumber());
+				return facebook::jsi::Value(nipworker_register_subscription(engineHandle, subId.c_str(), bufferSize));
+			}
+		)
+	);
+	byteRuntime.setProperty(
+		runtime,
+		"registerPublishBuffer",
+		facebook::jsi::Function::createFromHostFunction(
+			runtime,
+			facebook::jsi::PropNameID::forAscii(runtime, "registerPublishBuffer"),
+			2,
+			[engineHandle](facebook::jsi::Runtime& runtime, const facebook::jsi::Value&, const facebook::jsi::Value* args, size_t count) {
+				if (count < 2 || !args[0].isString() || !args[1].isNumber()) {
+					return facebook::jsi::Value(false);
+				}
+				std::string publishId = args[0].asString(runtime).utf8(runtime);
+				auto bufferSize = static_cast<size_t>(args[1].asNumber());
+				return facebook::jsi::Value(nipworker_register_publish_buffer(engineHandle, publishId.c_str(), bufferSize));
+			}
+		)
+	);
+	byteRuntime.setProperty(
+		runtime,
+		"retainSubscription",
+		facebook::jsi::Function::createFromHostFunction(
+			runtime,
+			facebook::jsi::PropNameID::forAscii(runtime, "retainSubscription"),
+			1,
+			[engineHandle](facebook::jsi::Runtime& runtime, const facebook::jsi::Value&, const facebook::jsi::Value* args, size_t count) {
+				if (count < 1 || !args[0].isString()) {
+					return facebook::jsi::Value(false);
+				}
+				std::string subId = args[0].asString(runtime).utf8(runtime);
+				return facebook::jsi::Value(nipworker_retain_subscription(engineHandle, subId.c_str()));
+			}
+		)
+	);
+	byteRuntime.setProperty(
+		runtime,
+		"releaseSubscription",
+		facebook::jsi::Function::createFromHostFunction(
+			runtime,
+			facebook::jsi::PropNameID::forAscii(runtime, "releaseSubscription"),
+			1,
+			[engineHandle](facebook::jsi::Runtime& runtime, const facebook::jsi::Value&, const facebook::jsi::Value* args, size_t count) {
+				if (count < 1 || !args[0].isString()) {
+					return facebook::jsi::Value::undefined();
+				}
+				std::string subId = args[0].asString(runtime).utf8(runtime);
+				nipworker_release_subscription(engineHandle, subId.c_str());
+				return facebook::jsi::Value::undefined();
+			}
+		)
+	);
+	byteRuntime.setProperty(
+		runtime,
+		"getSubscriptionBuffer",
+		facebook::jsi::Function::createFromHostFunction(
+			runtime,
+			facebook::jsi::PropNameID::forAscii(runtime, "getSubscriptionBuffer"),
+			1,
+			[engineHandle](facebook::jsi::Runtime& runtime, const facebook::jsi::Value&, const facebook::jsi::Value* args, size_t count) {
+				if (count < 1 || !args[0].isString()) {
+					return facebook::jsi::Value::undefined();
+				}
+				std::string subId = args[0].asString(runtime).utf8(runtime);
+				uint8_t* ptr = nipworker_subscription_buffer_ptr(engineHandle, subId.c_str());
+				size_t len = nipworker_subscription_buffer_len(engineHandle, subId.c_str());
+				if (!ptr || len == 0) {
+					return facebook::jsi::Value::undefined();
+				}
+				auto nativeBuffer = std::make_shared<NipworkerExternalMutableBuffer>(ptr, len);
+				facebook::jsi::ArrayBuffer buffer(runtime, std::move(nativeBuffer));
+				return facebook::jsi::Value(runtime, std::move(buffer));
+			}
+		)
+	);
+	byteRuntime.setProperty(
+		runtime,
+		"cleanupSubscriptions",
+		facebook::jsi::Function::createFromHostFunction(
+			runtime,
+			facebook::jsi::PropNameID::forAscii(runtime, "cleanupSubscriptions"),
+			0,
+			[engineHandle](facebook::jsi::Runtime&, const facebook::jsi::Value&, const facebook::jsi::Value*, size_t) {
+				nipworker_cleanup_subscriptions(engineHandle);
+				return facebook::jsi::Value::undefined();
+			}
+		)
+	);
+	byteRuntime.setProperty(
+		runtime,
 		"deinit",
 		facebook::jsi::Function::createFromHostFunction(
 			runtime,
@@ -246,6 +379,12 @@ static void NipworkerReactNativeCallbackForwarder(void* userdata, const uint8_t*
 	NSData* data = [NSData dataWithBytes:ptr length:len];
 	nipworker_free_bytes((uint8_t*)ptr, len);
 
+	dispatch_async(dispatch_get_main_queue(), ^{
+		[[NSNotificationCenter defaultCenter] postNotificationName:NipworkerRuntimeDataNotification
+															object:nil
+														  userInfo:@{ NipworkerRuntimeDataKey: data }];
+	});
+
 	if (module.byteRuntimeInstalled || NipworkerByteRuntimeInstalled.load()) {
 		NipworkerQueuePacket((const uint8_t*)data.bytes, data.length);
 		NipworkerNotifyQueuedPacket();
@@ -266,6 +405,41 @@ static void NipworkerReactNativeCallbackForwarder(void* userdata, const uint8_t*
 		}];
 	});
 }
+
+@implementation NipworkerRuntime
+
++ (void *)sharedHandle {
+	return NipworkerGetEngineHandleDefault(NULL);
+}
+
++ (void *)sharedHandleWithDefaultRelays:(NSArray<NSString *> *)defaultRelays
+                          indexerRelays:(NSArray<NSString *> *)indexerRelays
+                               userdata:(void *)userdata {
+	return NipworkerGetEngineHandle(userdata, defaultRelays, indexerRelays);
+}
+
++ (void)handleMessage:(NSData *)data {
+	void* handle = NipworkerGetEngineHandleDefault(NULL);
+	if (handle && data.length > 0) {
+		nipworker_handle_message(handle, (const uint8_t*)data.bytes, data.length);
+	}
+}
+
++ (void)setPrivateKey:(NSString *)secret {
+	void* handle = NipworkerGetEngineHandleDefault(NULL);
+	if (handle && secret) {
+		nipworker_set_private_key(handle, [secret UTF8String]);
+	}
+}
+
++ (void)wake {
+	void* handle = NipworkerGetEngineHandleDefault(NULL);
+	if (handle) {
+		nipworker_wake(handle);
+	}
+}
+
+@end
 
 @implementation NipworkerReactNativeModule
 
@@ -314,7 +488,9 @@ RCT_EXPORT_MODULE(NipworkerReactNativeModule)
 }
 
 RCT_EXPORT_METHOD(initEngine:(NSArray<NSString *> *)defaultRelays indexerRelays:(NSArray<NSString *> *)indexerRelays) {
-	self.engineHandle = NipworkerGetEngineHandle((__bridge void*)self, defaultRelays, indexerRelays);
+	self.engineHandle = [NipworkerRuntime sharedHandleWithDefaultRelays:defaultRelays
+														   indexerRelays:indexerRelays
+																userdata:(__bridge void*)self];
 }
 
 RCT_EXPORT_BLOCKING_SYNCHRONOUS_METHOD(installByteRuntime) {
@@ -349,20 +525,16 @@ RCT_EXPORT_METHOD(handleMessage:(NSArray<NSNumber *> *)bytes) {
 		for (NSUInteger i = 0; i < bytes.count; i++) {
 			rawBytes[i] = (uint8_t)(bytes[i].unsignedCharValue);
 		}
-		nipworker_handle_message(self.engineHandle, (const uint8_t*)data.bytes, data.length);
+		[NipworkerRuntime handleMessage:data];
 	}
 }
 
 RCT_EXPORT_METHOD(setPrivateKey:(NSString *)secret) {
-	if (self.engineHandle && secret) {
-		nipworker_set_private_key(self.engineHandle, [secret UTF8String]);
-	}
+	[NipworkerRuntime setPrivateKey:secret];
 }
 
 RCT_EXPORT_METHOD(wake) {
-	if (self.engineHandle) {
-		nipworker_wake(self.engineHandle);
-	}
+	[NipworkerRuntime wake];
 }
 
 RCT_EXPORT_BLOCKING_SYNCHRONOUS_METHOD(getStorageItem:(NSString *)key) {

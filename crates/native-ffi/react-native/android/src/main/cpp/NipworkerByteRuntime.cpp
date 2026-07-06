@@ -11,6 +11,13 @@ extern "C" void nipworker_handle_message(void* handle, const uint8_t* ptr, size_
 extern "C" void nipworker_set_private_key(void* handle, const char* ptr);
 extern "C" void nipworker_wake(void* handle);
 extern "C" void nipworker_deinit(void* handle);
+extern "C" bool nipworker_register_subscription(void* handle, const char* sub_id, size_t buffer_size);
+extern "C" bool nipworker_register_publish_buffer(void* handle, const char* publish_id, size_t buffer_size);
+extern "C" bool nipworker_retain_subscription(void* handle, const char* sub_id);
+extern "C" void nipworker_release_subscription(void* handle, const char* sub_id);
+extern "C" uint8_t* nipworker_subscription_buffer_ptr(void* handle, const char* sub_id);
+extern "C" size_t nipworker_subscription_buffer_len(void* handle, const char* sub_id);
+extern "C" void nipworker_cleanup_subscriptions(void* handle);
 
 namespace {
 using facebook::jsi::Array;
@@ -37,6 +44,23 @@ public:
 
 private:
 	std::vector<uint8_t> bytes_;
+};
+
+class ExternalMutableBuffer final : public MutableBuffer {
+public:
+	ExternalMutableBuffer(uint8_t* ptr, size_t len) : ptr_(ptr), len_(len) {}
+
+	size_t size() const override {
+		return len_;
+	}
+
+	uint8_t* data() override {
+		return ptr_;
+	}
+
+private:
+	uint8_t* ptr_;
+	size_t len_;
 };
 
 std::mutex gQueueMutex;
@@ -76,6 +100,93 @@ Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nativeQueue
 	enqueueBytes(reinterpret_cast<const uint8_t*>(ptr), static_cast<size_t>(len));
 	env->ReleaseByteArrayElements(bytes, ptr, JNI_ABORT);
 	return JNI_TRUE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nativeRegisterSubscription(
+	JNIEnv* env,
+	jclass,
+	jlong handle,
+	jstring subId,
+	jint bufferSize
+) {
+	if (handle == 0 || subId == nullptr || bufferSize <= 0) return JNI_FALSE;
+	const char* subIdChars = env->GetStringUTFChars(subId, nullptr);
+	if (subIdChars == nullptr) return JNI_FALSE;
+	bool ok = nipworker_register_subscription(
+		reinterpret_cast<void*>(handle),
+		subIdChars,
+		static_cast<size_t>(bufferSize)
+	);
+	env->ReleaseStringUTFChars(subId, subIdChars);
+	return ok ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nativeRegisterPublishBuffer(
+	JNIEnv* env,
+	jclass,
+	jlong handle,
+	jstring publishId,
+	jint bufferSize
+) {
+	if (handle == 0 || publishId == nullptr || bufferSize <= 0) return JNI_FALSE;
+	const char* publishIdChars = env->GetStringUTFChars(publishId, nullptr);
+	if (publishIdChars == nullptr) return JNI_FALSE;
+	bool ok = nipworker_register_publish_buffer(
+		reinterpret_cast<void*>(handle),
+		publishIdChars,
+		static_cast<size_t>(bufferSize)
+	);
+	env->ReleaseStringUTFChars(publishId, publishIdChars);
+	return ok ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nativeRetainSubscription(
+	JNIEnv* env,
+	jclass,
+	jlong handle,
+	jstring subId
+) {
+	if (handle == 0 || subId == nullptr) return JNI_FALSE;
+	const char* subIdChars = env->GetStringUTFChars(subId, nullptr);
+	if (subIdChars == nullptr) return JNI_FALSE;
+	bool ok = nipworker_retain_subscription(reinterpret_cast<void*>(handle), subIdChars);
+	env->ReleaseStringUTFChars(subId, subIdChars);
+	return ok ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nativeReleaseSubscription(
+	JNIEnv* env,
+	jclass,
+	jlong handle,
+	jstring subId
+) {
+	if (handle == 0 || subId == nullptr) return;
+	const char* subIdChars = env->GetStringUTFChars(subId, nullptr);
+	if (subIdChars == nullptr) return;
+	nipworker_release_subscription(reinterpret_cast<void*>(handle), subIdChars);
+	env->ReleaseStringUTFChars(subId, subIdChars);
+}
+
+extern "C" JNIEXPORT jobject JNICALL
+Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nativeGetSubscriptionBuffer(
+	JNIEnv* env,
+	jclass,
+	jlong handle,
+	jstring subId
+) {
+	if (handle == 0 || subId == nullptr) return nullptr;
+	const char* subIdChars = env->GetStringUTFChars(subId, nullptr);
+	if (subIdChars == nullptr) return nullptr;
+	auto* engineHandle = reinterpret_cast<void*>(handle);
+	uint8_t* ptr = nipworker_subscription_buffer_ptr(engineHandle, subIdChars);
+	size_t len = nipworker_subscription_buffer_len(engineHandle, subIdChars);
+	env->ReleaseStringUTFChars(subId, subIdChars);
+	if (ptr == nullptr || len == 0) return nullptr;
+	return env->NewDirectByteBuffer(ptr, static_cast<jlong>(len));
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
@@ -153,6 +264,103 @@ Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nativeInsta
 			0,
 			[engineHandle](Runtime&, const Value&, const Value*, size_t) -> Value {
 				nipworker_wake(engineHandle);
+				return Value::undefined();
+			}
+		)
+	);
+
+	byteRuntime.setProperty(
+		runtime,
+		"registerSubscription",
+		Function::createFromHostFunction(
+			runtime,
+			PropNameID::forAscii(runtime, "registerSubscription"),
+			2,
+			[engineHandle](Runtime& runtime, const Value&, const Value* args, size_t count) -> Value {
+				if (count < 2 || !args[0].isString() || !args[1].isNumber()) return Value(false);
+				std::string subId = args[0].asString(runtime).utf8(runtime);
+				auto bufferSize = static_cast<size_t>(args[1].asNumber());
+				return Value(nipworker_register_subscription(engineHandle, subId.c_str(), bufferSize));
+			}
+		)
+	);
+
+	byteRuntime.setProperty(
+		runtime,
+		"registerPublishBuffer",
+		Function::createFromHostFunction(
+			runtime,
+			PropNameID::forAscii(runtime, "registerPublishBuffer"),
+			2,
+			[engineHandle](Runtime& runtime, const Value&, const Value* args, size_t count) -> Value {
+				if (count < 2 || !args[0].isString() || !args[1].isNumber()) return Value(false);
+				std::string publishId = args[0].asString(runtime).utf8(runtime);
+				auto bufferSize = static_cast<size_t>(args[1].asNumber());
+				return Value(nipworker_register_publish_buffer(engineHandle, publishId.c_str(), bufferSize));
+			}
+		)
+	);
+
+	byteRuntime.setProperty(
+		runtime,
+		"retainSubscription",
+		Function::createFromHostFunction(
+			runtime,
+			PropNameID::forAscii(runtime, "retainSubscription"),
+			1,
+			[engineHandle](Runtime& runtime, const Value&, const Value* args, size_t count) -> Value {
+				if (count < 1 || !args[0].isString()) return Value(false);
+				std::string subId = args[0].asString(runtime).utf8(runtime);
+				return Value(nipworker_retain_subscription(engineHandle, subId.c_str()));
+			}
+		)
+	);
+
+	byteRuntime.setProperty(
+		runtime,
+		"releaseSubscription",
+		Function::createFromHostFunction(
+			runtime,
+			PropNameID::forAscii(runtime, "releaseSubscription"),
+			1,
+			[engineHandle](Runtime& runtime, const Value&, const Value* args, size_t count) -> Value {
+				if (count < 1 || !args[0].isString()) return Value::undefined();
+				std::string subId = args[0].asString(runtime).utf8(runtime);
+				nipworker_release_subscription(engineHandle, subId.c_str());
+				return Value::undefined();
+			}
+		)
+	);
+
+	byteRuntime.setProperty(
+		runtime,
+		"getSubscriptionBuffer",
+		Function::createFromHostFunction(
+			runtime,
+			PropNameID::forAscii(runtime, "getSubscriptionBuffer"),
+			1,
+			[engineHandle](Runtime& runtime, const Value&, const Value* args, size_t count) -> Value {
+				if (count < 1 || !args[0].isString()) return Value::undefined();
+				std::string subId = args[0].asString(runtime).utf8(runtime);
+				uint8_t* ptr = nipworker_subscription_buffer_ptr(engineHandle, subId.c_str());
+				size_t len = nipworker_subscription_buffer_len(engineHandle, subId.c_str());
+				if (ptr == nullptr || len == 0) return Value::undefined();
+				auto nativeBuffer = std::make_shared<ExternalMutableBuffer>(ptr, len);
+				ArrayBuffer buffer(runtime, std::move(nativeBuffer));
+				return Value(runtime, std::move(buffer));
+			}
+		)
+	);
+
+	byteRuntime.setProperty(
+		runtime,
+		"cleanupSubscriptions",
+		Function::createFromHostFunction(
+			runtime,
+			PropNameID::forAscii(runtime, "cleanupSubscriptions"),
+			0,
+			[engineHandle](Runtime&, const Value&, const Value*, size_t) -> Value {
+				nipworker_cleanup_subscriptions(engineHandle);
 				return Value::undefined();
 			}
 		)

@@ -79,9 +79,10 @@ export abstract class BaseBackend {
 			buffer: ArrayBuffer;
 			options: SubscriptionConfig;
 			refCount: number;
+			nativeOwned?: boolean;
 		}
 	>();
-	protected publishes = new Map<string, { buffer: ArrayBuffer }>();
+	protected publishes = new Map<string, { buffer: ArrayBuffer; nativeOwned?: boolean }>();
 	protected eventTarget = new SimpleEventEmitter();
 	protected activePubkey: string | null = null;
 	protected _pendingSession: { type: string; payload: any } | null = null;

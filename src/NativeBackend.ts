@@ -405,40 +405,25 @@ export class NativeBackend extends BaseBackend {
 			const diag = (globalThis as any).__nipworker_native_diag;
 			if (diag) diag.handleNativeMessageCount++;
 		}
-		if (data.length < 8) {
-			console.warn('[NativeBackend] Ignoring malformed native message: data too short');
+		let subId = '';
+		try {
+			const bb = new flatbuffers.ByteBuffer(data);
+			const workerMsg = WorkerMessage.getRootAsWorkerMessage(bb);
+			subId = workerMsg.subId() ?? '';
+			if (subId === 'crypto') {
+				this.handleCryptoMessage(data);
+				return;
+			}
+			if (subId === '') {
+				this.handleDirectResponse(data);
+				return;
+			}
+		} catch (err) {
+			console.warn('[NativeBackend] Ignoring malformed native message: invalid WorkerMessage', err);
 			return;
 		}
-		const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
-		let offset = 0;
-		const subIdLen = view.getUint32(offset, true);
-		offset += 4;
-		if (offset + subIdLen > data.byteLength) {
-			console.warn('[NativeBackend] Ignoring malformed native message: subId exceeds buffer');
-			return;
-		}
-		const subId = new TextDecoder().decode(data.subarray(offset, offset + subIdLen));
-		offset += subIdLen;
-		if (offset + 4 > data.byteLength) {
-			console.warn('[NativeBackend] Ignoring malformed native message: missing payload length');
-			return;
-		}
-		const payloadLen = view.getUint32(offset, true);
-		offset += 4;
-		if (offset + payloadLen > data.byteLength) {
-			console.warn('[NativeBackend] Ignoring malformed native message: payload exceeds buffer');
-			return;
-		}
-		const payload = data.subarray(offset, offset + payloadLen);
 
-		if (subId === 'crypto') {
-			this.handleCryptoMessage(payload);
-			return;
-		}
-		if (subId === '') {
-			this.handleDirectResponse(payload);
-			return;
-		}
+		const payload = data;
 		if (typeof globalThis !== 'undefined') {
 			const diag = (globalThis as any).__nipworker_native_diag;
 			if (diag) diag.subscriptionCount = this.subscriptions.size;
@@ -446,6 +431,10 @@ export class NativeBackend extends BaseBackend {
 
 		const subscription = this.subscriptions.get(subId);
 		if (subscription) {
+			if (subscription.nativeOwned) {
+				this.dispatch(`subscription:${subId}`, subId);
+				return;
+			}
 			const buf = subscription.buffer;
 			const written = ArrayBufferReader.writePayload(buf, payload, subId);
 			if (written) {
@@ -458,6 +447,10 @@ export class NativeBackend extends BaseBackend {
 
 		const publish = this.publishes.get(subId);
 		if (publish) {
+			if (publish.nativeOwned) {
+				this.dispatch(`publish:${subId}`, subId);
+				return;
+			}
 			const written = ArrayBufferReader.writePayload(publish.buffer, payload, subId);
 			if (written) {
 				this.dispatch(`publish:${subId}`, subId);
@@ -477,8 +470,10 @@ export class NativeBackend extends BaseBackend {
 		if (payload.length < 4) return;
 		const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
 		const msgLen = view.getUint32(0, true);
-		if (payload.length < 4 + msgLen) return;
-		const bb = new flatbuffers.ByteBuffer(payload.subarray(4, 4 + msgLen));
+		const maybeLenPrefixed = payload.length >= 4 + msgLen && msgLen > 0;
+		const bb = new flatbuffers.ByteBuffer(
+			maybeLenPrefixed ? payload.subarray(4, 4 + msgLen) : payload
+		);
 		const workerMsg = WorkerMessage.getRootAsWorkerMessage(bb);
 		const msgType = workerMsg.type();
 		if (msgType === MessageType.Pubkey) {
@@ -589,15 +584,31 @@ export class NativeBackend extends BaseBackend {
 		const existing = this.subscriptions.get(subId);
 		if (existing) {
 			existing.refCount++;
+			if (existing.nativeOwned) {
+				this.nativeModule.retainSubscription?.(subId);
+			}
 			return existing.buffer;
 		}
 
 		const totalLimit = requests.reduce((sum, req) => sum + (req.limit || 100), 0);
 		const bufferSize = ArrayBufferReader.calculateBufferSize(totalLimit, options.bytesPerEvent);
-		const buffer = new ArrayBuffer(bufferSize);
-		ArrayBufferReader.initializeBuffer(buffer);
+		let nativeOwned = false;
+		let buffer: ArrayBuffer | undefined;
+		const registeredNative = this.nativeModule.registerSubscription?.(subId, bufferSize) === true;
+		if (registeredNative) {
+			buffer = this.nativeModule.getSubscriptionBuffer?.(subId);
+			nativeOwned = buffer instanceof ArrayBuffer;
+			if (!nativeOwned) {
+				this.nativeModule.releaseSubscription?.(subId);
+				buffer = undefined;
+			}
+		}
+		if (!buffer) {
+			buffer = new ArrayBuffer(bufferSize);
+			ArrayBufferReader.initializeBuffer(buffer);
+		}
 
-		this.subscriptions.set(subId, { buffer, options, refCount: 1 });
+		this.subscriptions.set(subId, { buffer, options, refCount: 1, nativeOwned });
 
 		const pipeline =
 			options.pipeline !== undefined
@@ -654,14 +665,56 @@ export class NativeBackend extends BaseBackend {
 		return buffer;
 	}
 
+	override getBuffer(subId: string): ArrayBuffer | undefined {
+		const existing = this.subscriptions.get(subId);
+		if (!existing) {
+			return undefined;
+		}
+		existing.refCount++;
+		if (existing.nativeOwned) {
+			this.nativeModule.retainSubscription?.(subId);
+			const nativeBuffer = this.nativeModule.getSubscriptionBuffer?.(subId);
+			if (nativeBuffer instanceof ArrayBuffer) {
+				existing.buffer = nativeBuffer;
+				return nativeBuffer;
+			}
+		}
+		return existing.buffer;
+	}
+
+	override unsubscribe(subscriptionId: string): void {
+		const subscription = this.subscriptions.get(subscriptionId);
+		if (!subscription) return;
+		subscription.refCount--;
+		if (subscription.nativeOwned) {
+			this.nativeModule.releaseSubscription?.(subscriptionId);
+		}
+	}
+
 	publish(
 		publish_id: string,
 		event: NostrEvent,
 		defaultRelays: string[] = [],
 		optimisticSubIds?: string[]
 	): ArrayBuffer {
-		const buffer = new ArrayBuffer(3072);
-		ArrayBufferReader.initializeBuffer(buffer);
+		const bufferSize = 3072;
+		let nativeOwned = false;
+		let buffer: ArrayBuffer | undefined;
+		const registeredNative =
+			(this.nativeModule.registerPublishBuffer?.(publish_id, bufferSize) ??
+				this.nativeModule.registerSubscription?.(publish_id, bufferSize)) === true;
+		if (registeredNative) {
+			buffer = this.nativeModule.getSubscriptionBuffer?.(publish_id);
+			nativeOwned = buffer instanceof ArrayBuffer;
+			if (!nativeOwned) {
+				this.nativeModule.releaseSubscription?.(publish_id);
+				buffer = undefined;
+			}
+		}
+		if (!buffer) {
+			buffer = new ArrayBuffer(bufferSize);
+			ArrayBufferReader.initializeBuffer(buffer);
+		}
 
 		const templateT = new TemplateT(
 			event.kind,
@@ -680,8 +733,17 @@ export class NativeBackend extends BaseBackend {
 		builder.finish(mainT.pack(builder));
 		const uint8Array = builder.asUint8Array();
 		this.postMessage(uint8Array);
-		this.publishes.set(publish_id, { buffer });
+		this.publishes.set(publish_id, { buffer, nativeOwned });
 		return buffer;
+	}
+
+	releasePublish(publish_id: string): void {
+		const publish = this.publishes.get(publish_id);
+		if (!publish) return;
+		this.publishes.delete(publish_id);
+		if (publish.nativeOwned) {
+			this.nativeModule.releaseSubscription?.(publish_id);
+		}
 	}
 
 	setSigner(name: string, payload?: string | { url: string; clientSecret: string }): void {
@@ -759,9 +821,25 @@ export class NativeBackend extends BaseBackend {
 	}
 
 	cleanup(): void {
+		if (typeof this.nativeModule.cleanupSubscriptions === 'function') {
+			this.nativeModule.cleanupSubscriptions();
+			for (const [subId, subscription] of this.subscriptions.entries()) {
+				if (
+					subscription.nativeOwned &&
+					subscription.refCount <= 0 &&
+					!this.PERPETUAL_SUBSCRIPTIONS.includes(subId)
+				) {
+					this.subscriptions.delete(subId);
+				}
+			}
+		}
 		const toDelete: string[] = [];
 		for (const [subId, subscription] of this.subscriptions.entries()) {
-			if (subscription.refCount <= 0 && !this.PERPETUAL_SUBSCRIPTIONS.includes(subId)) {
+			if (
+				!subscription.nativeOwned &&
+				subscription.refCount <= 0 &&
+				!this.PERPETUAL_SUBSCRIPTIONS.includes(subId)
+			) {
 				toDelete.push(subId);
 			}
 		}

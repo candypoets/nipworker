@@ -10,6 +10,7 @@ import { WorkerMessage } from 'src/generated/nostr/fb';
  * Used for MessageChannel-based communication between main thread and workers.
  */
 export class ArrayBufferReader {
+	static malformedFrameLogOnceBySubId = new Set<string>();
 	/**
 	 * Initialize a buffer for writing - sets the write position header to 4
 	 * @param buffer The ArrayBuffer to initialize
@@ -116,7 +117,11 @@ export class ArrayBufferReader {
 	 * @param lastReadPosition Last position read (default: 0, meaning read from beginning)
 	 * @returns Object containing new messages and updated read position
 	 */
-	static readMessages(buffer: ArrayBuffer, lastReadPosition: number = 0, _debugId?: string) {
+	static readMessages(
+		buffer: ArrayBuffer,
+		lastReadPosition: number = 0,
+		debugId?: string
+	) {
 		const view = new DataView(buffer);
 		const uint8View = new Uint8Array(buffer);
 
@@ -143,9 +148,25 @@ export class ArrayBufferReader {
 				const eventLength = view.getUint32(headerPos, true);
 				const payloadStart = headerPos + 4;
 				const nextPos = payloadStart + eventLength;
+				const remaining = currentWritePosition - payloadStart;
 
 				// Need the full payload to be available
-				if (nextPos > currentWritePosition) break;
+				if (nextPos > currentWritePosition) {
+					const cacheKey = debugId || '__no_sub_id__';
+					if (!this.malformedFrameLogOnceBySubId.has(cacheKey)) {
+						this.malformedFrameLogOnceBySubId.add(cacheKey);
+						console.error(
+							'[ArrayBufferReader] malformed frame, skipping remaining bytes: ' +
+								`subId=${debugId ?? 'unknown'}, ` +
+								`subIdLen=${debugId ? debugId.length : -1}, ` +
+								`payloadLen=${eventLength}, ` +
+								`currentWritePosition=${currentWritePosition}, ` +
+								`lastReadPos=${lastReadPosition}`
+						);
+					}
+					currentPos = currentWritePosition;
+					break;
+				}
 
 				// Parse directly from the existing buffer view to avoid per-message copies.
 				const bb = new ByteBuffer(uint8View.subarray(payloadStart, nextPos));

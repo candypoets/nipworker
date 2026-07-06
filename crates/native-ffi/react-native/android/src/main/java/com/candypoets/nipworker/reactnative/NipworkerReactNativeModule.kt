@@ -4,15 +4,144 @@ import android.content.Context
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.ReadableArray
 import com.facebook.react.bridge.ReactApplicationContext
+import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.module.annotations.ReactModule
 import com.facebook.react.modules.core.DeviceEventManagerModule
+import com.facebook.react.turbomodule.core.interfaces.TurboModule
+import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicLong
+
+typealias NipworkerRuntimeListener = (ByteArray) -> Unit
+
+object NipworkerRuntime {
+	private const val STORAGE_NAME = "nipworker_storage"
+	private val nextUserdata = AtomicLong(1L)
+	private val listeners = LinkedHashSet<NipworkerRuntimeListener>()
+
+	@Volatile
+	private var sharedHandle: Long = 0L
+
+	@Volatile
+	private var sharedUserdata: Long = 0L
+
+	val handle: Long
+		get() = sharedHandle
+
+	fun addListener(listener: NipworkerRuntimeListener): () -> Unit {
+		synchronized(this) {
+			listeners.add(listener)
+		}
+		return {
+			synchronized(this) {
+				listeners.remove(listener)
+			}
+		}
+	}
+
+	fun init(context: Context, defaultRelays: ReadableArray? = null, indexerRelays: ReadableArray? = null): Long {
+		synchronized(this) {
+			if (sharedHandle == 0L) {
+				sharedUserdata = nextUserdata.getAndIncrement()
+				val cacheDir = context.filesDir.resolve("nipworker")
+				sharedHandle = NipworkerReactNativeModule.nipworkerInitWithConfig(
+					sharedUserdata,
+					cacheDir.absolutePath,
+					readableArrayToCsv(defaultRelays),
+					readableArrayToCsv(indexerRelays)
+				)
+			}
+			return sharedHandle
+		}
+	}
+
+	fun handleMessage(bytes: ByteArray) {
+		val handle = sharedHandle
+		if (handle != 0L) {
+			NipworkerReactNativeModule.nipworkerHandleMessage(handle, bytes)
+		}
+	}
+
+	fun setPrivateKey(secret: String) {
+		val handle = sharedHandle
+		if (handle != 0L) {
+			NipworkerReactNativeModule.nipworkerSetPrivateKey(handle, secret)
+		}
+	}
+
+	fun wake() {
+		val handle = sharedHandle
+		if (handle != 0L) {
+			NipworkerReactNativeModule.nipworkerWake(handle)
+		}
+	}
+
+	fun registerSubscription(subId: String, bufferSize: Int): Boolean {
+		val handle = sharedHandle
+		return handle != 0L && NipworkerReactNativeModule.nativeRegisterSubscription(handle, subId, bufferSize)
+	}
+
+	fun registerPublishBuffer(publishId: String, bufferSize: Int): Boolean {
+		val handle = sharedHandle
+		return handle != 0L && NipworkerReactNativeModule.nativeRegisterPublishBuffer(handle, publishId, bufferSize)
+	}
+
+	fun retainSubscription(subId: String): Boolean {
+		val handle = sharedHandle
+		return handle != 0L && NipworkerReactNativeModule.nativeRetainSubscription(handle, subId)
+	}
+
+	fun releaseSubscription(subId: String) {
+		val handle = sharedHandle
+		if (handle != 0L) {
+			NipworkerReactNativeModule.nativeReleaseSubscription(handle, subId)
+		}
+	}
+
+	fun subscriptionBuffer(subId: String): ByteBuffer? {
+		val handle = sharedHandle
+		return if (handle == 0L) null else NipworkerReactNativeModule.nativeGetSubscriptionBuffer(handle, subId)
+	}
+
+	fun deinit() {
+		synchronized(this) {
+			if (sharedHandle != 0L) {
+				NipworkerReactNativeModule.nipworkerDeinit(sharedHandle)
+				sharedHandle = 0L
+				sharedUserdata = 0L
+			}
+			listeners.clear()
+		}
+	}
+
+	internal fun dispatch(data: ByteArray) {
+		val snapshot = synchronized(this) {
+			listeners.toList()
+		}
+		for (listener in snapshot) {
+			listener(data)
+		}
+	}
+
+	private fun readableArrayToCsv(values: ReadableArray?): String {
+		if (values == null) {
+			return ""
+		}
+		val relays = mutableListOf<String>()
+		for (i in 0 until values.size()) {
+			val relay = values.getString(i)?.trim()
+			if (!relay.isNullOrEmpty() && !relay.contains(",")) {
+				relays.add(relay)
+			}
+		}
+		return relays.joinToString(",")
+	}
+}
 
 @ReactModule(name = NipworkerReactNativeModule.NAME)
 class NipworkerReactNativeModule(
 	private val reactContext: ReactApplicationContext
-) : NativeNipworkerReactNativeSpec(reactContext) {
+) : ReactContextBaseJavaModule(reactContext), TurboModule {
 	companion object {
 		const val NAME = "NipworkerReactNativeModule"
 		private const val EVENT_NAME = "NipworkerEvent"
@@ -23,38 +152,9 @@ class NipworkerReactNativeModule(
 			System.loadLibrary("nipworker_react_native")
 		}
 
-		private val nextUserdata = AtomicLong(1L)
-
-		@Volatile
-		private var sharedHandle: Long = 0L
-
-		@Volatile
-		private var sharedUserdata: Long = 0L
-
-		@Volatile
-		private var activeModule: NipworkerReactNativeModule? = null
-
 		@JvmStatic
 		fun onNativeData(userdata: Long, data: ByteArray) {
-			val module = activeModule ?: return
-			if (nativeIsByteRuntimeInstalled() && nativeQueueData(data)) {
-				val payload = Arguments.createMap().apply {
-					putInt("v", 1)
-					putString("encoding", "queued")
-				}
-				module.emitData(payload)
-				return
-			}
-			val bytes = Arguments.createArray()
-			for (byte in data) {
-				bytes.pushInt(byte.toInt() and 0xff)
-			}
-			val payload = Arguments.createMap().apply {
-				putInt("v", 1)
-				putString("encoding", "bytes")
-				putArray("data", bytes)
-			}
-			module.emitData(payload)
+			NipworkerRuntime.dispatch(data)
 		}
 
 		@JvmStatic
@@ -94,7 +194,26 @@ class NipworkerReactNativeModule(
 
 		@JvmStatic
 		external fun nativeQueueData(bytes: ByteArray): Boolean
+
+		@JvmStatic
+		external fun nativeRegisterSubscription(handle: Long, subId: String, bufferSize: Int): Boolean
+
+		@JvmStatic
+		external fun nativeRegisterPublishBuffer(handle: Long, publishId: String, bufferSize: Int): Boolean
+
+		@JvmStatic
+		external fun nativeRetainSubscription(handle: Long, subId: String): Boolean
+
+		@JvmStatic
+		external fun nativeReleaseSubscription(handle: Long, subId: String)
+
+		@JvmStatic
+		external fun nativeGetSubscriptionBuffer(handle: Long, subId: String): ByteBuffer?
 	}
+
+	private var removeRuntimeListener: (() -> Unit)? = null
+
+	override fun getName(): String = NAME
 
 	private val storage by lazy {
 		reactContext.getSharedPreferences(STORAGE_NAME, Context.MODE_PRIVATE)
@@ -110,102 +229,95 @@ class NipworkerReactNativeModule(
 		// Required by NativeEventEmitter on Android legacy paths.
 	}
 
-	private fun readableArrayToCsv(values: ReadableArray?): String {
-		if (values == null) {
-			return ""
-		}
-		val relays = mutableListOf<String>()
-		for (i in 0 until values.size()) {
-			val relay = values.getString(i)?.trim()
-			if (!relay.isNullOrEmpty() && !relay.contains(",")) {
-				relays.add(relay)
-			}
-		}
-		return relays.joinToString(",")
+	@ReactMethod
+	fun initEngine(defaultRelays: ReadableArray, indexerRelays: ReadableArray) {
+		ensureRuntimeListener()
+		NipworkerRuntime.init(reactContext, defaultRelays, indexerRelays)
 	}
 
-	override fun initEngine(defaultRelays: ReadableArray, indexerRelays: ReadableArray) {
-		activeModule = this
-		if (sharedHandle == 0L) {
-			sharedUserdata = nextUserdata.getAndIncrement()
-			val cacheDir = reactContext.filesDir.resolve("nipworker")
-			sharedHandle = nipworkerInitWithConfig(
-				sharedUserdata,
-				cacheDir.absolutePath,
-				readableArrayToCsv(defaultRelays),
-				readableArrayToCsv(indexerRelays)
-			)
+	private fun ensureRuntimeListener() {
+		if (removeRuntimeListener == null) {
+			removeRuntimeListener = NipworkerRuntime.addListener { data ->
+				emitRuntimeData(data)
+			}
 		}
 	}
 
 	@ReactMethod(isBlockingSynchronousMethod = true)
-	override fun installByteRuntime(): Boolean {
+	fun installByteRuntime(): Boolean {
 		initEngine(Arguments.createArray(), Arguments.createArray())
 		val runtimePtr = reactContext.javaScriptContextHolder?.get() ?: 0L
-		if (runtimePtr == 0L || sharedHandle == 0L) {
+		val handle = NipworkerRuntime.handle
+		if (runtimePtr == 0L || handle == 0L) {
 			return false
 		}
-		return nativeInstallByteRuntime(runtimePtr, sharedHandle)
+		return nativeInstallByteRuntime(runtimePtr, handle)
 	}
 
 	@ReactMethod
-	override fun handleMessage(bytes: ReadableArray) {
-		if (sharedHandle != 0L) {
-			val data = ByteArray(bytes.size())
-			for (i in 0 until bytes.size()) {
-				data[i] = (bytes.getInt(i) and 0xff).toByte()
-			}
-			nipworkerHandleMessage(sharedHandle, data)
+	fun handleMessage(bytes: ReadableArray) {
+		val data = ByteArray(bytes.size())
+		for (i in 0 until bytes.size()) {
+			data[i] = (bytes.getInt(i) and 0xff).toByte()
 		}
+		NipworkerRuntime.handleMessage(data)
 	}
 
 	@ReactMethod
-	override fun wake() {
-		if (sharedHandle != 0L) {
-			nipworkerWake(sharedHandle)
-		}
+	fun wake() {
+		NipworkerRuntime.wake()
 	}
 
 	@ReactMethod
-	override fun setPrivateKey(secret: String) {
-		if (sharedHandle != 0L) {
-			nipworkerSetPrivateKey(sharedHandle, secret)
-		}
+	fun setPrivateKey(secret: String) {
+		NipworkerRuntime.setPrivateKey(secret)
 	}
 
 	@ReactMethod(isBlockingSynchronousMethod = true)
-	override fun getStorageItem(key: String): String? {
+	fun getStorageItem(key: String): String? {
 		return storage.getString(key, null)
 	}
 
 	@ReactMethod(isBlockingSynchronousMethod = true)
-	override fun setStorageItem(key: String, value: String): Boolean {
+	fun setStorageItem(key: String, value: String): Boolean {
 		return storage.edit().putString(key, value).commit()
 	}
 
 	@ReactMethod(isBlockingSynchronousMethod = true)
-	override fun removeStorageItem(key: String): Boolean {
+	fun removeStorageItem(key: String): Boolean {
 		return storage.edit().remove(key).commit()
 	}
 
-	override fun deinitEngine() {
-		if (sharedHandle != 0L) {
-			nipworkerDeinit(sharedHandle)
-			sharedHandle = 0L
-			sharedUserdata = 0L
+	@ReactMethod
+	fun deinitEngine() {
+		removeRuntimeListener?.invoke()
+		removeRuntimeListener = null
+	}
+
+	private fun emitRuntimeData(data: ByteArray) {
+		if (nativeIsByteRuntimeInstalled() && nativeQueueData(data)) {
+			val payload = Arguments.createMap().apply {
+				putInt("v", 1)
+				putString("encoding", "queued")
+			}
+			emitData(payload)
+			return
 		}
-		if (activeModule === this) {
-			activeModule = null
+		val bytes = Arguments.createArray()
+		for (byte in data) {
+			bytes.pushInt(byte.toInt() and 0xff)
 		}
+		val payload = Arguments.createMap().apply {
+			putInt("v", 1)
+			putString("encoding", "bytes")
+			putArray("data", bytes)
+		}
+		emitData(payload)
 	}
 
 	private fun emitData(payload: com.facebook.react.bridge.WritableMap) {
-		try {
-			emitOnData(payload)
-		} catch (_: Throwable) {
-			reactContext
-				.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
-				.emit(EVENT_NAME, payload)
-		}
+		reactContext
+			.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+			.emit(EVENT_NAME, payload)
 	}
 }

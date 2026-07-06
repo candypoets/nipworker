@@ -27,12 +27,19 @@ private final class ManagerBox {
 }
 
 public actor NostrManager {
+    private static let sharedRuntimeNotification = "NipworkerRuntimeDataNotification"
+    private static let sharedRuntimeDataKey = "data"
+
+    private static var reactNativeSharedManager: NostrManager?
+
     private var handle: UnsafeMutableRawPointer?
+    private let ownsHandle: Bool
     private var subscriptions: [String: SubscriptionState] = [:]
     private var publishes: [String: PublishState] = [:]
     private var relayStatuses: [String: RelayStatus] = [:]
     private var activePubkey: String?
     private var pendingSession: (type: String, payload: Any)?
+    private var sharedRuntimeObserver: NSObjectProtocol?
 
     private var signContinuation: CheckedContinuation<NostrEvent, Error>?
     private var pubkeyContinuation: CheckedContinuation<String, Error>?
@@ -41,6 +48,7 @@ public actor NostrManager {
 
     public init(config: NostrManagerConfig = NostrManagerConfig()) {
         self.handle = nil
+        self.ownsHandle = true
         self.boxPtr = UnsafeMutablePointer<ManagerBox>.allocate(capacity: 1)
         self.boxPtr.initialize(to: ManagerBox(manager: self))
 
@@ -58,9 +66,40 @@ public actor NostrManager {
         }, self.boxPtr)
     }
 
+    private init(borrowedHandle: UnsafeMutableRawPointer?) {
+        self.handle = borrowedHandle
+        self.ownsHandle = false
+        self.boxPtr = UnsafeMutablePointer<ManagerBox>.allocate(capacity: 1)
+        self.boxPtr.initialize(to: ManagerBox(manager: self))
+
+        self.sharedRuntimeObserver = NotificationCenter.default.addObserver(
+            forName: Notification.Name(rawValue: Self.sharedRuntimeNotification),
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let data = notification.userInfo?[Self.sharedRuntimeDataKey] as? Data else { return }
+            Task { [weak self] in
+                await self?.handleNativeMessage(data)
+            }
+        }
+    }
+
+    public static func reactNativeShared() -> NostrManager {
+        if let manager = reactNativeSharedManager {
+            return manager
+        }
+        let manager = NostrManager(borrowedHandle: nipworker_react_native_shared_handle())
+        reactNativeSharedManager = manager
+        return manager
+    }
+
     deinit {
-        if let handle = handle {
+        if ownsHandle, let handle = handle {
             nipworker_deinit(handle)
+        }
+        if let observer = sharedRuntimeObserver {
+            NotificationCenter.default.removeObserver(observer)
+            sharedRuntimeObserver = nil
         }
         boxPtr.pointee.manager = nil
         boxPtr.deinitialize(count: 1)
@@ -74,11 +113,12 @@ public actor NostrManager {
         requests: [RequestObject],
         options: SubscriptionConfig = SubscriptionConfig()
     ) -> SubscriptionBuffer {
-        let subId = createShortId(subscriptionId)
+        let subId = subscriptionId
 
         if var existing = subscriptions[subId] {
             existing.refCount += 1
             subscriptions[subId] = existing
+            subId.withCString { _ = nipworker_retain_subscription(handle, $0) }
             return existing.buffer
         }
 
@@ -87,8 +127,16 @@ public actor NostrManager {
             totalEventLimit: totalLimit,
             bytesPerEvent: Int(options.bytesPerEvent)
         )
-        let buffer = SubscriptionBuffer(capacity: bufferSize)
-        ArrayBufferReader.initializeBuffer(buffer)
+        let registered = subId.withCString { nipworker_register_subscription(handle, $0, bufferSize) }
+        let nativePointer = subId.withCString { nipworker_subscription_buffer_ptr(handle, $0) }
+        let nativeLength = subId.withCString { nipworker_subscription_buffer_len(handle, $0) }
+        let buffer: SubscriptionBuffer
+        if registered, let nativePointer, nativeLength > 0 {
+            buffer = SubscriptionBuffer(pointer: UnsafeMutableRawPointer(nativePointer), capacity: nativeLength)
+        } else {
+            buffer = SubscriptionBuffer(capacity: bufferSize)
+            ArrayBufferReader.initializeBuffer(buffer)
+        }
 
         subscriptions[subId] = SubscriptionState(buffer: buffer, options: options, refCount: 1)
 
@@ -105,10 +153,11 @@ public actor NostrManager {
     }
 
     public func unsubscribe(subscriptionId: String) {
-        let subId = createShortId(subscriptionId)
+        let subId = subscriptionId
         guard var state = subscriptions[subId] else { return }
         state.refCount -= 1
         subscriptions[subId] = state
+        subId.withCString { nipworker_release_subscription(handle, $0) }
     }
 
     // MARK: - Publish
@@ -120,8 +169,16 @@ public actor NostrManager {
         optimisticSubIds: [String] = []
     ) -> SubscriptionBuffer {
         let bufferSize = 3072
-        let buffer = SubscriptionBuffer(capacity: bufferSize)
-        ArrayBufferReader.initializeBuffer(buffer)
+        let registered = publishId.withCString { nipworker_register_publish_buffer(handle, $0, bufferSize) }
+        let nativePointer = publishId.withCString { nipworker_subscription_buffer_ptr(handle, $0) }
+        let nativeLength = publishId.withCString { nipworker_subscription_buffer_len(handle, $0) }
+        let buffer: SubscriptionBuffer
+        if registered, let nativePointer, nativeLength > 0 {
+            buffer = SubscriptionBuffer(pointer: UnsafeMutableRawPointer(nativePointer), capacity: nativeLength)
+        } else {
+            buffer = SubscriptionBuffer(capacity: bufferSize)
+            ArrayBufferReader.initializeBuffer(buffer)
+        }
 
         let fbData = buildPublishMessage(
             publishId: publishId,
@@ -139,6 +196,11 @@ public actor NostrManager {
 
         publishes[publishId] = PublishState(buffer: buffer)
         return buffer
+    }
+
+    public func releasePublish(publishId: String) {
+        publishes.removeValue(forKey: publishId)
+        publishId.withCString { nipworker_release_subscription(handle, $0) }
     }
 
     // MARK: - Signer
@@ -207,16 +269,9 @@ public actor NostrManager {
     // MARK: - Cleanup
 
     public func cleanup() {
+        nipworker_cleanup_subscriptions(handle)
         let toDelete = subscriptions.filter { $0.value.refCount <= 0 }.map { $0.key }
         for subId in toDelete {
-            let fbData = buildUnsubscribeMessage(subId: subId)
-            fbData.withUnsafeBytes { bytes in
-                nipworker_handle_message(
-                    handle,
-                    bytes.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                    bytes.count
-                )
-            }
             subscriptions.removeValue(forKey: subId)
         }
     }
@@ -260,62 +315,42 @@ public actor NostrManager {
     // MARK: - Callback Handling
 
     private func handleNativeMessage(_ data: Data) {
-        guard data.count >= 8 else { return }
-
-        var offset = 0
-        let subIdLen = Int(readUInt32LE(data, offset))
-        offset += 4
-        guard offset + subIdLen <= data.count else { return }
-        let subIdData = data.subdata(in: offset..<offset + subIdLen)
-        let subId = String(data: subIdData, encoding: .utf8) ?? ""
-        offset += subIdLen
-
-        guard offset + 4 <= data.count else { return }
-        let payloadLen = Int(readUInt32LE(data, offset))
-        offset += 4
-        guard offset + payloadLen <= data.count else { return }
-        let payload = data.subdata(in: offset..<offset + payloadLen)
+        guard data.count >= 4 else { return }
+        let bb = ByteBuffer(data: data)
+        let rootOffset = bb.read(def: Int32.self, position: 0)
+        if rootOffset < 0 || Int(rootOffset) >= data.count { return }
+        let workerMsg = nostr_fb_WorkerMessage(bb, o: rootOffset)
+        let subId = workerMsg.subId ?? ""
 
         if subId == "crypto" {
-            handleCryptoMessage(payload)
+            handleCryptoMessage(data)
         } else if subId.isEmpty {
-            handleDirectResponse(payload)
+            handleDirectResponse(data)
         } else {
-            handleSubscriptionMessage(subId: subId, payload: payload)
+            handleSubscriptionMessage(subId: subId)
         }
     }
 
-    private func handleSubscriptionMessage(subId: String, payload: Data) {
+    private func handleSubscriptionMessage(subId: String) {
         guard subscriptions[subId] != nil || publishes[subId] != nil else {
             return
         }
 
-        var lengthPrefixed = Data()
-        var len = UInt32(payload.count).littleEndian
-        withUnsafeBytes(of: &len) { lengthPrefixed.append(contentsOf: $0) }
-        lengthPrefixed.append(payload)
-
-        if let subState = subscriptions[subId] {
-            let written = ArrayBufferReader.writeBatchedData(buffer: subState.buffer, data: lengthPrefixed, debugId: subId)
-            if written {
-                DispatchQueue.main.async {
-                    NotificationCenter.default.post(
-                        name: .nipworkerSubscriptionUpdated,
-                        object: nil,
-                        userInfo: ["subId": subId]
-                    )
-                }
+        if subscriptions[subId] != nil {
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(
+                    name: .nipworkerSubscriptionUpdated,
+                    object: nil,
+                    userInfo: ["subId": subId]
+                )
             }
-        } else if let pubState = publishes[subId] {
-            let written = ArrayBufferReader.writeBatchedData(buffer: pubState.buffer, data: lengthPrefixed, debugId: subId)
-            if written {
-                DispatchQueue.main.async {
-                    NotificationCenter.default.post(
-                        name: .nipworkerSubscriptionUpdated,
-                        object: nil,
-                        userInfo: ["subId": subId]
-                    )
-                }
+        } else if publishes[subId] != nil {
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(
+                    name: .nipworkerSubscriptionUpdated,
+                    object: nil,
+                    userInfo: ["subId": subId]
+                )
             }
         }
     }
@@ -543,13 +578,6 @@ public actor NostrManager {
         default:
             break
         }
-    }
-
-    private func readUInt32LE(_ data: Data, _ offset: Int) -> UInt32 {
-        return UInt32(data[offset]) |
-            (UInt32(data[offset + 1]) << 8) |
-            (UInt32(data[offset + 2]) << 16) |
-            (UInt32(data[offset + 3]) << 24)
     }
 
     private func parseEventDict(_ dict: [String: Any]) -> NostrEvent {

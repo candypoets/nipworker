@@ -1,6 +1,41 @@
 import Foundation
 
+public final class NipworkerHookHandle {
+    private let onCancel: () -> Void
+    private var isCancelled = false
+
+    public init(_ onCancel: @escaping () -> Void) {
+        self.onCancel = onCancel
+    }
+
+    public func cancel() {
+        guard !isCancelled else { return }
+        isCancelled = true
+        onCancel()
+    }
+
+    deinit {
+        cancel()
+    }
+}
+
 // MARK: - Callback-based subscription helpers
+
+/// Subscribe through the React Native shared runtime. Returns an unsubscribe function.
+public func useSubscription(
+    subscriptionId: String,
+    requests: [RequestObject],
+    callback: @escaping ([WorkerMessageView]) -> Void,
+    options: SubscriptionConfig = SubscriptionConfig()
+) -> () -> Void {
+    useSubscription(
+        manager: NostrManager.reactNativeShared(),
+        subscriptionId: subscriptionId,
+        requests: requests,
+        callback: callback,
+        options: options
+    )
+}
 
 /// Subscribe with a callback closure. Returns an unsubscribe function.
 /// Mirrors the JS `useSubscription` hook pattern.
@@ -14,14 +49,25 @@ public func useSubscription(
     var notificationToken: NSObjectProtocol?
     var lastReadPosition = 4
     var isActive = true
-    let canonicalSubscriptionId = manager.createShortId(subscriptionId)
+    let canonicalSubscriptionId = subscriptionId
 
     func readAvailableMessages() {
         Task {
-            let result = await manager.readWorkerMessages(for: canonicalSubscriptionId, from: lastReadPosition)
-            lastReadPosition = result.newPosition
-            if isActive, !result.messages.isEmpty {
-                callback(result.messages)
+            var position = lastReadPosition
+            var allMessages: [WorkerMessageView] = []
+
+            while true {
+                let result = await manager.readWorkerMessages(for: canonicalSubscriptionId, from: position)
+                if result.messages.isEmpty {
+                    break
+                }
+                allMessages.append(contentsOf: result.messages)
+                position = result.newPosition
+            }
+
+            lastReadPosition = position
+            if isActive, !allMessages.isEmpty {
+                callback(allMessages)
             }
         }
     }
@@ -52,6 +98,61 @@ public func useSubscription(
             await manager.unsubscribe(subscriptionId: canonicalSubscriptionId)
         }
     }
+}
+
+/// Subscribe through the React Native shared runtime. Returns a cancellable handle.
+public func useSubscriptionHandle(
+    subscriptionId: String,
+    requests: [RequestObject],
+    callback: @escaping ([WorkerMessageView]) -> Void,
+    options: SubscriptionConfig = SubscriptionConfig()
+) -> NipworkerHookHandle {
+    NipworkerHookHandle(
+        useSubscription(
+            subscriptionId: subscriptionId,
+            requests: requests,
+            callback: callback,
+            options: options
+        )
+    )
+}
+
+/// Subscribe with a callback closure. Returns a cancellable handle.
+/// This is the native component-friendly form of the JS `useSubscription` API.
+public func useSubscriptionHandle(
+    manager: NostrManager,
+    subscriptionId: String,
+    requests: [RequestObject],
+    callback: @escaping ([WorkerMessageView]) -> Void,
+    options: SubscriptionConfig = SubscriptionConfig()
+) -> NipworkerHookHandle {
+    NipworkerHookHandle(
+        useSubscription(
+            manager: manager,
+            subscriptionId: subscriptionId,
+            requests: requests,
+            callback: callback,
+            options: options
+        )
+    )
+}
+
+/// Publish through the React Native shared runtime. Returns an unsubscribe function.
+public func usePublish(
+    publishId: String,
+    event: NostrEvent,
+    callback: @escaping ([String: PublishStatus]) -> Void,
+    defaultRelays: [String] = [],
+    optimisticSubIds: [String] = []
+) -> () -> Void {
+    usePublish(
+        manager: NostrManager.reactNativeShared(),
+        publishId: publishId,
+        event: event,
+        callback: callback,
+        defaultRelays: defaultRelays,
+        optimisticSubIds: optimisticSubIds
+    )
 }
 
 /// Publish with a callback for status updates. Returns an unsubscribe function.
@@ -87,10 +188,23 @@ public func usePublish(
                   updatedPubId == publishId else { return }
 
             Task {
-                let result = await manager.readPublishStatuses(for: publishId, from: lastReadPosition)
-                lastReadPosition = result.newPosition
-                if !result.statuses.isEmpty {
-                    callback(result.statuses)
+                var position = lastReadPosition
+                var merged: [String: PublishStatus] = [:]
+
+                while true {
+                    let result = await manager.readPublishStatuses(for: publishId, from: position)
+                    if result.statuses.isEmpty {
+                        break
+                    }
+                    for (url, status) in result.statuses {
+                        merged[url] = status
+                    }
+                    position = result.newPosition
+                }
+
+                lastReadPosition = position
+                if !merged.isEmpty {
+                    callback(merged)
                 }
             }
         }
@@ -101,7 +215,58 @@ public func usePublish(
         if let token = notificationToken {
             NotificationCenter.default.removeObserver(token)
         }
+        Task {
+            await manager.releasePublish(publishId: publishId)
+        }
     }
+}
+
+/// Publish through the React Native shared runtime. Returns a cancellable handle.
+public func usePublishHandle(
+    publishId: String,
+    event: NostrEvent,
+    callback: @escaping ([String: PublishStatus]) -> Void,
+    defaultRelays: [String] = [],
+    optimisticSubIds: [String] = []
+) -> NipworkerHookHandle {
+    NipworkerHookHandle(
+        usePublish(
+            publishId: publishId,
+            event: event,
+            callback: callback,
+            defaultRelays: defaultRelays,
+            optimisticSubIds: optimisticSubIds
+        )
+    )
+}
+
+/// Publish with a callback for status updates. Returns a cancellable handle.
+/// This is the native component-friendly form of the JS `usePublish` API.
+public func usePublishHandle(
+    manager: NostrManager,
+    publishId: String,
+    event: NostrEvent,
+    callback: @escaping ([String: PublishStatus]) -> Void,
+    defaultRelays: [String] = [],
+    optimisticSubIds: [String] = []
+) -> NipworkerHookHandle {
+    NipworkerHookHandle(
+        usePublish(
+            manager: manager,
+            publishId: publishId,
+            event: event,
+            callback: callback,
+            defaultRelays: defaultRelays,
+            optimisticSubIds: optimisticSubIds
+        )
+    )
+}
+
+/// Relay status helper using the React Native shared runtime.
+public func useRelayStatus(
+    onStatus: @escaping (String, RelayStatus) -> Void
+) -> () -> Void {
+    useRelayStatus(manager: NostrManager.reactNativeShared(), onStatus: onStatus)
 }
 
 /// Relay status helper. Immediately calls handler with current statuses,

@@ -8,17 +8,49 @@
  */
 
 import { AppState, NativeEventEmitter, NativeModules, type AppStateStatus } from 'react-native';
+import * as flatbuffers from 'flatbuffers';
 
-import { NativeBackend, type NativeRuntimeBridge } from './NativeBackend';
+import { ArrayBufferReader } from './lib/ArrayBufferReader';
+import { BaseBackend, type StorageAdapter } from './lib/BaseBackend';
 import { getManager, setManager, setGlobalManager } from './manager';
 import type { NostrManagerLike } from './manager';
-import type { NostrManagerConfig } from './types';
-import type { StorageAdapter } from './lib/BaseBackend';
+import type { NostrManagerConfig, RequestObject, SubscriptionConfig } from './types';
+import type { EventTemplate, NostrEvent } from 'nostr-tools';
+import {
+	GetPublicKeyT,
+	MainContent,
+	MainMessageT,
+	MessageType,
+	MuteFilterPipeConfigT,
+	Nip46BunkerT,
+	Nip46QRT,
+	ParsePipeConfigT,
+	PipeConfig,
+	PipelineConfigT,
+	PipeT,
+	Pubkey,
+	PublishT,
+	Raw,
+	RequestT,
+	SaveToDbPipeConfigT,
+	SerializeEventsPipeConfigT,
+	SetSignerT,
+	SignEventT,
+	SignedEvent,
+	SignerType,
+	StringVec,
+	StringVecT,
+	SubscribeT,
+	SubscriptionConfigT,
+	TemplateT,
+	UnsubscribeT,
+	WorkerMessage
+} from './generated/nostr/fb';
 import NativeNipworkerReactNative from './specs/NativeNipworkerReactNative';
 
 const REACT_NATIVE_EVENT_NAME = 'NipworkerEvent';
 const memoryStorage = new Map<string, string>();
-let reactNativeBackendInstance: ReactNativeBackend | undefined;
+let reactNativeBackendInstance: ReactNativeManager | undefined;
 
 type ByteRuntime = {
 	init(config?: NostrManagerConfig): void;
@@ -27,6 +59,26 @@ type ByteRuntime = {
 	setPrivateKey(secret: string): void;
 	deinit(): void;
 	drain(): ArrayBuffer[];
+	registerSubscription?(subId: string, bufferSize: number): boolean;
+	registerPublishBuffer?(publishId: string, bufferSize: number): boolean;
+	retainSubscription?(subId: string): boolean;
+	releaseSubscription?(subId: string): void;
+	getSubscriptionBuffer?(subId: string): ArrayBuffer | undefined;
+	cleanupSubscriptions?(): void;
+};
+
+type ReactNativeModuleFacade = {
+	init(config?: NostrManagerConfig): void;
+	handleMessage(bytes: Uint8Array | ArrayBuffer): void;
+	wake(): void;
+	setPrivateKey(secret: string): void;
+	deinit(): void;
+	registerSubscription(subId: string, bufferSize: number): boolean;
+	registerPublishBuffer(publishId: string, bufferSize: number): boolean;
+	retainSubscription(subId: string): boolean;
+	releaseSubscription(subId: string): void;
+	getSubscriptionBuffer(subId: string): ArrayBuffer | undefined;
+	cleanupSubscriptions(): void;
 };
 
 function toExactUint8Array(bytes: Uint8Array | ArrayBuffer): Uint8Array {
@@ -91,11 +143,11 @@ function getReactNativeModule(): any {
 	return mod;
 }
 
-const reactNativeBridge: NativeRuntimeBridge = {
+const reactNativeBridge = {
 	name: 'react-native',
 	eventName: REACT_NATIVE_EVENT_NAME,
 	storage: reactNativeStorageAdapter,
-	getModule(): any {
+	getModule(): ReactNativeModuleFacade {
 		const mod = getReactNativeModule();
 		return {
 			init(config?: NostrManagerConfig): void {
@@ -160,6 +212,30 @@ const reactNativeBridge: NativeRuntimeBridge = {
 				} else {
 					mod.deinit();
 				}
+			},
+			registerSubscription(subId: string, bufferSize: number): boolean {
+				const byteRuntime = getByteRuntime();
+				return byteRuntime?.registerSubscription?.(subId, bufferSize) === true;
+			},
+			registerPublishBuffer(publishId: string, bufferSize: number): boolean {
+				const byteRuntime = getByteRuntime();
+				return byteRuntime?.registerPublishBuffer?.(publishId, bufferSize) === true;
+			},
+			retainSubscription(subId: string): boolean {
+				const byteRuntime = getByteRuntime();
+				return byteRuntime?.retainSubscription?.(subId) === true;
+			},
+			releaseSubscription(subId: string): void {
+				const byteRuntime = getByteRuntime();
+				byteRuntime?.releaseSubscription?.(subId);
+			},
+			getSubscriptionBuffer(subId: string): ArrayBuffer | undefined {
+				const byteRuntime = getByteRuntime();
+				return byteRuntime?.getSubscriptionBuffer?.(subId);
+			},
+			cleanupSubscriptions(): void {
+				const byteRuntime = getByteRuntime();
+				byteRuntime?.cleanupSubscriptions?.();
 			}
 		};
 	},
@@ -229,12 +305,46 @@ const reactNativeBridge: NativeRuntimeBridge = {
 	}
 };
 
-export class ReactNativeBackend extends NativeBackend {
+function eventDataToBytes(event: any): Uint8Array | null {
+	if (event instanceof Uint8Array) return event;
+	if (event instanceof ArrayBuffer) return new Uint8Array(event);
+	if (ArrayBuffer.isView(event)) return new Uint8Array(event.buffer, event.byteOffset, event.byteLength);
+	if (Array.isArray(event)) return new Uint8Array(event);
+	if (!event || typeof event !== 'object') return null;
+	if (event.v === 1 && event.encoding === 'bytes') return eventDataToBytes(event.data);
+	return null;
+}
+
+export class ReactNativeManager extends BaseBackend {
 	private appStateSubscription: { remove: () => void } | undefined;
 	private appState = AppState.currentState;
+	private nativeModule: ReactNativeModuleFacade;
+	private eventEmitter: any;
+	private eventListener: ((arg: any) => void) | undefined;
+	private deinitialized = false;
+	private _signCB = (_event: NostrEvent) => {};
+	private readonly useByteRuntime: boolean;
+	private nativeSubscriptionReadPos = new Map<string, number>();
+	private nativePublishReadPos = new Map<string, number>();
 
 	constructor(config: NostrManagerConfig = {}) {
-		super(config, reactNativeBridge);
+		super(reactNativeStorageAdapter);
+		this.nativeModule = reactNativeBridge.getModule();
+		this.nativeModule.init(config);
+		this.useByteRuntime = !!getByteRuntime();
+		this.eventEmitter = reactNativeBridge.getEventEmitter();
+		this.eventListener = (arg: any) => {
+			if (this.deinitialized) return;
+			const event = Array.isArray(arg) ? arg[0] : arg;
+			const decoded = eventDataToBytes(event);
+			if (!decoded) return;
+			if (this.useByteRuntime) {
+				this.handleNativeWake(decoded);
+				return;
+			}
+			this.handleNativeMessage(decoded);
+		};
+		this.eventEmitter.addListener(REACT_NATIVE_EVENT_NAME, this.eventListener);
 		this.appStateSubscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
 			const wasActive = this.appState === 'active';
 			const wasBackgrounded = this.appState === 'background' || this.appState === 'inactive';
@@ -244,23 +354,385 @@ export class ReactNativeBackend extends NativeBackend {
 				this.cleanup();
 			}
 			if (wasBackgrounded && nextState === 'active') {
-				this.wakeNative();
+				this.nativeModule.wake();
 			}
 		});
+		setManager(this);
+		Promise.resolve().then(() => this.restoreSession());
 	}
 
-	override deinit(): void {
+	isDeinitialized(): boolean {
+		return this.deinitialized;
+	}
+
+	private postMessage(bytes: Uint8Array): void {
+		this.nativeModule.handleMessage(bytes.slice().buffer);
+	}
+
+	private handleNativeWake(data: Uint8Array): void {
+		let subId = '';
+		try {
+			const bb = new flatbuffers.ByteBuffer(data);
+			const workerMsg = WorkerMessage.getRootAsWorkerMessage(bb);
+			subId = workerMsg.subId() ?? '';
+		} catch {
+			return;
+		}
+		if (subId === 'crypto') {
+			this.handleCryptoMessage(data);
+			return;
+		}
+		if (subId === '') {
+			this.handleDirectResponse(data);
+			return;
+		}
+		if (this.subscriptions.has(subId)) {
+			this.drainNativeBuffer(
+				subId,
+				this.subscriptions.get(subId)?.buffer,
+				this.nativeSubscriptionReadPos,
+				'subscription'
+			);
+			return;
+		}
+		if (this.publishes.has(subId)) {
+			this.drainNativeBuffer(subId, this.publishes.get(subId)?.buffer, this.nativePublishReadPos, 'publish');
+		}
+	}
+
+	private drainNativeBuffer(
+		subId: string,
+		buffer: ArrayBuffer | undefined,
+		readPositions: Map<string, number>,
+		kind: 'subscription' | 'publish'
+	): void {
+		if (!buffer) return;
+		const lastReadPosition = readPositions.get(subId) ?? 4;
+		const result = ArrayBufferReader.readMessages(buffer, lastReadPosition, subId);
+		if (result.hasNewData) {
+			readPositions.set(subId, result.newReadPosition);
+			this.dispatch(kind === 'publish' ? `publish:${subId}` : `subscription:${subId}`, subId);
+		}
+	}
+
+	private handleNativeMessage(data: Uint8Array): void {
+		let subId = '';
+		try {
+			const bb = new flatbuffers.ByteBuffer(data);
+			const workerMsg = WorkerMessage.getRootAsWorkerMessage(bb);
+			subId = workerMsg.subId() ?? '';
+		} catch {
+			return;
+		}
+
+		if (subId === 'crypto') {
+			this.handleCryptoMessage(data);
+			return;
+		}
+		if (subId === '') {
+			this.handleDirectResponse(data);
+			return;
+		}
+		if (this.subscriptions.has(subId)) {
+			this.dispatch(`subscription:${subId}`, subId);
+			return;
+		}
+		if (this.publishes.has(subId)) {
+			this.dispatch(`publish:${subId}`, subId);
+		}
+	}
+
+	private handleDirectResponse(payload: Uint8Array): void {
+		if (payload.length < 4) return;
+		const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+		const msgLen = view.getUint32(0, true);
+		const maybeLenPrefixed = payload.length >= 4 + msgLen && msgLen > 0;
+		const bb = new flatbuffers.ByteBuffer(
+			maybeLenPrefixed ? payload.subarray(4, 4 + msgLen) : payload
+		);
+		const workerMsg = WorkerMessage.getRootAsWorkerMessage(bb);
+		if (workerMsg.type() !== MessageType.Pubkey) return;
+		const pubkeyObj = workerMsg.content(new Pubkey());
+		const pubkey = pubkeyObj ? pubkeyObj.pubkey() : null;
+		if (pubkey) {
+			this.activePubkey = pubkey;
+			const secretKey = this._pendingSession?.type === 'privkey' ? this._pendingSession.payload : undefined;
+			if (this._pendingSession) {
+				this.saveSession(pubkey, this._pendingSession.type, this._pendingSession.payload);
+				this._pendingSession = null;
+			}
+			this.dispatch('auth', { pubkey: this.activePubkey, hasSigner: true, secretKey });
+		} else {
+			this.dispatch('auth', { pubkey: null, hasSigner: false });
+		}
+	}
+
+	private handleCryptoMessage(payload: Uint8Array): void {
+		const bb = new flatbuffers.ByteBuffer(payload);
+		const workerMsg = WorkerMessage.getRootAsWorkerMessage(bb);
+		if (workerMsg.type() !== MessageType.Raw) return;
+		const rawObj = workerMsg.content(new Raw());
+		const rawStr = rawObj ? rawObj.raw() : null;
+		if (!rawStr) return;
+		try {
+			const msg = JSON.parse(rawStr);
+			if (msg.op === 'get_public_key' || msg.op === 'set_signer') {
+				const secretKey = this._pendingSession?.type === 'privkey' ? this._pendingSession.payload : undefined;
+				if (msg.result) {
+					this.activePubkey = msg.result;
+					if (this._pendingSession) {
+						const sessionPayload =
+							this._pendingSession.type === 'nip46' &&
+							typeof msg.bunker_url === 'string' &&
+							msg.bunker_url.startsWith('bunker://') &&
+							this._pendingSession.payload &&
+							typeof this._pendingSession.payload === 'object'
+								? { ...this._pendingSession.payload, url: msg.bunker_url }
+								: this._pendingSession.payload;
+						this.saveSession(this.activePubkey!, this._pendingSession.type, sessionPayload);
+						this._pendingSession = null;
+					}
+				}
+				this.dispatch('auth', { pubkey: this.activePubkey, hasSigner: !!msg.result, secretKey });
+			} else if (msg.op === 'sign_event' && msg.result) {
+				this._signCB(JSON.parse(msg.result));
+			} else if (msg.error) {
+				console.warn('[ReactNativeManager] Crypto error:', msg.error);
+			}
+		} catch (e) {
+			console.warn('[ReactNativeManager] Failed to parse crypto raw message:', e);
+		}
+	}
+
+	subscribe(
+		subscriptionId: string,
+		requests: RequestObject[],
+		options: SubscriptionConfig
+	): ArrayBuffer {
+		const subId = subscriptionId;
+		const existing = this.subscriptions.get(subId);
+		if (existing) {
+			existing.refCount++;
+			this.nativeModule.retainSubscription(subId);
+			return existing.buffer;
+		}
+
+		const totalLimit = requests.reduce((sum, req) => sum + (req.limit || 100), 0);
+		const bufferSize = ArrayBufferReader.calculateBufferSize(totalLimit, options.bytesPerEvent);
+		if (!this.nativeModule.registerSubscription(subId, bufferSize)) {
+			throw new Error('[ReactNativeManager] native subscription buffers are unavailable');
+		}
+		const buffer = this.nativeModule.getSubscriptionBuffer(subId);
+		if (!(buffer instanceof ArrayBuffer)) {
+			this.nativeModule.releaseSubscription(subId);
+			throw new Error('[ReactNativeManager] native subscription buffer unavailable');
+		}
+		this.subscriptions.set(subId, { buffer, options, refCount: 1, nativeOwned: true });
+
+		const pipeline =
+			options.pipeline !== undefined
+				? new PipelineConfigT(options.pipeline)
+				: new PipelineConfigT([
+						new PipeT(PipeConfig.MuteFilterPipeConfig, new MuteFilterPipeConfigT()),
+						new PipeT(PipeConfig.ParsePipeConfig, new ParsePipeConfigT()),
+						new PipeT(PipeConfig.SaveToDbPipeConfig, new SaveToDbPipeConfigT()),
+						new PipeT(PipeConfig.SerializeEventsPipeConfig, new SerializeEventsPipeConfigT(subId))
+					]);
+		const optionsT = new SubscriptionConfigT(
+			pipeline,
+			options.closeOnEose,
+			options.cacheFirst,
+			options.timeoutMs ? BigInt(options.timeoutMs) : undefined,
+			options.maxEvents,
+			options.skipCache,
+			options.force,
+			options.bytesPerEvent,
+			options.isSlow,
+			options.pagination ? this.textEncoder.encode(options.pagination) : null
+		);
+		const subscribeT = new SubscribeT(
+			this.textEncoder.encode(subId),
+			requests.map(
+				(r) =>
+					new RequestT(
+						r.ids,
+						r.authors,
+						r.kinds,
+						Object.entries(r.tags || {}).flatMap(([key, values]) => new StringVecT([key, ...values])),
+						r.limit,
+						r.since,
+						r.until,
+						r.search ? this.textEncoder.encode(r.search) : null,
+						r.relays,
+						r.closeOnEOSE,
+						r.cacheFirst,
+						r.noCache
+					)
+			),
+			optionsT
+		);
+		const mainT = new MainMessageT(MainContent.Subscribe, subscribeT);
+		const builder = new flatbuffers.Builder(2048);
+		builder.finish(mainT.pack(builder));
+		this.postMessage(builder.asUint8Array());
+		this.nativeSubscriptionReadPos.set(subId, 4);
+		return buffer;
+	}
+
+	override getBuffer(subId: string): ArrayBuffer | undefined {
+		const existing = this.subscriptions.get(subId);
+		if (!existing) return undefined;
+		existing.refCount++;
+		this.nativeModule.retainSubscription(subId);
+		return existing.buffer;
+	}
+
+	override unsubscribe(subscriptionId: string): void {
+		const subscription = this.subscriptions.get(subscriptionId);
+		if (!subscription) return;
+		subscription.refCount--;
+		if (subscription.refCount <= 0) {
+			this.nativeSubscriptionReadPos.delete(subscriptionId);
+		}
+		this.nativeModule.releaseSubscription(subscriptionId);
+	}
+
+	publish(
+		publish_id: string,
+		event: NostrEvent,
+		defaultRelays: string[] = [],
+		optimisticSubIds?: string[]
+	): ArrayBuffer {
+		const bufferSize = 3072;
+		if (!this.nativeModule.registerPublishBuffer(publish_id, bufferSize)) {
+			throw new Error(`[ReactNativeManager] Failed to register native publish buffer '${publish_id}'`);
+		}
+		const buffer = this.nativeModule.getSubscriptionBuffer(publish_id);
+		if (!(buffer instanceof ArrayBuffer)) {
+			this.nativeModule.releaseSubscription(publish_id);
+			throw new Error(`[ReactNativeManager] Failed to get native publish buffer '${publish_id}'`);
+		}
+		const templateT = new TemplateT(
+			event.kind,
+			event.created_at,
+			this.textEncoder.encode(event.content),
+			event.tags.map((t) => new StringVecT(t)) || []
+		);
+		const publishT = new PublishT(
+			this.textEncoder.encode(publish_id),
+			templateT,
+			defaultRelays,
+			optimisticSubIds || []
+		);
+		const mainT = new MainMessageT(MainContent.Publish, publishT);
+		const builder = new flatbuffers.Builder(2048);
+		builder.finish(mainT.pack(builder));
+		this.postMessage(builder.asUint8Array());
+		this.publishes.set(publish_id, { buffer });
+		this.nativePublishReadPos.set(publish_id, 4);
+		return buffer;
+	}
+
+	releasePublish(publish_id: string): void {
+		if (!this.publishes.has(publish_id)) return;
+		this.publishes.delete(publish_id);
+		this.nativePublishReadPos.delete(publish_id);
+		this.nativeModule.releaseSubscription(publish_id);
+	}
+
+	setSigner(name: string, payload?: string | { url: string; clientSecret: string }): void {
+		this._pendingSession = { type: name, payload };
+		switch (name) {
+			case 'pubkey':
+				this.activePubkey = payload as string;
+				this.saveSession(this.activePubkey, 'pubkey', payload);
+				this._pendingSession = null;
+				this.dispatch('auth', { pubkey: this.activePubkey, hasSigner: false });
+				break;
+			case 'privkey':
+				this.nativeModule.setPrivateKey(payload as string);
+				this.getPublicKey();
+				break;
+			case 'nip07':
+				console.warn('[ReactNativeManager] NIP-07 is not supported in React Native');
+				this.dispatch('auth', { pubkey: null, hasSigner: false });
+				break;
+			case 'nip46': {
+				const nip46Payload = payload as { url: string; clientSecret: string } | undefined;
+				const url = nip46Payload?.url || '';
+				const clientSecret = nip46Payload?.clientSecret;
+				const signerT = url.startsWith('bunker://')
+					? new SetSignerT(SignerType.Nip46Bunker, new Nip46BunkerT(url, clientSecret))
+					: url.startsWith('nostrconnect://')
+						? new SetSignerT(SignerType.Nip46QR, new Nip46QRT(url, clientSecret))
+						: null;
+				if (!signerT) {
+					this._pendingSession = null;
+					this.dispatch('auth', { pubkey: null, hasSigner: false });
+					return;
+				}
+				const mainT = new MainMessageT(MainContent.SetSigner, signerT);
+				const builder = new flatbuffers.Builder(2048);
+				builder.finish(mainT.pack(builder));
+				this.postMessage(builder.asUint8Array());
+				break;
+			}
+		}
+	}
+
+	signEvent(event: EventTemplate, cb: (event: NostrEvent) => void): void {
+		this._signCB = cb;
+		const templateT = new TemplateT(
+			event.kind,
+			event.created_at,
+			this.textEncoder.encode(event.content),
+			event.tags.map((t) => new StringVecT(t)) || []
+		);
+		const signEventT = new SignEventT(templateT);
+		const mainT = new MainMessageT(MainContent.SignEvent, signEventT);
+		const builder = new flatbuffers.Builder(2048);
+		builder.finish(mainT.pack(builder));
+		this.postMessage(builder.asUint8Array());
+	}
+
+	getPublicKey(): void {
+		const mainT = new MainMessageT(MainContent.GetPublicKey, new GetPublicKeyT());
+		const builder = new flatbuffers.Builder(2048);
+		builder.finish(mainT.pack(builder));
+		this.postMessage(builder.asUint8Array());
+	}
+
+	protected onLogout(): void {}
+
+	cleanup(): void {
+		this.nativeModule.cleanupSubscriptions();
+		for (const [subId, subscription] of this.subscriptions.entries()) {
+			if (subscription.refCount <= 0 && !this.PERPETUAL_SUBSCRIPTIONS.includes(subId)) {
+				this.subscriptions.delete(subId);
+				this.nativeSubscriptionReadPos.delete(subId);
+			}
+		}
+	}
+
+	deinit(): void {
+		this.deinitialized = true;
 		this.appStateSubscription?.remove();
 		this.appStateSubscription = undefined;
-		super.deinit();
+		if (this.eventListener) {
+			this.eventEmitter?.removeListener(REACT_NATIVE_EVENT_NAME, this.eventListener);
+			this.eventListener = undefined;
+		}
+		this.nativeModule.deinit();
 	}
 }
 
-export function getOrCreateReactNativeBackend(config: NostrManagerConfig = {}): ReactNativeBackend {
+export { ReactNativeManager as ReactNativeBackend };
+
+export function getOrCreateReactNativeBackend(config: NostrManagerConfig = {}): ReactNativeManager {
 	if (reactNativeBackendInstance && !reactNativeBackendInstance.isDeinitialized()) {
 		return reactNativeBackendInstance;
 	}
-	reactNativeBackendInstance = new ReactNativeBackend(config);
+	reactNativeBackendInstance = new ReactNativeManager(config);
 	return reactNativeBackendInstance;
 }
 

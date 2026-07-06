@@ -78,13 +78,13 @@ export function useSubscription(
 		if (processing) return;
 		processing = true;
 		try {
-			let result = ArrayBufferReader.readMessages(buffer, lastReadPos);
+			let result = ArrayBufferReader.readMessages(buffer, lastReadPos, subId);
 			while (result.hasNewData && buffer) {
 				for (const message of result.messages) {
 					callback(message);
 				}
 				lastReadPos = result.newReadPosition;
-				result = ArrayBufferReader.readMessages(buffer, lastReadPos);
+				result = ArrayBufferReader.readMessages(buffer, lastReadPos, subId);
 			}
 		} catch (e) {
 			console.error('[useSubscription processEvents] error:', e);
@@ -155,6 +155,7 @@ export function usePublish(
 	const unsubscribe = (): void => {
 		running = false;
 		getManager().removeEventListener(`publish:${pubId}`, processEvents);
+		getManager().releasePublish?.(pubId);
 	};
 
 	const optimisticSubIds = options.subId
@@ -168,7 +169,7 @@ export function usePublish(
 		if (!running || !buffer) {
 			return;
 		}
-		const result = ArrayBufferReader.readMessages(buffer, lastReadPos);
+		const result = ArrayBufferReader.readMessages(buffer, lastReadPos, pubId);
 		if (result.hasNewData) {
 			result.messages.forEach((message: WorkerMessage) => {
 				callback(message);

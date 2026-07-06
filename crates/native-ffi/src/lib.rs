@@ -4,6 +4,7 @@ mod jni;
 use futures::StreamExt;
 use nipworker_core::service::engine::NostrEngine;
 use nipworker_core::storage::{NostrDbStorage, PersistentNostrDbStorage};
+use std::collections::HashMap;
 use std::ffi::{c_char, c_void, CStr};
 use std::path::PathBuf;
 use std::slice;
@@ -70,9 +71,97 @@ enum EngineCommand {
     Wake,
 }
 
+struct NativeSubscription {
+    buffer: Vec<u8>,
+    ref_count: i32,
+    close_on_cleanup: bool,
+}
+
+impl NativeSubscription {
+    fn new(buffer_size: usize, close_on_cleanup: bool) -> Self {
+        let size = buffer_size.max(4);
+        let mut buffer = vec![0; size];
+        buffer[0..4].copy_from_slice(&4u32.to_le_bytes());
+        Self {
+            buffer,
+            ref_count: 1,
+            close_on_cleanup,
+        }
+    }
+
+    fn append_payload(&mut self, payload: &[u8]) -> bool {
+        let write_pos = u32::from_le_bytes([
+            self.buffer[0],
+            self.buffer[1],
+            self.buffer[2],
+            self.buffer[3],
+        ]) as usize;
+        let required = 4 + payload.len();
+        if write_pos + required > self.buffer.len() {
+            return false;
+        }
+        self.buffer[write_pos..write_pos + 4]
+            .copy_from_slice(&(payload.len() as u32).to_le_bytes());
+        self.buffer[write_pos + 4..write_pos + 4 + payload.len()].copy_from_slice(payload);
+        let next_pos = (write_pos + required) as u32;
+        self.buffer[0..4].copy_from_slice(&next_pos.to_le_bytes());
+        true
+    }
+}
+
+struct NativeSubscriptionStore {
+    subscriptions: HashMap<String, NativeSubscription>,
+}
+
+impl NativeSubscriptionStore {
+    fn new() -> Self {
+        Self {
+            subscriptions: HashMap::new(),
+        }
+    }
+
+    fn register(&mut self, sub_id: String, buffer_size: usize, close_on_cleanup: bool) {
+        if let Some(existing) = self.subscriptions.get_mut(&sub_id) {
+            existing.ref_count += 1;
+            return;
+        }
+        self.subscriptions.insert(
+            sub_id,
+            NativeSubscription::new(buffer_size, close_on_cleanup),
+        );
+    }
+
+    fn retain(&mut self, sub_id: &str) -> bool {
+        if let Some(existing) = self.subscriptions.get_mut(sub_id) {
+            existing.ref_count += 1;
+            return true;
+        }
+        false
+    }
+
+    fn release(&mut self, sub_id: &str) {
+        if let Some(existing) = self.subscriptions.get_mut(sub_id) {
+            existing.ref_count -= 1;
+        }
+    }
+
+    fn append_payload(&mut self, sub_id: &str, payload: &[u8]) -> Result<(), bool> {
+        if let Some(existing) = self.subscriptions.get_mut(sub_id) {
+            let written = existing.append_payload(payload);
+            if !written {
+                let close_on_cleanup = existing.close_on_cleanup;
+                self.subscriptions.remove(sub_id);
+                return Err(close_on_cleanup);
+            }
+        }
+        Ok(())
+    }
+}
+
 struct NipworkerState {
     destroyed: bool,
     cmd_tx: Option<UnboundedSender<EngineCommand>>,
+    subscriptions: Arc<Mutex<NativeSubscriptionStore>>,
 }
 
 /// Opaque handle
@@ -102,6 +191,29 @@ fn build_set_private_key_message(secret: &str) -> Vec<u8> {
         &fb::MainMessageArgs {
             content_type: fb::MainContent::SetSigner,
             content: Some(set_signer.as_union_value()),
+        },
+    );
+    builder.finish(main_msg, None);
+    builder.finished_data().to_vec()
+}
+
+fn build_unsubscribe_message(subscription_id: &str) -> Vec<u8> {
+    use flatbuffers::FlatBufferBuilder;
+    use nipworker_core::generated::nostr::fb;
+
+    let mut builder = FlatBufferBuilder::new();
+    let sub_id_offset = builder.create_string(subscription_id);
+    let unsubscribe = fb::Unsubscribe::create(
+        &mut builder,
+        &fb::UnsubscribeArgs {
+            subscription_id: Some(sub_id_offset),
+        },
+    );
+    let main_msg = fb::MainMessage::create(
+        &mut builder,
+        &fb::MainMessageArgs {
+            content_type: fb::MainContent::Unsubscribe,
+            content: Some(unsubscribe.as_union_value()),
         },
     );
     builder.finish(main_msg, None);
@@ -190,9 +302,12 @@ pub extern "C" fn nipworker_init_with_config(
     }));
 
     let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel::<EngineCommand>();
+    let subscriptions = Arc::new(Mutex::new(NativeSubscriptionStore::new()));
 
     // Cast userdata to usize so it can be moved into the spawned thread.
     let userdata = userdata as usize;
+    let callback_subscriptions = subscriptions.clone();
+    let callback_cmd_tx = cmd_tx.clone();
 
     // Spawn engine thread
     thread::spawn(move || {
@@ -233,14 +348,41 @@ pub extern "C" fn nipworker_init_with_config(
             // nipworker_free_bytes() after copying to avoid leaking memory.
             tokio::task::spawn_local(async move {
                 while let Some((sub_id, bytes)) = async_event_rx.next().await {
-                    let sub_id_bytes = sub_id.as_bytes();
-                    let mut payload = Vec::with_capacity(8 + sub_id_bytes.len() + bytes.len());
-                    payload.extend_from_slice(&(sub_id_bytes.len() as u32).to_le_bytes());
-                    payload.extend_from_slice(sub_id_bytes);
-                    payload.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
-                    payload.extend_from_slice(&bytes);
-                    let len = payload.len();
-                    let ptr = Box::into_raw(payload.into_boxed_slice()) as *const u8;
+                    let mut should_forward = true;
+                    let mut should_unsubscribe = false;
+                    let sub_id_len = sub_id.len();
+                    let payload_len = bytes.len();
+                    if let Ok(mut subscriptions) = callback_subscriptions.lock() {
+                        match subscriptions.append_payload(&sub_id, &bytes) {
+                            Ok(()) => {}
+                            Err(close_on_cleanup) => {
+                                should_forward = false;
+                                should_unsubscribe = close_on_cleanup;
+                            }
+                        }
+                    }
+                    if !should_forward {
+                        log::warn!(
+                            "[nipworker-native] native buffer full for subId={} (subIdLen={}, payloadLen={})",
+                            sub_id,
+                            sub_id_len,
+                            payload_len
+                        );
+                        if should_unsubscribe {
+                            let _ = callback_cmd_tx.send(EngineCommand::HandleMessage(
+                                build_unsubscribe_message(&sub_id),
+                            ));
+                        }
+                        continue;
+                    }
+                    log::debug!(
+                        "[nipworker-native] queueing callback for subId={} (subIdLen={}, payloadLen={})",
+                        sub_id,
+                        sub_id_len,
+                        payload_len
+                    );
+                    let len = bytes.len();
+                    let ptr = Box::into_raw(bytes.into_boxed_slice()) as *const u8;
                     callback(userdata as *mut c_void, ptr, len);
                 }
             });
@@ -270,6 +412,7 @@ pub extern "C" fn nipworker_init_with_config(
         state: Mutex::new(NipworkerState {
             destroyed: false,
             cmd_tx: Some(cmd_tx),
+            subscriptions,
         }),
     });
     Box::into_raw(handle) as *mut c_void
@@ -326,6 +469,192 @@ pub unsafe extern "C" fn nipworker_set_private_key(handle: *mut c_void, ptr: *co
     }
 }
 
+#[no_mangle]
+pub unsafe extern "C" fn nipworker_register_subscription(
+    handle: *mut c_void,
+    sub_id: *const c_char,
+    buffer_size: usize,
+) -> bool {
+    if handle.is_null() || sub_id.is_null() {
+        return false;
+    }
+    let handle = unsafe { &*(handle as *mut NipworkerHandle) };
+    let sub_id = unsafe { CStr::from_ptr(sub_id) }
+        .to_string_lossy()
+        .to_string();
+    if let Ok(state) = handle.state.lock() {
+        if state.destroyed {
+            return false;
+        }
+        if let Ok(mut subscriptions) = state.subscriptions.lock() {
+            subscriptions.register(sub_id, buffer_size, true);
+            return true;
+        }
+    }
+    false
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn nipworker_register_publish_buffer(
+    handle: *mut c_void,
+    publish_id: *const c_char,
+    buffer_size: usize,
+) -> bool {
+    if handle.is_null() || publish_id.is_null() {
+        return false;
+    }
+    let handle = unsafe { &*(handle as *mut NipworkerHandle) };
+    let publish_id = unsafe { CStr::from_ptr(publish_id) }
+        .to_string_lossy()
+        .to_string();
+    if let Ok(state) = handle.state.lock() {
+        if state.destroyed {
+            return false;
+        }
+        if let Ok(mut subscriptions) = state.subscriptions.lock() {
+            subscriptions.register(publish_id, buffer_size, false);
+            return true;
+        }
+    }
+    false
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn nipworker_retain_subscription(
+    handle: *mut c_void,
+    sub_id: *const c_char,
+) -> bool {
+    if handle.is_null() || sub_id.is_null() {
+        return false;
+    }
+    let handle = unsafe { &*(handle as *mut NipworkerHandle) };
+    let sub_id = unsafe { CStr::from_ptr(sub_id) }.to_string_lossy();
+    if let Ok(state) = handle.state.lock() {
+        if state.destroyed {
+            return false;
+        }
+        if let Ok(mut subscriptions) = state.subscriptions.lock() {
+            return subscriptions.retain(&sub_id);
+        }
+    }
+    false
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn nipworker_release_subscription(
+    handle: *mut c_void,
+    sub_id: *const c_char,
+) {
+    if handle.is_null() || sub_id.is_null() {
+        return;
+    }
+    let handle = unsafe { &*(handle as *mut NipworkerHandle) };
+    let sub_id = unsafe { CStr::from_ptr(sub_id) }.to_string_lossy();
+    if let Ok(state) = handle.state.lock() {
+        if state.destroyed {
+            return;
+        }
+        if let Ok(mut subscriptions) = state.subscriptions.lock() {
+            subscriptions.release(&sub_id);
+        }
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn nipworker_subscription_buffer_ptr(
+    handle: *mut c_void,
+    sub_id: *const c_char,
+) -> *mut u8 {
+    if handle.is_null() || sub_id.is_null() {
+        return std::ptr::null_mut();
+    }
+    let handle = unsafe { &*(handle as *mut NipworkerHandle) };
+    let sub_id = unsafe { CStr::from_ptr(sub_id) }.to_string_lossy();
+    if let Ok(state) = handle.state.lock() {
+        if state.destroyed {
+            return std::ptr::null_mut();
+        }
+        if let Ok(mut subscriptions) = state.subscriptions.lock() {
+            if let Some(subscription) = subscriptions.subscriptions.get_mut(sub_id.as_ref()) {
+                return subscription.buffer.as_mut_ptr();
+            }
+        }
+    }
+    std::ptr::null_mut()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn nipworker_subscription_buffer_len(
+    handle: *mut c_void,
+    sub_id: *const c_char,
+) -> usize {
+    if handle.is_null() || sub_id.is_null() {
+        return 0;
+    }
+    let handle = unsafe { &*(handle as *mut NipworkerHandle) };
+    let sub_id = unsafe { CStr::from_ptr(sub_id) }.to_string_lossy();
+    if let Ok(state) = handle.state.lock() {
+        if state.destroyed {
+            return 0;
+        }
+        if let Ok(subscriptions) = state.subscriptions.lock() {
+            if let Some(subscription) = subscriptions.subscriptions.get(sub_id.as_ref()) {
+                return subscription.buffer.len();
+            }
+        }
+    }
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn nipworker_cleanup_subscriptions(handle: *mut c_void) {
+    if handle.is_null() {
+        return;
+    }
+    let handle = unsafe { &*(handle as *mut NipworkerHandle) };
+    let mut to_delete = Vec::new();
+    let tx = if let Ok(state) = handle.state.lock() {
+        if state.destroyed {
+            return;
+        }
+        if let Ok(subscriptions) = state.subscriptions.lock() {
+            for (sub_id, subscription) in subscriptions.subscriptions.iter() {
+                if subscription.ref_count <= 0
+                    && sub_id != "notifications"
+                    && sub_id != "starterpack"
+                {
+                    to_delete.push((sub_id.clone(), subscription.close_on_cleanup));
+                }
+            }
+        }
+        state.cmd_tx.clone()
+    } else {
+        None
+    };
+
+    if to_delete.is_empty() {
+        return;
+    }
+
+    if let Ok(state) = handle.state.lock() {
+        if let Ok(mut subscriptions) = state.subscriptions.lock() {
+            for sub_id in &to_delete {
+                subscriptions.subscriptions.remove(&sub_id.0);
+            }
+        }
+    }
+
+    if let Some(tx) = tx {
+        for (sub_id, close_on_cleanup) in to_delete {
+            if close_on_cleanup {
+                let _ = tx.send(EngineCommand::HandleMessage(build_unsubscribe_message(
+                    &sub_id,
+                )));
+            }
+        }
+    }
+}
+
 /// Free a buffer previously passed to the callback in `nipworker_init`.
 /// The host must call this after copying the data to its own storage.
 #[no_mangle]
@@ -345,5 +674,53 @@ pub extern "C" fn nipworker_deinit(handle: *mut c_void) {
             let _ = state.cmd_tx.take();
         }
         // Intentionally leak the Box to prevent use-after-free from other threads.
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{NativeSubscription, NativeSubscriptionStore};
+
+    #[test]
+    fn new_subscription_initializes_header_to_four() {
+        let subscription = NativeSubscription::new(64, false);
+        assert_eq!(subscription.buffer.len(), 64);
+        assert_eq!(&subscription.buffer[0..4], &4u32.to_le_bytes());
+    }
+
+    #[test]
+    fn append_payload_records_length_and_advances_cursor() {
+        let mut subscription = NativeSubscription::new(64, false);
+        let payload = b"\x0a\x0b\x0c\x0d";
+
+        let written = subscription.append_payload(payload);
+        assert!(written, "payload should fit");
+        assert_eq!(&subscription.buffer[4..8], &(payload.len() as u32).to_le_bytes());
+        assert_eq!(&subscription.buffer[8..12], payload);
+        assert_eq!(&subscription.buffer[0..4], &(12u32).to_le_bytes());
+    }
+
+    #[test]
+    fn append_payload_rejects_overflow_without_panic() {
+        let mut subscription = NativeSubscription::new(12, false);
+        let large = vec![0u8; 16];
+
+        let written = subscription.append_payload(&large);
+        assert!(!written, "payload larger than remaining space should be rejected");
+        assert_eq!(&subscription.buffer[0..4], &4u32.to_le_bytes());
+    }
+
+    #[test]
+    fn register_reuses_existing_subscription_without_reset() {
+        let mut store = NativeSubscriptionStore::new();
+        store.register("sub-1".to_string(), 32, false);
+        assert_eq!(store.subscriptions.get("sub-1").unwrap().ref_count, 1);
+
+        let first = store.subscriptions.get("sub-1").unwrap().buffer[0];
+        store.register("sub-1".to_string(), 32, false);
+        let second = store.subscriptions.get("sub-1").unwrap();
+
+        assert_eq!(second.ref_count, 2);
+        assert_eq!(second.buffer[0], first);
     }
 }
