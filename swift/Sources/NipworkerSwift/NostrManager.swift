@@ -6,18 +6,10 @@ public extension Notification.Name {
     static let nipworkerSubscriptionUpdated = Notification.Name("nipworkerSubscriptionUpdated")
     static let nipworkerRelayStatusUpdated = Notification.Name("nipworkerRelayStatusUpdated")
     static let nipworkerAuthUpdated = Notification.Name("nipworkerAuthUpdated")
-}
 
-/// Internal state stored per subscription
-struct SubscriptionState {
-    var buffer: SubscriptionBuffer
-    var options: SubscriptionConfig
-    var refCount: Int
-}
-
-/// Internal state stored per publish
-struct PublishState {
-    var buffer: SubscriptionBuffer
+    static func nipworkerSubscriptionUpdated(subId: String) -> Notification.Name {
+        Notification.Name("nipworkerSubscriptionUpdated.\(subId)")
+    }
 }
 
 /// Weak reference box for the C callback
@@ -34,8 +26,7 @@ public actor NostrManager {
 
     private var handle: UnsafeMutableRawPointer?
     private let ownsHandle: Bool
-    private var subscriptions: [String: SubscriptionState] = [:]
-    private var publishes: [String: PublishState] = [:]
+    private var bufferViews: [String: SubscriptionBuffer] = [:]
     private var relayStatuses: [String: RelayStatus] = [:]
     private var activePubkey: String?
     private var pendingSession: (type: String, payload: Any)?
@@ -88,7 +79,7 @@ public actor NostrManager {
         if let manager = reactNativeSharedManager {
             return manager
         }
-        let manager = NostrManager(borrowedHandle: nipworker_react_native_shared_handle())
+        let manager = NostrManager(borrowedHandle: nipworker_react_native_shared_handle_if_available())
         reactNativeSharedManager = manager
         return manager
     }
@@ -114,50 +105,28 @@ public actor NostrManager {
         options: SubscriptionConfig = SubscriptionConfig()
     ) -> SubscriptionBuffer {
         let subId = subscriptionId
-
-        if var existing = subscriptions[subId] {
-            existing.refCount += 1
-            subscriptions[subId] = existing
-            subId.withCString { _ = nipworker_retain_subscription(handle, $0) }
-            return existing.buffer
+        let existingRetained = subId.withCString { nipworker_retain_subscription(handle, $0) }
+        if existingRetained, let buffer = bufferView(for: subId) {
+            return buffer
         }
-
-        let totalLimit = requests.reduce(0) { $0 + ($1.limit ?? 100) }
-        let bufferSize = ArrayBufferReader.calculateBufferSize(
-            totalEventLimit: totalLimit,
-            bytesPerEvent: Int(options.bytesPerEvent)
-        )
-        let registered = subId.withCString { nipworker_register_subscription(handle, $0, bufferSize) }
-        let nativePointer = subId.withCString { nipworker_subscription_buffer_ptr(handle, $0) }
-        let nativeLength = subId.withCString { nipworker_subscription_buffer_len(handle, $0) }
-        let buffer: SubscriptionBuffer
-        if registered, let nativePointer, nativeLength > 0 {
-            buffer = SubscriptionBuffer(pointer: UnsafeMutableRawPointer(nativePointer), capacity: nativeLength)
-        } else {
-            buffer = SubscriptionBuffer(capacity: bufferSize)
-            ArrayBufferReader.initializeBuffer(buffer)
-        }
-
-        subscriptions[subId] = SubscriptionState(buffer: buffer, options: options, refCount: 1)
 
         let fbData = buildSubscribeMessage(subId: subId, requests: requests, options: options)
-        fbData.withUnsafeBytes { bytes in
-            nipworker_handle_message(
+        let ok = fbData.withUnsafeBytes { bytes in
+            nipworker_subscribe_message(
                 handle,
                 bytes.baseAddress?.assumingMemoryBound(to: UInt8.self),
                 bytes.count
             )
         }
 
+        guard ok, let buffer = bufferView(for: subId) else {
+            return SubscriptionBuffer(capacity: 4)
+        }
         return buffer
     }
 
     public func unsubscribe(subscriptionId: String) {
-        let subId = subscriptionId
-        guard var state = subscriptions[subId] else { return }
-        state.refCount -= 1
-        subscriptions[subId] = state
-        subId.withCString { nipworker_release_subscription(handle, $0) }
+        subscriptionId.withCString { nipworker_release_subscription(handle, $0) }
     }
 
     // MARK: - Publish
@@ -168,38 +137,27 @@ public actor NostrManager {
         defaultRelays: [String] = [],
         optimisticSubIds: [String] = []
     ) -> SubscriptionBuffer {
-        let bufferSize = 3072
-        let registered = publishId.withCString { nipworker_register_publish_buffer(handle, $0, bufferSize) }
-        let nativePointer = publishId.withCString { nipworker_subscription_buffer_ptr(handle, $0) }
-        let nativeLength = publishId.withCString { nipworker_subscription_buffer_len(handle, $0) }
-        let buffer: SubscriptionBuffer
-        if registered, let nativePointer, nativeLength > 0 {
-            buffer = SubscriptionBuffer(pointer: UnsafeMutableRawPointer(nativePointer), capacity: nativeLength)
-        } else {
-            buffer = SubscriptionBuffer(capacity: bufferSize)
-            ArrayBufferReader.initializeBuffer(buffer)
-        }
-
         let fbData = buildPublishMessage(
             publishId: publishId,
             event: event,
             defaultRelays: defaultRelays,
             optimisticSubIds: optimisticSubIds
         )
-        fbData.withUnsafeBytes { bytes in
-            nipworker_handle_message(
+        let ok = fbData.withUnsafeBytes { bytes in
+            nipworker_publish_message(
                 handle,
                 bytes.baseAddress?.assumingMemoryBound(to: UInt8.self),
                 bytes.count
             )
         }
 
-        publishes[publishId] = PublishState(buffer: buffer)
+        guard ok, let buffer = bufferView(for: publishId) else {
+            return SubscriptionBuffer(capacity: 4)
+        }
         return buffer
     }
 
     public func releasePublish(publishId: String) {
-        publishes.removeValue(forKey: publishId)
         publishId.withCString { nipworker_release_subscription(handle, $0) }
     }
 
@@ -270,31 +228,27 @@ public actor NostrManager {
 
     public func cleanup() {
         nipworker_cleanup_subscriptions(handle)
-        let toDelete = subscriptions.filter { $0.value.refCount <= 0 }.map { $0.key }
-        for subId in toDelete {
-            subscriptions.removeValue(forKey: subId)
-        }
     }
 
     // MARK: - Read Events (called by Subscription)
 
     public func readEvents(for subId: String, from position: Int) -> (events: [NostrEvent], newPosition: Int) {
-        guard let state = subscriptions[subId] else { return ([], position) }
-        let result = ArrayBufferReader.readMessages(buffer: state.buffer, lastReadPosition: position)
+        guard let buffer = bufferView(for: subId) else { return ([], position) }
+        let result = ArrayBufferReader.readMessages(buffer: buffer, lastReadPosition: position)
         let events = result.messages.compactMap { parseWorkerMessage($0) }
         return (events, result.newReadPosition)
     }
 
     public func readWorkerMessages(for subId: String, from position: Int) -> (messages: [WorkerMessageView], newPosition: Int) {
-        guard let state = subscriptions[subId] else { return ([], position) }
-        let result = ArrayBufferReader.readMessages(buffer: state.buffer, lastReadPosition: position)
+        guard let buffer = bufferView(for: subId) else { return ([], position) }
+        let result = ArrayBufferReader.readMessages(buffer: buffer, lastReadPosition: position)
         let messages = result.messages.compactMap { WorkerMessageView($0) }
         return (messages, result.newReadPosition)
     }
 
     public func readPublishStatuses(for publishId: String, from position: Int) -> (statuses: [String: PublishStatus], newPosition: Int) {
-        guard let state = publishes[publishId] else { return ([:], position) }
-        let result = ArrayBufferReader.readMessages(buffer: state.buffer, lastReadPosition: position)
+        guard let buffer = bufferView(for: publishId) else { return ([:], position) }
+        let result = ArrayBufferReader.readMessages(buffer: buffer, lastReadPosition: position)
         var statuses: [String: PublishStatus] = [:]
         for data in result.messages {
             if let (url, status) = parsePublishStatus(data) {
@@ -315,6 +269,10 @@ public actor NostrManager {
     // MARK: - Callback Handling
 
     private func handleNativeMessage(_ data: Data) {
+        if let routeSubId = decodeRouteWakeFrame(data) {
+            handleSubscriptionMessage(subId: routeSubId)
+            return
+        }
         guard data.count >= 4 else { return }
         let bb = ByteBuffer(data: data)
         let rootOffset = bb.read(def: Int32.self, position: 0)
@@ -332,26 +290,12 @@ public actor NostrManager {
     }
 
     private func handleSubscriptionMessage(subId: String) {
-        guard subscriptions[subId] != nil || publishes[subId] != nil else {
-            return
-        }
-
-        if subscriptions[subId] != nil {
-            DispatchQueue.main.async {
-                NotificationCenter.default.post(
-                    name: .nipworkerSubscriptionUpdated,
-                    object: nil,
-                    userInfo: ["subId": subId]
-                )
-            }
-        } else if publishes[subId] != nil {
-            DispatchQueue.main.async {
-                NotificationCenter.default.post(
-                    name: .nipworkerSubscriptionUpdated,
-                    object: nil,
-                    userInfo: ["subId": subId]
-                )
-            }
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(
+                name: .nipworkerSubscriptionUpdated(subId: subId),
+                object: nil,
+                userInfo: ["subId": subId]
+            )
         }
     }
 
@@ -370,7 +314,34 @@ public actor NostrManager {
         _parseCryptoResponse(payload)
     }
 
+    private func decodeRouteWakeFrame(_ data: Data) -> String? {
+        guard data.count >= 8 else { return nil }
+        guard [UInt8](data.prefix(4)) == [0x4e, 0x57, 0x52, 0x31] else { return nil }
+        let subIdLength = Int(data.withUnsafeBytes {
+            $0.load(fromByteOffset: 4, as: UInt32.self).littleEndian
+        })
+        guard subIdLength > 0, subIdLength == data.count - 8 else { return nil }
+        return String(data: data.subdata(in: 8..<data.count), encoding: .utf8)
+    }
+
     // MARK: - Helpers
+
+    private func bufferView(for id: String) -> SubscriptionBuffer? {
+        let nativePointer = id.withCString { nipworker_subscription_buffer_ptr(handle, $0) }
+        let nativeLength = id.withCString { nipworker_subscription_buffer_len(handle, $0) }
+        guard let nativePointer, nativeLength > 0 else {
+            bufferViews.removeValue(forKey: id)
+            return nil
+        }
+        if let existing = bufferViews[id],
+           existing.pointer == UnsafeMutableRawPointer(nativePointer),
+           existing.capacity == nativeLength {
+            return existing
+        }
+        let buffer = SubscriptionBuffer(pointer: UnsafeMutableRawPointer(nativePointer), capacity: nativeLength)
+        bufferViews[id] = buffer
+        return buffer
+    }
 
     public nonisolated func createShortId(_ input: String) -> String {
         if input.count < 64 { return input }

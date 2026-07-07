@@ -74,14 +74,11 @@ public func useSubscription(
 
     Task {
         notificationToken = NotificationCenter.default.addObserver(
-            forName: .nipworkerSubscriptionUpdated,
+            forName: .nipworkerSubscriptionUpdated(subId: canonicalSubscriptionId),
             object: nil,
             queue: .main
-        ) { notification in
-            guard isActive,
-                  let updatedSubId = notification.userInfo?["subId"] as? String,
-                  updatedSubId == canonicalSubscriptionId else { return }
-
+        ) { _ in
+            guard isActive else { return }
             readAvailableMessages()
         }
 
@@ -178,14 +175,12 @@ public func usePublish(
         )
 
         notificationToken = NotificationCenter.default.addObserver(
-            forName: .nipworkerSubscriptionUpdated,
+            forName: .nipworkerSubscriptionUpdated(subId: publishId),
             object: nil,
             queue: .main
-        ) { [weak manager] notification in
+        ) { [weak manager] _ in
             guard isActive,
-                  let manager = manager,
-                  let updatedPubId = notification.userInfo?["subId"] as? String,
-                  updatedPubId == publishId else { return }
+                  let manager = manager else { return }
 
             Task {
                 var position = lastReadPosition

@@ -1,7 +1,7 @@
 import type { NostrManagerConfig } from 'src/types';
 import { EngineManager } from './EngineManager';
 import { NostrManager } from './NostrManager';
-import { getManager, setManager, setGlobalManager, NostrManagerLike } from './manager';
+import type { NostrManagerLike } from './manager';
 
 export * from './lib/NostrUtils';
 export * from './types';
@@ -15,7 +15,7 @@ export { NostrManager } from './NostrManager';
 /**
  * Create the appropriate web backend.
  *
- * Native/Lynx builds should import from `@candypoets/nipworker/native`.
+ * React Native builds should import from `@candypoets/nipworker/react-native`.
  */
 export function createNostrManager(config?: NostrManagerConfig): NostrManagerLike {
 	if (config?.engine) {

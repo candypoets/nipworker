@@ -10,7 +10,9 @@ import com.facebook.react.module.annotations.ReactModule
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import com.facebook.react.turbomodule.core.interfaces.TurboModule
 import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.util.concurrent.atomic.AtomicLong
+import nostr.fb.WorkerMessage
 
 typealias NipworkerRuntimeListener = (ByteArray) -> Unit
 
@@ -18,6 +20,7 @@ object NipworkerRuntime {
 	private const val STORAGE_NAME = "nipworker_storage"
 	private val nextUserdata = AtomicLong(1L)
 	private val listeners = LinkedHashSet<NipworkerRuntimeListener>()
+	private val keyedListeners = LinkedHashMap<String, LinkedHashSet<NipworkerRuntimeListener>>()
 
 	@Volatile
 	private var sharedHandle: Long = 0L
@@ -35,6 +38,23 @@ object NipworkerRuntime {
 		return {
 			synchronized(this) {
 				listeners.remove(listener)
+			}
+		}
+	}
+
+	fun addListener(id: String, listener: NipworkerRuntimeListener): () -> Unit {
+		synchronized(this) {
+			keyedListeners.getOrPut(id) { LinkedHashSet() }.add(listener)
+		}
+		return {
+			synchronized(this) {
+				val listenersForId = keyedListeners[id]
+				if (listenersForId != null) {
+					listenersForId.remove(listener)
+					if (listenersForId.isEmpty()) {
+						keyedListeners.remove(id)
+					}
+				}
 			}
 		}
 	}
@@ -60,6 +80,18 @@ object NipworkerRuntime {
 		if (handle != 0L) {
 			NipworkerReactNativeModule.nipworkerHandleMessage(handle, bytes)
 		}
+	}
+
+	fun subscribe(message: ByteArray, subId: String): ByteBuffer? {
+		val handle = sharedHandle
+		if (handle == 0L) return null
+		retainSubscriptionBuffer(subId)?.let { return it }
+		return NipworkerReactNativeModule.nativeSubscribeMessage(handle, message, subId)
+	}
+
+	fun publish(message: ByteArray, publishId: String): ByteBuffer? {
+		val handle = sharedHandle
+		return if (handle == 0L) null else NipworkerReactNativeModule.nativePublishMessage(handle, message, publishId)
 	}
 
 	fun setPrivateKey(secret: String) {
@@ -91,6 +123,18 @@ object NipworkerRuntime {
 		return handle != 0L && NipworkerReactNativeModule.nativeRetainSubscription(handle, subId)
 	}
 
+	fun retainSubscriptionBuffer(subId: String): ByteBuffer? {
+		val handle = sharedHandle
+		if (handle == 0L || !NipworkerReactNativeModule.nativeRetainSubscription(handle, subId)) {
+			return null
+		}
+		return NipworkerReactNativeModule.nativeGetSubscriptionBuffer(handle, subId)
+			?: run {
+				NipworkerReactNativeModule.nativeReleaseSubscription(handle, subId)
+				null
+			}
+	}
+
 	fun releaseSubscription(subId: String) {
 		val handle = sharedHandle
 		if (handle != 0L) {
@@ -111,16 +155,48 @@ object NipworkerRuntime {
 				sharedUserdata = 0L
 			}
 			listeners.clear()
+			keyedListeners.clear()
 		}
 	}
 
 	internal fun dispatch(data: ByteArray) {
-		val snapshot = synchronized(this) {
-			listeners.toList()
+		val subId = readSubId(data)
+		val (globalSnapshot, keyedSnapshot) = synchronized(this) {
+			listeners.toList() to if (subId == null) {
+				emptyList<NipworkerRuntimeListener>()
+			} else {
+				keyedListeners[subId].orEmpty().toList()
+			}
 		}
-		for (listener in snapshot) {
+		for (listener in globalSnapshot) {
 			listener(data)
 		}
+		for (listener in keyedSnapshot) {
+			listener(data)
+		}
+	}
+
+	private fun readSubId(data: ByteArray): String? {
+		decodeRouteWakeFrame(data)?.let { return it }
+		return runCatching {
+			val buffer = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN)
+			WorkerMessage.getRootAsWorkerMessage(buffer).subId()
+		}.getOrNull()
+	}
+
+	private fun decodeRouteWakeFrame(data: ByteArray): String? {
+		if (data.size < 8) return null
+		if (
+			data[0] != 0x4e.toByte() ||
+			data[1] != 0x57.toByte() ||
+			data[2] != 0x52.toByte() ||
+			data[3] != 0x31.toByte()
+		) {
+			return null
+		}
+		val subIdLength = ByteBuffer.wrap(data, 4, 4).order(ByteOrder.LITTLE_ENDIAN).int
+		if (subIdLength <= 0 || subIdLength != data.size - 8) return null
+		return data.decodeToString(8, data.size)
 	}
 
 	private fun readableArrayToCsv(values: ReadableArray?): String {
@@ -194,6 +270,12 @@ class NipworkerReactNativeModule(
 
 		@JvmStatic
 		external fun nativeQueueData(bytes: ByteArray): Boolean
+
+		@JvmStatic
+		external fun nativeSubscribeMessage(handle: Long, bytes: ByteArray, subId: String): ByteBuffer?
+
+		@JvmStatic
+		external fun nativePublishMessage(handle: Long, bytes: ByteArray, publishId: String): ByteBuffer?
 
 		@JvmStatic
 		external fun nativeRegisterSubscription(handle: Long, subId: String, bufferSize: Int): Boolean

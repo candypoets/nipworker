@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 // MARK: - C FFI Imports from libnipworker_native_ffi
@@ -14,6 +15,20 @@ func nipworker_handle_message(
     _ ptr: UnsafePointer<UInt8>?,
     _ len: Int
 )
+
+@_silgen_name("nipworker_subscribe_message")
+func nipworker_subscribe_message(
+    _ handle: UnsafeMutableRawPointer?,
+    _ ptr: UnsafePointer<UInt8>?,
+    _ len: Int
+) -> Bool
+
+@_silgen_name("nipworker_publish_message")
+func nipworker_publish_message(
+    _ handle: UnsafeMutableRawPointer?,
+    _ ptr: UnsafePointer<UInt8>?,
+    _ len: Int
+) -> Bool
 
 @_silgen_name("nipworker_set_private_key")
 func nipworker_set_private_key(
@@ -68,6 +83,12 @@ func nipworker_subscription_buffer_len(
 @_silgen_name("nipworker_cleanup_subscriptions")
 func nipworker_cleanup_subscriptions(_ handle: UnsafeMutableRawPointer?)
 
-@_silgen_name("nipworker_react_native_shared_handle")
-@_weakLinked
-func nipworker_react_native_shared_handle() -> UnsafeMutableRawPointer?
+func nipworker_react_native_shared_handle_if_available() -> UnsafeMutableRawPointer? {
+    typealias SharedHandleFunction = @convention(c) () -> UnsafeMutableRawPointer?
+
+    guard let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "nipworker_react_native_shared_handle") else {
+        return nil
+    }
+
+    return unsafeBitCast(symbol, to: SharedHandleFunction.self)()
+}

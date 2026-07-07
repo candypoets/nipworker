@@ -16,13 +16,11 @@ public final class Subscription: ObservableObject {
         self.manager = manager
 
         self.notificationToken = NotificationCenter.default.addObserver(
-            forName: .nipworkerSubscriptionUpdated,
+            forName: .nipworkerSubscriptionUpdated(subId: id),
             object: nil,
             queue: .main
-        ) { [weak self] notification in
-            guard let self = self,
-                  let subId = notification.userInfo?["subId"] as? String,
-                  subId == self.id else { return }
+        ) { [weak self] _ in
+            guard let self = self else { return }
             Task { await self.sync() }
         }
     }

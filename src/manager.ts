@@ -1,14 +1,11 @@
 import type { EventTemplate, NostrEvent } from 'nostr-tools';
 import type { RequestObject, SubscriptionConfig } from './types';
 
-/** Lynx injects NativeModules as a bundle parameter, not on globalThis. */
-declare const NativeModules: Record<string, any> | undefined;
-
 /**
  * Common interface implemented by all backend variants:
  * - NostrManager   (legacy 4-worker WASM)
  * - EngineManager  (single-worker WASM engine)
- * - NativeBackend  (LynxJS native module)
+ * - ReactNativeManager (React Native native module)
  */
 export interface NostrManagerLike {
 	readonly PERPETUAL_SUBSCRIPTIONS: string[];
@@ -55,36 +52,10 @@ export interface NostrManagerLike {
 }
 
 /**
- * Detect whether we are running inside a LynxJS environment with the
- * NipworkerLynxModule native module available.
- */
-export function hasLynxNativeModule(): boolean {
-	try {
-		// In Sparkling/Lynx real builds, NativeModules is injected as a bundle
-		// parameter (IIFE argument), not mounted on globalThis.
-		let mod =
-			(typeof NativeModules !== 'undefined' && (NativeModules as any)?.NipworkerLynxModule) ||
-			(globalThis as any).lynx?.getNativeModules?.()?.NipworkerLynxModule ||
-			(globalThis as any).NativeModules?.NipworkerLynxModule;
-
-		if (!mod) {
-			const app = (globalThis as any).lynx?.getNativeApp?.();
-			if (app && app.NativeModules) {
-				mod = app.NativeModules.NipworkerLynxModule;
-			}
-		}
-
-		return !!mod;
-	} catch {
-		return false;
-	}
-}
-
-/**
  * Detect whether any native module backend is available.
  */
 export function hasNativeModule(): boolean {
-	return hasLynxNativeModule();
+	return false;
 }
 
 // Global manager instance for hooks. Must be explicitly set by the app.

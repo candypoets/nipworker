@@ -1,5 +1,5 @@
 /*
- * JNI C bridge for NIPWorker Android (LynxJS).
+ * JNI C bridge for NIPWorker Android (React Native).
  *
  * CRITICAL FIXES applied:
  * 1. JNI_OnLoad caches JavaVM* g_vm (previously never set, causing
@@ -66,7 +66,7 @@ static void ensure_jni_cache(JNIEnv* env, jclass cls) {
 }
 
 JNIEXPORT jlong JNICALL
-impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerInit(
+impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerInit(
     JNIEnv* env, jclass cls, jlong userdata);
 JNIEXPORT jlong JNICALL
 impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerInitWithStoragePath(
@@ -80,16 +80,16 @@ impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipwor
     jstring default_relays,
     jstring indexer_relays);
 JNIEXPORT void JNICALL
-impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerHandleMessage(
+impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerHandleMessage(
     JNIEnv* env, jclass cls, jlong handle, jbyteArray bytes);
 JNIEXPORT void JNICALL
-impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerSetPrivateKey(
+impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerSetPrivateKey(
     JNIEnv* env, jclass cls, jlong handle, jstring secret);
 JNIEXPORT void JNICALL
-impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerDeinit(
+impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerDeinit(
     JNIEnv* env, jclass cls, jlong handle);
 JNIEXPORT void JNICALL
-impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerFreeBytes(
+impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerFreeBytes(
     JNIEnv* env, jclass cls, jlong ptr, jlong len);
 
 /* ---------------------------------------------------------------------------
@@ -107,7 +107,7 @@ JNIEXPORT jint JNICALL impl_JNI_OnLoad(JavaVM* vm, void* reserved) {
 
     jclass cls = (*env)->FindClass(
         env,
-        "com/candypoets/nipworker/lynx/NipworkerLynxModule"
+        "com/candypoets/nipworker/reactnative/NipworkerReactNativeModule"
     );
     if (cls == NULL) {
         if ((*env)->ExceptionCheck(env)) {
@@ -129,27 +129,27 @@ JNIEXPORT jint JNICALL impl_JNI_OnLoad(JavaVM* vm, void* reserved) {
         {
             "nipworkerInit",
             "(J)J",
-            (void*)&impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerInit
+            (void*)&impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerInit
         },
         {
             "nipworkerHandleMessage",
             "(J[B)V",
-            (void*)&impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerHandleMessage
+            (void*)&impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerHandleMessage
         },
         {
             "nipworkerSetPrivateKey",
             "(JLjava/lang/String;)V",
-            (void*)&impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerSetPrivateKey
+            (void*)&impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerSetPrivateKey
         },
         {
             "nipworkerDeinit",
             "(J)V",
-            (void*)&impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerDeinit
+            (void*)&impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerDeinit
         },
         {
             "nipworkerFreeBytes",
             "(JJ)V",
-            (void*)&impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerFreeBytes
+            (void*)&impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerFreeBytes
         },
     };
 
@@ -187,7 +187,7 @@ JNIEXPORT void JNICALL impl_JNI_OnUnload(JavaVM* vm, void* reserved) {
 
 JNI_USED
 JNIEXPORT jlong JNICALL
-impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerInit(
+impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerInit(
     JNIEnv* env,
     jclass cls,
     jlong userdata
@@ -259,7 +259,7 @@ impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipwor
 
 JNI_USED
 JNIEXPORT void JNICALL
-impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerHandleMessage(
+impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerHandleMessage(
     JNIEnv* env,
     jclass cls,
     jlong handle,
@@ -278,7 +278,7 @@ impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerHandleMessa
 
 JNI_USED
 JNIEXPORT void JNICALL
-impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerSetPrivateKey(
+impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerSetPrivateKey(
     JNIEnv* env,
     jclass cls,
     jlong handle,
@@ -296,7 +296,7 @@ impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerSetPrivateK
 
 JNI_USED
 JNIEXPORT void JNICALL
-impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerWake(
+impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerWake(
     JNIEnv* env,
     jclass cls,
     jlong handle
@@ -307,7 +307,7 @@ impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerWake(
 
 JNI_USED
 JNIEXPORT void JNICALL
-impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerDeinit(
+impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerDeinit(
     JNIEnv* env,
     jclass cls,
     jlong handle
@@ -318,7 +318,7 @@ impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerDeinit(
 
 JNI_USED
 JNIEXPORT void JNICALL
-impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerFreeBytes(
+impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerFreeBytes(
     JNIEnv* env,
     jclass cls,
     jlong ptr,

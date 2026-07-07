@@ -91,11 +91,8 @@ fun NipworkerRuntime.useSubscription(
 	options: NipworkerSubscriptionOptions = NipworkerSubscriptionOptions(),
 	onMessages: (List<NipworkerWorkerMessage>) -> Unit,
 ): NipworkerHookHandle {
-	val bufferSize = calculateBufferSize(requests, options)
-	if (!registerSubscription(subscriptionId, bufferSize)) {
-		retainSubscription(subscriptionId)
-	}
-	val buffer = subscriptionBuffer(subscriptionId)
+	val buffer = retainSubscriptionBuffer(subscriptionId)
+		?: subscribe(buildSubscribeMessage(subscriptionId, requests, options), subscriptionId)
 	var lastReadPosition = 4
 
 	fun drain() {
@@ -106,12 +103,10 @@ fun NipworkerRuntime.useSubscription(
 		}
 	}
 
-	val listener = addListener { bytes ->
-		val message = runCatching { NipworkerWorkerMessage(bytes) }.getOrNull() ?: return@addListener
-		if (message.subId == subscriptionId) drain()
+	val listener = addListener(subscriptionId) {
+		drain()
 	}
 
-	handleMessage(buildSubscribeMessage(subscriptionId, requests, options))
 	drain()
 
 	return NipworkerHookHandle {
@@ -127,11 +122,7 @@ fun NipworkerRuntime.usePublish(
 	optimisticSubIds: List<String> = emptyList(),
 	onStatus: (NipworkerWorkerMessage) -> Unit,
 ): NipworkerHookHandle {
-	val bufferSize = 3072
-	if (!registerPublishBuffer(publishId, bufferSize)) {
-		retainSubscription(publishId)
-	}
-	val buffer = subscriptionBuffer(publishId)
+	val buffer = publish(buildPublishMessage(publishId, event, defaultRelays, optimisticSubIds), publishId)
 	var lastReadPosition = 4
 
 	fun drain() {
@@ -144,28 +135,16 @@ fun NipworkerRuntime.usePublish(
 		}
 	}
 
-	val listener = addListener { bytes ->
-		val message = runCatching { NipworkerWorkerMessage(bytes) }.getOrNull() ?: return@addListener
-		if (message.subId == publishId && message.type != MessageType.ParsedNostrEvent) {
-			drain()
-		}
+	val listener = addListener(publishId) {
+		drain()
 	}
 
-	handleMessage(buildPublishMessage(publishId, event, defaultRelays, optimisticSubIds))
 	drain()
 
 	return NipworkerHookHandle {
 		listener()
 		releaseSubscription(publishId)
 	}
-}
-
-private fun calculateBufferSize(
-	requests: List<NipworkerRequest>,
-	options: NipworkerSubscriptionOptions,
-): Int {
-	val totalLimit = requests.sumOf { if (it.limit > 0) it.limit else 100 }
-	return 4 + totalLimit * (options.bytesPerEvent.toInt() + 4)
 }
 
 private fun ByteBuffer.readWorkerMessages(fromPosition: Int): List<NipworkerWorkerMessage> {

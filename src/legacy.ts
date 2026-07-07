@@ -1,6 +1,6 @@
 import type { NostrManagerConfig } from 'src/types';
 import { NostrManager } from './NostrManager';
-import { getManager, setManager, setGlobalManager, NostrManagerLike } from './manager';
+import type { NostrManagerLike } from './manager';
 
 export * from './lib/NostrUtils';
 export * from './types';

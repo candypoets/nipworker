@@ -23,12 +23,30 @@ vi.mock('react-native', () => {
 				setPrivateKey: vi.fn(),
 				deinit: vi.fn(),
 				drain: vi.fn(() => queuedBuffers.splice(0)),
+				subscribe: vi.fn((_bytes: ArrayBuffer, subId: string) => {
+					const buffer = nativeBuffers.get(subId) ?? new ArrayBuffer(4096);
+					if (!nativeBuffers.has(subId)) {
+						new DataView(buffer).setUint32(0, 4, true);
+						nativeBuffers.set(subId, buffer);
+					}
+					return buffer;
+				}),
+				publish: vi.fn((_bytes: ArrayBuffer, publishId: string) => {
+					const buffer = nativeBuffers.get(publishId) ?? new ArrayBuffer(3072);
+					if (!nativeBuffers.has(publishId)) {
+						new DataView(buffer).setUint32(0, 4, true);
+						nativeBuffers.set(publishId, buffer);
+					}
+					return buffer;
+				}),
 				registerSubscription: vi.fn((subId: string, bufferSize: number) => {
 					const buffer = new ArrayBuffer(bufferSize);
 					new DataView(buffer).setUint32(0, 4, true);
 					nativeBuffers.set(subId, buffer);
 					return true;
 				}),
+				registerPublishBuffer: vi.fn(() => true),
+				retainSubscriptionBuffer: vi.fn((subId: string) => nativeBuffers.get(subId)),
 				retainSubscription: vi.fn(() => true),
 				releaseSubscription: vi.fn(),
 				getSubscriptionBuffer: vi.fn((subId: string) => nativeBuffers.get(subId)),
@@ -92,21 +110,6 @@ function buildEoceMessage(subId: string): Uint8Array {
 	return builder.asUint8Array();
 }
 
-function buildNativeFrame(subId: string, payload: Uint8Array): ArrayBuffer {
-	const subIdBytes = new TextEncoder().encode(subId);
-	const frame = new Uint8Array(4 + subIdBytes.length + 4 + payload.length);
-	const view = new DataView(frame.buffer);
-	let offset = 0;
-	view.setUint32(offset, subIdBytes.length, true);
-	offset += 4;
-	frame.set(subIdBytes, offset);
-	offset += subIdBytes.length;
-	view.setUint32(offset, payload.length, true);
-	offset += 4;
-	frame.set(payload, offset);
-	return frame.buffer;
-}
-
 function createSubscriptionBuffer(payload: Uint8Array): ArrayBuffer {
 	const buffer = new ArrayBuffer(4 + 4 + payload.length);
 	const view = new DataView(buffer);
@@ -115,6 +118,15 @@ function createSubscriptionBuffer(payload: Uint8Array): ArrayBuffer {
 	view.setUint32(4, payload.length, true);
 	bytes.set(payload, 8);
 	return buffer;
+}
+
+function buildRouteWakeFrame(subId: string): ArrayBuffer {
+	const subIdBytes = new TextEncoder().encode(subId);
+	const frame = new Uint8Array(8 + subIdBytes.length);
+	frame.set([0x4e, 0x57, 0x52, 0x31], 0);
+	new DataView(frame.buffer).setUint32(4, subIdBytes.length, true);
+	frame.set(subIdBytes, 8);
+	return frame.buffer;
 }
 
 describe('react-native byte runtime subscription path', () => {
@@ -132,15 +144,15 @@ describe('react-native byte runtime subscription path', () => {
 
 		const callback = vi.fn();
 		const byteRuntime = (globalThis as any).__nipworkerReactNativeByteRuntime;
-		byteRuntime.registerSubscription = vi.fn((subId: string) => {
+		byteRuntime.subscribe = vi.fn((_bytes: ArrayBuffer, subId: string) => {
 			nativeBuffers.set(subId, createSubscriptionBuffer(buildEoceMessage(subId)));
-			return true;
+			return nativeBuffers.get(subId);
 		});
 		const unsubscribe = useSubscription('turbo-sub', [{ kinds: [1], limit: 1 }], callback, {
 			closeOnEose: true
 		});
 
-		queuedBuffers.push(buildNativeFrame('turbo-sub', buildEoceMessage('turbo-sub')));
+		queuedBuffers.push(buildRouteWakeFrame('turbo-sub'));
 		nativeEventListener?.({ v: 1, encoding: 'queued' });
 		await Promise.resolve();
 		await Promise.resolve();
@@ -158,9 +170,9 @@ describe('react-native byte runtime subscription path', () => {
 		const manager = createNostrManager();
 		setManager(manager);
 		const byteRuntime = (globalThis as any).__nipworkerReactNativeByteRuntime;
-		byteRuntime.registerSubscription = vi.fn((subId: string) => {
+		byteRuntime.subscribe = vi.fn((_bytes: ArrayBuffer, subId: string) => {
 			nativeBuffers.set(subId, createSubscriptionBuffer(buildEoceMessage(subId)));
-			return true;
+			return nativeBuffers.get(subId);
 		});
 		byteRuntime.getSubscriptionBuffer = vi.fn((subId: string) => nativeBuffers.get(subId));
 		byteRuntime.retainSubscription = vi.fn(() => true);
@@ -172,12 +184,12 @@ describe('react-native byte runtime subscription path', () => {
 			closeOnEose: true
 		});
 
-		queuedBuffers.push(buildNativeFrame('native-owned-sub', buildEoceMessage('native-owned-sub')));
+		queuedBuffers.push(buildRouteWakeFrame('native-owned-sub'));
 		nativeEventListener?.({ v: 1, encoding: 'queued' });
 		await Promise.resolve();
 		await Promise.resolve();
 
-		expect(byteRuntime.registerSubscription).toHaveBeenCalledWith('native-owned-sub', expect.any(Number));
+		expect(byteRuntime.subscribe).toHaveBeenCalledWith(expect.any(ArrayBuffer), 'native-owned-sub');
 		expect(callback).toHaveBeenCalledTimes(1);
 		const message = callback.mock.calls[0][0] as WorkerMessage;
 		expect(message.type()).toBe(MessageType.Eoce);
@@ -187,6 +199,30 @@ describe('react-native byte runtime subscription path', () => {
 		expect(byteRuntime.releaseSubscription).toHaveBeenCalledWith('native-owned-sub');
 		appStateListener?.('background');
 		expect(byteRuntime.cleanupSubscriptions).toHaveBeenCalled();
+		manager.deinit();
+	});
+
+	it('reuses an existing native subscription buffer without resubscribing', () => {
+		const manager = createNostrManager();
+		setManager(manager);
+		const byteRuntime = (globalThis as any).__nipworkerReactNativeByteRuntime;
+		const buffer = createSubscriptionBuffer(buildEoceMessage('shared-sub'));
+		nativeBuffers.set('shared-sub', buffer);
+
+		const first = manager.subscribe('shared-sub', [{ kinds: [1], limit: 1 }], {
+			closeOnEose: false
+		});
+		const second = manager.subscribe('shared-sub', [{ kinds: [1], limit: 1 }], {
+			closeOnEose: false
+		});
+
+		expect(first).toBe(buffer);
+		expect(second).toBe(buffer);
+		expect(byteRuntime.subscribe).not.toHaveBeenCalledWith(expect.any(ArrayBuffer), 'shared-sub');
+		expect(byteRuntime.retainSubscriptionBuffer).toHaveBeenCalledTimes(2);
+
+		manager.unsubscribe('shared-sub');
+		manager.unsubscribe('shared-sub');
 		manager.deinit();
 	});
 
@@ -209,6 +245,30 @@ describe('react-native byte runtime subscription path', () => {
 
 		expect(byteRuntime.releaseSubscription).toHaveBeenCalledWith('background-cleanup-sub');
 		expect(byteRuntime.cleanupSubscriptions).toHaveBeenCalled();
+		manager.deinit();
+	});
+
+	it('delegates publish buffer ownership to the byte runtime', () => {
+		const manager = createNostrManager();
+		setManager(manager);
+		const byteRuntime = (globalThis as any).__nipworkerReactNativeByteRuntime;
+
+		const buffer = manager.publish('publish-1', {
+			id: '0'.repeat(64),
+			pubkey: '0'.repeat(64),
+			created_at: 1,
+			kind: 1,
+			tags: [],
+			content: 'hello',
+			sig: '0'.repeat(128)
+		});
+
+		expect(buffer).toBe(nativeBuffers.get('publish-1'));
+		expect(byteRuntime.publish).toHaveBeenCalledWith(expect.any(ArrayBuffer), 'publish-1');
+		expect(byteRuntime.registerPublishBuffer).not.toHaveBeenCalled();
+
+		manager.releasePublish?.('publish-1');
+		expect(byteRuntime.releaseSubscription).toHaveBeenCalledWith('publish-1');
 		manager.deinit();
 	});
 });

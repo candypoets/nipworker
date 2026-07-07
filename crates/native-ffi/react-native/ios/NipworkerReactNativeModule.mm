@@ -24,6 +24,8 @@ void* nipworker_init(void (*callback)(void* userdata, const uint8_t* ptr, size_t
 void* nipworker_init_with_storage_path(void (*callback)(void* userdata, const uint8_t* ptr, size_t len), void* userdata, const char* storage_path);
 void* nipworker_init_with_config(void (*callback)(void* userdata, const uint8_t* ptr, size_t len), void* userdata, const char* storage_path, const char* default_relays, const char* indexer_relays);
 void nipworker_handle_message(void* handle, const uint8_t* ptr, size_t len);
+bool nipworker_subscribe_message(void* handle, const uint8_t* ptr, size_t len);
+bool nipworker_publish_message(void* handle, const uint8_t* ptr, size_t len);
 void nipworker_set_private_key(void* handle, const char* ptr);
 void nipworker_wake(void* handle);
 void nipworker_deinit(void* handle);
@@ -267,6 +269,60 @@ static void NipworkerInstallByteRuntime(facebook::jsi::Runtime& runtime, void* e
 	);
 	byteRuntime.setProperty(
 		runtime,
+		"subscribe",
+		facebook::jsi::Function::createFromHostFunction(
+			runtime,
+			facebook::jsi::PropNameID::forAscii(runtime, "subscribe"),
+			2,
+			[engineHandle](facebook::jsi::Runtime& runtime, const facebook::jsi::Value&, const facebook::jsi::Value* args, size_t count) {
+				if (count < 2 || !args[0].isObject() || !args[0].asObject(runtime).isArrayBuffer(runtime) || !args[1].isString()) {
+					return facebook::jsi::Value::undefined();
+				}
+				facebook::jsi::ArrayBuffer message = args[0].asObject(runtime).getArrayBuffer(runtime);
+				std::string subId = args[1].asString(runtime).utf8(runtime);
+				if (!nipworker_subscribe_message(engineHandle, message.data(runtime), message.size(runtime))) {
+					return facebook::jsi::Value::undefined();
+				}
+				uint8_t* ptr = nipworker_subscription_buffer_ptr(engineHandle, subId.c_str());
+				size_t len = nipworker_subscription_buffer_len(engineHandle, subId.c_str());
+				if (!ptr || len == 0) {
+					return facebook::jsi::Value::undefined();
+				}
+				auto nativeBuffer = std::make_shared<NipworkerExternalMutableBuffer>(ptr, len);
+				facebook::jsi::ArrayBuffer buffer(runtime, std::move(nativeBuffer));
+				return facebook::jsi::Value(runtime, std::move(buffer));
+			}
+		)
+	);
+	byteRuntime.setProperty(
+		runtime,
+		"publish",
+		facebook::jsi::Function::createFromHostFunction(
+			runtime,
+			facebook::jsi::PropNameID::forAscii(runtime, "publish"),
+			2,
+			[engineHandle](facebook::jsi::Runtime& runtime, const facebook::jsi::Value&, const facebook::jsi::Value* args, size_t count) {
+				if (count < 2 || !args[0].isObject() || !args[0].asObject(runtime).isArrayBuffer(runtime) || !args[1].isString()) {
+					return facebook::jsi::Value::undefined();
+				}
+				facebook::jsi::ArrayBuffer message = args[0].asObject(runtime).getArrayBuffer(runtime);
+				std::string publishId = args[1].asString(runtime).utf8(runtime);
+				if (!nipworker_publish_message(engineHandle, message.data(runtime), message.size(runtime))) {
+					return facebook::jsi::Value::undefined();
+				}
+				uint8_t* ptr = nipworker_subscription_buffer_ptr(engineHandle, publishId.c_str());
+				size_t len = nipworker_subscription_buffer_len(engineHandle, publishId.c_str());
+				if (!ptr || len == 0) {
+					return facebook::jsi::Value::undefined();
+				}
+				auto nativeBuffer = std::make_shared<NipworkerExternalMutableBuffer>(ptr, len);
+				facebook::jsi::ArrayBuffer buffer(runtime, std::move(nativeBuffer));
+				return facebook::jsi::Value(runtime, std::move(buffer));
+			}
+		)
+	);
+	byteRuntime.setProperty(
+		runtime,
 		"retainSubscription",
 		facebook::jsi::Function::createFromHostFunction(
 			runtime,
@@ -278,6 +334,33 @@ static void NipworkerInstallByteRuntime(facebook::jsi::Runtime& runtime, void* e
 				}
 				std::string subId = args[0].asString(runtime).utf8(runtime);
 				return facebook::jsi::Value(nipworker_retain_subscription(engineHandle, subId.c_str()));
+			}
+		)
+	);
+	byteRuntime.setProperty(
+		runtime,
+		"retainSubscriptionBuffer",
+		facebook::jsi::Function::createFromHostFunction(
+			runtime,
+			facebook::jsi::PropNameID::forAscii(runtime, "retainSubscriptionBuffer"),
+			1,
+			[engineHandle](facebook::jsi::Runtime& runtime, const facebook::jsi::Value&, const facebook::jsi::Value* args, size_t count) {
+				if (count < 1 || !args[0].isString()) {
+					return facebook::jsi::Value::undefined();
+				}
+				std::string subId = args[0].asString(runtime).utf8(runtime);
+				if (!nipworker_retain_subscription(engineHandle, subId.c_str())) {
+					return facebook::jsi::Value::undefined();
+				}
+				uint8_t* ptr = nipworker_subscription_buffer_ptr(engineHandle, subId.c_str());
+				size_t len = nipworker_subscription_buffer_len(engineHandle, subId.c_str());
+				if (!ptr || len == 0) {
+					nipworker_release_subscription(engineHandle, subId.c_str());
+					return facebook::jsi::Value::undefined();
+				}
+				auto nativeBuffer = std::make_shared<NipworkerExternalMutableBuffer>(ptr, len);
+				facebook::jsi::ArrayBuffer buffer(runtime, std::move(nativeBuffer));
+				return facebook::jsi::Value(runtime, std::move(buffer));
 			}
 		)
 	);

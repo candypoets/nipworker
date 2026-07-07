@@ -8,6 +8,8 @@
 #include <vector>
 
 extern "C" void nipworker_handle_message(void* handle, const uint8_t* ptr, size_t len);
+extern "C" bool nipworker_subscribe_message(void* handle, const uint8_t* ptr, size_t len);
+extern "C" bool nipworker_publish_message(void* handle, const uint8_t* ptr, size_t len);
 extern "C" void nipworker_set_private_key(void* handle, const char* ptr);
 extern "C" void nipworker_wake(void* handle);
 extern "C" void nipworker_deinit(void* handle);
@@ -100,6 +102,66 @@ Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nativeQueue
 	enqueueBytes(reinterpret_cast<const uint8_t*>(ptr), static_cast<size_t>(len));
 	env->ReleaseByteArrayElements(bytes, ptr, JNI_ABORT);
 	return JNI_TRUE;
+}
+
+extern "C" JNIEXPORT jobject JNICALL
+Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nativeSubscribeMessage(
+	JNIEnv* env,
+	jclass,
+	jlong handle,
+	jbyteArray bytes,
+	jstring subId
+) {
+	if (handle == 0 || bytes == nullptr || subId == nullptr) return nullptr;
+	jsize len = env->GetArrayLength(bytes);
+	jbyte* ptr = env->GetByteArrayElements(bytes, nullptr);
+	if (ptr == nullptr) return nullptr;
+	auto* engineHandle = reinterpret_cast<void*>(handle);
+	bool ok = nipworker_subscribe_message(
+		engineHandle,
+		reinterpret_cast<const uint8_t*>(ptr),
+		static_cast<size_t>(len)
+	);
+	env->ReleaseByteArrayElements(bytes, ptr, JNI_ABORT);
+	if (!ok) return nullptr;
+
+	const char* subIdChars = env->GetStringUTFChars(subId, nullptr);
+	if (subIdChars == nullptr) return nullptr;
+	uint8_t* bufferPtr = nipworker_subscription_buffer_ptr(engineHandle, subIdChars);
+	size_t bufferLen = nipworker_subscription_buffer_len(engineHandle, subIdChars);
+	env->ReleaseStringUTFChars(subId, subIdChars);
+	if (bufferPtr == nullptr || bufferLen == 0) return nullptr;
+	return env->NewDirectByteBuffer(bufferPtr, static_cast<jlong>(bufferLen));
+}
+
+extern "C" JNIEXPORT jobject JNICALL
+Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nativePublishMessage(
+	JNIEnv* env,
+	jclass,
+	jlong handle,
+	jbyteArray bytes,
+	jstring publishId
+) {
+	if (handle == 0 || bytes == nullptr || publishId == nullptr) return nullptr;
+	jsize len = env->GetArrayLength(bytes);
+	jbyte* ptr = env->GetByteArrayElements(bytes, nullptr);
+	if (ptr == nullptr) return nullptr;
+	auto* engineHandle = reinterpret_cast<void*>(handle);
+	bool ok = nipworker_publish_message(
+		engineHandle,
+		reinterpret_cast<const uint8_t*>(ptr),
+		static_cast<size_t>(len)
+	);
+	env->ReleaseByteArrayElements(bytes, ptr, JNI_ABORT);
+	if (!ok) return nullptr;
+
+	const char* publishIdChars = env->GetStringUTFChars(publishId, nullptr);
+	if (publishIdChars == nullptr) return nullptr;
+	uint8_t* bufferPtr = nipworker_subscription_buffer_ptr(engineHandle, publishIdChars);
+	size_t bufferLen = nipworker_subscription_buffer_len(engineHandle, publishIdChars);
+	env->ReleaseStringUTFChars(publishId, publishIdChars);
+	if (bufferPtr == nullptr || bufferLen == 0) return nullptr;
+	return env->NewDirectByteBuffer(bufferPtr, static_cast<jlong>(bufferLen));
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
@@ -287,6 +349,32 @@ Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nativeInsta
 
 	byteRuntime.setProperty(
 		runtime,
+		"subscribe",
+		Function::createFromHostFunction(
+			runtime,
+			PropNameID::forAscii(runtime, "subscribe"),
+			2,
+			[engineHandle](Runtime& runtime, const Value&, const Value* args, size_t count) -> Value {
+				if (count < 2 || !isArrayBuffer(runtime, args[0]) || !args[1].isString()) {
+					return Value::undefined();
+				}
+				ArrayBuffer message = args[0].asObject(runtime).getArrayBuffer(runtime);
+				std::string subId = args[1].asString(runtime).utf8(runtime);
+				if (!nipworker_subscribe_message(engineHandle, message.data(runtime), message.size(runtime))) {
+					return Value::undefined();
+				}
+				uint8_t* ptr = nipworker_subscription_buffer_ptr(engineHandle, subId.c_str());
+				size_t len = nipworker_subscription_buffer_len(engineHandle, subId.c_str());
+				if (ptr == nullptr || len == 0) return Value::undefined();
+				auto nativeBuffer = std::make_shared<ExternalMutableBuffer>(ptr, len);
+				ArrayBuffer buffer(runtime, std::move(nativeBuffer));
+				return Value(runtime, std::move(buffer));
+			}
+		)
+	);
+
+	byteRuntime.setProperty(
+		runtime,
 		"registerPublishBuffer",
 		Function::createFromHostFunction(
 			runtime,
@@ -303,6 +391,32 @@ Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nativeInsta
 
 	byteRuntime.setProperty(
 		runtime,
+		"publish",
+		Function::createFromHostFunction(
+			runtime,
+			PropNameID::forAscii(runtime, "publish"),
+			2,
+			[engineHandle](Runtime& runtime, const Value&, const Value* args, size_t count) -> Value {
+				if (count < 2 || !isArrayBuffer(runtime, args[0]) || !args[1].isString()) {
+					return Value::undefined();
+				}
+				ArrayBuffer message = args[0].asObject(runtime).getArrayBuffer(runtime);
+				std::string publishId = args[1].asString(runtime).utf8(runtime);
+				if (!nipworker_publish_message(engineHandle, message.data(runtime), message.size(runtime))) {
+					return Value::undefined();
+				}
+				uint8_t* ptr = nipworker_subscription_buffer_ptr(engineHandle, publishId.c_str());
+				size_t len = nipworker_subscription_buffer_len(engineHandle, publishId.c_str());
+				if (ptr == nullptr || len == 0) return Value::undefined();
+				auto nativeBuffer = std::make_shared<ExternalMutableBuffer>(ptr, len);
+				ArrayBuffer buffer(runtime, std::move(nativeBuffer));
+				return Value(runtime, std::move(buffer));
+			}
+		)
+	);
+
+	byteRuntime.setProperty(
+		runtime,
 		"retainSubscription",
 		Function::createFromHostFunction(
 			runtime,
@@ -312,6 +426,32 @@ Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nativeInsta
 				if (count < 1 || !args[0].isString()) return Value(false);
 				std::string subId = args[0].asString(runtime).utf8(runtime);
 				return Value(nipworker_retain_subscription(engineHandle, subId.c_str()));
+			}
+		)
+	);
+
+	byteRuntime.setProperty(
+		runtime,
+		"retainSubscriptionBuffer",
+		Function::createFromHostFunction(
+			runtime,
+			PropNameID::forAscii(runtime, "retainSubscriptionBuffer"),
+			1,
+			[engineHandle](Runtime& runtime, const Value&, const Value* args, size_t count) -> Value {
+				if (count < 1 || !args[0].isString()) return Value::undefined();
+				std::string subId = args[0].asString(runtime).utf8(runtime);
+				if (!nipworker_retain_subscription(engineHandle, subId.c_str())) {
+					return Value::undefined();
+				}
+				uint8_t* ptr = nipworker_subscription_buffer_ptr(engineHandle, subId.c_str());
+				size_t len = nipworker_subscription_buffer_len(engineHandle, subId.c_str());
+				if (ptr == nullptr || len == 0) {
+					nipworker_release_subscription(engineHandle, subId.c_str());
+					return Value::undefined();
+				}
+				auto nativeBuffer = std::make_shared<ExternalMutableBuffer>(ptr, len);
+				ArrayBuffer buffer(runtime, std::move(nativeBuffer));
+				return Value(runtime, std::move(buffer));
 			}
 		)
 	);

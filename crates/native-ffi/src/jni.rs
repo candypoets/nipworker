@@ -1,4 +1,4 @@
-//! JNI bridge for Android (LynxJS).
+//! JNI bridge for Android (React Native).
 //!
 //! These `#[no_mangle]` functions are the entry points called from
 //! Kotlin via the JVM's JNI. Because they are defined in Rust with
@@ -15,7 +15,7 @@ extern "C" {
 
     fn impl_JNI_OnUnload(vm: *mut c_void, reserved: *mut c_void);
 
-    fn impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerInit(
+    fn impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerInit(
         env: *mut c_void,
         cls: *mut c_void,
         userdata: i64,
@@ -37,33 +37,33 @@ extern "C" {
         indexer_relays: *mut c_void,
     ) -> i64;
 
-    fn impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerHandleMessage(
+    fn impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerHandleMessage(
         env: *mut c_void,
         cls: *mut c_void,
         handle: i64,
         bytes: *mut c_void,
     );
 
-    fn impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerSetPrivateKey(
+    fn impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerSetPrivateKey(
         env: *mut c_void,
         cls: *mut c_void,
         handle: i64,
         secret: *mut c_void,
     );
 
-    fn impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerDeinit(
+    fn impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerDeinit(
         env: *mut c_void,
         cls: *mut c_void,
         handle: i64,
     );
 
-    fn impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerWake(
+    fn impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerWake(
         env: *mut c_void,
         cls: *mut c_void,
         handle: i64,
     );
 
-    fn impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerFreeBytes(
+    fn impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerFreeBytes(
         env: *mut c_void,
         cls: *mut c_void,
         ptr: i64,
@@ -82,81 +82,13 @@ pub extern "C" fn JNI_OnUnload(vm: *mut c_void, reserved: *mut c_void) {
 }
 
 #[no_mangle]
-pub extern "C" fn Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerInit(
-    env: *mut c_void,
-    cls: *mut c_void,
-    userdata: i64,
-) -> i64 {
-    unsafe {
-        impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerInit(
-            env, cls, userdata,
-        )
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerHandleMessage(
-    env: *mut c_void,
-    cls: *mut c_void,
-    handle: i64,
-    bytes: *mut c_void,
-) {
-    unsafe {
-        impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerHandleMessage(
-            env, cls, handle, bytes,
-        )
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerSetPrivateKey(
-    env: *mut c_void,
-    cls: *mut c_void,
-    handle: i64,
-    secret: *mut c_void,
-) {
-    unsafe {
-        impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerSetPrivateKey(
-            env, cls, handle, secret,
-        )
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerDeinit(
-    env: *mut c_void,
-    cls: *mut c_void,
-    handle: i64,
-) {
-    unsafe {
-        impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerDeinit(
-            env, cls, handle,
-        )
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerFreeBytes(
-    env: *mut c_void,
-    cls: *mut c_void,
-    ptr: i64,
-    len: i64,
-) {
-    unsafe {
-        impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerFreeBytes(
-            env, cls, ptr, len,
-        )
-    }
-}
-
-#[no_mangle]
 pub extern "C" fn Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerInit(
     env: *mut c_void,
     cls: *mut c_void,
     userdata: i64,
 ) -> i64 {
     unsafe {
-        impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerInit(
+        impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerInit(
             env, cls, userdata,
         )
     }
@@ -208,7 +140,7 @@ pub extern "C" fn Java_com_candypoets_nipworker_reactnative_NipworkerReactNative
     bytes: *mut c_void,
 ) {
     unsafe {
-        impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerHandleMessage(
+        impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerHandleMessage(
             env, cls, handle, bytes,
         )
     }
@@ -222,7 +154,7 @@ pub extern "C" fn Java_com_candypoets_nipworker_reactnative_NipworkerReactNative
     secret: *mut c_void,
 ) {
     unsafe {
-        impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerSetPrivateKey(
+        impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerSetPrivateKey(
             env, cls, handle, secret,
         )
     }
@@ -235,7 +167,7 @@ pub extern "C" fn Java_com_candypoets_nipworker_reactnative_NipworkerReactNative
     handle: i64,
 ) {
     unsafe {
-        impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerDeinit(
+        impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerDeinit(
             env, cls, handle,
         )
     }
@@ -248,7 +180,7 @@ pub extern "C" fn Java_com_candypoets_nipworker_reactnative_NipworkerReactNative
     handle: i64,
 ) {
     unsafe {
-        impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerWake(env, cls, handle)
+        impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerWake(env, cls, handle)
     }
 }
 
@@ -260,7 +192,7 @@ pub extern "C" fn Java_com_candypoets_nipworker_reactnative_NipworkerReactNative
     len: i64,
 ) {
     unsafe {
-        impl_Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerFreeBytes(
+        impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerFreeBytes(
             env, cls, ptr, len,
         )
     }

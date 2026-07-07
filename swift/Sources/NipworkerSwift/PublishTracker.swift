@@ -15,13 +15,11 @@ public final class PublishTracker: ObservableObject {
         self.manager = manager
 
         self.notificationToken = NotificationCenter.default.addObserver(
-            forName: .nipworkerSubscriptionUpdated,
+            forName: .nipworkerSubscriptionUpdated(subId: publishId),
             object: nil,
             queue: .main
-        ) { [weak self] notification in
-            guard let self = self,
-                  let subId = notification.userInfo?["subId"] as? String,
-                  subId == self.publishId else { return }
+        ) { [weak self] _ in
+            guard let self = self else { return }
             Task { await self.sync() }
         }
     }

@@ -150,7 +150,6 @@ impl NativeSubscriptionStore {
             let written = existing.append_payload(payload);
             if !written {
                 let close_on_cleanup = existing.close_on_cleanup;
-                self.subscriptions.remove(sub_id);
                 return Err(close_on_cleanup);
             }
         }
@@ -218,6 +217,53 @@ fn build_unsubscribe_message(subscription_id: &str) -> Vec<u8> {
     );
     builder.finish(main_msg, None);
     builder.finished_data().to_vec()
+}
+
+const ROUTE_WAKE_MAGIC: &[u8; 4] = b"NWR1";
+
+fn build_route_wake_frame(sub_id: &str) -> Vec<u8> {
+    let sub_id_bytes = sub_id.as_bytes();
+    let mut frame = Vec::with_capacity(8 + sub_id_bytes.len());
+    frame.extend_from_slice(ROUTE_WAKE_MAGIC);
+    frame.extend_from_slice(&(sub_id_bytes.len() as u32).to_le_bytes());
+    frame.extend_from_slice(sub_id_bytes);
+    frame
+}
+
+fn subscription_buffer_size_from_message(bytes: &[u8]) -> Option<(String, usize)> {
+    let main_message =
+        flatbuffers::root::<nipworker_core::generated::nostr::fb::MainMessage>(bytes).ok()?;
+    let subscribe = main_message.content_as_subscribe()?;
+    let total_limit = subscribe
+        .requests()
+        .iter()
+        .map(|request| {
+            let limit = request.limit();
+            if limit > 0 {
+                limit as usize
+            } else {
+                100
+            }
+        })
+        .sum::<usize>()
+        .max(1);
+    let bytes_per_event = match subscribe.config().bytes_per_event() {
+        0 => 3072usize,
+        value => value as usize,
+    };
+    let data_size = total_limit.saturating_mul(bytes_per_event);
+    let overhead = data_size / 4;
+    Some((
+        subscribe.subscription_id().to_string(),
+        4usize.saturating_add(data_size).saturating_add(overhead),
+    ))
+}
+
+fn publish_id_from_message(bytes: &[u8]) -> Option<String> {
+    let main_message =
+        flatbuffers::root::<nipworker_core::generated::nostr::fb::MainMessage>(bytes).ok()?;
+    let publish = main_message.content_as_publish()?;
+    Some(publish.publish_id().to_string())
 }
 
 #[no_mangle]
@@ -381,8 +427,13 @@ pub extern "C" fn nipworker_init_with_config(
                         sub_id_len,
                         payload_len
                     );
-                    let len = bytes.len();
-                    let ptr = Box::into_raw(bytes.into_boxed_slice()) as *const u8;
+                    let callback_bytes = if sub_id.is_empty() || sub_id == "crypto" {
+                        bytes
+                    } else {
+                        build_route_wake_frame(&sub_id)
+                    };
+                    let len = callback_bytes.len();
+                    let ptr = Box::into_raw(callback_bytes.into_boxed_slice()) as *const u8;
                     callback(userdata as *mut c_void, ptr, len);
                 }
             });
@@ -449,6 +500,66 @@ pub unsafe extern "C" fn nipworker_handle_message(handle: *mut c_void, ptr: *con
             let _ = tx.send(EngineCommand::HandleMessage(bytes));
         }
     }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn nipworker_subscribe_message(
+    handle: *mut c_void,
+    ptr: *const u8,
+    len: usize,
+) -> bool {
+    if handle.is_null() || ptr.is_null() {
+        return false;
+    }
+    let handle_ref = unsafe { &*(handle as *mut NipworkerHandle) };
+    let bytes = unsafe { slice::from_raw_parts(ptr, len) }.to_vec();
+    let Some((sub_id, buffer_size)) = subscription_buffer_size_from_message(&bytes) else {
+        return false;
+    };
+    if let Ok(state) = handle_ref.state.lock() {
+        if state.destroyed {
+            return false;
+        }
+        if let Ok(mut subscriptions) = state.subscriptions.lock() {
+            subscriptions.register(sub_id, buffer_size, true);
+        } else {
+            return false;
+        }
+        if let Some(ref tx) = state.cmd_tx {
+            return tx.send(EngineCommand::HandleMessage(bytes)).is_ok();
+        }
+    }
+    false
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn nipworker_publish_message(
+    handle: *mut c_void,
+    ptr: *const u8,
+    len: usize,
+) -> bool {
+    if handle.is_null() || ptr.is_null() {
+        return false;
+    }
+    let handle_ref = unsafe { &*(handle as *mut NipworkerHandle) };
+    let bytes = unsafe { slice::from_raw_parts(ptr, len) }.to_vec();
+    let Some(publish_id) = publish_id_from_message(&bytes) else {
+        return false;
+    };
+    if let Ok(state) = handle_ref.state.lock() {
+        if state.destroyed {
+            return false;
+        }
+        if let Ok(mut subscriptions) = state.subscriptions.lock() {
+            subscriptions.register(publish_id, 3072, false);
+        } else {
+            return false;
+        }
+        if let Some(ref tx) = state.cmd_tx {
+            return tx.send(EngineCommand::HandleMessage(bytes)).is_ok();
+        }
+    }
+    false
 }
 
 #[no_mangle]
@@ -695,7 +806,10 @@ mod tests {
 
         let written = subscription.append_payload(payload);
         assert!(written, "payload should fit");
-        assert_eq!(&subscription.buffer[4..8], &(payload.len() as u32).to_le_bytes());
+        assert_eq!(
+            &subscription.buffer[4..8],
+            &(payload.len() as u32).to_le_bytes()
+        );
         assert_eq!(&subscription.buffer[8..12], payload);
         assert_eq!(&subscription.buffer[0..4], &(12u32).to_le_bytes());
     }
@@ -706,7 +820,10 @@ mod tests {
         let large = vec![0u8; 16];
 
         let written = subscription.append_payload(&large);
-        assert!(!written, "payload larger than remaining space should be rejected");
+        assert!(
+            !written,
+            "payload larger than remaining space should be rejected"
+        );
         assert_eq!(&subscription.buffer[0..4], &4u32.to_le_bytes());
     }
 
@@ -722,5 +839,21 @@ mod tests {
 
         assert_eq!(second.ref_count, 2);
         assert_eq!(second.buffer[0], first);
+    }
+
+    #[test]
+    fn overflow_keeps_subscription_buffer_for_reader_consistency() {
+        let mut store = NativeSubscriptionStore::new();
+        store.register("sub-1".to_string(), 12, true);
+        let large = vec![0u8; 16];
+
+        let result = store.append_payload("sub-1", &large);
+
+        assert_eq!(result, Err(true));
+        assert!(store.subscriptions.contains_key("sub-1"));
+        assert_eq!(
+            &store.subscriptions.get("sub-1").unwrap().buffer[0..4],
+            &4u32.to_le_bytes()
+        );
     }
 }

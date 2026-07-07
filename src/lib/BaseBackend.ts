@@ -1,7 +1,7 @@
 import type { EventTemplate, NostrEvent } from 'nostr-tools';
 import type { RequestObject, SubscriptionConfig } from '../types';
 
-// Minimal EventTarget / CustomEvent polyfill for environments without DOM APIs (QuickJS, Lynx, etc.)
+// Minimal EventTarget / CustomEvent polyfill for environments without DOM APIs.
 class SimpleEvent {
 	type: string;
 	detail: any;
@@ -26,7 +26,7 @@ class SimpleEventEmitter {
 		arr.push({ listener, options });
 		this._listeners.set(type, arr);
 	}
-	removeEventListener(type: string, listener: any, options?: any): void {
+	removeEventListener(type: string, listener: any, _options?: any): void {
 		const arr = this._listeners.get(type);
 		if (!arr) return;
 		this._listeners.set(type, arr.filter((l) => l.listener !== listener));
@@ -47,7 +47,7 @@ class SimpleEventEmitter {
 
 /**
  * Storage adapter used by BaseBackend for session persistence.
- * Allows native backends (Lynx) to use platform storage instead of localStorage.
+ * Allows native backends to use platform storage instead of localStorage.
  */
 export interface StorageAdapter {
 	getItem(key: string): string | null;
@@ -66,7 +66,7 @@ export const localStorageAdapter: StorageAdapter = {
  * Abstract base class implementing shared logic across all NIPWorker backends:
  * - NostrManager   (legacy 4-worker WASM)
  * - EngineManager  (single-worker WASM engine)
- * - NativeBackend  (Lynx native module)
+ * - ReactNativeManager (React Native native module)
  *
  * Subclasses must implement the abstract communication methods
  * (subscribe, publish, setSigner, etc.) and may override session hooks.

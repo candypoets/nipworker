@@ -1,7 +1,8 @@
 import { Event, EventTemplate } from 'nostr-tools';
 import { ArrayBufferReader } from 'src/lib/ArrayBufferReader';
 import { WorkerMessage } from './generated/nostr/fb';
-import { RequestObject, getManager, type SubscriptionConfig } from './manager';
+import { getManager } from './manager';
+import type { RequestObject, SubscriptionConfig } from './types';
 import { scheduleMicrotask } from './lib/scheduleMicrotask';
 // Re-export type guard utilities for hooks users
 export {

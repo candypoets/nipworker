@@ -20,11 +20,11 @@ SYMBOLS=(
 	"nipworker_set_private_key"
 	"nipworker_deinit"
 	"nipworker_free_bytes"
-	"Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerInit"
-	"Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerHandleMessage"
-	"Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerSetPrivateKey"
-	"Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerDeinit"
-	"Java_com_candypoets_nipworker_lynx_NipworkerLynxModule_nipworkerFreeBytes"
+	"Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerInit"
+	"Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerHandleMessage"
+	"Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerSetPrivateKey"
+	"Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerDeinit"
+	"Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerFreeBytes"
 )
 
 if [[ ! -f "$AAR_PATH" ]]; then
