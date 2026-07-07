@@ -1,10 +1,5 @@
-import org.gradle.api.tasks.compile.JavaCompile
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
-
 plugins {
 	id("com.android.library")
-	id("org.jetbrains.kotlin.android")
 	id("maven-publish")
 }
 
@@ -33,20 +28,14 @@ fun nativeFfiVersion(): String {
 }
 
 android {
-	namespace = "com.candypoets.nipworker.lynx"
+	namespace = "com.candypoets.nipworker.nativeffi"
 	compileSdk = providers.gradleProperty("ANDROID_COMPILE_SDK").map(String::toInt).orElse(35).get()
 
 	defaultConfig {
 		minSdk = providers.gradleProperty("ANDROID_MIN_SDK").map(String::toInt).orElse(23).get()
-		consumerProguardFiles("consumer-rules.pro")
 		ndk {
 			abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
 		}
-	}
-
-	compileOptions {
-		sourceCompatibility = JavaVersion.VERSION_17
-		targetCompatibility = JavaVersion.VERSION_17
 	}
 
 	sourceSets {
@@ -62,39 +51,8 @@ android {
 	}
 }
 
-tasks.withType<KotlinCompile>().configureEach {
-	compilerOptions {
-		jvmTarget.set(JvmTarget.JVM_17)
-	}
-}
-
-val compileLynxStubs by tasks.registering(JavaCompile::class) {
-	source = fileTree("src/compileOnlyStubs/java") {
-		include("**/*.java")
-	}
-	classpath = files()
-	destinationDirectory.set(layout.buildDirectory.dir("lynx-stubs/classes"))
-	sourceCompatibility = JavaVersion.VERSION_17.toString()
-	targetCompatibility = JavaVersion.VERSION_17.toString()
-}
-
-val lynxStubsJar by tasks.registering(Jar::class) {
-	dependsOn(compileLynxStubs)
-	archiveClassifier.set("lynx-compile-stubs")
-	from(layout.buildDirectory.dir("lynx-stubs/classes"))
-}
-
 dependencies {
-	compileOnly(files(lynxStubsJar))
 	androidTestImplementation("androidx.test.ext:junit:1.2.1")
-
-	// Optional override for host-specific Lynx/Sparkling SDK coordinates:
-	// ./gradlew assembleRelease -PnipworkerLynxCompileOnly=com.example:lynx:1.0.0
-	providers.gradleProperty("nipworkerLynxCompileOnly").orNull
-		?.split(",")
-		?.map(String::trim)
-		?.filter(String::isNotEmpty)
-		?.forEach { compileOnly(it) }
 }
 
 afterEvaluate {
@@ -104,9 +62,9 @@ afterEvaluate {
 				from(components["release"])
 				artifactId = "nipworker-native-ffi-android"
 
-				pom {
-					name.set("NIPWorker Native FFI Android")
-					description.set("Android AAR packaging the NIPWorker Rust native FFI and Lynx module")
+					pom {
+						name.set("NIPWorker Native FFI Android")
+						description.set("Android AAR packaging the NIPWorker Rust native FFI libraries")
 					url.set("https://github.com/candypoets/nipworker")
 					licenses {
 						license {
