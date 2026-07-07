@@ -45,6 +45,7 @@ export class NostrManager extends BaseBackend {
 	private parser: Worker;
 	private crypto: Worker;
 	private signCB = (_event: any) => {};
+	private lastWakeAt = 0;
 
 	// MessageChannel for parser-main communication
 	private parserMainPort: MessagePort;
@@ -280,7 +281,7 @@ export class NostrManager extends BaseBackend {
 	 * Cleanup stale subscriptions when hidden, and wake workers when the page becomes active again.
 	 */
 	private setupVisibilityTracking(): void {
-		if (typeof document === 'undefined') return;
+		if (typeof document === 'undefined' || typeof window === 'undefined') return;
 
 		let wasHidden = false;
 		let hiddenTime = 0;
@@ -310,8 +311,18 @@ export class NostrManager extends BaseBackend {
 		});
 
 		window.addEventListener('pageshow', () => {
-			if (wasHidden || document.visibilityState === 'visible') {
+			if (!document.hidden) {
 				wakeFromLifecycle('pageshow');
+			}
+		});
+		window.addEventListener('focus', () => {
+			if (!document.hidden) {
+				wakeFromLifecycle('focus');
+			}
+		});
+		window.addEventListener('online', () => {
+			if (!document.hidden) {
+				wakeFromLifecycle('online');
 			}
 		});
 	}
@@ -321,7 +332,10 @@ export class NostrManager extends BaseBackend {
 	 * Called when returning from background to foreground.
 	 */
 	private wakeWorkers(source = 'visibility'): void {
-		console.log('[main] Waking connections worker for foreground reconnection');
+		const now = Date.now();
+		if (now - this.lastWakeAt < 250) return;
+		this.lastWakeAt = now;
+		console.log(`[main] Waking connections worker for foreground reconnection (${source})`);
 		this.connections.postMessage({ type: 'wake', source });
 	}
 

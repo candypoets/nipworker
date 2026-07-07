@@ -41,6 +41,7 @@ export class EngineManager extends BaseBackend {
 	private worker: Worker;
 	private enginePort: MessagePort;
 	private _signCB = (_event: NostrEvent) => {};
+	private lastWakeAt = 0;
 
 	constructor(_config: NostrManagerConfig = {}) {
 		super(localStorageAdapter);
@@ -211,10 +212,13 @@ export class EngineManager extends BaseBackend {
 	}
 
 	private setupVisibilityTracking(): void {
-		if (typeof document === 'undefined') return;
+		if (typeof document === 'undefined' || typeof window === 'undefined') return;
 		let wasHidden = false;
 		const wakeFromLifecycle = (source: string) => {
 			wasHidden = false;
+			const now = Date.now();
+			if (now - this.lastWakeAt < 250) return;
+			this.lastWakeAt = now;
 			this.worker.postMessage({ type: 'wake', source });
 		};
 
@@ -233,8 +237,18 @@ export class EngineManager extends BaseBackend {
 		});
 
 		window.addEventListener('pageshow', () => {
-			if (wasHidden || document.visibilityState === 'visible') {
+			if (!document.hidden) {
 				wakeFromLifecycle('pageshow');
+			}
+		});
+		window.addEventListener('focus', () => {
+			if (!document.hidden) {
+				wakeFromLifecycle('focus');
+			}
+		});
+		window.addEventListener('online', () => {
+			if (!document.hidden) {
+				wakeFromLifecycle('online');
 			}
 		});
 	}
