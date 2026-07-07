@@ -14,7 +14,11 @@ setManager(manager);
 
 ## Event Transport
 
-The current legacy React Native bridge receives native events as:
+The React Native entry point installs a JSI byte runtime when possible. Rust owns
+subscription and publish buffers; JS receives a small wake event and drains
+callback packets from native memory.
+
+Fallback bridge events use:
 
 ```ts
 {
@@ -24,11 +28,7 @@ The current legacy React Native bridge receives native events as:
 }
 ```
 
-The JS entry point decodes those events and routes them through the shared
-`NativeBackend`. Outgoing `handleMessage` calls pass `number[]` payloads for the
-same reason: this legacy React Native native module does not expose a direct
-`ArrayBuffer` transport. A future JSI/TurboModule backend should replace the
-array bridge with direct `ArrayBuffer`/native-buffer access.
+The fallback path decodes those events in `ReactNativeManager`.
 
 ## TurboModule Experiment
 
@@ -42,7 +42,8 @@ JSI runtime object:
 
 ```ts
 installByteRuntime(): boolean
-globalThis.__nipworkerReactNativeByteRuntime.handleMessage(bytes: ArrayBuffer): void
+globalThis.__nipworkerReactNativeByteRuntime.subscribe(bytes: ArrayBuffer, subId: string): ArrayBuffer
+globalThis.__nipworkerReactNativeByteRuntime.publish(bytes: ArrayBuffer, publishId: string): ArrayBuffer
 ```
 
 The installer keeps the codegen surface on officially supported types while the
