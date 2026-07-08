@@ -95,10 +95,10 @@ jobs:
       - run: npm ci
         if: ${{ steps.check_publish.outputs.should_publish == 'true' }}
 
-      # Build package
+      # Build JS/WASM package. Native mobile artifacts are built in native-build.yml.
       - name: Build package
         if: ${{ steps.check_publish.outputs.should_publish == 'true' }}
-        run: npm run build
+        run: npm run build:package
 
       # ──────────────────────────────────────────
       # Wait for native builds and bundle artifacts

@@ -1,6 +1,6 @@
 {
   "name": "@candypoets/nipworker",
-  "version": "0.96.4",
+  "version": "0.96.5",
   "description": "Nostr client library with worker-based architecture using Rust WASM",
   "type": "module",
   "module": "./dist/index.js",
@@ -87,6 +87,7 @@
   },
   "scripts": {
     "build": "npm-run-all --parallel build:connections build:cache build:parser build:crypto build:engine build:native:android build:native:ios && vite build",
+    "build:package": "npm run build:crates && vite build",
     "build:crates": "npm-run-all --parallel build:connections build:cache build:parser build:crypto build:engine",
     "build:native:android": "cd crates/native-ffi/android && ./build-android-aar.sh",
     "build:native:ios": "cd crates/native-ffi/ios && ./build-ios.sh",
@@ -103,7 +104,7 @@
     "flatc:swift:raw": "flatc --swift --gen-all --filename-suffix '_generated' -o ./swift/Sources/NipworkerSwift/Generated ./schemas/message.fbs",
     "flatc:java": "flatc --java --gen-all --filename-suffix '' -o ./crates/native-ffi/react-native/android/src/main/java ./schemas/message.fbs && perl -pi -e 's/FLATBUFFERS_25_12_19/FLATBUFFERS_25_2_10/g' ./crates/native-ffi/react-native/android/src/main/java/nostr/fb/*.java",
     "build:types": "tsc --emitDeclarationOnly --outDir dist",
-    "prepublishOnly": "npm run build",
+    "prepublishOnly": "npm run build:package",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
