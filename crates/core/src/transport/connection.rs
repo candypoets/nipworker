@@ -120,6 +120,7 @@ pub struct RelayConnection {
     active_reqs: Arc<RwLock<HashMap<String, Vec<String>>>>,
     backoff_attempts: Arc<RwLock<u32>>,
     next_retry_at_ms: Arc<RwLock<u64>>,
+    wake_in_flight: Arc<RwLock<bool>>,
 
     // Channel created at construction time so callers can enqueue immediately.
     queue_tx: Arc<RwLock<Option<Sender<String>>>>,
@@ -159,6 +160,7 @@ impl RelayConnection {
             active_reqs: Arc::new(RwLock::new(HashMap::new())),
             backoff_attempts: Arc::new(RwLock::new(0)),
             next_retry_at_ms: Arc::new(RwLock::new(0)),
+            wake_in_flight: Arc::new(RwLock::new(false)),
             queue_tx: Arc::new(RwLock::new(Some(tx))),
             queue_rx: Arc::new(RwLock::new(Some(rx))),
             out_writer,
@@ -719,6 +721,15 @@ impl RelayConnection {
     pub fn wake(self: &Arc<Self>) {
         tracing::info!(relay = %self.url, status = ?*self.status.read().unwrap(), "[connections][wake] waking connection");
 
+        {
+            let mut in_flight = self.wake_in_flight.write().unwrap();
+            if *in_flight {
+                tracing::info!(relay = %self.url, "[connections][wake] wake already in flight; coalescing request");
+                return;
+            }
+            *in_flight = true;
+        }
+
         self.clear_backoff();
 
         let replay_frames: Vec<String> = self
@@ -741,6 +752,7 @@ impl RelayConnection {
 
             if let Err(e) = conn.connect().await {
                 tracing::warn!(relay = %conn.url, error = ?e, "[connections][wake] reconnect attempt failed");
+                *conn.wake_in_flight.write().unwrap() = false;
                 return;
             }
 
@@ -749,6 +761,7 @@ impl RelayConnection {
                     tracing::warn!(relay = %conn.url, error = ?e, "[connections][wake] failed to enqueue replay frame");
                 }
             }
+            *conn.wake_in_flight.write().unwrap() = false;
         });
     }
 
@@ -963,6 +976,7 @@ mod tests {
         status_callbacks: Arc<RwLock<HashMap<String, Box<dyn Fn(TransportStatus)>>>>,
         connect_result: Arc<RwLock<Result<(), TransportError>>>,
         send_fail_count: Arc<AtomicUsize>,
+        on_connect_callback: Arc<Mutex<Option<Box<dyn Fn(&MockRelayTransport)>>>>,
     }
 
     impl MockRelayTransport {
@@ -973,6 +987,7 @@ mod tests {
                 status_callbacks: Arc::new(RwLock::new(HashMap::new())),
                 connect_result: Arc::new(RwLock::new(Ok(()))),
                 send_fail_count: Arc::new(AtomicUsize::new(0)),
+                on_connect_callback: Arc::new(Mutex::new(None)),
             }
         }
 
@@ -982,6 +997,13 @@ mod tests {
 
         fn set_send_fail_count(&self, count: usize) {
             self.send_fail_count.store(count, Ordering::SeqCst);
+        }
+
+        fn set_on_connect_callback<F>(&self, callback: F)
+        where
+            F: Fn(&MockRelayTransport) + 'static,
+        {
+            *self.on_connect_callback.lock().unwrap() = Some(Box::new(callback));
         }
 
         fn calls(&self) -> Vec<Call> {
@@ -1010,6 +1032,9 @@ mod tests {
                 .lock()
                 .unwrap()
                 .push(Call::Connect(url.to_string()));
+            if let Some(cb) = self.on_connect_callback.lock().unwrap().as_ref() {
+                cb(self);
+            }
             self.connect_result.read().unwrap().clone()
         }
 
@@ -1786,6 +1811,65 @@ mod tests {
 
                 assert!(disconnects >= 1, "wake should replace the websocket");
                 assert!(sends >= 2, "wake should replay the active REQ frame");
+            })
+            .await;
+    }
+
+    #[tokio::test]
+    async fn test_wake_coalesces_while_reconnect_is_in_flight() {
+        let local = LocalSet::new();
+        local
+            .run_until(async {
+                let transport = Arc::new(MockRelayTransport::new());
+                let (out_writer, status_writer, to_crypto, _out, _status, _crypto) = make_writers();
+
+                let conn = RelayConnection::new(
+                    "wss://r".to_string(),
+                    transport.clone(),
+                    out_writer,
+                    status_writer,
+                    to_crypto,
+                );
+
+                tokio::task::yield_now().await;
+                tokio::task::yield_now().await;
+                tokio::task::yield_now().await;
+                let initial_connects = transport
+                    .calls()
+                    .iter()
+                    .filter(|c| matches!(c, Call::Connect(url) if url == "wss://r"))
+                    .count();
+
+                let nested_wakes = Arc::new(std::sync::atomic::AtomicBool::new(false));
+                let conn_for_callback = conn.clone();
+                let nested_wakes_for_callback = nested_wakes.clone();
+                transport.set_on_connect_callback(move |_| {
+                    if !nested_wakes_for_callback.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                        conn_for_callback.wake();
+                        conn_for_callback.wake();
+                    }
+                });
+
+                conn.wake();
+
+                tokio::task::yield_now().await;
+                tokio::task::yield_now().await;
+                tokio::task::yield_now().await;
+
+                let wake_connects = transport
+                    .calls()
+                    .iter()
+                    .filter(|c| matches!(c, Call::Connect(url) if url == "wss://r"))
+                    .count()
+                    .saturating_sub(initial_connects);
+                let wake_disconnects = transport
+                    .calls()
+                    .iter()
+                    .filter(|c| matches!(c, Call::Disconnect(url) if url == "wss://r"))
+                    .count();
+
+                assert_eq!(wake_connects, 1, "parallel wake calls should share one reconnect");
+                assert_eq!(wake_disconnects, 1, "parallel wake calls should share one disconnect");
             })
             .await;
     }
