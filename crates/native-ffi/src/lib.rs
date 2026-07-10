@@ -300,27 +300,27 @@ pub extern "C" fn nipworker_init_with_config(
     // Initialize tracing subscriber for native builds
     #[cfg(target_vendor = "apple")]
     {
+        use tracing_subscriber::filter::LevelFilter;
         use tracing_subscriber::prelude::*;
         let _ = tracing_log::LogTracer::init();
         let _ = tracing_subscriber::registry()
-            .with(tracing_oslog::OsLogger::new(
-                "com.nutscash.sparkling",
-                "nipworker",
-            ))
+            .with(
+                tracing_oslog::OsLogger::new("com.nutscash.sparkling", "nipworker")
+                    .with_filter(LevelFilter::ERROR),
+            )
             .try_init();
     }
     #[cfg(target_os = "android")]
     {
         android_logger::init_once(
-            android_logger::Config::default().with_max_level(log::LevelFilter::Debug),
+            android_logger::Config::default().with_max_level(log::LevelFilter::Error),
         );
-        log::info!("android_logger initialized");
     }
     #[cfg(all(not(target_vendor = "apple"), not(target_os = "android")))]
     {
         let _ = tracing_log::LogTracer::init();
         let _ = tracing_subscriber::fmt()
-            .with_max_level(tracing::Level::DEBUG)
+            .with_max_level(tracing::Level::ERROR)
             .with_ansi(false)
             .try_init();
     }

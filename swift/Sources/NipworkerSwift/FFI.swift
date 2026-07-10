@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import ObjectiveC.runtime
 
 // MARK: - C FFI Imports from libnipworker_native_ffi
 
@@ -84,6 +85,18 @@ func nipworker_subscription_buffer_len(
 func nipworker_cleanup_subscriptions(_ handle: UnsafeMutableRawPointer?)
 
 func nipworker_react_native_shared_handle_if_available() -> UnsafeMutableRawPointer? {
+    let runtimeClassName = "NipworkerRuntime"
+    let sharedHandleSelector = NSSelectorFromString("sharedHandle")
+    if let runtimeClass = NSClassFromString(runtimeClassName), runtimeClass.responds(to: sharedHandleSelector) {
+        typealias SharedHandleMessageSend = @convention(c) (AnyClass, Selector) -> UnsafeMutableRawPointer?
+        if let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "objc_msgSend") {
+            let send = unsafeBitCast(symbol, to: SharedHandleMessageSend.self)
+            if let handle = send(runtimeClass, sharedHandleSelector) {
+                return handle
+            }
+        }
+    }
+
     typealias SharedHandleFunction = @convention(c) () -> UnsafeMutableRawPointer?
 
     guard let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "nipworker_react_native_shared_handle") else {

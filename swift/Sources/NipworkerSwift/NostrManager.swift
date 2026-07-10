@@ -79,7 +79,10 @@ public actor NostrManager {
         if let manager = reactNativeSharedManager {
             return manager
         }
-        let manager = NostrManager(borrowedHandle: nipworker_react_native_shared_handle_if_available())
+        guard let handle = nipworker_react_native_shared_handle_if_available() else {
+            return NostrManager(borrowedHandle: nil)
+        }
+        let manager = NostrManager(borrowedHandle: handle)
         reactNativeSharedManager = manager
         return manager
     }
