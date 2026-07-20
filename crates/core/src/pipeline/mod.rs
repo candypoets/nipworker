@@ -25,6 +25,10 @@ pub struct PipelineEvent {
     pub id: [u8; 32],
     /// Relay source (if from network)
     pub source_relay: Option<String>,
+    /// Serialized WorkerMessage bytes, stashed by an upstream pipe (e.g.
+    /// SaveToDbPipe) so a downstream SerializeEventsPipe can reuse them
+    /// instead of building the same FlatBuffer twice.
+    pub serialized: Option<Vec<u8>>,
 }
 
 impl PipelineEvent {
@@ -34,6 +38,7 @@ impl PipelineEvent {
             raw: Some(event),
             parsed: None,
             source_relay,
+            serialized: None,
         }
     }
 
@@ -43,6 +48,7 @@ impl PipelineEvent {
             raw: None,
             parsed: Some(event),
             source_relay: None,
+            serialized: None,
         }
     }
 
@@ -260,12 +266,6 @@ impl Pipeline {
     ) -> Result<Self> {
         Self::new(
             vec![
-                PipeType::MuteFilter(MuteFilterPipe::new(MuteCriteria::new(
-                    vec![],
-                    vec!["nsfw".to_string()],
-                    vec!["nsfw".to_string()],
-                    vec![],
-                ))),
                 PipeType::Parse(ParsePipe::new(parser)),
                 PipeType::SaveToDb(SaveToDbPipe::new(to_cache)),
                 PipeType::SerializeEvents(SerializeEventsPipe::new(subscription_id.clone())),

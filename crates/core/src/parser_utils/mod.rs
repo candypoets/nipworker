@@ -1,4 +1,3 @@
-pub mod batch_buffer;
 pub mod buffer;
 pub mod json;
 pub mod relay;

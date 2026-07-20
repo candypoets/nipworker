@@ -141,6 +141,44 @@ impl RingBufferStorage {
         Ok(Some(buffer[data_start..data_end].to_vec()))
     }
 
+    /// Cheap liveness check: does `offset` still point to a complete event?
+    /// Validates the offset against the head and the size-prefix bounds without
+    /// copying any event bytes.
+    pub fn contains_offset(&self, offset: u64) -> bool {
+        if !self.initialized.get() {
+            return false;
+        }
+
+        let head = self.head_offset.get();
+
+        // Evicted offsets are before the current head
+        if offset < head {
+            return false;
+        }
+
+        let rel = (offset - head) as usize;
+        let buffer = self.buffer.borrow();
+
+        // Beyond the tail or not enough bytes for the size prefix
+        if rel + 4 > buffer.len() {
+            return false;
+        }
+
+        let size = u32::from_le_bytes([
+            buffer[rel],
+            buffer[rel + 1],
+            buffer[rel + 2],
+            buffer[rel + 3],
+        ]) as usize;
+
+        if size == 0 {
+            return false;
+        }
+
+        // The full event must be within the buffer
+        rel + 4 + size <= buffer.len()
+    }
+
     /// Remove the first event from the buffer (single event eviction)
     fn remove_first_event(&self, buffer: &mut Vec<u8>) -> bool {
         if buffer.len() < 4 {
@@ -326,6 +364,10 @@ impl EventStorage for RingBufferStorage {
         })
     }
 
+    fn contains_offset(&self, event_offset: u64) -> bool {
+        RingBufferStorage::contains_offset(self, event_offset)
+    }
+
     fn load_events(&self) -> Result<Vec<u64>, DatabaseError> {
         let events = self.extract_events_from_buffer();
 
@@ -354,5 +396,73 @@ impl EventStorage for RingBufferStorage {
 
     fn as_any(&self) -> &dyn std::any::Any {
         self
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_storage(max_buffer_size: usize) -> RingBufferStorage {
+        RingBufferStorage::new(
+            "test-db".to_string(),
+            "rb:test".to_string(),
+            max_buffer_size,
+            DatabaseConfig::default(),
+        )
+    }
+
+    #[tokio::test]
+    async fn contains_offset_true_for_live_events() {
+        let storage = make_storage(1024 * 1024);
+        storage.initialize().await.unwrap();
+
+        let off1 = storage.add_event(b"hello").await.unwrap();
+        let off2 = storage.add_event(b"world!!").await.unwrap();
+
+        assert!(storage.contains_offset(off1));
+        assert!(storage.contains_offset(off2));
+    }
+
+    #[tokio::test]
+    async fn contains_offset_false_for_out_of_range_offsets() {
+        let storage = make_storage(1024 * 1024);
+        storage.initialize().await.unwrap();
+
+        let off = storage.add_event(b"hello").await.unwrap();
+
+        // Beyond the tail
+        assert!(!storage.contains_offset(off + 10_000));
+        // Inside the event payload (not an event boundary): the bytes "hell"
+        // read as a size prefix of ~1.8 GB, which fails the bounds check.
+        assert!(!storage.contains_offset(off + 4));
+        // Uninitialized storage reports nothing
+        let uninit = make_storage(1024);
+        assert!(!uninit.contains_offset(0));
+    }
+
+    #[tokio::test]
+    async fn contains_offset_false_after_eviction() {
+        // Each event occupies 4 + 16 = 20 bytes; room for ~5 events.
+        let storage = make_storage(100);
+        storage.initialize().await.unwrap();
+
+        let payload = [7u8; 16];
+        let first = storage.add_event(&payload).await.unwrap();
+        assert!(storage.contains_offset(first));
+
+        // Push enough events to evict the first one
+        let mut last = first;
+        for _ in 0..9 {
+            last = storage.add_event(&payload).await.unwrap();
+        }
+
+        assert!(!storage.contains_offset(first), "evicted offset must be dead");
+        assert!(storage.contains_offset(last), "newest offset must be live");
+
+        // get_event still agrees with contains_offset
+        assert!(storage.get_event(first).unwrap().is_none());
+        assert!(storage.get_event(last).unwrap().is_some());
     }
 }

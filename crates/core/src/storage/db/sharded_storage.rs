@@ -255,6 +255,14 @@ impl EventStorage for ShardedRingBufferStorage {
         storage.get_event(inner)
     }
 
+    fn contains_offset(&self, event_offset: u64) -> bool {
+        let (shard, inner) = unpack_offset(event_offset);
+        match self.shards.get(&shard) {
+            Some(storage) => storage.contains_offset(inner),
+            None => false,
+        }
+    }
+
     fn load_events(&self) -> Result<Vec<u64>, DatabaseError> {
         // Aggregate all shards' offsets and tag them with shard ID.
         // NOTE: This returns a flat list without cross-shard ordering guarantees.

@@ -11,9 +11,7 @@ import {
 	ConnectionStatus,
 	Message,
 	MessageType,
-	NostrEvent,
 	Raw,
-	StringVec,
 	WorkerMessage
 } from '../generated/nostr/fb';
 
@@ -71,20 +69,14 @@ type CloseSubCommand = {
 	subscription_id: string;
 };
 
-type NostrEventJson = {
-	id: string;
-	pubkey: string;
-	kind: number;
-	content: string;
-	tags: string[][];
-	created_at: number;
-	sig: string;
-};
+/** Max dedup entries kept per subscription id; oldest entries are evicted FIFO. */
+const DEDUP_MAX_ENTRIES = 10_000;
 
 type Session = {
 	relaySockets: Map<string, WebSocket>;
 	pendingFrames: Map<string, string[]>;
-	dedupBySubId: Map<string, Set<string>>;
+	/** Per-subId set of raw-frame hashes already forwarded (bounded FIFO). */
+	dedupBySubId: Map<string, Set<number>>;
 	lastSubIdByRelay: Map<string, string>;
 	torSocksProxy?: string;
 };
@@ -671,6 +663,13 @@ function relayFrameToWorkerMessage(
 	subIdHint?: string,
 	logger?: RelayProxyServerLogger
 ): Uint8Array | null {
+	// Fast path: EVENT frames are forwarded raw without JSON.parse - the Rust
+	// parser worker parses the event payload itself, exactly as in non-proxy mode.
+	if (sniffFrameKind(rawFrame) === 'EVENT') {
+		return eventFrameToWorkerMessage(session, relayUrl, rawFrame, subIdHint);
+	}
+
+	// Low-volume control frames (EOSE/OK/CLOSED/NOTICE/AUTH) go through JSON.parse.
 	const frame = parseRelayFrame(rawFrame);
 	if (!frame) {
 		return buildRawWorkerMessage(subIdHint ?? '', relayUrl, rawFrame);
@@ -680,24 +679,6 @@ function relayFrameToWorkerMessage(
 	}
 
 	const kind = frame[0];
-	if (kind === 'EVENT') {
-		const subId = typeof frame[1] === 'string' ? frame[1] : '';
-		const event = asNostrEvent(frame[2]);
-		if (!subId) {
-			return buildRawWorkerMessage(subId, relayUrl, rawFrame);
-		}
-		if (!event) {
-			return buildRawWorkerMessage(subId, relayUrl, rawFrame);
-		}
-
-		const dedupSet = session.dedupBySubId.get(subId);
-		if (dedupSet && dedupSet.has(event.id)) {
-			return null;
-		}
-		if (dedupSet) dedupSet.add(event.id);
-
-		return buildNostrEventWorkerMessage(subId, relayUrl, event);
-	}
 
 	if (kind === 'NOTICE') {
 		const message = frame[1] === undefined ? null : String(frame[1]);
@@ -730,44 +711,187 @@ function relayFrameToWorkerMessage(
 	return buildRawWorkerMessage(subIdHint ?? '', relayUrl, rawFrame);
 }
 
-function buildNostrEventWorkerMessage(subId: string, relayUrl: string, event: NostrEventJson): Uint8Array {
-	const builder = new flatbuffers.Builder(1024);
-
-	const subIdOffset = subId ? builder.createString(subId) : 0;
-	const relayUrlOffset = builder.createString(relayUrl);
-	const idOffset = builder.createString(event.id);
-	const pubkeyOffset = builder.createString(event.pubkey);
-	const contentOffset = builder.createString(event.content);
-	const sigOffset = builder.createString(event.sig);
-
-	const tagOffsets = new Array<flatbuffers.Offset>(event.tags.length);
-	for (let i = 0; i < event.tags.length; i++) {
-		tagOffsets[i] = createStringVecOffset(builder, event.tags[i]!);
+/**
+ * Forward a relay EVENT frame as a Raw worker message without JSON.parse.
+ * The Raw payload is the arr[2] event object JSON (mirrors the Rust
+ * connections worker, see crates/core/src/transport/fb_utils.rs) - the Rust
+ * parser worker parses the event itself, exactly as in non-proxy mode.
+ * Dedup is by raw-frame hash: the same event from different relays arrives
+ * byte-identical. Returns null when the frame was already forwarded.
+ */
+function eventFrameToWorkerMessage(
+	session: Session,
+	relayUrl: string,
+	rawFrame: string,
+	subIdHint?: string
+): Uint8Array | null {
+	const parts = extractEventFrameParts(rawFrame) ?? parseEventFrameFallback(rawFrame);
+	if (!parts || !parts.subId) {
+		return buildRawWorkerMessage(subIdHint ?? '', relayUrl, rawFrame);
 	}
-	const tagsOffset = NostrEvent.createTagsVector(builder, tagOffsets);
 
-	const eventOffset = NostrEvent.createNostrEvent(
-		builder,
-		idOffset,
-		pubkeyOffset,
-		event.kind,
-		contentOffset,
-		tagsOffset,
-		event.created_at,
-		sigOffset
-	);
+	const dedupSet = session.dedupBySubId.get(parts.subId);
+	if (dedupSet) {
+		const hash = fnv1a(rawFrame);
+		if (dedupSet.has(hash)) {
+			return null;
+		}
+		// Bounded FIFO eviction: JS Sets iterate in insertion order.
+		if (dedupSet.size >= DEDUP_MAX_ENTRIES) {
+			const oldest = dedupSet.values().next().value;
+			if (oldest !== undefined) dedupSet.delete(oldest);
+		}
+		dedupSet.add(hash);
+	}
 
-	const workerMessageOffset = WorkerMessage.createWorkerMessage(
-		builder,
-		subIdOffset,
-		relayUrlOffset,
-		MessageType.NostrEvent,
-		Message.NostrEvent,
-		eventOffset
-	);
+	return buildRawWorkerMessage(parts.subId, relayUrl, parts.payload);
+}
 
-	builder.finish(workerMessageOffset);
-	return builder.asUint8Array();
+/** FNV-1a 32-bit hash over UTF-16 code units - cheap dedup key for raw frames. */
+function fnv1a(str: string): number {
+	let hash = 0x811c9dc5;
+	for (let i = 0; i < str.length; i++) {
+		hash ^= str.charCodeAt(i);
+		hash = Math.imul(hash, 0x01000193);
+	}
+	return hash >>> 0;
+}
+
+function skipJsonWhitespace(s: string, i: number): number {
+	while (i < s.length) {
+		const c = s.charCodeAt(i);
+		if (c !== 32 && c !== 9 && c !== 10 && c !== 13) break;
+		i++;
+	}
+	return i;
+}
+
+/**
+ * Read the first array element of a relay frame without a full parse.
+ * Only used as a fast-path detector; anything unusual falls back to JSON.parse.
+ */
+function sniffFrameKind(frame: string): string | null {
+	let i = skipJsonWhitespace(frame, 0);
+	if (frame.charCodeAt(i) !== 91 /* [ */) return null;
+	i = skipJsonWhitespace(frame, i + 1);
+	if (frame.charCodeAt(i) !== 34 /* " */) return null;
+	const start = ++i;
+	while (i < frame.length) {
+		const c = frame.charCodeAt(i);
+		if (c === 92 /* \\ */) return null; // escape: defer to JSON.parse
+		if (c === 34 /* " */) return frame.slice(start, i);
+		i++;
+	}
+	return null;
+}
+
+/**
+ * Scan a plain (escape-free) JSON string token starting at s[start] === '"'.
+ * Returns null on escapes or unterminated input so callers can fall back.
+ */
+function scanPlainJsonString(s: string, start: number): { value: string; after: number } | null {
+	if (s.charCodeAt(start) !== 34 /* " */) return null;
+	let i = start + 1;
+	while (i < s.length) {
+		const c = s.charCodeAt(i);
+		if (c === 92 /* \\ */) return null;
+		if (c === 34 /* " */) return { value: s.slice(start + 1, i), after: i + 1 };
+		i++;
+	}
+	return null;
+}
+
+/**
+ * Find the end index (exclusive) of the JSON value starting at `start`,
+ * tracking bracket depth and string/escape boundaries. No allocation, no parse.
+ */
+function scanJsonValueEnd(s: string, start: number): number | null {
+	const open = s.charCodeAt(start);
+	if (open === 123 /* { */ || open === 91 /* [ */) {
+		let depth = 0;
+		let i = start;
+		while (i < s.length) {
+			const c = s.charCodeAt(i);
+			if (c === 34 /* " */) {
+				i++;
+				while (i < s.length) {
+					const sc = s.charCodeAt(i);
+					if (sc === 92 /* \\ */) {
+						i += 2;
+						continue;
+					}
+					if (sc === 34 /* " */) {
+						i++;
+						break;
+					}
+					i++;
+				}
+				continue;
+			}
+			if (c === 123 || c === 91) {
+				depth++;
+			} else if (c === 125 || c === 93) {
+				depth--;
+				if (depth === 0) return i + 1;
+			}
+			i++;
+		}
+		return null;
+	}
+	if (open === 34 /* " */) {
+		let i = start + 1;
+		while (i < s.length) {
+			const c = s.charCodeAt(i);
+			if (c === 92 /* \\ */) {
+				i += 2;
+				continue;
+			}
+			if (c === 34 /* " */) return i + 1;
+			i++;
+		}
+		return null;
+	}
+	// Scalar (number/true/false/null): ends at the next delimiter.
+	let i = start;
+	while (i < s.length) {
+		const c = s.charCodeAt(i);
+		if (c === 44 || c === 93 || c === 32 || c === 9 || c === 10 || c === 13) return i;
+		i++;
+	}
+	return null;
+}
+
+/**
+ * Extract { subId, payload } from a `["EVENT", "<subId>", {...}]` frame with a
+ * single cheap scan - no JSON.parse, no intermediate objects. Returns null for
+ * frames with escapes in the subId or any unusual layout (caller falls back).
+ */
+function extractEventFrameParts(frame: string): { subId: string; payload: string } | null {
+	let i = skipJsonWhitespace(frame, 0);
+	if (frame.charCodeAt(i) !== 91 /* [ */) return null;
+	i = skipJsonWhitespace(frame, i + 1);
+	if (!frame.startsWith('"EVENT"', i)) return null;
+	i += '"EVENT"'.length;
+	i = skipJsonWhitespace(frame, i);
+	if (frame.charCodeAt(i) !== 44 /* , */) return null;
+	i = skipJsonWhitespace(frame, i + 1);
+	const sub = scanPlainJsonString(frame, i);
+	if (!sub) return null;
+	i = skipJsonWhitespace(frame, sub.after);
+	if (frame.charCodeAt(i) !== 44 /* , */) return null;
+	i = skipJsonWhitespace(frame, i + 1);
+	const payloadEnd = scanJsonValueEnd(frame, i);
+	if (payloadEnd === null) return null;
+	return { subId: sub.value, payload: frame.slice(i, payloadEnd) };
+}
+
+/** Full-parse fallback for EVENT frames the cheap scanner rejects (rare). */
+function parseEventFrameFallback(rawFrame: string): { subId: string; payload: string } | null {
+	const frame = parseRelayFrame(rawFrame);
+	if (!frame || frame[0] !== 'EVENT') return null;
+	if (typeof frame[1] !== 'string' || !frame[1]) return null;
+	if (!frame[2] || typeof frame[2] !== 'object') return null;
+	return { subId: frame[1], payload: JSON.stringify(frame[2]) };
 }
 
 function buildConnectionStatusWorkerMessage(
@@ -822,119 +946,6 @@ function buildRawWorkerMessage(subId: string, relayUrl: string, rawFrame: string
 
 	builder.finish(workerMessageOffset);
 	return builder.asUint8Array();
-}
-
-function asNostrEvent(value: unknown): NostrEventJson | null {
-	if (!value || typeof value !== 'object') return null;
-	const candidate = value as Partial<NostrEventJson>;
-	if (
-		typeof candidate.id !== 'string' ||
-		typeof candidate.pubkey !== 'string' ||
-		typeof candidate.kind !== 'number' ||
-		typeof candidate.content !== 'string' ||
-		typeof candidate.created_at !== 'number' ||
-		typeof candidate.sig !== 'string' ||
-		!Array.isArray(candidate.tags)
-	) {
-		return null;
-	}
-
-	const rawTags = candidate.tags;
-	let needsSanitization = false;
-	for (const tag of rawTags) {
-		if (!Array.isArray(tag) || tag.length === 0) {
-			needsSanitization = true;
-			continue;
-		}
-		for (const item of tag) {
-			if (typeof item !== 'string') {
-				needsSanitization = true;
-				break;
-			}
-		}
-	}
-
-	let tags: string[][];
-	if (!needsSanitization) {
-		tags = rawTags as string[][];
-	} else {
-		tags = [];
-		for (const tag of rawTags) {
-			if (!Array.isArray(tag)) continue;
-			const sanitizedTag: string[] = [];
-			for (const item of tag) {
-				if (typeof item === 'string') {
-					sanitizedTag.push(item);
-				}
-			}
-			if (sanitizedTag.length > 0) {
-				tags.push(sanitizedTag);
-			}
-		}
-	}
-
-	return {
-		id: candidate.id,
-		pubkey: candidate.pubkey,
-		kind: candidate.kind,
-		content: candidate.content,
-		created_at: candidate.created_at,
-		sig: candidate.sig,
-		tags
-	};
-}
-
-/**
- * Diagnose why a value cannot be converted to a NostrEventJson.
- * Returns a human-readable error message describing the first validation failure.
- */
-function diagnoseEventError(value: unknown): string {
-	if (!value) return 'value is null/undefined';
-	if (typeof value !== 'object') return `expected object, got ${typeof value}`;
-
-	const candidate = value as Partial<NostrEventJson>;
-	const checks: [keyof NostrEventJson, string, string][] = [
-		['id', 'string', typeof candidate.id],
-		['pubkey', 'string', typeof candidate.pubkey],
-		['kind', 'number', typeof candidate.kind],
-		['content', 'string', typeof candidate.content],
-		['created_at', 'number', typeof candidate.created_at],
-		['sig', 'string', typeof candidate.sig],
-	];
-
-	for (const [field, expected, actual] of checks) {
-		if (actual !== expected) {
-			return `${field} is ${actual === 'undefined' ? 'missing' : `type ${actual} (expected ${expected})`}`;
-		}
-	}
-
-	if (!Array.isArray(candidate.tags)) {
-		return `tags is ${candidate.tags === undefined ? 'missing' : `type ${typeof candidate.tags} (expected array)`}`;
-	}
-
-	// Check for non-string tags
-	for (let i = 0; i < candidate.tags.length; i++) {
-		const tag = candidate.tags[i];
-		if (!Array.isArray(tag)) {
-			return `tags[${i}] is not an array`;
-		}
-		for (let j = 0; j < tag.length; j++) {
-			if (typeof tag[j] !== 'string') {
-				return `tags[${i}][${j}] is type ${typeof tag[j]} (expected string)`;
-			}
-		}
-	}
-
-	return 'unknown validation error';
-}
-
-function createStringVecOffset(builder: flatbuffers.Builder, values: string[]): flatbuffers.Offset {
-	const itemOffsets = new Array<flatbuffers.Offset>(values.length);
-	for (let i = 0; i < values.length; i++) {
-		itemOffsets[i] = builder.createString(values[i]!);
-	}
-	const itemsOffset = StringVec.createItemsVector(builder, itemOffsets);
-	return StringVec.createStringVec(builder, itemsOffset);
 }
 
 function parseRelayFrame(rawFrame: string): unknown[] | null {

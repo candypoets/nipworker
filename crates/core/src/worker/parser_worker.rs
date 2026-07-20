@@ -1,3 +1,4 @@
+use crate::cache_input;
 use crate::channel::{MessageSender, WorkerChannel};
 use crate::generated::nostr::fb;
 use crate::network::{publish::PublishManager, subscription::SubscriptionManager};
@@ -6,13 +7,14 @@ use crate::parser::Parser;
 use crate::pipeline::Pipeline;
 use crate::spawn::spawn_worker;
 use crate::types::{network::Request, nostr::Template};
+use crate::worker::batch_buffer::BatchBufferManager;
 use flatbuffers::FlatBufferBuilder;
 use futures::channel::mpsc;
 use futures::lock::Mutex;
 use futures::{FutureExt, SinkExt, StreamExt};
 use rustc_hash::FxHashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex as StdMutex, RwLock};
 use tracing::{info, info_span, warn, Span};
 
 // Tunables
@@ -24,6 +26,8 @@ const BATCH_SIZE: usize = 8;
 const NUM_SHARDS: usize = 10;
 const SHARD_CAP: usize = BATCH_SIZE * 4;
 const SLOW_SHARDS: usize = 2;
+/// How often the parser checks parser→main batch buffers for timeout flushes.
+const MAIN_BATCH_SWEEP_MS: u64 = 25;
 
 struct Sub {
     pipeline: Arc<Mutex<Pipeline>>,
@@ -49,6 +53,8 @@ pub struct ParserWorker {
     subscription_manager: SubscriptionManager,
     subscriptions: Arc<RwLock<FxHashMap<String, Sub>>>,
     slow_rr: AtomicUsize,
+    /// Per-subscription batch buffers for the parser→main channel.
+    main_batches: StdMutex<BatchBufferManager>,
 }
 
 impl ParserWorker {
@@ -68,6 +74,7 @@ impl ParserWorker {
             subscription_manager,
             subscriptions: Arc::new(RwLock::new(FxHashMap::default())),
             slow_rr: AtomicUsize::new(0),
+            main_batches: StdMutex::new(BatchBufferManager::new()),
         }
     }
 
@@ -130,6 +137,16 @@ impl ParserWorker {
                         break;
                     }
                 }
+            }
+        });
+
+        // Batch timeout sweeper: flushes parser→main batch buffers whose oldest
+        // frame exceeded the timeout so live events never sit buffered forever.
+        let this_sweep = this.clone();
+        spawn_worker(async move {
+            loop {
+                crate::platform::sleep(MAIN_BATCH_SWEEP_MS).await;
+                this_sweep.flush_timed_out_batches();
             }
         });
 
@@ -240,16 +257,19 @@ impl ParserWorker {
                                 };
 
                                 let sid = wm.sub_id().unwrap_or("").to_string();
-                                let msg_type = wm.type_();
+                                let content_type = wm.content_type();
                                 info!(
                                     "[network] Received from network: type={:?}, sub_id={}",
-                                    msg_type, sid
+                                    content_type, sid
                                 );
                                 // ConnectionStatus with empty sub_id is a relay status message
                                 // (not tied to a subscription). Forward directly to main.
                                 if sid.is_empty() {
-                                    if msg_type == fb::MessageType::ConnectionStatus {
+                                    if content_type == fb::Message::ConnectionStatus {
                                         this_ingress.send_output_to_main("", &bytes);
+                                        // Relay-level statuses are control messages:
+                                        // never let them sit behind the batch timer.
+                                        this_ingress.flush_main("");
                                         continue;
                                     }
                                     warn!("Invalid message: Missing sub_id");
@@ -425,8 +445,8 @@ impl ParserWorker {
             }
         };
 
-        match wm.type_() {
-            fb::MessageType::ConnectionStatus => {
+        match wm.content_type() {
+            fb::Message::ConnectionStatus => {
                 // handle connection status directly without needing a subscription
                 let Some(cs) = wm.content_as_connection_status() else {
                     warn!("WorkerMessage ConnectionStatus missing content");
@@ -501,7 +521,7 @@ impl ParserWorker {
             return;
         }
 
-        let (pipeline_arc, publish_id, eosed) = {
+        let pipeline_arc = {
             let guard = match self.subscriptions.read() {
                 Ok(g) => g,
                 Err(_) => {
@@ -513,14 +533,14 @@ impl ParserWorker {
                 warn!("Sub not found for {}", sid);
                 return;
             };
-            (Arc::clone(&sub.pipeline), sub.publish_id.clone(), sub.eosed)
+            Arc::clone(&sub.pipeline)
         };
 
-        match wm.type_() {
-            fb::MessageType::ConnectionStatus => {
+        match wm.content_type() {
+            fb::Message::ConnectionStatus => {
                 // Handled above before subscription lookup
             }
-            fb::MessageType::Eoce => {
+            fb::Message::Eoce => {
                 let flushed_outputs = {
                     let mut pipeline_guard = pipeline_arc.lock().await;
                     pipeline_guard.flush()
@@ -534,7 +554,7 @@ impl ParserWorker {
                 self.send_output_to_main(&sid, &eoce_bytes);
                 self.flush_main(&sid);
             }
-            fb::MessageType::Raw => {
+            fb::Message::Raw => {
                 let Some(raw) = wm.content_as_raw() else {
                     warn!("WorkerMessage Raw missing content");
                     return;
@@ -548,10 +568,9 @@ impl ParserWorker {
                 let mut pipeline_guard = pipeline_arc.lock().await;
                 match pipeline_guard.process(raw_msg).await {
                     Ok(Some(output)) => {
+                        // Buffered; flushed by the batch size/time thresholds so
+                        // live events don't cost one postMessage each.
                         self.send_output_to_main(&sid, &output);
-                        if eosed {
-                            self.flush_main(&sid);
-                        }
                     }
                     Ok(None) => {}
                     Err(e) => {
@@ -559,7 +578,7 @@ impl ParserWorker {
                     }
                 }
             }
-            fb::MessageType::ParsedNostrEvent => {
+            fb::Message::ParsedEvent => {
                 let mut pipeline_guard = pipeline_arc.lock().await;
                 match pipeline_guard
                     .process_cached_batch(&[fb_bytes_arc.as_ref().clone()])
@@ -575,17 +594,16 @@ impl ParserWorker {
                     }
                 }
             }
-            fb::MessageType::NostrEvent => {
+            fb::Message::NostrEvent => {
                 let mut pipeline_guard = pipeline_arc.lock().await;
                 match pipeline_guard
                     .process_bytes(fb_bytes_arc.as_ref().as_slice())
                     .await
                 {
                     Ok(Some(output)) => {
+                        // Buffered; flushed by the batch size/time thresholds so
+                        // live events don't cost one postMessage each.
                         self.send_output_to_main(&sid, &output);
-                        if eosed {
-                            self.flush_main(&sid);
-                        }
                     }
                     Ok(None) => {}
                     Err(e) => {
@@ -696,11 +714,12 @@ impl ParserWorker {
                     event: None,
                     parsed_event: None,
                     relays: None,
+                    close: false,
                 },
             );
 
             builder.finish(cache_req, None);
-            let bytes = builder.finished_data().to_vec();
+            let bytes = cache_input::frame(cache_input::TAG_REQUEST, builder.finished_data());
             let _ = self.to_cache.send(&bytes);
         }
 
@@ -726,9 +745,27 @@ impl ParserWorker {
         builder.finish(wm, None);
         let _ = self.to_connections.send(builder.finished_data());
 
+        let mut builder = FlatBufferBuilder::new();
+        let sid = builder.create_string(&subscription_id);
+        let close = fb::CacheRequest::create(
+            &mut builder,
+            &fb::CacheRequestArgs {
+                sub_id: Some(sid),
+                close: true,
+                ..Default::default()
+            },
+        );
+        builder.finish(close, None);
+        let framed = cache_input::frame(cache_input::TAG_REQUEST, builder.finished_data());
+        let _ = self.to_cache.send(&framed);
+
         if let Ok(mut w) = self.subscriptions.write() {
             w.remove(&subscription_id);
         }
+
+        // Flush any buffered events so nothing is left sitting in the batch
+        // buffer for a subscription that no longer exists.
+        self.flush_main(&subscription_id);
 
         Ok(())
     }
@@ -855,11 +892,12 @@ impl ParserWorker {
                     event: Some(fb_event),
                     parsed_event: None,
                     relays: relay_vec,
+                    close: false,
                 },
             );
 
             builder.finish(cache_req, None);
-            let bytes = builder.finished_data().to_vec();
+            let bytes = cache_input::frame(cache_input::TAG_REQUEST, builder.finished_data());
 
             info!(
                 "publish_event: sending CacheRequest to cache, event_id={}, bytes={}",
@@ -908,12 +946,45 @@ impl ParserWorker {
         messages
     }
 
-    fn send_output_to_main(&self, sub_id: &str, data: &[u8]) {
-        let encoded = encode_tagged(sub_id, data);
-        let _ = self.to_main.send(&encoded);
+    fn lock_main_batches(&self) -> std::sync::MutexGuard<'_, BatchBufferManager> {
+        match self.main_batches.lock() {
+            Ok(g) => g,
+            Err(poisoned) => {
+                warn!("Main batches lock poisoned");
+                poisoned.into_inner()
+            }
+        }
     }
 
-    fn flush_main(&self, _sub_id: &str) {}
+    /// Buffer a serialized WorkerMessage for the parser→main channel.
+    /// Frames accumulate per subscription and are sent as one batched,
+    /// length-prefixed payload when the 16KB size threshold is hit, when
+    /// `flush_main`/`flush_timed_out_batches` runs, or on EOSE/EOCE/close.
+    fn send_output_to_main(&self, sub_id: &str, data: &[u8]) {
+        let flushed = self.lock_main_batches().add_message(sub_id, data);
+        if let Some(payload) = flushed {
+            let _ = self.to_main.send(&payload);
+        }
+    }
+
+    /// Immediately send everything buffered for `sub_id`. Called on EOSE/EOCE,
+    /// after control (ConnectionStatus) messages so they are never delayed
+    /// behind the batch timer, and on subscription close.
+    fn flush_main(&self, sub_id: &str) {
+        let payload = self.lock_main_batches().flush_sub(sub_id);
+        if let Some(payload) = payload {
+            let _ = self.to_main.send(&payload);
+        }
+    }
+
+    /// Flush every per-subscription batch whose oldest frame exceeded the
+    /// batch timeout. Driven periodically by the sweep task in `run()`.
+    fn flush_timed_out_batches(&self) {
+        let payloads = self.lock_main_batches().drain_timed_out();
+        for payload in payloads {
+            let _ = self.to_main.send(&payload);
+        }
+    }
 }
 
 /// Encode a (sub_id, data) pair into a single Vec<u8> using a simple length-prefix format:
@@ -940,6 +1011,41 @@ pub fn decode_tagged(bytes: &[u8]) -> Option<(String, Vec<u8>)> {
     let sub_id = String::from_utf8_lossy(&bytes[4..4 + sub_len]).to_string();
     let data = bytes[4 + sub_len..].to_vec();
     Some((sub_id, data))
+}
+
+/// Decode a batched parser→main payload: concatenated frames of
+/// `[4-byte frame len LE][encode_tagged(sub_id, data)]`.
+/// Malformed trailing bytes stop decoding; frames decoded so far are returned.
+pub fn decode_tagged_batch(bytes: &[u8]) -> Vec<(String, Vec<u8>)> {
+    let mut frames = Vec::new();
+    let mut offset = 0;
+
+    while offset + 4 <= bytes.len() {
+        let len = u32::from_le_bytes([
+            bytes[offset],
+            bytes[offset + 1],
+            bytes[offset + 2],
+            bytes[offset + 3],
+        ]) as usize;
+
+        if len == 0 || offset + 4 + len > bytes.len() {
+            warn!(
+                "Invalid batched frame length: {} at offset {} (payload {} bytes)",
+                len,
+                offset,
+                bytes.len()
+            );
+            break;
+        }
+
+        if let Some(frame) = decode_tagged(&bytes[offset + 4..offset + 4 + len]) {
+            frames.push(frame);
+        }
+
+        offset += 4 + len;
+    }
+
+    frames
 }
 
 fn request_from_t(rt: &fb::RequestT) -> Request {
@@ -976,6 +1082,7 @@ fn request_from_t(rt: &fb::RequestT) -> Request {
         no_cache: rt.no_cache,
         max_relays: rt.max_relays as u32,
         cache_only: rt.cache_only,
+        mesh_only: rt.mesh_only,
     }
 }
 
@@ -1201,6 +1308,14 @@ mod tests {
         }
     }
 
+    // Decode the first frame of a batched parser→main payload.
+    fn decode_first_frame(bytes: &[u8]) -> (String, Vec<u8>) {
+        decode_tagged_batch(bytes)
+            .into_iter()
+            .next()
+            .expect("expected at least one frame in batched payload")
+    }
+
     #[tokio::test]
     async fn test_eose_from_multiple_relays() {
         let local = tokio::task::LocalSet::new();
@@ -1274,10 +1389,10 @@ mod tests {
                     let bytes = result
                         .expect("Timeout waiting for EOSE message")
                         .expect("to_main channel closed");
-                    let (sub_id, data) = decode_tagged(&bytes).expect("decode failed");
+                    let (sub_id, data) = decode_first_frame(&bytes);
                     assert_eq!(sub_id, "multi_eose_sub");
                     let wm = flatbuffers::root::<fb::WorkerMessage>(&data).unwrap();
-                    assert_eq!(wm.type_(), fb::MessageType::ConnectionStatus);
+                    assert_eq!(wm.content_type(), fb::Message::ConnectionStatus);
                     let cs = wm.content_as_connection_status().unwrap();
                     assert_eq!(cs.status(), "EOSE");
                     received_relays.push(cs.relay_url().to_string());
@@ -1367,11 +1482,11 @@ mod tests {
                         .await
                         .expect("timeout waiting for optimistic update")
                         .expect("to_main channel closed");
-                let (sub_id, data) = decode_tagged(&bytes).expect("decode failed");
+                let (sub_id, data) = decode_first_frame(&bytes);
                 assert_eq!(sub_id, full_sub_id);
 
                 let wm = flatbuffers::root::<fb::WorkerMessage>(&data).unwrap();
-                assert_eq!(wm.type_(), fb::MessageType::ParsedNostrEvent);
+                assert_eq!(wm.content_type(), fb::Message::ParsedEvent);
             })
             .await;
     }
@@ -1439,10 +1554,10 @@ mod tests {
 
             // Collect EOSE status
             let bytes = to_main_ch.recv().await.expect("to_main channel closed");
-            let (sub_id, data) = decode_tagged(&bytes).expect("decode failed");
+            let (sub_id, data) = decode_first_frame(&bytes);
             assert_eq!(sub_id, "partial_eose_sub");
             let wm = flatbuffers::root::<fb::WorkerMessage>(&data).unwrap();
-            assert_eq!(wm.type_(), fb::MessageType::ConnectionStatus);
+            assert_eq!(wm.content_type(), fb::Message::ConnectionStatus);
             let cs = wm.content_as_connection_status().unwrap();
             assert_eq!(cs.status(), "EOSE");
             assert_eq!(cs.relay_url(), "wss://r2");
@@ -1518,13 +1633,13 @@ mod tests {
 
             // Receive EOSE status message (pipeline flush output + EOSE status)
             let bytes = to_main_ch.recv().await.expect("to_main channel closed");
-            let (sub_id, data) = decode_tagged(&bytes).expect("decode failed");
+            let (sub_id, data) = decode_first_frame(&bytes);
             assert_eq!(sub_id, "flush_eose_sub");
 
             // Verify it's a valid WorkerMessage (could be flushed output or EOSE status)
             let wm = flatbuffers::root::<fb::WorkerMessage>(&data).unwrap();
             // After EOSE, we should get ConnectionStatus type with EOSE
-            assert_eq!(wm.type_(), fb::MessageType::ConnectionStatus);
+            assert_eq!(wm.content_type(), fb::Message::ConnectionStatus);
             let cs = wm.content_as_connection_status().unwrap();
             assert_eq!(cs.status(), "EOSE");
         }).await;
@@ -1594,10 +1709,10 @@ mod tests {
 
                 // Should receive EOSE status without crashing
                 let bytes = to_main_ch.recv().await.expect("to_main channel closed");
-                let (sub_id, data) = decode_tagged(&bytes).expect("decode failed");
+                let (sub_id, data) = decode_first_frame(&bytes);
                 assert_eq!(sub_id, "empty_eose_sub");
                 let wm = flatbuffers::root::<fb::WorkerMessage>(&data).unwrap();
-                assert_eq!(wm.type_(), fb::MessageType::ConnectionStatus);
+                assert_eq!(wm.content_type(), fb::Message::ConnectionStatus);
                 let cs = wm.content_as_connection_status().unwrap();
                 assert_eq!(cs.status(), "EOSE");
 
@@ -1680,10 +1795,10 @@ mod tests {
 
             // Collect first EOSE status
             let bytes = to_main_ch.recv().await.expect("to_main channel closed for first EOSE");
-            let (sub_id, data) = decode_tagged(&bytes).expect("decode failed");
+            let (sub_id, data) = decode_first_frame(&bytes);
             assert_eq!(sub_id, "idempotent_eose_sub");
             let wm = flatbuffers::root::<fb::WorkerMessage>(&data).unwrap();
-            assert_eq!(wm.type_(), fb::MessageType::ConnectionStatus);
+            assert_eq!(wm.content_type(), fb::Message::ConnectionStatus);
             let cs = wm.content_as_connection_status().unwrap();
             assert_eq!(cs.status(), "EOSE");
             assert_eq!(cs.relay_url(), "wss://relay1.example.com");
@@ -1709,13 +1824,148 @@ mod tests {
 
             // Collect second EOSE status
             let bytes = to_main_ch.recv().await.expect("to_main channel closed for second EOSE");
-            let (sub_id, data) = decode_tagged(&bytes).expect("decode failed");
+            let (sub_id, data) = decode_first_frame(&bytes);
             assert_eq!(sub_id, "idempotent_eose_sub");
             let wm = flatbuffers::root::<fb::WorkerMessage>(&data).unwrap();
-            assert_eq!(wm.type_(), fb::MessageType::ConnectionStatus);
+            assert_eq!(wm.content_type(), fb::Message::ConnectionStatus);
             let cs = wm.content_as_connection_status().unwrap();
             assert_eq!(cs.status(), "EOSE");
             assert_eq!(cs.relay_url(), "wss://relay2.example.com");
         }).await;
+    }
+
+    #[tokio::test]
+    async fn test_send_output_buffers_until_flush_main() {
+        let local = tokio::task::LocalSet::new();
+        local
+            .run_until(async {
+                let (mut to_main_ch, from_parser_ch) = FuturesWorkerChannel::new_pair();
+                let (to_cache_a, _to_cache_b) = TokioWorkerChannel::new_pair();
+
+                let parser = Arc::new(Parser::new(None));
+                let worker = ParserWorker::new(
+                    parser,
+                    Arc::from(to_cache_a.clone_sender()),
+                    Arc::from(to_cache_a.clone_sender()),
+                    from_parser_ch.clone_sender(),
+                );
+
+                worker.send_output_to_main("batch_sub", b"hello");
+                worker.send_output_to_main("batch_sub", b"world");
+
+                // Nothing is sent until a flush trigger fires
+                assert!(
+                    to_main_ch.recv().now_or_never().is_none(),
+                    "buffered events must not be sent one postMessage each"
+                );
+
+                worker.flush_main("batch_sub");
+
+                let bytes = to_main_ch.recv().await.expect("to_main channel closed");
+                let frames = decode_tagged_batch(&bytes);
+                assert_eq!(frames.len(), 2);
+                assert_eq!(frames[0], ("batch_sub".to_string(), b"hello".to_vec()));
+                assert_eq!(frames[1], ("batch_sub".to_string(), b"world".to_vec()));
+            })
+            .await;
+    }
+
+    #[tokio::test]
+    async fn test_send_output_flushes_on_size_threshold() {
+        let local = tokio::task::LocalSet::new();
+        local
+            .run_until(async {
+                let (mut to_main_ch, from_parser_ch) = FuturesWorkerChannel::new_pair();
+                let (to_cache_a, _to_cache_b) = TokioWorkerChannel::new_pair();
+
+                let parser = Arc::new(Parser::new(None));
+                let worker = ParserWorker::new(
+                    parser,
+                    Arc::from(to_cache_a.clone_sender()),
+                    Arc::from(to_cache_a.clone_sender()),
+                    from_parser_ch.clone_sender(),
+                );
+
+                // A single message >= 16KB flushes immediately without flush_main
+                let big = vec![7u8; crate::worker::batch_buffer::BATCH_SIZE_THRESHOLD];
+                worker.send_output_to_main("big_sub", &big);
+
+                let bytes = to_main_ch.recv().await.expect("to_main channel closed");
+                let frames = decode_tagged_batch(&bytes);
+                assert_eq!(frames.len(), 1);
+                assert_eq!(frames[0], ("big_sub".to_string(), big));
+            })
+            .await;
+    }
+
+    #[tokio::test]
+    async fn test_timed_out_batch_flushed_by_sweep() {
+        let local = tokio::task::LocalSet::new();
+        local
+            .run_until(async {
+                let (mut to_main_ch, from_parser_ch) = FuturesWorkerChannel::new_pair();
+                let (to_cache_a, _to_cache_b) = TokioWorkerChannel::new_pair();
+
+                let parser = Arc::new(Parser::new(None));
+                let worker = ParserWorker::new(
+                    parser,
+                    Arc::from(to_cache_a.clone_sender()),
+                    Arc::from(to_cache_a.clone_sender()),
+                    from_parser_ch.clone_sender(),
+                );
+
+                worker.send_output_to_main("slow_sub", b"trickle");
+                assert!(to_main_ch.recv().now_or_never().is_none());
+
+                // Age the batch past the timeout, then run the sweep step
+                tokio::time::sleep(tokio::time::Duration::from_millis(
+                    crate::worker::batch_buffer::BATCH_TIMEOUT_MS + 10,
+                ))
+                .await;
+                worker.flush_timed_out_batches();
+
+                let bytes = to_main_ch.recv().await.expect("to_main channel closed");
+                let frames = decode_tagged_batch(&bytes);
+                assert_eq!(frames.len(), 1);
+                assert_eq!(frames[0], ("slow_sub".to_string(), b"trickle".to_vec()));
+            })
+            .await;
+    }
+
+    #[tokio::test]
+    async fn test_flush_main_is_per_subscription() {
+        let local = tokio::task::LocalSet::new();
+        local
+            .run_until(async {
+                let (mut to_main_ch, from_parser_ch) = FuturesWorkerChannel::new_pair();
+                let (to_cache_a, _to_cache_b) = TokioWorkerChannel::new_pair();
+
+                let parser = Arc::new(Parser::new(None));
+                let worker = ParserWorker::new(
+                    parser,
+                    Arc::from(to_cache_a.clone_sender()),
+                    Arc::from(to_cache_a.clone_sender()),
+                    from_parser_ch.clone_sender(),
+                );
+
+                worker.send_output_to_main("sub_a", b"a1");
+                worker.send_output_to_main("sub_b", b"b1");
+
+                worker.flush_main("sub_a");
+                let bytes = to_main_ch.recv().await.expect("to_main channel closed");
+                let frames = decode_tagged_batch(&bytes);
+                assert_eq!(frames.len(), 1);
+                assert_eq!(frames[0].0, "sub_a");
+
+                // sub_b is still buffered
+                assert!(to_main_ch.recv().now_or_never().is_none());
+
+                worker.flush_main("sub_b");
+                let bytes = to_main_ch.recv().await.expect("to_main channel closed");
+                let frames = decode_tagged_batch(&bytes);
+                assert_eq!(frames.len(), 1);
+                assert_eq!(frames[0].0, "sub_b");
+            })
+            .await;
     }
 }

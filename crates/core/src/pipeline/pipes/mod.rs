@@ -11,7 +11,7 @@ mod serialize_events;
 pub use chat_limiter::ChatLimiterPipe;
 pub use counter::CounterPipe;
 pub use kind_filter::KindFilterPipe;
-pub use mute::{MuteCriteria, MuteFilterPipe};
+pub use mute::{MuteCriteria, MuteFilterPipe, MuteTarget};
 pub use npub_limiter::NpubLimiterPipe;
 pub use parse::ParsePipe;
 pub use proof_verification::ProofVerificationPipe;

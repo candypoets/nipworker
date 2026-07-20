@@ -56,6 +56,7 @@ impl RequestDeduplicator {
                     no_cache: request.no_cache,
                     max_relays: request.max_relays,
                     cache_only: request.cache_only,
+                    mesh_only: request.mesh_only,
                     relays: {
                         let mut relays: Vec<String> = relay_set.into_iter().collect();
                         relays.sort();
@@ -150,6 +151,7 @@ impl RequestDeduplicator {
         // Add other filter-relevant fields
         key_parts.push(format!("close_on_eose:{}", request.close_on_eose));
         key_parts.push(format!("cache_first:{}", request.cache_first));
+        key_parts.push(format!("mesh_only:{}", request.mesh_only));
 
         key_parts.join("|")
     }

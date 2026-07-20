@@ -250,11 +250,12 @@ impl ConnectionsWorker {
                         let mut fbb = flatbuffers::FlatBufferBuilder::new();
                         let wm = build_worker_message(&mut fbb, &full_sub_id, url, msg);
                         fbb.finish(wm, None);
-                        let bytes = fbb.finished_data().to_vec();
                         if full_sub_id.starts_with("n46:") {
-                            let _ = to_crypto_messages.send(&bytes);
+                            // MessageSender accepts &[u8]: send the finished buffer without copying.
+                            let _ = to_crypto_messages.send(fbb.finished_data());
                         } else {
-                            let _ = tx_msg.unbounded_send(bytes);
+                            // The mpsc bridge to the parser loop requires an owned Vec.
+                            let _ = tx_msg.unbounded_send(fbb.finished_data().to_vec());
                         }
                     });
 
@@ -312,8 +313,8 @@ impl ConnectionsWorker {
                             }
                         };
                         let url = wm.url().unwrap_or("");
-                        match wm.type_() {
-                            fb::MessageType::Raw => {
+                        match wm.content_type() {
+                            fb::Message::Raw => {
                                 if let Some(raw) = wm.content_as_raw() {
                                     let text = raw.raw();
                                     if !text.is_empty() && !url.is_empty() {
@@ -345,7 +346,7 @@ impl ConnectionsWorker {
                                     }
                                 }
                             }
-                            fb::MessageType::NostrEvent => {
+                            fb::Message::NostrEvent => {
                                 if let Some(ev) = wm.content_as_nostr_event() {
                                     let tags: Vec<serde_json::Value> = ev
                                         .tags()
@@ -384,7 +385,7 @@ impl ConnectionsWorker {
                                     }
                                 }
                             }
-                            fb::MessageType::ConnectionStatus => {
+                            fb::Message::ConnectionStatus => {
                                 if let Some(cs) = wm.content_as_connection_status() {
                                     match cs.status() {
                                         "CLOSE" => {
@@ -1138,8 +1139,8 @@ mod tests {
                 let bytes = parser_out_test.recv().await.unwrap();
                 let wm = flatbuffers::root::<fb::WorkerMessage>(&bytes).unwrap();
                 assert_eq!(
-                    wm.type_(),
-                    fb::MessageType::ConnectionStatus,
+                    wm.content_type(),
+                    fb::Message::ConnectionStatus,
                     "expected ConnectionStatus message"
                 );
             })
@@ -1344,8 +1345,8 @@ mod tests {
 
                 // The status callback should serialize and send ConnectionStatus bytes
                 assert_eq!(
-                    wm.type_(),
-                    fb::MessageType::ConnectionStatus,
+                    wm.content_type(),
+                    fb::Message::ConnectionStatus,
                     "expected ConnectionStatus message for failed status"
                 );
 

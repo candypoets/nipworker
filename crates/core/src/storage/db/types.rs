@@ -112,6 +112,10 @@ pub trait EventStorage {
 
     fn get_event(&self, event_offset: u64) -> Result<Option<Vec<u8>>, DatabaseError>;
 
+    /// Cheap liveness check: does `event_offset` still point to a complete,
+    /// readable event? Must NOT copy event bytes (unlike `get_event`).
+    fn contains_offset(&self, event_offset: u64) -> bool;
+
     /// Load all events from persistent storage
     fn load_events(&self) -> Result<Vec<u64>, DatabaseError>;
 
@@ -128,11 +132,14 @@ pub type EventKey = u32;
 pub struct EventRecord {
     pub key: EventKey,
     pub offset: u64,
+    /// Event creation time captured at index time, so since/until pruning and
+    /// result sorting never need to read event bytes from storage.
+    pub created_at: u32,
 }
 
 /// Index types for efficient querying (concurrent)
 pub type EventIdIndex = Rc<RefCell<FxHashMap<String, EventRecord>>>;
-pub type EventKeyIndex = Rc<RefCell<FxHashMap<EventKey, u64>>>;
+pub type EventKeyIndex = Rc<RefCell<FxHashMap<EventKey, EventRecord>>>;
 pub type KindIndex = Rc<RefCell<FxHashMap<u16, FxHashSet<EventKey>>>>;
 pub type PubkeyIndex = Rc<RefCell<FxHashMap<String, FxHashSet<EventKey>>>>;
 pub type TagIndex = Rc<RefCell<FxHashMap<String, FxHashSet<EventKey>>>>;
@@ -197,11 +204,13 @@ impl DatabaseIndexes {
         self.events_by_id.borrow().len()
     }
 
-    pub fn upsert_event_record(&self, event_id: &str, offset: u64) -> EventKey {
+    pub fn upsert_event_record(&self, event_id: &str, offset: u64, created_at: u32) -> EventKey {
         let mut events_by_id = self.events_by_id.borrow_mut();
         if let Some(record) = events_by_id.get_mut(event_id) {
             record.offset = offset;
-            self.events_by_key.borrow_mut().insert(record.key, offset);
+            record.created_at = created_at;
+            let record = *record;
+            self.events_by_key.borrow_mut().insert(record.key, record);
             return record.key;
         }
 
@@ -211,8 +220,13 @@ impl DatabaseIndexes {
             .checked_add(1)
             .expect("event key space exhausted");
 
-        events_by_id.insert(event_id.to_string(), EventRecord { key, offset });
-        self.events_by_key.borrow_mut().insert(key, offset);
+        let record = EventRecord {
+            key,
+            offset,
+            created_at,
+        };
+        events_by_id.insert(event_id.to_string(), record);
+        self.events_by_key.borrow_mut().insert(key, record);
         key
     }
 }

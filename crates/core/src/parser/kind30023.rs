@@ -8,6 +8,15 @@ use pulldown_cmark::{
     TagEnd,
 };
 use regex::Regex;
+use std::sync::LazyLock;
+
+// Static inline matcher, compiled once instead of per event
+static INLINE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?i)(nostr:)?((?:nprofile|npub|nevent|note|naddr)1[a-z0-9]+)|(^|[\s\(\[])(#[A-Za-z0-9_]+)",
+    )
+    .expect("valid article inline regex")
+});
 
 /// Parsed representation for NIP-23 (kind 30023) long-form content.
 pub struct Kind30023Parsed {
@@ -370,9 +379,7 @@ fn append_text_to_current_block(block_stack: &mut [ArticleBlock], text: &str) {
 }
 
 fn parse_text_inlines(text: &str) -> Vec<ArticleInline> {
-    let matcher =
-        Regex::new(r"(?i)(nostr:)?((?:nprofile|npub|nevent|note|naddr)1[a-z0-9]+)|(^|[\s\(\[])(#[A-Za-z0-9_]+)")
-            .expect("valid article inline regex");
+    let matcher = &*INLINE_RE;
     let mut inlines = Vec::new();
     let mut cursor = 0;
 

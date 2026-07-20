@@ -15,12 +15,13 @@
 use crate::platform::{now_millis, sleep};
 use crate::spawn::spawn_worker;
 use crate::traits::{RelayTransport, TransportStatus};
+use crate::transport::frame_scan::scan_relay_frame;
 use crate::transport::types::{AuthState, ConnectionStats, ConnectionStatus, RelayError};
 use crate::utils::{extract_first_three, validate_relay_url};
 
 use futures::channel::mpsc::{self, Receiver, Sender};
 use futures::StreamExt;
-use serde_json::{json, Value};
+use serde_json::json;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
@@ -36,75 +37,44 @@ const HEALTHY_RETRY_DELAYS_MS: [u32; 3] = [200, 800, 2_000];
 const COLD_START_RETRY_DELAYS_MS: [u32; 1] = [200];
 const AUTH_REQUEST_ID_MASK: u64 = 0x8000_0000_0000_0000;
 
-fn normalize_token(token: &str) -> String {
-    let t = token.trim();
-    let b = t.as_bytes();
-    if b.len() >= 2 && b[0] == b'"' && b[b.len() - 1] == b'"' {
-        t[1..b.len() - 1].to_string()
-    } else {
-        t.to_string()
-    }
-}
-
-/// Parse incoming relay frame and return (kind, sub_id, content_for_auth)
+/// Parse incoming relay frame and return (kind, sub_id, content_for_auth).
+///
+/// Single zero-copy scan over the frame text — no serde_json DOM is built and
+/// the event object of EVENT frames is never reserialized. String escape
+/// sequences are kept as-is (not decoded), matching the previous tolerant path.
 fn parse_incoming_relay_text(text: &str) -> Option<(String, Option<String>, Option<String>)> {
-    // Strict JSON parsing first
-    if let Ok(Value::Array(arr)) = serde_json::from_str::<Value>(text) {
-        let kind = arr.get(0)?.as_str()?.to_string();
+    let scan = scan_relay_frame(text)?;
+    let kind = scan.kind.to_string();
 
-        let sub_id = match kind.as_str() {
-            "EVENT" | "EOSE" | "OK" | "CLOSED" => {
-                arr.get(1).and_then(|v| v.as_str()).map(ToString::to_string)
+    let sub_id = match kind.as_str() {
+        "EVENT" | "EOSE" | "OK" | "CLOSED" => scan.args[0].and_then(|v| {
+            if v.is_string {
+                Some(v.inner().to_string())
+            } else {
+                None
             }
-            _ => None,
-        };
+        }),
+        _ => None,
+    };
 
-        let content = match kind.as_str() {
-            "AUTH" | "NOTICE" => arr.get(1).map(|v| {
-                v.as_str()
-                    .map(ToString::to_string)
-                    .unwrap_or_else(|| v.to_string())
-            }),
-            "OK" => {
-                // Keep both accepted flag + message for tolerant downstream checks.
-                let mut parts = Vec::new();
-                if let Some(v) = arr.get(2) {
-                    parts.push(v.to_string());
-                }
-                if let Some(v) = arr.get(3) {
-                    parts.push(v.to_string());
-                }
-                if parts.is_empty() {
-                    None
-                } else {
-                    Some(parts.join(","))
-                }
+    let content = match kind.as_str() {
+        "AUTH" | "NOTICE" => scan.args[0].map(|v| v.inner().to_string()),
+        "OK" => {
+            // Keep both accepted flag + message for tolerant downstream checks.
+            let mut parts = Vec::new();
+            if let Some(v) = scan.args[1] {
+                parts.push(v.raw);
             }
-            _ => arr.get(2).map(|v| v.to_string()),
-        };
-
-        return Some((kind, sub_id, content));
-    }
-
-    // Tolerant fallback
-    let [k_opt, second_opt, third_opt] = extract_first_three(text)?;
-    let kind = normalize_token(k_opt?).to_string();
-
-    let (sub_id, content) = match kind.as_str() {
-        "AUTH" | "NOTICE" => (
-            None,
-            second_opt
-                .map(normalize_token)
-                .or_else(|| third_opt.map(normalize_token)),
-        ),
-        "EVENT" | "EOSE" | "OK" | "CLOSED" => (
-            second_opt.map(normalize_token),
-            third_opt.map(normalize_token),
-        ),
-        _ => (
-            second_opt.map(normalize_token),
-            third_opt.map(normalize_token),
-        ),
+            if let Some(v) = scan.args[2] {
+                parts.push(v.raw);
+            }
+            if parts.is_empty() {
+                None
+            } else {
+                Some(parts.join(","))
+            }
+        }
+        _ => scan.args[1].map(|v| v.raw.to_string()),
     };
 
     Some((kind, sub_id, content))
@@ -1868,8 +1838,14 @@ mod tests {
                     .filter(|c| matches!(c, Call::Disconnect(url) if url == "wss://r"))
                     .count();
 
-                assert_eq!(wake_connects, 1, "parallel wake calls should share one reconnect");
-                assert_eq!(wake_disconnects, 1, "parallel wake calls should share one disconnect");
+                assert_eq!(
+                    wake_connects, 1,
+                    "parallel wake calls should share one reconnect"
+                );
+                assert_eq!(
+                    wake_disconnects, 1,
+                    "parallel wake calls should share one disconnect"
+                );
             })
             .await;
     }

@@ -4,7 +4,7 @@ use crate::types::nostr::Filter;
 
 use crate::generated::nostr::fb;
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct Request {
     pub ids: Vec<String>,
 
@@ -33,6 +33,8 @@ pub struct Request {
     pub max_relays: u32,
 
     pub cache_only: bool,
+
+    pub mesh_only: bool,
 }
 
 impl Request {
@@ -95,6 +97,7 @@ impl Request {
             no_cache: fb_req.no_cache(),
             max_relays: fb_req.max_relays() as u32,
             cache_only: fb_req.cache_only(),
+            mesh_only: fb_req.mesh_only(),
         }
     }
 
@@ -178,6 +181,7 @@ impl Request {
                 no_cache: self.no_cache,
                 max_relays: self.max_relays as u16,
                 cache_only: self.cache_only,
+                mesh_only: self.mesh_only,
             },
         )
     }

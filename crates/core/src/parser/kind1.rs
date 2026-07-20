@@ -12,6 +12,19 @@ use crate::{
     types::{network::Request, nostr, Event},
 };
 use rustc_hash::FxHashMap;
+use std::sync::LazyLock;
+
+// Static mention/reference regexes, compiled once instead of per event
+static PROFILE_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"(?:nostr:)?(npub1[a-z0-9]+)").unwrap());
+static NPROFILE_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"(?:nostr:)?(nprofile1[a-z0-9]+)").unwrap());
+static NOTE_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"(?:nostr:)?(note1[a-z0-9]+)").unwrap());
+static NEVENT_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"(?:nostr:)?(nevent1[a-z0-9]+)").unwrap());
+static NADDR_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"(?:nostr:)?(naddr1[a-z0-9]+)").unwrap());
 
 pub struct ProfilePointer {
     pub public_key: String,
@@ -207,13 +220,10 @@ impl Parser {
         tags: &[Vec<String>],
         requests: &mut Vec<Request>,
     ) -> Vec<ProfilePointer> {
-        use regex::Regex;
         let mut profile_mentions = Vec::new();
 
         // Look for nostr:npub... or npub... patterns
-        let profile_regex = Regex::new(r"(?:nostr:)?(npub1[a-z0-9]+)").unwrap();
-
-        for caps in profile_regex.captures_iter(content) {
+        for caps in PROFILE_RE.captures_iter(content) {
             if let Some(npub) = caps.get(1) {
                 if let Ok(decoded) = nostr::nips::nip19::FromBech32::from_bech32(npub.as_str()) {
                     if let nostr::nips::nip19::Nip19::Pubkey(pubkey) = decoded {
@@ -239,9 +249,7 @@ impl Parser {
         }
 
         // Also look for nprofile references
-        let nprofile_regex = Regex::new(r"(?:nostr:)?(nprofile1[a-z0-9]+)").unwrap();
-
-        for caps in nprofile_regex.captures_iter(content) {
+        for caps in NPROFILE_RE.captures_iter(content) {
             if let Some(nprofile) = caps.get(1) {
                 if let Ok(decoded) = nostr::nips::nip19::FromBech32::from_bech32(nprofile.as_str())
                 {
@@ -283,13 +291,10 @@ impl Parser {
         tags: &[Vec<String>],
         requests: &mut Vec<Request>,
     ) -> Vec<EventPointer> {
-        use regex::Regex;
         let mut event_refs = Vec::new();
 
         // Look for nostr:note... or note... patterns
-        let note_regex = Regex::new(r"(?:nostr:)?(note1[a-z0-9]+)").unwrap();
-
-        for caps in note_regex.captures_iter(content) {
+        for caps in NOTE_RE.captures_iter(content) {
             if let Some(note) = caps.get(1) {
                 if let Ok(decoded) = nostr::nips::nip19::FromBech32::from_bech32(note.as_str()) {
                     if let nostr::nips::nip19::Nip19::EventId(event_id) = decoded {
@@ -319,9 +324,7 @@ impl Parser {
         }
 
         // Also look for nevent references
-        let nevent_regex = Regex::new(r"(?:nostr:)?(nevent1[a-z0-9]+)").unwrap();
-
-        for caps in nevent_regex.captures_iter(content) {
+        for caps in NEVENT_RE.captures_iter(content) {
             if let Some(nevent) = caps.get(1) {
                 if let Ok(decoded) = nostr::nips::nip19::FromBech32::from_bech32(nevent.as_str()) {
                     if let nostr::nips::nip19::Nip19::Event(event) = decoded {
@@ -366,12 +369,9 @@ impl Parser {
         content: &str,
         requests: &mut Vec<Request>,
     ) -> Vec<AddressPointer> {
-        use regex::Regex;
         let mut address_refs = Vec::new();
 
-        let naddr_regex = Regex::new(r"(?:nostr:)?(naddr1[a-z0-9]+)").unwrap();
-
-        for caps in naddr_regex.captures_iter(content) {
+        for caps in NADDR_RE.captures_iter(content) {
             if let Some(naddr) = caps.get(1) {
                 if let Ok(decoded) = nostr::nips::nip19::FromBech32::from_bech32(naddr.as_str()) {
                     if let nostr::nips::nip19::Nip19::Coordinate(coord) = decoded {

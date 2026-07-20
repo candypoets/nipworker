@@ -1,3 +1,4 @@
+#[cfg(feature = "parser")]
 pub mod batch_buffer;
 #[cfg(feature = "cache")]
 pub mod cache_worker;

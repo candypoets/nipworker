@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import { WebSocket, WebSocketServer } from 'ws';
 import * as flatbuffers from 'flatbuffers';
-import { Message, MessageType, NostrEventT, WorkerMessage } from '../generated/nostr/fb';
+import { Message, MessageType, NostrEventT, Raw, WorkerMessage } from '../generated/nostr/fb';
 import {
 	createRelayProxyServer,
 	attachRelayProxyToServer,
@@ -11,11 +11,14 @@ import { createServer, Server } from 'http';
 import { AddressInfo } from 'net';
 
 // Helper to create a mock Nostr relay
-async function createMockRelay(port: number): Promise<{ wss: WebSocketServer; messages: string[]; close: () => Promise<void> }> {
+async function createMockRelay(port: number): Promise<{ wss: WebSocketServer; messages: string[]; broadcast: (frame: string) => void; close: () => Promise<void> }> {
 	const messages: string[] = [];
+	const sockets = new Set<WebSocket>();
 	const wss = new WebSocketServer({ port, host: '127.0.0.1' });
 	
 	wss.on('connection', (ws) => {
+		sockets.add(ws);
+		ws.on('close', () => sockets.delete(ws));
 		ws.on('message', (data) => {
 			const msg = data.toString();
 			messages.push(msg);
@@ -43,6 +46,9 @@ async function createMockRelay(port: number): Promise<{ wss: WebSocketServer; me
 	return {
 		wss,
 		messages,
+		broadcast: (frame: string) => {
+			for (const ws of sockets) ws.send(frame);
+		},
 		close: () => new Promise<void>((res, rej) => {
 			wss.close((err) => err ? rej(err) : res());
 		})
@@ -74,6 +80,42 @@ function waitForMessage(ws: WebSocket): Promise<Buffer> {
 function createEnvelope(relays: string[], frames: string[]): Uint8Array {
 	const envelope = { relays, frames };
 	return Buffer.from(JSON.stringify(envelope));
+}
+
+// Helper to wait until a condition holds (polls every 10ms)
+async function waitUntil(cond: () => boolean, timeoutMs = 5000): Promise<void> {
+	const start = Date.now();
+	while (!cond()) {
+		if (Date.now() - start > timeoutMs) throw new Error('waitUntil timeout');
+		await new Promise((r) => setTimeout(r, 10));
+	}
+}
+
+type RawFrame = { subId: string; payload: string };
+
+// Collect Raw worker messages received by a client socket
+function collectRawFrames(client: WebSocket): RawFrame[] {
+	const raws: RawFrame[] = [];
+	client.on('message', (data) => {
+		const bb = new flatbuffers.ByteBuffer(new Uint8Array(data as Buffer));
+		const wm = WorkerMessage.getRootAsWorkerMessage(bb);
+		if (wm.contentType() !== Message.Raw) return;
+		const raw = wm.content(new Raw());
+		raws.push({ subId: wm.subId() ?? '', payload: raw?.raw() ?? '' });
+	});
+	return raws;
+}
+
+function makeEvent(id: string) {
+	return {
+		id,
+		pubkey: 'a'.repeat(64),
+		kind: 1,
+		content: `content ${id}`,
+		tags: [['t', 'value']],
+		created_at: 1700000000,
+		sig: 'b'.repeat(128)
+	};
 }
 
 describe('Relay Proxy Server', () => {
@@ -335,6 +377,116 @@ describe('Relay Proxy Server', () => {
 			await proxy.close();
 			proxy = null;
 		});
+	});
+
+	describe('EVENT Forwarding (Raw)', () => {
+		let mockRelay: Awaited<ReturnType<typeof createMockRelay>> | null = null;
+		let proxy: ReturnType<typeof createRelayProxyServer> | null = null;
+		let mockRelayPort: number;
+
+		beforeEach(async () => {
+			mockRelayPort = 19320 + Math.floor(Math.random() * 100);
+			mockRelay = await createMockRelay(mockRelayPort);
+		});
+
+		afterEach(async () => {
+			if (proxy) {
+				await proxy.close();
+				proxy = null;
+			}
+			if (mockRelay) {
+				await mockRelay.close();
+				mockRelay = null;
+			}
+		});
+
+		async function connectAndSubscribe(subId: string): Promise<{ client: WebSocket; raws: RawFrame[] }> {
+			const proxyPort = 19400 + Math.floor(Math.random() * 100);
+			proxy = createRelayProxyServer({ port: proxyPort, path: '/' });
+
+			const client = new WebSocket(`ws://127.0.0.1:${proxyPort}/`);
+			await waitForConnection(client);
+			const raws = collectRawFrames(client);
+
+			client.send(
+				createEnvelope(
+					[`ws://127.0.0.1:${mockRelayPort}`],
+					[JSON.stringify(['REQ', subId, { kinds: [1] }])]
+				)
+			);
+			// Wait until the relay received the REQ: upstream socket is open then.
+			await waitUntil(() => mockRelay!.messages.length >= 1);
+			return { client, raws };
+		}
+
+		it('should forward relay EVENT frames as Raw worker messages (event payload only)', async () => {
+			const { client, raws } = await connectAndSubscribe('sub1');
+
+			const event = makeEvent('c'.repeat(64));
+			mockRelay!.broadcast(JSON.stringify(['EVENT', 'sub1', event]));
+
+			await waitUntil(() => raws.length === 1);
+			expect(raws[0].subId).toBe('sub1');
+			// Raw payload is the arr[2] event object JSON, not the whole frame -
+			// the Rust parser worker parses the event itself (as in non-proxy mode).
+			expect(raws[0].payload).toBe(JSON.stringify(event));
+			expect(JSON.parse(raws[0].payload)).toEqual(event);
+
+			client.close();
+		});
+
+		it('should dedup identical EVENT frames per subscription', async () => {
+			const { client, raws } = await connectAndSubscribe('sub1');
+
+			const frame = JSON.stringify(['EVENT', 'sub1', makeEvent('d'.repeat(64))]);
+			mockRelay!.broadcast(frame);
+			mockRelay!.broadcast(frame);
+			mockRelay!.broadcast(frame);
+
+			await waitUntil(() => raws.length >= 1);
+			await new Promise((r) => setTimeout(r, 200));
+			expect(raws).toHaveLength(1);
+
+			// A different event for the same subscription is forwarded
+			mockRelay!.broadcast(JSON.stringify(['EVENT', 'sub1', makeEvent('e'.repeat(64))]));
+			await waitUntil(() => raws.length >= 2);
+			expect(raws).toHaveLength(2);
+
+			// The same frame under a different subId is NOT deduped
+			mockRelay!.broadcast(JSON.stringify(['EVENT', 'other-sub', makeEvent('d'.repeat(64))]));
+			await waitUntil(() => raws.length >= 3);
+			expect(raws[2].subId).toBe('other-sub');
+
+			client.close();
+		});
+
+		it('should bound the dedup set with FIFO eviction at 10k entries', async () => {
+			const { client, raws } = await connectAndSubscribe('bounded-sub');
+
+			const frameFor = (i: number) =>
+				JSON.stringify(['EVENT', 'bounded-sub', makeEvent(i.toString(16).padStart(64, '0'))]);
+
+			// Fill the dedup set beyond capacity: 10_001 distinct frames.
+			// After this, frame 0 has been evicted; frames 1..10_000 are still tracked.
+			for (let i = 0; i <= 10_000; i++) {
+				mockRelay!.broadcast(frameFor(i));
+			}
+			await waitUntil(() => raws.length >= 10_001, 30_000);
+			expect(raws).toHaveLength(10_001);
+
+			// Re-sending the most recent frame is deduped (still in the set)
+			mockRelay!.broadcast(frameFor(10_000));
+			await new Promise((r) => setTimeout(r, 200));
+			expect(raws).toHaveLength(10_001);
+
+			// Re-sending the evicted oldest frame is forwarded again
+			mockRelay!.broadcast(frameFor(0));
+			await waitUntil(() => raws.length >= 10_002);
+			expect(raws).toHaveLength(10_002);
+			expect(raws[10_001].payload).toBe(JSON.stringify(makeEvent('0'.repeat(64))));
+
+			client.close();
+		}, 60_000);
 	});
 
 	describe('Text Message Commands', () => {

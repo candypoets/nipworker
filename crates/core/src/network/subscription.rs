@@ -262,9 +262,10 @@ impl SubscriptionManager {
                                 .event_ids()
                                 .map(|v| v.iter().map(|s| s.to_string()).collect())
                                 .unwrap_or_default();
+                            let target: MuteTarget = config.target().into();
 
                             PipeType::MuteFilter(MuteFilterPipe::new(MuteCriteria::new(
-                                pubkeys, hashtags, words, event_ids,
+                                pubkeys, hashtags, words, event_ids, target,
                             )))
                         }
                         _ => {

@@ -214,12 +214,14 @@ impl Storage for NostrDbStorage {
             }
         }
 
-        // Sort by created_at (newest first)
-        all_events.sort_by(|a, b| {
-            let ca = Self::extract_created_at(a).unwrap_or_default();
-            let cb = Self::extract_created_at(b).unwrap_or_default();
-            cb.cmp(&ca)
-        });
+        // Sort by created_at (newest first) - decorate/sort/undecorate so each
+        // event is parsed exactly once instead of O(n log n) flatbuffer roots.
+        let mut with_time: Vec<(u32, Vec<u8>)> = all_events
+            .into_iter()
+            .map(|b| (Self::extract_created_at(&b).unwrap_or_default(), b))
+            .collect();
+        with_time.sort_by(|a, b| b.0.cmp(&a.0));
+        all_events = with_time.into_iter().map(|(_, b)| b).collect();
 
         Ok(all_events)
     }
@@ -383,5 +385,34 @@ mod tests {
         assert_eq!(results.len(), 1);
         let created_at = NostrDbStorage::extract_created_at(&results[0]);
         assert_eq!(created_at, Some(2000));
+    }
+
+    #[tokio::test]
+    async fn test_query_merges_multiple_filters_sorted_desc() {
+        let storage = NostrDbStorage::new("test-sort".to_string(), 1024 * 1024, vec![], vec![]);
+        storage.initialize().await.unwrap();
+
+        let pubkey = "0000000000000000000000000000000000000000000000000000000000000001";
+        // kind 1 events with created_at 1000 and 3000, kind 6 event with 2000
+        for (i, kind, created_at) in [(0usize, 1u16, 1000u32), (1, 1, 3000), (2, 6, 2000)] {
+            let id = format!("{:064x}", i + 1);
+            let bytes =
+                build_worker_message_with_tags("save_to_db", kind, pubkey, &id, created_at, &[]);
+            storage.persist(&bytes).await.unwrap();
+        }
+
+        let mut f1 = Filter::new();
+        f1.kinds = Some(vec![1]);
+        let mut f2 = Filter::new();
+        f2.kinds = Some(vec![6]);
+
+        // Per-filter results are [3000, 1000] and [2000]; the merged output
+        // must be globally sorted newest-first.
+        let results = storage.query(vec![f1, f2]).await.unwrap();
+        let created_ats: Vec<u32> = results
+            .iter()
+            .map(|b| NostrDbStorage::extract_created_at(b).unwrap())
+            .collect();
+        assert_eq!(created_ats, vec![3000, 2000, 1000]);
     }
 }

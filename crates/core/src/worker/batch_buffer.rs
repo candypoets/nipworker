@@ -1,370 +1,216 @@
-//! BatchBuffer for accumulating and sending batched events via MessageChannel.
+//! BatchBuffer for accumulating parser→main frames before sending.
 //!
-//! This module provides efficient batched event delivery from the parser worker
-//! to the main thread using MessagePort.postMessage with transferable ArrayBuffers.
+//! Live (post-EOSE) events used to be forwarded one channel message per event.
+//! This module batches them so a single channel message carries many events,
+//! cutting cross-thread postMessage traffic on the parser→main channel.
 //!
-//! Batching criteria:
-//! - Buffer size exceeds 16KB, OR
-//! - Timeout exceeds 50ms since first event in batch
+//! Batching criteria (per subscription):
+//! - Buffer size reaches 16KB (flushed synchronously on add), OR
+//! - 50ms elapsed since the first buffered frame (flushed by the caller's sweep)
 //!
-//! Data format: [4-byte len (little endian)][WorkerMessage][4-byte len][WorkerMessage]...
-//! (Same format as SharedArrayBuffer for compatibility with ArrayBufferReader)
+//! Wire format of a flushed payload: concatenated frames of
+//!   [4-byte frame len LE][4-byte subIdLen LE][subId][WorkerMessage]
+//! i.e. length-prefixed `encode_tagged` frames, decoded by
+//! `parser_worker::decode_tagged_batch` and the main-thread ArrayBufferReader.
 
-#[cfg(target_arch = "wasm32")]
-use js_sys::{Array, Object, Reflect, Uint8Array};
-use std::cell::RefCell;
-use std::rc::Rc;
-#[cfg(target_arch = "wasm32")]
-use tracing::{debug, warn};
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen::JsValue;
-#[cfg(target_arch = "wasm32")]
-use web_sys::MessagePort;
+use crate::platform::now_millis;
+use crate::worker::parser_worker::encode_tagged;
+use rustc_hash::FxHashMap;
 
-#[cfg(target_arch = "wasm32")]
-// Thread-local storage for the global BatchBufferManager instance
-thread_local! {
-    static GLOBAL_BATCH_MANAGER: RefCell<Option<BatchBufferManager>> = RefCell::new(None);
+/// Flush once a subscription's buffer reaches 16KB.
+pub const BATCH_SIZE_THRESHOLD: usize = 16 * 1024;
+/// Flush once the oldest buffered frame is 50ms old.
+pub const BATCH_TIMEOUT_MS: u64 = 50;
+
+/// Per-subscription accumulator of length-prefixed tagged frames.
+struct BatchBuffer {
+    buf: Vec<u8>,
+    /// Timestamp (ms) of the first frame in the current batch.
+    first_at: u64,
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-thread_local! {
-    static GLOBAL_BATCH_MANAGER: RefCell<Option<()>> = RefCell::new(None);
-}
-
-/// Initialize the global BatchBufferManager singleton.
-/// This should be called once during NetworkManager initialization.
-#[cfg(target_arch = "wasm32")]
-pub fn init_global_batch_manager(port: MessagePort) {
-    GLOBAL_BATCH_MANAGER.with(|manager| {
-        *manager.borrow_mut() = Some(BatchBufferManager::new(port));
-    });
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-pub fn init_global_batch_manager(_port: ()) {}
-
-/// Get a reference to the global BatchBufferManager if initialized.
-#[cfg(target_arch = "wasm32")]
-fn with_global_batch_manager<F, R>(f: F) -> Option<R>
-where
-    F: FnOnce(&BatchBufferManager) -> R,
-{
-    GLOBAL_BATCH_MANAGER.with(|manager| manager.borrow().as_ref().map(f))
-}
-
-/// Get a mutable reference to the global BatchBufferManager if initialized.
-#[cfg(target_arch = "wasm32")]
-fn with_global_batch_manager_mut<F, R>(f: F) -> Option<R>
-where
-    F: FnOnce(&mut BatchBufferManager) -> R,
-{
-    GLOBAL_BATCH_MANAGER.with(|manager| manager.borrow_mut().as_mut().map(f))
-}
-
-/// Add a message to a subscription's batch buffer via the global manager.
-/// This is a convenience function that can be called from anywhere.
-#[cfg(target_arch = "wasm32")]
-pub fn add_message_to_batch(sub_id: &str, data: &[u8]) {
-    with_global_batch_manager_mut(|manager| {
-        manager.add_message(sub_id, data);
-    });
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-pub fn add_message_to_batch(_sub_id: &str, _data: &[u8]) {}
-
-/// Flush all pending batches via the global manager.
-#[cfg(target_arch = "wasm32")]
-pub fn flush_all_batches() {
-    with_global_batch_manager_mut(|manager| {
-        manager.flush_all();
-    });
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-pub fn flush_all_batches() {}
-
-/// Create a batch buffer for a subscription via the global manager.
-#[cfg(target_arch = "wasm32")]
-pub fn create_batch_buffer(sub_id: &str) {
-    with_global_batch_manager_mut(|manager| {
-        manager.create_buffer_for_sub(sub_id);
-    });
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-pub fn create_batch_buffer(_sub_id: &str) {}
-
-/// Remove a subscription's batch buffer via the global manager.
-#[cfg(target_arch = "wasm32")]
-pub fn remove_batch_buffer(sub_id: &str) {
-    with_global_batch_manager_mut(|manager| {
-        manager.remove(sub_id);
-    });
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-pub fn remove_batch_buffer(_sub_id: &str) {}
-
-/// Flush a specific subscription's batch buffer via the global manager.
-#[cfg(target_arch = "wasm32")]
-pub fn flush_batch(sub_id: &str) {
-    with_global_batch_manager_mut(|manager| {
-        manager.flush_sub(sub_id);
-    });
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-pub fn flush_batch(_sub_id: &str) {}
-
-/// Default batch size threshold: 16KB
-#[cfg(target_arch = "wasm32")]
-const BATCH_SIZE_THRESHOLD: usize = 16 * 1024;
-/// Default timeout threshold: 50ms
-#[cfg(target_arch = "wasm32")]
-const BATCH_TIMEOUT_MS: u32 = 50;
-
-/// BatchBuffer accumulates events and sends them via MessagePort when thresholds are reached.
-#[cfg(target_arch = "wasm32")]
-pub struct BatchBuffer {
-    /// The subscription ID this buffer belongs to
-    sub_id: String,
-    /// Accumulated data buffer
-    buffer: Vec<u8>,
-    /// Timestamp when the first event was added to current batch (for timeout tracking)
-    first_event_time: RefCell<Option<f64>>,
-    /// The MessagePort to send batched data through
-    port: MessagePort,
-}
-
-#[cfg(target_arch = "wasm32")]
 impl BatchBuffer {
-    /// Create a new BatchBuffer for a subscription
-    pub fn new(sub_id: String, port: MessagePort) -> Self {
+    fn new() -> Self {
         Self {
-            sub_id,
-            buffer: Vec::with_capacity(BATCH_SIZE_THRESHOLD),
-            first_event_time: RefCell::new(None),
-            port,
+            buf: Vec::with_capacity(BATCH_SIZE_THRESHOLD),
+            first_at: 0,
         }
     }
 
-    /// Add a serialized WorkerMessage to the batch.
-    /// Format: [4-byte len (little endian)][WorkerMessage bytes]
-    /// Returns true if the batch was flushed, false otherwise.
-    pub fn add_message(&mut self, data: &[u8]) -> bool {
-        // Check if this is the first event in the batch
-        if self.buffer.is_empty() {
-            *self.first_event_time.borrow_mut() = Some(js_sys::Date::now());
+    /// Append a frame; returns a payload to send if the size threshold
+    /// forced a flush (before and/or after appending).
+    fn add_frame(&mut self, frame: &[u8], now: u64) -> Option<Vec<u8>> {
+        // Flush the current batch first if this frame would push it over
+        // the threshold (keeps frames whole; one payload stays <= ~16KB).
+        let mut pending = None;
+        if !self.buf.is_empty() && self.buf.len() + frame.len() > BATCH_SIZE_THRESHOLD {
+            pending = Some(std::mem::take(&mut self.buf));
         }
-
-        // Calculate required space: 4 bytes for length prefix + data length
-        let required_space = 4 + data.len();
-
-        // Check if adding this message would exceed the threshold
-        // (only flush if we already have data and this would push us over)
-        let should_flush_before =
-            !self.buffer.is_empty() && (self.buffer.len() + required_space > BATCH_SIZE_THRESHOLD);
-
-        if should_flush_before {
-            self.flush();
-            *self.first_event_time.borrow_mut() = Some(js_sys::Date::now());
+        if self.buf.is_empty() {
+            self.first_at = now;
         }
-
-        // Write length prefix (4 bytes, little endian)
-        let len = data.len() as u32;
-        self.buffer.extend_from_slice(&len.to_le_bytes());
-
-        // Write the actual data
-        self.buffer.extend_from_slice(data);
-
-        // Check if we've now exceeded the threshold after adding
-        let should_flush_after = self.buffer.len() >= BATCH_SIZE_THRESHOLD;
-
-        if should_flush_after {
-            self.flush();
-            return true;
+        self.buf.extend_from_slice(frame);
+        // A single frame larger than the threshold (or an exact landing on it)
+        // flushes immediately.
+        if self.buf.len() >= BATCH_SIZE_THRESHOLD {
+            return Some(std::mem::take(&mut self.buf));
         }
-
-        false
+        pending
     }
 
-    /// Check if the batch should be flushed due to timeout.
-    /// Returns true if flushed, false otherwise.
-    pub fn check_timeout(&self) -> bool {
-        if self.buffer.is_empty() {
-            return false;
-        }
-
-        if let Some(first_time) = *self.first_event_time.borrow() {
-            let elapsed = js_sys::Date::now() - first_time;
-            if elapsed >= BATCH_TIMEOUT_MS as f64 {
-                return true;
-            }
-        }
-
-        false
+    fn timed_out(&self, now: u64) -> bool {
+        !self.buf.is_empty() && now.saturating_sub(self.first_at) >= BATCH_TIMEOUT_MS
     }
 
-    /// Flush the current batch via MessagePort.postMessage with transferable ArrayBuffer.
-    /// This sends { subId, data } where data is a Uint8Array (backed by transferable ArrayBuffer).
-    pub fn flush(&mut self) {
-        if self.buffer.is_empty() {
-            return;
+    fn take(&mut self) -> Option<Vec<u8>> {
+        if self.buf.is_empty() {
+            None
+        } else {
+            Some(std::mem::take(&mut self.buf))
         }
-
-        // Create a Uint8Array from our buffer data
-        let uint8_array = Uint8Array::new_with_length(self.buffer.len() as u32);
-        uint8_array.copy_from(&self.buffer);
-
-        // Create the message object: { subId, data }
-        let message = match Self::create_message_object(&self.sub_id, &uint8_array) {
-            Ok(msg) => msg,
-            Err(e) => {
-                warn!(
-                    "Failed to create message object for sub {}: {:?}",
-                    self.sub_id, e
-                );
-                // Clear buffer even on error to avoid infinite growth
-                self.buffer.clear();
-                *self.first_event_time.borrow_mut() = None;
-                return;
-            }
-        };
-
-        // Create transferables array with the Uint8Array's buffer
-        let transferables = Array::new();
-        transferables.push(&uint8_array.buffer());
-
-        // Send via MessagePort with transferable
-        match self
-            .port
-            .post_message_with_transferable(&message, &transferables)
-        {
-            Ok(_) => {
-                debug!(
-                    "Flushed batch for sub {}: {} bytes",
-                    self.sub_id,
-                    self.buffer.len()
-                );
-            }
-            Err(e) => {
-                warn!("Failed to send batch for sub {}: {:?}", self.sub_id, e);
-            }
-        }
-
-        // Clear the buffer and reset timer
-        self.buffer.clear();
-        *self.first_event_time.borrow_mut() = None;
-    }
-
-    /// Create a JavaScript object: { subId: string, data: Uint8Array }
-    fn create_message_object(sub_id: &str, data: &Uint8Array) -> Result<JsValue, JsValue> {
-        let obj = Object::new();
-        Reflect::set(
-            &obj,
-            &JsValue::from_str("subId"),
-            &JsValue::from_str(sub_id),
-        )?;
-        Reflect::set(&obj, &JsValue::from_str("data"), data)?;
-        Ok(obj.into())
-    }
-
-    /// Get the current buffer size in bytes
-    pub fn len(&self) -> usize {
-        self.buffer.len()
-    }
-
-    /// Check if the buffer is empty
-    pub fn is_empty(&self) -> bool {
-        self.buffer.is_empty()
     }
 }
 
-/// BatchBufferManager manages BatchBuffers for multiple subscriptions.
-/// It handles periodic timeout checking and flushing.
-#[cfg(target_arch = "wasm32")]
+/// Manages one BatchBuffer per subscription id.
 pub struct BatchBufferManager {
-    buffers: RefCell<std::collections::HashMap<String, Rc<RefCell<BatchBuffer>>>>,
-    port: MessagePort,
+    buffers: FxHashMap<String, BatchBuffer>,
 }
 
-#[cfg(target_arch = "wasm32")]
 impl BatchBufferManager {
-    /// Create a new BatchBufferManager with a MessagePort
-    pub fn new(port: MessagePort) -> Self {
+    pub fn new() -> Self {
         Self {
-            buffers: RefCell::new(std::collections::HashMap::new()),
-            port,
+            buffers: FxHashMap::default(),
         }
     }
 
-    /// Get or create a BatchBuffer for a subscription
-    pub fn get_or_create(&self, sub_id: &str) -> Rc<RefCell<BatchBuffer>> {
-        let mut buffers = self.buffers.borrow_mut();
-        let port = self.port.clone();
-        buffers
+    /// Buffer a serialized WorkerMessage for `sub_id`, framed as
+    /// `[4B len][encode_tagged(sub_id, data)]`.
+    /// Returns a flushed payload when the size threshold forces a flush.
+    pub fn add_message(&mut self, sub_id: &str, data: &[u8]) -> Option<Vec<u8>> {
+        let tagged = encode_tagged(sub_id, data);
+        let mut frame = Vec::with_capacity(4 + tagged.len());
+        frame.extend_from_slice(&(tagged.len() as u32).to_le_bytes());
+        frame.extend_from_slice(&tagged);
+        let now = now_millis();
+        self.buffers
             .entry(sub_id.to_string())
-            .or_insert_with(move || {
-                Rc::new(RefCell::new(BatchBuffer::new(sub_id.to_string(), port)))
-            })
-            .clone()
+            .or_insert_with(BatchBuffer::new)
+            .add_frame(&frame, now)
     }
 
-    /// Create a batch buffer for a specific subscription (used by global functions)
-    pub fn create_buffer_for_sub(&mut self, sub_id: &str) {
-        let mut buffers = self.buffers.borrow_mut();
-        if !buffers.contains_key(sub_id) {
-            let port = self.port.clone();
-            buffers.insert(
-                sub_id.to_string(),
-                Rc::new(RefCell::new(BatchBuffer::new(sub_id.to_string(), port))),
-            );
+    /// Drain a subscription's buffer; returns the payload if non-empty.
+    /// The buffer entry is removed so closed subscriptions don't leak entries.
+    pub fn flush_sub(&mut self, sub_id: &str) -> Option<Vec<u8>> {
+        let payload = self.buffers.get_mut(sub_id).and_then(BatchBuffer::take);
+        if payload.is_some() {
+            self.buffers.remove(sub_id);
         }
+        payload
     }
 
-    /// Add a message to the appropriate subscription's batch buffer.
-    /// The message should already be serialized as a WorkerMessage FlatBuffer.
-    /// Format: [4-byte len (little endian)][WorkerMessage bytes]
-    pub fn add_message(&mut self, sub_id: &str, data: &[u8]) {
-        // Auto-create buffer if it doesn't exist
-        if !self.buffers.borrow().contains_key(sub_id) {
-            self.create_buffer_for_sub(sub_id);
-        }
-        if let Some(buffer) = self.buffers.borrow().get(sub_id) {
-            buffer.borrow_mut().add_message(data);
-        }
-    }
-
-    /// Flush a specific subscription's buffer
-    pub fn flush_sub(&self, sub_id: &str) {
-        if let Some(buffer) = self.buffers.borrow().get(sub_id) {
-            buffer.borrow_mut().flush();
-        }
-    }
-
-    /// Flush all buffers (useful for shutdown or EOSE)
-    pub fn flush_all(&self) {
-        for (_, buffer) in self.buffers.borrow().iter() {
-            buffer.borrow_mut().flush();
-        }
-    }
-
-    /// Check all buffers for timeout and flush if needed.
-    /// This should be called periodically (e.g., every 50ms).
-    pub fn check_timeouts(&self) {
-        for (_, buffer) in self.buffers.borrow().iter() {
-            if buffer.borrow().check_timeout() {
-                buffer.borrow_mut().flush();
+    /// Drain every buffer whose oldest frame exceeded the timeout.
+    pub fn drain_timed_out(&mut self) -> Vec<Vec<u8>> {
+        let now = now_millis();
+        let timed_out: Vec<String> = self
+            .buffers
+            .iter()
+            .filter(|(_, b)| b.timed_out(now))
+            .map(|(k, _)| k.clone())
+            .collect();
+        let mut out = Vec::with_capacity(timed_out.len());
+        for key in timed_out {
+            if let Some(payload) = self.flush_sub(&key) {
+                out.push(payload);
             }
         }
+        out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::worker::parser_worker::decode_tagged_batch;
+
+    #[test]
+    fn buffers_until_explicit_flush() {
+        let mut mgr = BatchBufferManager::new();
+        assert!(mgr.add_message("s1", b"hello").is_none());
+        assert!(mgr.add_message("s1", b"world").is_none());
+
+        // Nothing flushed for other subs
+        assert!(mgr.flush_sub("other").is_none());
+
+        let payload = mgr.flush_sub("s1").expect("expected pending batch");
+        let frames = decode_tagged_batch(&payload);
+        assert_eq!(frames.len(), 2);
+        assert_eq!(frames[0], ("s1".to_string(), b"hello".to_vec()));
+        assert_eq!(frames[1], ("s1".to_string(), b"world".to_vec()));
+
+        // Buffer drained and entry removed
+        assert!(mgr.flush_sub("s1").is_none());
+        assert!(mgr.buffers.is_empty());
     }
 
-    /// Remove a subscription's buffer (e.g., when subscription is closed)
-    pub fn remove(&self, sub_id: &str) {
-        // Flush any remaining data before removing
-        self.flush_sub(sub_id);
-        self.buffers.borrow_mut().remove(sub_id);
+    #[test]
+    fn flushes_on_size_threshold() {
+        let mut mgr = BatchBufferManager::new();
+        // Fill most of the buffer with small frames
+        let chunk = vec![0u8; 8 * 1024];
+        assert!(mgr.add_message("s1", &chunk).is_none());
+        // This frame pushes the existing batch over 16KB -> flush-before
+        let flushed = mgr.add_message("s1", &chunk).expect("expected size flush");
+        let frames = decode_tagged_batch(&flushed);
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0].1, chunk);
+        // The second frame remains buffered
+        let rest = mgr.flush_sub("s1").expect("expected remainder");
+        assert_eq!(decode_tagged_batch(&rest).len(), 1);
+    }
+
+    #[test]
+    fn oversized_frame_flushes_immediately() {
+        let mut mgr = BatchBufferManager::new();
+        let big = vec![1u8; BATCH_SIZE_THRESHOLD];
+        let flushed = mgr
+            .add_message("s1", &big)
+            .expect("oversized frame should flush immediately");
+        let frames = decode_tagged_batch(&flushed);
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0].1, big);
+        assert!(mgr.flush_sub("s1").is_none());
+    }
+
+    #[test]
+    fn timeout_drains_only_stale_buffers() {
+        let mut mgr = BatchBufferManager::new();
+        assert!(mgr.add_message("s1", b"a").is_none());
+        // Not yet timed out
+        assert!(mgr.drain_timed_out().is_empty());
+        // Force the buffer to look stale by backdating first_at
+        if let Some(buf) = mgr.buffers.get_mut("s1") {
+            buf.first_at = now_millis().saturating_sub(BATCH_TIMEOUT_MS + 1);
+        }
+        let drained = mgr.drain_timed_out();
+        assert_eq!(drained.len(), 1);
+        assert_eq!(decode_tagged_batch(&drained[0]).len(), 1);
+        assert!(mgr.buffers.is_empty());
+    }
+
+    #[test]
+    fn per_subscription_isolation() {
+        let mut mgr = BatchBufferManager::new();
+        assert!(mgr.add_message("a", b"1").is_none());
+        assert!(mgr.add_message("b", b"2").is_none());
+
+        let pa = mgr.flush_sub("a").expect("batch for a");
+        let fa = decode_tagged_batch(&pa);
+        assert_eq!(fa.len(), 1);
+        assert_eq!(fa[0].0, "a");
+
+        let pb = mgr.flush_sub("b").expect("batch for b");
+        let fb = decode_tagged_batch(&pb);
+        assert_eq!(fb.len(), 1);
+        assert_eq!(fb[0].0, "b");
     }
 }

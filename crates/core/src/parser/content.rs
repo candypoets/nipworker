@@ -2,6 +2,7 @@ use crate::parser::Result;
 use crate::types::nostr::nips::nip19::{self, Nip19};
 use crate::types::ParserError;
 use regex::Regex;
+use std::sync::LazyLock;
 
 use crate::generated::nostr::fb;
 
@@ -107,7 +108,6 @@ impl ContentBlock {
 }
 
 pub struct ContentParser {
-    patterns: Vec<Pattern>,
     emoji_map: std::collections::HashMap<String, (String, Option<String>)>,
 }
 
@@ -121,10 +121,74 @@ pub struct ImetaData {
 }
 
 struct Pattern {
-    name: String,
-    regex: Regex,
+    name: &'static str,
+    regex: &'static LazyLock<Regex>,
     processor: fn(&str, &regex::Captures) -> Result<ContentBlock>,
 }
+
+// Static content patterns, compiled once instead of per event
+static CODE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"```([\s\S]*?)```").unwrap());
+static CASHU_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(cashuA[A-Za-z0-9_-]+)").unwrap());
+static HASHTAG_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(^|[\s\x22\x27(\]])(#[a-zA-Z0-9_]+)").unwrap());
+static IMAGE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)(https?://[^\s\\]+\.(jpg|jpeg|png|gif|webp|svg|ico)(\?[^\s\\]*)?)").unwrap()
+});
+static VIDEO_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)(https?://[^\s\\]+\.(mp4|mov|avi|mkv|webm|m4v)(\?[^\s\\]*)?)").unwrap()
+});
+static LINK_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)https?://[^\s\]\)\\]+").unwrap());
+static NOSTR_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)(nostr:([a-z0-9]+)|(nevent|nprofile|npub|naddr|note)1[a-z0-9]+)").unwrap()
+});
+static EMOJI_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r":([a-zA-Z0-9_-]+):").unwrap());
+
+static PATTERNS: &[Pattern] = &[
+    Pattern {
+        name: "code",
+        regex: &CODE_RE,
+        processor: process_code,
+    },
+    Pattern {
+        name: "cashu",
+        regex: &CASHU_RE,
+        processor: process_cashu,
+    },
+    Pattern {
+        name: "hashtag",
+        regex: &HASHTAG_RE,
+        processor: process_hashtag,
+    },
+    Pattern {
+        name: "image",
+        regex: &IMAGE_RE,
+        processor: process_image,
+    },
+    Pattern {
+        name: "video",
+        regex: &VIDEO_RE,
+        processor: process_video,
+    },
+    Pattern {
+        name: "link",
+        regex: &LINK_RE,
+        processor: process_link,
+    },
+    Pattern {
+        name: "nostr",
+        regex: &NOSTR_RE,
+        processor: process_nostr,
+    },
+    Pattern {
+        name: "emoji",
+        // NIP-30 shortcode format: :shortcode: where shortcode is alphanumeric, hyphens, underscores
+        regex: &EMOJI_RE,
+        processor: process_emoji_placeholder,
+    },
+];
 
 /// Safely truncate a string at the given byte length, ensuring we don't cut in the middle of a UTF-8 character
 fn safe_truncate(s: &str, max_bytes: usize) -> &str {
@@ -167,70 +231,14 @@ impl ContentParser {
             })
             .collect();
 
-        let patterns = vec![
-            Pattern {
-                name: "code".to_string(),
-                regex: Regex::new(r"```([\s\S]*?)```").unwrap(),
-                processor: process_code,
-            },
-            Pattern {
-                name: "cashu".to_string(),
-                regex: Regex::new(r"(cashuA[A-Za-z0-9_-]+)").unwrap(),
-                processor: process_cashu,
-            },
-            Pattern {
-                name: "hashtag".to_string(),
-                regex: Regex::new(r"(^|[\s\x22\x27(\]])(#[a-zA-Z0-9_]+)").unwrap(),
-                processor: process_hashtag,
-            },
-            Pattern {
-                name: "image".to_string(),
-                regex: Regex::new(
-                    r"(?i)(https?://[^\s\\]+\.(jpg|jpeg|png|gif|webp|svg|ico)(\?[^\s\\]*)?)",
-                )
-                .unwrap(),
-                processor: process_image,
-            },
-            Pattern {
-                name: "video".to_string(),
-                regex: Regex::new(
-                    r"(?i)(https?://[^\s\\]+\.(mp4|mov|avi|mkv|webm|m4v)(\?[^\s\\]*)?)",
-                )
-                .unwrap(),
-                processor: process_video,
-            },
-            Pattern {
-                name: "link".to_string(),
-                regex: Regex::new(r"(?i)https?://[^\s\]\)\\]+").unwrap(),
-                processor: process_link,
-            },
-            Pattern {
-                name: "nostr".to_string(),
-                regex: Regex::new(
-                    r"(?i)(nostr:([a-z0-9]+)|(nevent|nprofile|npub|naddr|note)1[a-z0-9]+)",
-                )
-                .unwrap(),
-                processor: process_nostr,
-            },
-            Pattern {
-                name: "emoji".to_string(),
-                // NIP-30 shortcode format: :shortcode: where shortcode is alphanumeric, hyphens, underscores
-                regex: Regex::new(r":([a-zA-Z0-9_-]+):").unwrap(),
-                processor: process_emoji_placeholder,
-            },
-        ];
-
-        Self {
-            patterns,
-            emoji_map,
-        }
+        Self { emoji_map }
     }
 
     pub fn parse_content(&self, content: &str) -> Result<Vec<ContentBlock>> {
         let mut blocks = vec![ContentBlock::new("text".to_string(), content.to_string())];
 
         // Process one pattern at a time to prioritize patterns
-        for pattern in &self.patterns {
+        for pattern in PATTERNS {
             let mut new_blocks = Vec::new();
 
             for block in blocks {

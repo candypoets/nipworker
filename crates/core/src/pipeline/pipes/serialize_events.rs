@@ -20,6 +20,22 @@ impl SerializeEventsPipe {
 
 impl Pipe for SerializeEventsPipe {
     async fn process(&mut self, event: PipelineEvent) -> Result<PipeOutput> {
+        // Reuse bytes stashed by an upstream pipe (e.g. SaveToDbPipe) instead
+        // of serializing the same event again. The inner sub_id is ignored
+        // downstream (main reads the sub id from the outer tagged framing).
+        if let Some(serialized) = event.serialized {
+            // Safety check: prevent excessive data
+            if serialized.len() > 512 * 1024 {
+                warn!(
+                    "FlatBuffer data too large: {} bytes for subscription {}",
+                    serialized.len(),
+                    self.subscription_id
+                );
+                return Ok(PipeOutput::Drop);
+            }
+            return Ok(PipeOutput::DirectOutput(serialized));
+        }
+
         if let Some(parsed_event) = event.parsed {
             let mut builder = FlatBufferBuilder::new();
 
@@ -103,5 +119,59 @@ impl Pipe for SerializeEventsPipe {
 
     fn name(&self) -> &str {
         &self.name
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn event_with_stash(bytes: Vec<u8>) -> PipelineEvent {
+        PipelineEvent {
+            raw: None,
+            parsed: None,
+            id: [1; 32],
+            source_relay: None,
+            serialized: Some(bytes),
+        }
+    }
+
+    #[tokio::test]
+    async fn reuses_stashed_bytes_as_direct_output() {
+        let stashed = vec![1u8, 2, 3, 4];
+        let mut pipe = SerializeEventsPipe::new("sub".to_string());
+        let out = pipe
+            .process(event_with_stash(stashed.clone()))
+            .await
+            .expect("serialize should succeed");
+        match out {
+            PipeOutput::DirectOutput(bytes) => assert_eq!(bytes, stashed),
+            _ => panic!("stashed bytes must be reused as DirectOutput"),
+        }
+    }
+
+    #[tokio::test]
+    async fn stashed_bytes_still_subject_to_size_guard() {
+        let oversized = vec![0u8; 512 * 1024 + 1];
+        let mut pipe = SerializeEventsPipe::new("sub".to_string());
+        let out = pipe
+            .process(event_with_stash(oversized))
+            .await
+            .expect("serialize should succeed");
+        assert!(matches!(out, PipeOutput::Drop));
+    }
+
+    #[tokio::test]
+    async fn drops_when_nothing_to_serialize() {
+        let mut pipe = SerializeEventsPipe::new("sub".to_string());
+        let event = PipelineEvent {
+            raw: None,
+            parsed: None,
+            id: [1; 32],
+            source_relay: None,
+            serialized: None,
+        };
+        let out = pipe.process(event).await.expect("serialize should succeed");
+        assert!(matches!(out, PipeOutput::Drop));
     }
 }

@@ -2,11 +2,39 @@ use crate::generated::nostr::fb::{self, NostrEvent, ParsedEvent, Request, Worker
 use crate::platform::now_millis;
 use crate::storage::db::sharded_storage::ShardedRingBufferStorage;
 use crate::storage::db::types::{
-    DatabaseConfig, DatabaseError, DatabaseIndexes, EventStorage, QueryFilter, QueryResult,
+    DatabaseConfig, DatabaseError, DatabaseIndexes, EventKey, EventRecord, EventStorage,
+    QueryFilter, QueryResult,
 };
 use rustc_hash::{FxHashMap, FxHashSet};
 
 type Result<T> = std::result::Result<T, DatabaseError>;
+
+/// A candidate event-key set for query evaluation. Single-value indexed fields
+/// borrow the index set directly (the common case avoids cloning the whole
+/// set); multi-value fields union into an owned set.
+enum CandidateSet<'a> {
+    Owned(FxHashSet<EventKey>),
+    Borrowed(&'a FxHashSet<EventKey>),
+}
+
+impl CandidateSet<'_> {
+    fn as_set(&self) -> &FxHashSet<EventKey> {
+        match self {
+            CandidateSet::Owned(set) => set,
+            CandidateSet::Borrowed(set) => set,
+        }
+    }
+}
+
+/// Outcome of gathering candidates for one indexed filter field.
+enum GatheredCandidates<'a> {
+    /// Field not present in the filter.
+    Absent,
+    /// Field present but no events match - the whole query result is empty.
+    Empty,
+    /// Field present with matching events.
+    Set(CandidateSet<'a>),
+}
 
 use std::future::Future;
 use std::sync::{Arc, RwLock};
@@ -274,8 +302,9 @@ impl<S: EventStorage> NostrDB<S> {
             .map(|record| record.offset)
         {
             // Only skip when the indexed offset still points to a readable event.
-            // Offsets can become stale after ring-buffer eviction.
-            if self.storage.get_event(existing_offset)?.is_some() {
+            // Offsets can become stale after ring-buffer eviction. This is a cheap
+            // bounds check - it does NOT copy the existing event bytes.
+            if self.storage.contains_offset(existing_offset) {
                 return Ok(());
             }
         }
@@ -314,8 +343,9 @@ impl<S: EventStorage> NostrDB<S> {
             .map(|record| record.offset)
         {
             // Only skip when the indexed offset still points to a readable event.
-            // Offsets can become stale after ring-buffer eviction.
-            if self.storage.get_event(existing_offset)?.is_some() {
+            // Offsets can become stale after ring-buffer eviction. This is a cheap
+            // bounds check - it does NOT copy the existing event bytes.
+            if self.storage.contains_offset(existing_offset) {
                 return Ok(());
             }
         }
@@ -575,20 +605,6 @@ impl<S: EventStorage> NostrDB<S> {
         flatbuffers::root::<ParsedEvent>(bytes).ok()
     }
 
-    /// Try to extract a NostrEvent from raw bytes
-    /// Handles both WorkerMessage wrapper (new format) and direct event (legacy)
-    fn extract_nostr_event(bytes: &[u8]) -> Option<NostrEvent<'_>> {
-        // Try WorkerMessage first (new format)
-        if let Ok(wm) = flatbuffers::root::<WorkerMessage>(bytes) {
-            if wm.content_type() == fb::Message::NostrEvent {
-                return wm.content_as_nostr_event();
-            }
-            return None;
-        }
-        // Legacy format: direct NostrEvent
-        flatbuffers::root::<NostrEvent>(bytes).ok()
-    }
-
     /// Extract created_at regardless of format (ParsedEvent or NostrEvent)
     /// Handles both WorkerMessage wrapper (new format) and direct event (legacy)
     fn extract_created_at(bytes: &[u8]) -> Option<u32> {
@@ -622,7 +638,9 @@ impl<S: EventStorage> NostrDB<S> {
     /// Add an event to all relevant indexes
     fn index_parsed_event(&self, event: ParsedEvent<'_>, offset: u64) {
         let event_id = event.id();
-        let event_key = self.indexes.upsert_event_record(event_id, offset);
+        let event_key = self
+            .indexes
+            .upsert_event_record(event_id, offset, event.created_at());
 
         // Kind
         self.indexes
@@ -717,7 +735,9 @@ impl<S: EventStorage> NostrDB<S> {
 
     fn index_nostr_event(&self, event: NostrEvent<'_>, offset: u64) {
         let event_id = event.id();
-        let event_key = self.indexes.upsert_event_record(event_id, offset);
+        let event_key =
+            self.indexes
+                .upsert_event_record(event_id, offset, event.created_at().max(0) as u32);
 
         // Kind
         self.indexes
@@ -844,6 +864,48 @@ impl<S: EventStorage> NostrDB<S> {
         Self::dedup_strings(&mut filter.q_tags);
     }
 
+    fn empty_query_result(start_time: u64) -> QueryResult {
+        QueryResult {
+            events: Vec::new(),
+            total_found: 0,
+            has_more: false,
+            query_time_ms: now_millis() - start_time,
+        }
+    }
+
+    /// Gather the candidate event-key set for one indexed filter field.
+    /// Borrows the index set when the field has a single value (no clone);
+    /// unions into an owned set for multiple values.
+    fn gather_candidates<'a, K: Eq + std::hash::Hash>(
+        values: &Option<Vec<K>>,
+        index: &'a FxHashMap<K, FxHashSet<EventKey>>,
+    ) -> GatheredCandidates<'a> {
+        let Some(values) = values else {
+            return GatheredCandidates::Absent;
+        };
+
+        if values.len() == 1 {
+            return match index.get(&values[0]) {
+                Some(set) if !set.is_empty() => {
+                    GatheredCandidates::Set(CandidateSet::Borrowed(set))
+                }
+                _ => GatheredCandidates::Empty,
+            };
+        }
+
+        let mut union = FxHashSet::default();
+        for value in values {
+            if let Some(set) = index.get(value) {
+                union.extend(set.iter().copied());
+            }
+        }
+        if union.is_empty() {
+            GatheredCandidates::Empty
+        } else {
+            GatheredCandidates::Set(CandidateSet::Owned(union))
+        }
+    }
+
     #[allow(non_snake_case)]
     pub fn query_events_with_filter(&self, filter: QueryFilter) -> Result<QueryResult> {
         self.query_events_with_filter_inner(filter, true)
@@ -858,300 +920,154 @@ impl<S: EventStorage> NostrDB<S> {
         let start_time = now_millis();
         Self::normalize_query_filter(&mut filter);
 
+        // Borrow all index maps up front (shared borrows on distinct RefCells)
+        // so single-value candidate sets can borrow directly from the indexes.
+        let events_by_id = self.indexes.events_by_id.borrow();
+        let events_by_kind = self.indexes.events_by_kind.borrow();
+        let events_by_pubkey = self.indexes.events_by_pubkey.borrow();
+        let events_by_e_tag = self.indexes.events_by_e_tag.borrow();
+        let events_by_E_tag = self.indexes.events_by_E_tag.borrow();
+        let events_by_p_tag = self.indexes.events_by_p_tag.borrow();
+        let events_by_P_tag = self.indexes.events_by_P_tag.borrow();
+        let events_by_a_tag = self.indexes.events_by_a_tag.borrow();
+        let events_by_d_tag = self.indexes.events_by_d_tag.borrow();
+        let events_by_q_tag = self.indexes.events_by_q_tag.borrow();
+
+        macro_rules! push_candidates {
+            ($sets:ident, $start:expr, $values:expr, $index:expr) => {
+                match Self::gather_candidates($values, $index) {
+                    GatheredCandidates::Absent => {}
+                    GatheredCandidates::Empty => {
+                        return Ok(Self::empty_query_result($start));
+                    }
+                    GatheredCandidates::Set(set) => $sets.push(set),
+                }
+            };
+        }
+
         // Start with candidate sets from indexed fields
-        let mut candidate_sets = Vec::new();
-        let mut use_full_scan = true;
+        let mut candidate_sets: Vec<CandidateSet<'_>> = Vec::new();
 
         // Filter by IDs (most specific)
         if let Some(ids) = &filter.ids {
             let mut id_set = FxHashSet::default();
-            let events_by_id = self.indexes.events_by_id.borrow();
             for id in ids {
                 if let Some(record) = events_by_id.get(id) {
                     id_set.insert(record.key);
                 }
             }
             if id_set.is_empty() {
-                return Ok(QueryResult {
-                    events: Vec::new(),
-                    total_found: 0,
-                    has_more: false,
-                    query_time_ms: now_millis() - start_time,
-                });
+                return Ok(Self::empty_query_result(start_time));
             }
-            candidate_sets.push(id_set);
-            use_full_scan = false;
+            candidate_sets.push(CandidateSet::Owned(id_set));
         }
 
         // Filter by kinds
-        if let Some(kinds) = &filter.kinds {
-            let mut kind_events = FxHashSet::default();
-            let events_by_kind = self.indexes.events_by_kind.borrow();
-            for kind in kinds {
-                if let Some(event_ids) = events_by_kind.get(kind) {
-                    kind_events.extend(event_ids.iter().cloned());
-                }
-            }
-            if kind_events.is_empty() {
-                return Ok(QueryResult {
-                    events: Vec::new(),
-                    total_found: 0,
-                    has_more: false,
-                    query_time_ms: now_millis() - start_time,
-                });
-            }
-            candidate_sets.push(kind_events);
-            use_full_scan = false;
-        }
+        push_candidates!(candidate_sets, start_time, &filter.kinds, &events_by_kind);
 
         // Filter by authors
-        if let Some(authors) = &filter.authors {
-            let mut author_events = FxHashSet::default();
-            let events_by_pubkey = self.indexes.events_by_pubkey.borrow();
-            for author in authors {
-                if let Some(event_ids) = events_by_pubkey.get(author) {
-                    author_events.extend(event_ids.iter().cloned());
-                }
-            }
-            if author_events.is_empty() {
-                return Ok(QueryResult {
-                    events: Vec::new(),
-                    total_found: 0,
-                    has_more: false,
-                    query_time_ms: now_millis() - start_time,
-                });
-            }
-            candidate_sets.push(author_events);
-            use_full_scan = false;
-        }
+        push_candidates!(candidate_sets, start_time, &filter.authors, &events_by_pubkey);
 
         // Filter by e_tags
-        if let Some(e_tags) = &filter.e_tags {
-            let mut tag_events = FxHashSet::default();
-            let events_by_e_tag = self.indexes.events_by_e_tag.borrow();
-            for tag in e_tags {
-                if let Some(event_ids) = events_by_e_tag.get(tag) {
-                    tag_events.extend(event_ids.iter().cloned());
-                }
-            }
-            if tag_events.is_empty() {
-                return Ok(QueryResult {
-                    events: Vec::new(),
-                    total_found: 0,
-                    has_more: false,
-                    query_time_ms: now_millis() - start_time,
-                });
-            }
-            candidate_sets.push(tag_events);
-            use_full_scan = false;
-        }
+        push_candidates!(candidate_sets, start_time, &filter.e_tags, &events_by_e_tag);
 
         // Filter by E_tags (uppercase - NIP-22)
-        if let Some(E_tags) = &filter.E_tags {
-            let mut tag_events = FxHashSet::default();
-            let events_by_E_tag = self.indexes.events_by_E_tag.borrow();
-            for tag in E_tags {
-                if let Some(event_ids) = events_by_E_tag.get(tag) {
-                    tag_events.extend(event_ids.iter().cloned());
-                }
-            }
-            if tag_events.is_empty() {
-                return Ok(QueryResult {
-                    events: Vec::new(),
-                    total_found: 0,
-                    has_more: false,
-                    query_time_ms: now_millis() - start_time,
-                });
-            }
-            candidate_sets.push(tag_events);
-            use_full_scan = false;
-        }
+        push_candidates!(candidate_sets, start_time, &filter.E_tags, &events_by_E_tag);
 
         // Filter by p_tags
-        if let Some(p_tags) = &filter.p_tags {
-            let mut tag_events = FxHashSet::default();
-            let events_by_p_tag = self.indexes.events_by_p_tag.borrow();
-            for tag in p_tags {
-                if let Some(event_ids) = events_by_p_tag.get(tag) {
-                    tag_events.extend(event_ids.iter().cloned());
-                }
-            }
-            if tag_events.is_empty() {
-                return Ok(QueryResult {
-                    events: Vec::new(),
-                    total_found: 0,
-                    has_more: false,
-                    query_time_ms: now_millis() - start_time,
-                });
-            }
-            candidate_sets.push(tag_events);
-            use_full_scan = false;
-        }
+        push_candidates!(candidate_sets, start_time, &filter.p_tags, &events_by_p_tag);
 
         // Filter by P_tags (uppercase - NIP-22)
-        if let Some(P_tags) = &filter.P_tags {
-            let mut tag_events = FxHashSet::default();
-            let events_by_P_tag = self.indexes.events_by_P_tag.borrow();
-            for tag in P_tags {
-                if let Some(event_ids) = events_by_P_tag.get(tag) {
-                    tag_events.extend(event_ids.iter().cloned());
-                }
-            }
-            if tag_events.is_empty() {
-                return Ok(QueryResult {
-                    events: Vec::new(),
-                    total_found: 0,
-                    has_more: false,
-                    query_time_ms: now_millis() - start_time,
-                });
-            }
-            candidate_sets.push(tag_events);
-            use_full_scan = false;
-        }
+        push_candidates!(candidate_sets, start_time, &filter.P_tags, &events_by_P_tag);
 
         // Filter by a_tags
-        if let Some(a_tags) = &filter.a_tags {
-            let mut tag_events = FxHashSet::default();
-            let events_by_a_tag = self.indexes.events_by_a_tag.borrow();
-            for tag in a_tags {
-                if let Some(event_ids) = events_by_a_tag.get(tag) {
-                    tag_events.extend(event_ids.iter().cloned());
-                }
-            }
-            if tag_events.is_empty() {
-                return Ok(QueryResult {
-                    events: Vec::new(),
-                    total_found: 0,
-                    has_more: false,
-                    query_time_ms: now_millis() - start_time,
-                });
-            }
-            candidate_sets.push(tag_events);
-            use_full_scan = false;
-        }
+        push_candidates!(candidate_sets, start_time, &filter.a_tags, &events_by_a_tag);
 
         // Filter by d_tags
-        if let Some(d_tags) = &filter.d_tags {
-            let mut tag_events = FxHashSet::default();
-            let events_by_d_tag = self.indexes.events_by_d_tag.borrow();
-            for tag in d_tags {
-                if let Some(event_ids) = events_by_d_tag.get(tag) {
-                    tag_events.extend(event_ids.iter().cloned());
-                }
-            }
-            if tag_events.is_empty() {
-                return Ok(QueryResult {
-                    events: Vec::new(),
-                    total_found: 0,
-                    has_more: false,
-                    query_time_ms: now_millis() - start_time,
-                });
-            }
-            candidate_sets.push(tag_events);
-            use_full_scan = false;
-        }
+        push_candidates!(candidate_sets, start_time, &filter.d_tags, &events_by_d_tag);
 
         // Filter by q_tags (quote/citation)
-        if let Some(q_tags) = &filter.q_tags {
-            let mut tag_events = FxHashSet::default();
-            let events_by_q_tag = self.indexes.events_by_q_tag.borrow();
-            for tag in q_tags {
-                if let Some(event_ids) = events_by_q_tag.get(tag) {
-                    tag_events.extend(event_ids.iter().cloned());
-                }
-            }
-            if tag_events.is_empty() {
-                return Ok(QueryResult {
-                    events: Vec::new(),
-                    total_found: 0,
-                    has_more: false,
-                    query_time_ms: now_millis() - start_time,
-                });
-            }
-            candidate_sets.push(tag_events);
-            use_full_scan = false;
-        }
+        push_candidates!(candidate_sets, start_time, &filter.q_tags, &events_by_q_tag);
 
-        // Apply non-indexed filters and collect results
-        let mut results = Vec::new();
+        // Apply non-indexed filters and collect surviving (created_at, offset)
+        // pairs. created_at comes from the index record, so since/until pruning
+        // happens WITHOUT reading event bytes from storage.
+        let use_full_scan = candidate_sets.is_empty();
         let events_by_key = self.indexes.events_by_key.borrow();
+        let mut survivors: Vec<(u32, u64)> = Vec::new();
 
-        let mut process_offset = |offset: u64| {
-            if let Ok(Some(b)) = self.storage.get_event(offset) {
-                if let Some(event) = Self::extract_parsed_event(&b) {
-                    let created_at = event.created_at();
-                    // Time range filters
-                    if let Some(since) = filter.since {
-                        if created_at < since as u32 {
-                            return;
-                        }
-                    }
-
-                    if let Some(until) = filter.until {
-                        if created_at > until as u32 {
-                            return;
-                        }
-                    }
-
-                    // Store the underlying bytes (event borrowing b prevents moving b)
-                    results.push((created_at, b));
-                } else if let Some(n) = Self::extract_nostr_event(&b) {
-                    let created_at = n.created_at().max(0) as u32;
-                    // Time range filters for NostrEvent
-                    if let Some(since) = filter.since {
-                        if created_at < since as u32 {
-                            return;
-                        }
-                    }
-
-                    if let Some(until) = filter.until {
-                        if created_at > until as u32 {
-                            return;
-                        }
-                    }
-
-                    // Store the underlying bytes
-                    results.push((created_at, b));
+        let consider = |record: EventRecord, survivors: &mut Vec<(u32, u64)>| {
+            // Time range filters (from the index record, no byte reads)
+            if let Some(since) = filter.since {
+                if record.created_at < since {
+                    return;
                 }
             }
+            if let Some(until) = filter.until {
+                if record.created_at > until {
+                    return;
+                }
+            }
+            // Skip offsets evicted from the ring buffer. This is a cheap bounds
+            // check - it does NOT copy event bytes like get_event would.
+            if !self.storage.contains_offset(record.offset) {
+                return;
+            }
+            survivors.push((record.created_at, record.offset));
         };
 
         if use_full_scan {
-            for offset in events_by_key.values().copied() {
-                process_offset(offset);
+            for record in events_by_key.values().copied() {
+                consider(record, &mut survivors);
             }
         } else {
-            candidate_sets.sort_by_key(|set| set.len());
-            if let Some((driver_set, remaining_sets)) = candidate_sets.split_first() {
-                for event_key in driver_set {
-                    if !remaining_sets.iter().all(|set| set.contains(event_key)) {
-                        continue;
+            // Intersect: iterate the smallest candidate set, probe the others.
+            let mut order: Vec<usize> = (0..candidate_sets.len()).collect();
+            order.sort_by_key(|&i| candidate_sets[i].as_set().len());
+            let (driver_idx, remaining_idxs) = order.split_first().unwrap();
+            let driver_set = candidate_sets[*driver_idx].as_set();
+            'candidates: for event_key in driver_set {
+                for &idx in remaining_idxs {
+                    if !candidate_sets[idx].as_set().contains(event_key) {
+                        continue 'candidates;
                     }
-                    if let Some(offset) = events_by_key.get(event_key).copied() {
-                        process_offset(offset);
-                    }
+                }
+                if let Some(record) = events_by_key.get(event_key).copied() {
+                    consider(record, &mut survivors);
                 }
             }
         }
         drop(events_by_key);
 
-        let total_found = results.len();
+        let total_found = survivors.len();
+
+        // Apply limit as a top-k selection by created_at (partial sort) so we
+        // never read event bytes for candidates beyond the limit.
+        if let Some(limit) = filter.limit {
+            if limit == 0 {
+                survivors.clear();
+            } else if survivors.len() > limit {
+                survivors.select_nth_unstable_by(limit - 1, |a, b| b.0.cmp(&a.0));
+                survivors.truncate(limit);
+            }
+        }
 
         if sort_results {
-            results.sort_by(|a, b| b.0.cmp(&a.0));
+            survivors.sort_by(|a, b| b.0.cmp(&a.0));
         }
-        let mut results: Vec<Vec<u8>> = results.into_iter().map(|(_, b)| b).collect();
 
-        // Apply limit
-        let has_more = if let Some(limit) = filter.limit {
-            let limited = results.len() > limit;
-            if limited {
-                results.truncate(limit);
+        // Only now read event bytes, and only for the surviving (<= limit)
+        // candidates.
+        let mut results: Vec<Vec<u8>> = Vec::with_capacity(survivors.len());
+        for (_, offset) in survivors {
+            if let Ok(Some(bytes)) = self.storage.get_event(offset) {
+                results.push(bytes);
             }
-            limited
-        } else {
-            false
-        };
+        }
+
+        let has_more = filter
+            .limit
+            .is_some_and(|limit| total_found > limit);
 
         let query_time = now_millis() - start_time;
 
@@ -1533,5 +1449,320 @@ impl<S: EventStorage> NostrDB<S> {
         }
 
         Ok(relay_set.into_iter().collect())
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::storage::db::ring_buffer::RingBufferStorage;
+    use flatbuffers::FlatBufferBuilder;
+    use std::cell::Cell;
+
+    /// Storage wrapper that counts byte reads, proving which query stages
+    /// avoid copying event bytes out of the ring buffer.
+    struct CountingStorage {
+        inner: RingBufferStorage,
+        get_calls: Cell<usize>,
+        contains_calls: Cell<usize>,
+    }
+
+    impl CountingStorage {
+        fn new(max_buffer_size: usize) -> Self {
+            Self {
+                inner: RingBufferStorage::new(
+                    "test-db".to_string(),
+                    "rb:test".to_string(),
+                    max_buffer_size,
+                    DatabaseConfig::default(),
+                ),
+                get_calls: Cell::new(0),
+                contains_calls: Cell::new(0),
+            }
+        }
+
+        fn reset_counters(&self) {
+            self.get_calls.set(0);
+            self.contains_calls.set(0);
+        }
+    }
+
+    impl EventStorage for CountingStorage {
+        async fn initialize_storage(&self) -> std::result::Result<(), DatabaseError> {
+            self.inner.initialize_storage().await
+        }
+
+        async fn add_event_data(&self, event_data: &[u8]) -> std::result::Result<u64, DatabaseError> {
+            self.inner.add_event_data(event_data).await
+        }
+
+        fn get_event(&self, event_offset: u64) -> std::result::Result<Option<Vec<u8>>, DatabaseError> {
+            self.get_calls.set(self.get_calls.get() + 1);
+            self.inner.get_event(event_offset)
+        }
+
+        fn contains_offset(&self, event_offset: u64) -> bool {
+            self.contains_calls.set(self.contains_calls.get() + 1);
+            self.inner.contains_offset(event_offset)
+        }
+
+        fn load_events(&self) -> std::result::Result<Vec<u64>, DatabaseError> {
+            self.inner.load_events()
+        }
+
+        async fn clear_storage(&self) -> std::result::Result<(), DatabaseError> {
+            self.inner.clear_storage().await
+        }
+
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+    }
+
+    fn new_test_db(max_buffer_size: usize) -> NostrDB<CountingStorage> {
+        NostrDB {
+            indexes: DatabaseIndexes::new(),
+            storage: CountingStorage::new(max_buffer_size),
+            is_initialized: Arc::new(RwLock::new(false)),
+            default_relays: vec![],
+            indexer_relays: vec![],
+        }
+    }
+
+    fn build_parsed_worker_message(
+        id: &str,
+        pubkey: &str,
+        kind: u16,
+        created_at: u32,
+        tags: &[&[&str]],
+    ) -> Vec<u8> {
+        let mut builder = FlatBufferBuilder::new();
+        let id_off = builder.create_string(id);
+        let pubkey_off = builder.create_string(pubkey);
+
+        let tag_offsets: Vec<_> = tags
+            .iter()
+            .map(|tag| {
+                let items: Vec<_> = tag.iter().map(|s| builder.create_string(s)).collect();
+                let items = builder.create_vector(&items);
+                fb::StringVec::create(&mut builder, &fb::StringVecArgs { items: Some(items) })
+            })
+            .collect();
+        let tags_vec = builder.create_vector(&tag_offsets);
+
+        let parsed = fb::ParsedEvent::create(
+            &mut builder,
+            &fb::ParsedEventArgs {
+                id: Some(id_off),
+                pubkey: Some(pubkey_off),
+                kind,
+                created_at,
+                tags: Some(tags_vec),
+                ..Default::default()
+            },
+        );
+        let sub_id_off = builder.create_string("save_to_db");
+        let message = fb::WorkerMessage::create(
+            &mut builder,
+            &fb::WorkerMessageArgs {
+                sub_id: Some(sub_id_off),
+                content_type: fb::Message::ParsedEvent,
+                content: Some(parsed.as_union_value()),
+                ..Default::default()
+            },
+        );
+        builder.finish(message, None);
+        builder.finished_data().to_vec()
+    }
+
+    fn event_id(index: usize) -> String {
+        format!("{:064x}", index + 1)
+    }
+
+    fn pubkey_id(index: usize) -> String {
+        format!("p{:063x}", index)
+    }
+
+    fn result_created_ats(result: &QueryResult) -> Vec<u32> {
+        result
+            .events
+            .iter()
+            .map(|b| NostrDB::<CountingStorage>::extract_created_at(b).unwrap())
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn query_limit_reads_only_top_k_events() {
+        let db = new_test_db(1024 * 1024);
+        db.initialize().await.unwrap();
+
+        // 50 events of kind 1 with created_at 1..=50
+        for i in 0..50u32 {
+            let bytes =
+                build_parsed_worker_message(&event_id(i as usize), &pubkey_id(0), 1, i + 1, &[]);
+            db.add_worker_message_bytes(&bytes).await.unwrap();
+        }
+        db.storage.reset_counters();
+
+        let mut filter = QueryFilter::new();
+        filter.kinds = Some(vec![1]);
+        filter.limit = Some(10);
+
+        let result = db.query_events_with_filter(filter).unwrap();
+
+        assert_eq!(result.total_found, 50);
+        assert!(result.has_more);
+        assert_eq!(result.events.len(), 10);
+        // Sorted newest-first: the 10 newest events (created_at 50 down to 41)
+        assert_eq!(result_created_ats(&result), (41..=50).rev().collect::<Vec<_>>());
+        // Only the 10 returned events were read from storage - not all 50.
+        assert_eq!(db.storage.get_calls.get(), 10);
+    }
+
+    #[tokio::test]
+    async fn query_since_until_prunes_without_byte_reads() {
+        let db = new_test_db(1024 * 1024);
+        db.initialize().await.unwrap();
+
+        for i in 0..20u32 {
+            let bytes =
+                build_parsed_worker_message(&event_id(i as usize), &pubkey_id(0), 1, i + 1, &[]);
+            db.add_worker_message_bytes(&bytes).await.unwrap();
+        }
+        db.storage.reset_counters();
+
+        let mut filter = QueryFilter::new();
+        filter.kinds = Some(vec![1]);
+        filter.since = Some(5);
+        filter.until = Some(10);
+
+        let result = db.query_events_with_filter(filter).unwrap();
+
+        assert_eq!(result.total_found, 6);
+        assert!(!result.has_more);
+        // created_at 10 down to 5, newest first
+        assert_eq!(result_created_ats(&result), vec![10, 9, 8, 7, 6, 5]);
+        // Pruning happened on index records: only the 6 survivors were read.
+        assert_eq!(db.storage.get_calls.get(), 6);
+    }
+
+    #[tokio::test]
+    async fn query_multi_field_intersection_matches_smallest_driver() {
+        let db = new_test_db(1024 * 1024);
+        db.initialize().await.unwrap();
+
+        // Author A: 5 kind-1 events; author B: 5 kind-1 + 5 kind-6 events
+        for i in 0..5u32 {
+            let a = build_parsed_worker_message(&event_id(i as usize), &pubkey_id(0), 1, i + 1, &[]);
+            db.add_worker_message_bytes(&a).await.unwrap();
+            let b1 =
+                build_parsed_worker_message(&event_id(10 + i as usize), &pubkey_id(1), 1, i + 1, &[]);
+            db.add_worker_message_bytes(&b1).await.unwrap();
+            let b6 =
+                build_parsed_worker_message(&event_id(20 + i as usize), &pubkey_id(1), 6, i + 1, &[]);
+            db.add_worker_message_bytes(&b6).await.unwrap();
+        }
+
+        let mut filter = QueryFilter::new();
+        filter.kinds = Some(vec![1]);
+        filter.authors = Some(vec![pubkey_id(1)]);
+
+        let result = db.query_events_with_filter(filter).unwrap();
+
+        assert_eq!(result.total_found, 5);
+        assert_eq!(result.events.len(), 5);
+        // Only author B's kind-1 events
+        for bytes in &result.events {
+            let event =
+                NostrDB::<CountingStorage>::extract_parsed_event(bytes).expect("parsed event");
+            assert_eq!(event.pubkey(), pubkey_id(1));
+            assert_eq!(event.kind(), 1);
+        }
+    }
+
+    #[tokio::test]
+    async fn query_full_scan_skips_evicted_offsets() {
+        // Small buffer: only the last few events survive eviction.
+        let probe = build_parsed_worker_message(&event_id(0), &pubkey_id(0), 1, 1, &[]);
+        let per_event = 4 + probe.len();
+        let capacity_events = 5usize;
+        let db = new_test_db(per_event * capacity_events + probe.len() / 2);
+        db.initialize().await.unwrap();
+
+        for i in 0..10u32 {
+            let bytes =
+                build_parsed_worker_message(&event_id(i as usize), &pubkey_id(0), 1, i + 1, &[]);
+            db.add_worker_message_bytes(&bytes).await.unwrap();
+        }
+
+        let mut filter = QueryFilter::new();
+        filter.kinds = Some(vec![1]);
+
+        let result = db.query_events_with_filter(filter).unwrap();
+
+        // Indexes still hold all 10 ids, but only the live tail may be returned.
+        assert_eq!(result.total_found, capacity_events);
+        assert_eq!(result.events.len(), capacity_events);
+        assert_eq!(result_created_ats(&result), vec![10, 9, 8, 7, 6]);
+    }
+
+    #[tokio::test]
+    async fn duplicate_persist_uses_cheap_liveness_check() {
+        let db = new_test_db(1024 * 1024);
+        db.initialize().await.unwrap();
+
+        let bytes = build_parsed_worker_message(&event_id(0), &pubkey_id(0), 1, 42, &[]);
+        let parsed = {
+            let wm = flatbuffers::root::<fb::WorkerMessage>(&bytes).unwrap();
+            wm.content_as_parsed_event().unwrap()
+        };
+
+        db.add_parsed_event_with_bytes(parsed, &bytes).await.unwrap();
+        db.storage.reset_counters();
+
+        // Re-persisting the same event must skip storage via contains_offset,
+        // without copying the existing event bytes (no get_event call).
+        db.add_parsed_event_with_bytes(parsed, &bytes).await.unwrap();
+
+        assert_eq!(db.storage.get_calls.get(), 0);
+        assert!(db.storage.contains_calls.get() >= 1);
+        assert_eq!(db.storage().load_events().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn duplicate_persist_restores_after_eviction() {
+        let probe = build_parsed_worker_message(&event_id(0), &pubkey_id(0), 1, 1, &[]);
+        let per_event = 4 + probe.len();
+        // Room for ~3 events.
+        let db = new_test_db(per_event * 3 + probe.len() / 2);
+        db.initialize().await.unwrap();
+
+        let bytes = build_parsed_worker_message(&event_id(0), &pubkey_id(0), 1, 42, &[]);
+        {
+            let wm = flatbuffers::root::<fb::WorkerMessage>(&bytes).unwrap();
+            let parsed = wm.content_as_parsed_event().unwrap();
+            db.add_parsed_event_with_bytes(parsed, &bytes).await.unwrap();
+        }
+
+        // Evict it with filler events
+        for i in 0..5u32 {
+            let filler =
+                build_parsed_worker_message(&event_id(10 + i as usize), &pubkey_id(1), 1, i, &[]);
+            db.add_worker_message_bytes(&filler).await.unwrap();
+        }
+
+        // The stale indexed offset must not suppress re-storage.
+        {
+            let wm = flatbuffers::root::<fb::WorkerMessage>(&bytes).unwrap();
+            let parsed = wm.content_as_parsed_event().unwrap();
+            db.add_parsed_event_with_bytes(parsed, &bytes).await.unwrap();
+        }
+
+        let mut filter = QueryFilter::new();
+        filter.ids = Some(vec![event_id(0)]);
+        let result = db.query_events_with_filter(filter).unwrap();
+        assert_eq!(result.total_found, 1);
+        assert_eq!(result_created_ats(&result), vec![42]);
     }
 }

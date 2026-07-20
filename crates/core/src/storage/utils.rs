@@ -594,6 +594,7 @@ fn build_requests_vector<'a>(
                 no_cache: r.no_cache(),
                 max_relays: r.max_relays(),
                 cache_only: r.cache_only(),
+                mesh_only: r.mesh_only(),
             },
         );
 

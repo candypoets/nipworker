@@ -141,6 +141,7 @@ impl<'a> ZapRequestParser<'a> {
         let mut kind = 0u16;
         let mut pubkey = String::new();
         let mut content = String::new();
+        let mut has_content = false;
         let mut tags = NostrTags(Vec::new());
         let mut signature = None;
 
@@ -159,7 +160,10 @@ impl<'a> ZapRequestParser<'a> {
             match key {
                 "kind" => kind = parser.parse_u64()? as u16,
                 "pubkey" => pubkey = parser.parse_string_unescaped()?,
-                "content" => content = parser.parse_string_unescaped()?,
+                "content" => {
+                    content = parser.parse_string_unescaped()?;
+                    has_content = true;
+                }
                 "tags" => tags = NostrTags::from_json(parser.parse_raw_json_value()?)?,
                 "signature" => signature = Some(parser.parse_string_unescaped()?),
                 _ => parser.skip_value()?,
@@ -168,7 +172,7 @@ impl<'a> ZapRequestParser<'a> {
             parser.skip_comma_or_end()?;
         }
 
-        if pubkey.is_empty() || content.is_empty() {
+        if pubkey.is_empty() || !has_content {
             return Err(ParserError::InvalidFormat(
                 "Missing required fields in ZapRequest".to_string(),
             ));
@@ -560,4 +564,27 @@ pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
 // Helper function to find a tag by name in a vec of vec of strings
 fn find_tag_in_vec<'a>(tags: &'a [Vec<String>], name: &str) -> Option<&'a Vec<String>> {
     tags.iter().find(|tag| !tag.is_empty() && tag[0] == name)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ZapRequest;
+
+    #[test]
+    fn zap_request_allows_empty_content() {
+        let request = ZapRequest::from_json(
+            r#"{"kind":9734,"pubkey":"sender","content":"","tags":[["p","recipient"]]}"#,
+        )
+        .expect("an empty zap comment is valid");
+
+        assert_eq!(request.content, "");
+    }
+
+    #[test]
+    fn zap_request_rejects_absent_content() {
+        let result =
+            ZapRequest::from_json(r#"{"kind":9734,"pubkey":"sender","tags":[["p","recipient"]]}"#);
+
+        assert!(result.is_err());
+    }
 }
