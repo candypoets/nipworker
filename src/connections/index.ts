@@ -6,8 +6,6 @@ import wasmUrl from '../../crates/connections/pkg/nipworker_connections_bg.wasm?
 export type InitConnectionsMsg = {
 	type: 'init';
 	payload: {
-		/** Port to communicate with main thread (for relay status) */
-		mainPort: MessagePort;
 		/** Port to communicate with cache worker */
 		cachePort: MessagePort;
 		/** Port to communicate with parser worker */

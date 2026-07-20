@@ -14,6 +14,7 @@ import { NostrEvent, NostrEventT } from '../../nostr/fb/nostr-event.js';
 import { ParsedEvent, ParsedEventT } from '../../nostr/fb/parsed-event.js';
 import { Pubkey, PubkeyT } from '../../nostr/fb/pubkey.js';
 import { Raw, RawT } from '../../nostr/fb/raw.js';
+import { SetSignerResponse, SetSignerResponseT } from '../../nostr/fb/set-signer-response.js';
 import { SignedEvent, SignedEventT } from '../../nostr/fb/signed-event.js';
 import { ValidProofs, ValidProofsT } from '../../nostr/fb/valid-proofs.js';
 
@@ -146,7 +147,7 @@ constructor(
   public url: string|Uint8Array|null = null,
   public type: MessageType = MessageType.ParsedNostrEvent,
   public contentType: Message = Message.NONE,
-  public content: BufferFullT|ConnectionStatusT|CountResponseT|EoceT|NostrEventT|ParsedEventT|PubkeyT|RawT|SignedEventT|ValidProofsT|null = null
+  public content: BufferFullT|ConnectionStatusT|CountResponseT|EoceT|NostrEventT|ParsedEventT|PubkeyT|RawT|SetSignerResponseT|SignedEventT|ValidProofsT|null = null
 ){}
 
 

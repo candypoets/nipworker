@@ -20,10 +20,11 @@ import {
 	ConnectionStatus,
 	MainContent,
 	MainMessageT,
-	MessageType,
+	Message,
 	MuteFilterPipeConfigT,
 	Nip46BunkerT,
 	Nip46QRT,
+	NostrEvent as FbNostrEvent,
 	ParsePipeConfigT,
 	PipeConfig,
 	PipelineConfigT,
@@ -34,9 +35,12 @@ import {
 	RequestT,
 	SaveToDbPipeConfigT,
 	SerializeEventsPipeConfigT,
+	SetSignerResponse,
 	SetSignerT,
 	SignEventT,
+	SignedEvent,
 	SignerType,
+	StringVec,
 	StringVecT,
 	SubscribeT,
 	SubscriptionConfigT,
@@ -72,6 +76,8 @@ type ReactNativeModuleFacade = {
 	handleMessage(bytes: Uint8Array | ArrayBuffer): void;
 	wake(): void;
 	setPrivateKey(secret: string): void;
+	setMeshProfile(profileJson: string): boolean;
+	clearMeshProfile(): boolean;
 	deinit(): void;
 	subscribe(bytes: Uint8Array | ArrayBuffer, subId: string): ArrayBuffer | undefined;
 	publish(bytes: Uint8Array | ArrayBuffer, publishId: string): ArrayBuffer | undefined;
@@ -156,24 +162,30 @@ const reactNativeBridge = {
 			init(config?: NostrManagerConfig): void {
 				const relayConfig = {
 					defaultRelays: config?.defaultRelays ?? [],
-					indexerRelays: config?.indexerRelays ?? []
+					indexerRelays: config?.indexerRelays ?? [],
+					meshBLEEnabled: config?.meshBLEEnabled ?? false
 				};
-				const hasRelayConfig =
-					relayConfig.defaultRelays.length > 0 || relayConfig.indexerRelays.length > 0;
-				if (hasRelayConfig && typeof mod.initEngine === 'function') {
-					mod.initEngine(relayConfig.defaultRelays, relayConfig.indexerRelays);
+				// The shared native handle must be configured before installing the
+				// byte runtime, which borrows that same handle.
+				if (typeof mod.initEngine === 'function') {
+					mod.initEngine(
+						relayConfig.defaultRelays,
+						relayConfig.indexerRelays,
+						relayConfig.meshBLEEnabled
+					);
 				}
 				if (typeof mod.installByteRuntime === 'function') {
 					mod.installByteRuntime();
+				}
+				if (relayConfig.meshBLEEnabled && typeof mod.startMesh === 'function') {
+					mod.startMesh();
 				}
 				const byteRuntime = getByteRuntime();
 				if (byteRuntime) {
 					byteRuntime.init(relayConfig);
 					return;
 				}
-				if (typeof mod.initEngine === 'function') {
-					mod.initEngine(relayConfig.defaultRelays, relayConfig.indexerRelays);
-				} else {
+				if (typeof mod.initEngine !== 'function') {
 					mod.init();
 				}
 			},
@@ -214,7 +226,16 @@ const reactNativeBridge = {
 				}
 				mod.setPrivateKey(secret);
 			},
+			setMeshProfile(profileJson: string): boolean {
+				return typeof mod.setMeshProfile === 'function' && Boolean(mod.setMeshProfile(profileJson));
+			},
+			clearMeshProfile(): boolean {
+				return typeof mod.clearMeshProfile === 'function' && Boolean(mod.clearMeshProfile());
+			},
 			deinit(): void {
+				if (typeof mod.stopMesh === 'function') {
+					mod.stopMesh();
+				}
 				const byteRuntime = getByteRuntime();
 				if (byteRuntime) {
 					byteRuntime.deinit();
@@ -298,7 +319,7 @@ const reactNativeBridge = {
 				addListener(_eventName: string, listener: (event: any) => void): void {
 					subscriptions.set(
 						listener,
-						turbo.onData((event: { data: number[] }) => listener(event.data))
+						turbo.onData((event: { data?: number[] }) => listener(event))
 					);
 				},
 				removeListener(_eventName: string, listener: (event: any) => void): void {
@@ -357,7 +378,8 @@ export class ReactNativeManager extends BaseBackend {
 	private eventEmitter: any;
 	private eventListener: ((arg: any) => void) | undefined;
 	private deinitialized = false;
-	private _signCB = (_event: NostrEvent) => {};
+	private _signRequests = new Map<number, (event: NostrEvent) => void>();
+	private _nextSignRequestId = 1;
 	private readonly useByteRuntime: boolean;
 
 	constructor(config: NostrManagerConfig = {}) {
@@ -369,6 +391,13 @@ export class ReactNativeManager extends BaseBackend {
 		this.eventListener = (arg: any) => {
 			if (this.deinitialized) return;
 			const event = Array.isArray(arg) ? arg[0] : arg;
+			if (this.useByteRuntime && event?.v === 1 && event?.encoding === 'queued') {
+				const byteRuntime = getByteRuntime();
+				for (const payload of byteRuntime?.drain?.() ?? []) {
+					this.handleNativeWake(new Uint8Array(payload));
+				}
+				return;
+			}
 			const decoded = eventDataToBytes(event);
 			if (!decoded) return;
 			if (this.useByteRuntime) {
@@ -435,11 +464,22 @@ export class ReactNativeManager extends BaseBackend {
 		if (this.handleRelayStatus(workerMsg, subId)) {
 			return;
 		}
+		if (subId === 'crypto' || subId === '') {
+			console.log('[nipworker-rn] signer response routed', {
+				subId,
+				contentType: workerMsg.contentType()
+			});
+		}
 		if (subId === 'crypto') {
 			this.handleCryptoMessage(data);
 			return;
 		}
 		if (subId === '') {
+			const contentType = workerMsg.contentType();
+			if (contentType === Message.SetSignerResponse || contentType === Message.Raw) {
+				this.handleCryptoMessage(data);
+				return;
+			}
 			this.handleDirectResponse(data);
 			return;
 		}
@@ -448,7 +488,7 @@ export class ReactNativeManager extends BaseBackend {
 	}
 
 	private handleRelayStatus(workerMsg: WorkerMessage, subId: string): boolean {
-		if (workerMsg.type() !== MessageType.ConnectionStatus) {
+		if (workerMsg.contentType() !== Message.ConnectionStatus) {
 			return false;
 		}
 		const statusObj = workerMsg.content(new ConnectionStatus());
@@ -473,7 +513,20 @@ export class ReactNativeManager extends BaseBackend {
 			maybeLenPrefixed ? payload.subarray(4, 4 + msgLen) : payload
 		);
 		const workerMsg = WorkerMessage.getRootAsWorkerMessage(bb);
-		if (workerMsg.type() !== MessageType.Pubkey) return;
+		if (workerMsg.contentType() === Message.SignedEvent) {
+			const signedEventObj = workerMsg.content(new SignedEvent());
+			const eventObj = signedEventObj ? signedEventObj.event() : null;
+			if (!eventObj) return;
+			// The byte-runtime SignedEvent message carries no request id, so
+			// requestId() is 0 and delivery falls back to the oldest pending
+			// request (FIFO).
+			const cb = this.takeSignCallback(signedEventObj!.requestId() || undefined);
+			if (cb) {
+				cb(this.fbEventToNostrEvent(eventObj));
+			}
+			return;
+		}
+		if (workerMsg.contentType() !== Message.Pubkey) return;
 		const pubkeyObj = workerMsg.content(new Pubkey());
 		const pubkey = pubkeyObj ? pubkeyObj.pubkey() : null;
 		if (pubkey) {
@@ -490,41 +543,104 @@ export class ReactNativeManager extends BaseBackend {
 		}
 	}
 
+	private isPubkeyResult(value: unknown): value is string {
+		return typeof value === 'string' && /^[0-9a-f]{64}$/i.test(value);
+	}
+
+	private handleSignerPubkey(pubkey: string, secretKey?: unknown, bunkerUrl?: unknown) {
+		this.activePubkey = pubkey;
+		if (this._pendingSession) {
+			const sessionPayload =
+				this._pendingSession.type === 'nip46' &&
+				typeof bunkerUrl === 'string' &&
+				bunkerUrl.startsWith('bunker://') &&
+				this._pendingSession.payload &&
+				typeof this._pendingSession.payload === 'object'
+					? { ...this._pendingSession.payload, url: bunkerUrl }
+					: this._pendingSession.payload;
+			this.saveSession(pubkey, this._pendingSession.type, sessionPayload);
+			this._pendingSession = null;
+		}
+		this.dispatch('auth', { pubkey: this.activePubkey, hasSigner: true, secretKey });
+	}
+
+	private fbEventToNostrEvent(eventObj: FbNostrEvent): NostrEvent {
+		const signedEvent: NostrEvent = {
+			id: eventObj.id() || '',
+			pubkey: eventObj.pubkey() || '',
+			created_at: eventObj.createdAt(),
+			kind: eventObj.kind(),
+			tags: [],
+			content: eventObj.content() || '',
+			sig: eventObj.sig() || ''
+		};
+		for (let i = 0; i < eventObj.tagsLength(); i++) {
+			const tag = eventObj.tags(i, new StringVec());
+			if (!tag) continue;
+			const values: string[] = [];
+			for (let j = 0; j < tag.itemsLength(); j++) {
+				const value = tag.items(j);
+				if (value !== null) values.push(value);
+			}
+			signedEvent.tags.push(values);
+		}
+		return signedEvent;
+	}
+
 	private handleCryptoMessage(payload: Uint8Array): void {
 		const bb = new flatbuffers.ByteBuffer(payload);
 		const workerMsg = WorkerMessage.getRootAsWorkerMessage(bb);
-		if (workerMsg.type() !== MessageType.Raw) return;
-		const rawObj = workerMsg.content(new Raw());
-		const rawStr = rawObj ? rawObj.raw() : null;
-		if (!rawStr) return;
-		try {
-			const msg = JSON.parse(rawStr);
-			if (msg.op === 'get_public_key' || msg.op === 'set_signer') {
+		switch (workerMsg.contentType()) {
+			case Message.SetSignerResponse: {
+				const resp = workerMsg.content(new SetSignerResponse());
+				if (!resp) return;
+				const pubkey = resp.pubkey() || '';
 				const secretKey =
 					this._pendingSession?.type === 'privkey' ? this._pendingSession.payload : undefined;
-				if (msg.result) {
-					this.activePubkey = msg.result;
-					if (this._pendingSession) {
-						const sessionPayload =
-							this._pendingSession.type === 'nip46' &&
-							typeof msg.bunker_url === 'string' &&
-							msg.bunker_url.startsWith('bunker://') &&
-							this._pendingSession.payload &&
-							typeof this._pendingSession.payload === 'object'
-								? { ...this._pendingSession.payload, url: msg.bunker_url }
-								: this._pendingSession.payload;
-						this.saveSession(this.activePubkey!, this._pendingSession.type, sessionPayload);
-						this._pendingSession = null;
-					}
+				if (this.isPubkeyResult(pubkey)) {
+					this.handleSignerPubkey(pubkey, secretKey, resp.bunkerUrl());
+				} else if (resp.error()) {
+					this.dispatch('auth', { pubkey: null, hasSigner: false });
 				}
-				this.dispatch('auth', { pubkey: this.activePubkey, hasSigner: !!msg.result, secretKey });
-			} else if (msg.op === 'sign_event' && msg.result) {
-				this._signCB(JSON.parse(msg.result));
-			} else if (msg.error) {
-				console.warn('[ReactNativeManager] Crypto error:', msg.error);
+				// Otherwise pubkey carries a NIP-46 QR status string
+				// ('awaiting discovery') - a second SetSignerResponse with the real
+				// pubkey and bunker_url arrives once discovery completes.
+				return;
 			}
-		} catch (e) {
-			console.warn('[ReactNativeManager] Failed to parse crypto raw message:', e);
+			case Message.Pubkey: {
+				const resp = workerMsg.content(new Pubkey());
+				const pubkey = resp?.pubkey() || '';
+				const secretKey =
+					this._pendingSession?.type === 'privkey' ? this._pendingSession.payload : undefined;
+				if (this.isPubkeyResult(pubkey)) {
+					this.handleSignerPubkey(pubkey, secretKey);
+				} else {
+					this.dispatch('auth', { pubkey: this.activePubkey, hasSigner: false, secretKey });
+				}
+				return;
+			}
+			case Message.SignedEvent: {
+				const resp = workerMsg.content(new SignedEvent());
+				if (!resp) return;
+				const eventObj = resp.event();
+				if (!eventObj) {
+					if (resp.error()) {
+						console.warn('[ReactNativeManager] sign_event failed:', resp.error());
+					}
+					return;
+				}
+				const cb = this.takeSignCallback(resp.requestId() || undefined);
+				if (cb) {
+					cb(this.fbEventToNostrEvent(eventObj));
+				}
+				return;
+			}
+			case Message.Raw: {
+				// Only emitted for malformed MainMessage payloads.
+				const raw = workerMsg.content(new Raw());
+				console.warn('[ReactNativeManager] crypto worker error:', raw?.raw());
+				return;
+			}
 		}
 	}
 
@@ -580,7 +696,8 @@ export class ReactNativeManager extends BaseBackend {
 						r.cacheFirst,
 						r.noCache,
 						undefined,
-						options.cacheOnly
+						options.cacheOnly,
+						r.meshOnly
 					)
 			),
 			optionsT
@@ -678,19 +795,50 @@ export class ReactNativeManager extends BaseBackend {
 		}
 	}
 
+	setMeshProfile(profile: NostrEvent): boolean {
+		if (profile.kind !== 0) {
+			throw new Error('[ReactNativeManager] Mesh profile must be a signed kind-0 event');
+		}
+		return this.nativeModule.setMeshProfile(JSON.stringify(profile));
+	}
+
+	clearMeshProfile(): boolean {
+		return this.nativeModule.clearMeshProfile();
+	}
+
 	signEvent(event: EventTemplate, cb: (event: NostrEvent) => void): void {
-		this._signCB = cb;
+		const requestId = this._nextSignRequestId++;
+		this._signRequests.set(requestId, cb);
 		const templateT = new TemplateT(
 			event.kind,
 			event.created_at,
 			this.textEncoder.encode(event.content),
 			event.tags.map((t) => new StringVecT(t)) || []
 		);
-		const signEventT = new SignEventT(templateT);
+		const signEventT = new SignEventT(templateT, requestId);
 		const mainT = new MainMessageT(MainContent.SignEvent, signEventT);
 		const builder = new flatbuffers.Builder(2048);
 		builder.finish(mainT.pack(builder));
 		this.postMessage(builder.asUint8Array());
+	}
+
+	/**
+	 * Resolve the callback for a sign_event response. Prefers an exact
+	 * request-id match; falls back to the oldest pending request for
+	 * responses that carry no id (byte runtime, legacy producers).
+	 */
+	private takeSignCallback(id?: number): ((event: NostrEvent) => void) | undefined {
+		if (id !== undefined) {
+			const cb = this._signRequests.get(id);
+			if (cb) {
+				this._signRequests.delete(id);
+				return cb;
+			}
+		}
+		const first = this._signRequests.entries().next();
+		if (first.done) return undefined;
+		this._signRequests.delete(first.value[0]);
+		return first.value[1];
 	}
 
 	getPublicKey(): void {
@@ -730,6 +878,27 @@ export function getOrCreateReactNativeBackend(config: NostrManagerConfig = {}): 
 
 export function createNostrManager(config?: NostrManagerConfig): NostrManagerLike {
 	return getOrCreateReactNativeBackend(config);
+}
+
+/** Retry starting the platform BLE transport after runtime permissions are granted. */
+export function startMeshBLE(): boolean {
+	const mod = getReactNativeModule();
+	return typeof mod.startMesh === 'function' ? Boolean(mod.startMesh()) : false;
+}
+
+export function stopMeshBLE(): void {
+	const mod = getReactNativeModule();
+	if (typeof mod.stopMesh === 'function') mod.stopMesh();
+}
+
+/** Pin a signed kind-0 profile as this device's visible nearby identity. */
+export function setMeshProfile(profile: NostrEvent): boolean {
+	return getOrCreateReactNativeBackend().setMeshProfile(profile);
+}
+
+/** Stop sharing the local profile while continuing to relay mesh events. */
+export function clearMeshProfile(): boolean {
+	return getOrCreateReactNativeBackend().clearMeshProfile();
 }
 
 export function hasReactNativeModule(): boolean {

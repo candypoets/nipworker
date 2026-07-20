@@ -1,6 +1,6 @@
 import {
 	WorkerMessage,
-	MessageType,
+	Message,
 	ConnectionStatus,
 	Eoce,
 	CountResponse,
@@ -47,35 +47,35 @@ import { ParsedData } from 'src/generated/nostr/fb/parsed-data';
 
 // ---- Top-level Message helpers ----
 export function isConnectionStatus(msg: WorkerMessage): ConnectionStatus | null {
-	if (msg.type() !== MessageType.ConnectionStatus) return null;
+	if (msg.contentType() !== Message.ConnectionStatus) return null;
 	return msg.content(new ConnectionStatus()) ?? null;
 }
 
 export const asConnectionStatus = isConnectionStatus;
 
 export function isEoce(msg: WorkerMessage): Eoce | null {
-	if (msg.type() !== MessageType.Eoce) return null;
+	if (msg.contentType() !== Message.Eoce) return null;
 	return msg.content(new Eoce()) ?? null;
 }
 
 export const asEoce = isEoce;
 
 export function isCountResponse(msg: WorkerMessage): CountResponse | null {
-	if (msg.type() !== MessageType.CountResponse) return null;
+	if (msg.contentType() !== Message.CountResponse) return null;
 	return msg.content(new CountResponse()) ?? null;
 }
 
 export const asCountResponse = isCountResponse;
 
 export function isBufferFull(msg: WorkerMessage): BufferFull | null {
-	if (msg.type() !== MessageType.BufferFull) return null;
+	if (msg.contentType() !== Message.BufferFull) return null;
 	return msg.content(new BufferFull()) ?? null;
 }
 
 export const asBufferFull = isBufferFull;
 
 export function isValidProofs(msg: WorkerMessage): ValidProofs | null {
-	if (msg.type() !== MessageType.ValidProofs) return null;
+	if (msg.contentType() !== Message.ValidProofs) return null;
 	return msg.content(new ValidProofs()) ?? null;
 }
 
@@ -83,14 +83,14 @@ export const asValidProofs = isValidProofs;
 
 // ---- Generic ParsedEvent --------
 export function isParsedEvent(msg: WorkerMessage): ParsedEvent | null {
-	if (msg.type() !== MessageType.ParsedNostrEvent) return null;
+	if (msg.contentType() !== Message.ParsedEvent) return null;
 	return msg.content(new ParsedEvent()) ?? null;
 }
 
 export const asParsedEvent = isParsedEvent;
 
 export const isNostrEvent = (msg: WorkerMessage): NostrEvent | null => {
-	if (msg.type() !== MessageType.NostrEvent) return null;
+	if (msg.contentType() !== Message.NostrEvent) return null;
 	return msg.content(new NostrEvent()) ?? null;
 };
 

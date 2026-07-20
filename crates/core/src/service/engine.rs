@@ -36,6 +36,12 @@ pub struct NostrEngine {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+pub struct MeshCacheEndpoint {
+    pub requests: TokioWorkerChannel,
+    pub responses: TokioWorkerChannel,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 fn spawn_native_local_thread<F>(name: &'static str, setup: F)
 where
     F: FnOnce() + Send + 'static,
@@ -154,16 +160,17 @@ impl NostrEngine {
             let mut ch = to_main_ch;
             loop {
                 match ch.recv().await {
-                    Ok(bytes) => match crate::worker::parser_worker::decode_tagged(&bytes) {
-                        Some((sub_id, data)) => {
+                    Ok(bytes) => {
+                        let frames = crate::worker::parser_worker::decode_tagged_batch(&bytes);
+                        if frames.is_empty() {
+                            tracing::warn!("Failed to decode tagged message from parser");
+                        }
+                        for (sub_id, data) in frames {
                             if let Err(e) = event_sink_clone.clone().try_send((sub_id, data)) {
                                 tracing::warn!("Failed to forward parser event to sink: {}", e);
                             }
                         }
-                        None => {
-                            tracing::warn!("Failed to decode tagged message from parser");
-                        }
-                    },
+                    }
                     Err(_) => break,
                 }
             }
@@ -191,6 +198,41 @@ impl NostrEngine {
         TF: FnOnce() -> Arc<dyn RelayTransport> + Send + 'static,
         SF: FnOnce() -> Arc<dyn Storage> + Send + 'static,
     {
+        Self::new_threaded_inner(transport_factory, storage_factory, None, event_sink).0
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn new_threaded_with_mesh<TF, SF, MSF>(
+        transport_factory: TF,
+        storage_factory: SF,
+        mesh_storage_factory: MSF,
+        event_sink: mpsc::Sender<(String, Vec<u8>)>,
+    ) -> (Self, MeshCacheEndpoint)
+    where
+        TF: FnOnce() -> Arc<dyn RelayTransport> + Send + 'static,
+        SF: FnOnce() -> Arc<dyn Storage> + Send + 'static,
+        MSF: FnOnce() -> Arc<dyn Storage> + Send + 'static,
+    {
+        let (engine, endpoint) = Self::new_threaded_inner(
+            transport_factory,
+            storage_factory,
+            Some(Box::new(mesh_storage_factory)),
+            event_sink,
+        );
+        (engine, endpoint.expect("mesh endpoint must be created"))
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn new_threaded_inner<TF, SF>(
+        transport_factory: TF,
+        storage_factory: SF,
+        mesh_storage_factory: Option<Box<dyn FnOnce() -> Arc<dyn Storage> + Send>>,
+        event_sink: mpsc::Sender<(String, Vec<u8>)>,
+    ) -> (Self, Option<MeshCacheEndpoint>)
+    where
+        TF: FnOnce() -> Arc<dyn RelayTransport> + Send + 'static,
+        SF: FnOnce() -> Arc<dyn Storage> + Send + 'static,
+    {
         info!("[NostrEngine] Initializing native threaded engine...");
 
         let (engine_parser_ch, parser_engine_ch) = TokioWorkerChannel::new_pair();
@@ -201,6 +243,12 @@ impl NostrEngine {
         let (cache_conn_ch, conn_cache_ch) = TokioWorkerChannel::new_pair();
         let (conn_crypto_ch, crypto_conn_ch) = TokioWorkerChannel::new_pair();
         let (to_main_ch, from_parser_ch) = TokioWorkerChannel::new_pair();
+        let (mesh_requests, cache_mesh_ch) = TokioWorkerChannel::new_pair();
+        let (cache_mesh_results, mesh_responses) = TokioWorkerChannel::new_pair();
+        let mesh_endpoint = mesh_storage_factory.as_ref().map(|_| MeshCacheEndpoint {
+            requests: mesh_requests,
+            responses: mesh_responses,
+        });
 
         let engine_parser_tx = engine_parser_ch.clone_sender();
         let engine_crypto_tx = engine_crypto_ch.clone_sender();
@@ -248,12 +296,24 @@ impl NostrEngine {
         });
 
         spawn_native_local_thread("nipworker-cache", move || {
-            let cache_worker = CacheWorker::new(storage_factory());
-            cache_worker.run(
-                Box::new(cache_parser_ch),
-                cache_parser_tx,
-                cache_conn_ch.clone_sender(),
-            );
+            if let Some(mesh_storage_factory) = mesh_storage_factory {
+                let cache_worker =
+                    CacheWorker::with_mesh_storage(storage_factory(), mesh_storage_factory());
+                cache_worker.run_with_mesh(
+                    Box::new(cache_parser_ch),
+                    cache_parser_tx,
+                    cache_conn_ch.clone_sender(),
+                    Box::new(cache_mesh_ch),
+                    cache_mesh_results.clone_sender(),
+                );
+            } else {
+                let cache_worker = CacheWorker::new(storage_factory());
+                cache_worker.run(
+                    Box::new(cache_parser_ch),
+                    cache_parser_tx,
+                    cache_conn_ch.clone_sender(),
+                );
+            }
         });
 
         spawn_native_local_thread("nipworker-crypto", move || {
@@ -286,26 +346,26 @@ impl NostrEngine {
         spawn_worker(async move {
             let mut ch = to_main_ch;
             while let Ok(bytes) = ch.recv().await {
-                match crate::worker::parser_worker::decode_tagged(&bytes) {
-                    Some((sub_id, data)) => {
-                        if let Err(e) = event_sink_clone.clone().try_send((sub_id, data)) {
-                            tracing::warn!("Failed to forward parser event to sink: {}", e);
-                        }
-                    }
-                    None => {
-                        tracing::warn!("Failed to decode tagged message from parser");
+                let frames = crate::worker::parser_worker::decode_tagged_batch(&bytes);
+                if frames.is_empty() {
+                    tracing::warn!("Failed to decode tagged message from parser");
+                }
+                for (sub_id, data) in frames {
+                    if let Err(e) = event_sink_clone.clone().try_send((sub_id, data)) {
+                        tracing::warn!("Failed to forward parser event to sink: {}", e);
                     }
                 }
             }
             info!("[NostrEngine] main loop exiting");
         });
 
-        Self {
+        let engine = Self {
             parser_tx: engine_parser_tx,
             crypto_tx: engine_crypto_tx,
             event_sink,
             connections_wake_tx: Some(connections_wake_tx),
-        }
+        };
+        (engine, mesh_endpoint)
     }
 
     pub fn wake(&self) {
@@ -699,24 +759,13 @@ mod tests {
         builder.finished_data().to_vec()
     }
 
-    async fn next_crypto_raw_response(
+    async fn next_crypto_worker_message(
         event_sink_rx: &mut futures::channel::mpsc::Receiver<(String, Vec<u8>)>,
-    ) -> serde_json::Value {
+    ) -> Vec<u8> {
         let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
         while tokio::time::Instant::now() < deadline {
             match tokio::time::timeout(Duration::from_millis(200), event_sink_rx.next()).await {
-                Ok(Some((sub_id, bytes))) if sub_id == "crypto" => {
-                    let wm = flatbuffers::root::<fb::WorkerMessage>(&bytes)
-                        .expect("valid WorkerMessage from crypto worker");
-                    if wm.type_() == fb::MessageType::Raw {
-                        if let Some(raw) = wm.content_as_raw() {
-                            if let Ok(value) = serde_json::from_str::<serde_json::Value>(raw.raw())
-                            {
-                                return value;
-                            }
-                        }
-                    }
-                }
+                Ok(Some((sub_id, bytes))) if sub_id == "crypto" => return bytes,
                 Ok(Some(_)) => continue,
                 _ => continue,
             }
@@ -763,24 +812,40 @@ mod tests {
                     .handle_message(&build_set_private_key_message(SECRET))
                     .await
                     .unwrap();
-                let set_signer = next_crypto_raw_response(&mut event_sink_rx).await;
-                assert_eq!(set_signer["op"].as_str(), Some("set_signer"));
+                let set_signer_bytes = next_crypto_worker_message(&mut event_sink_rx).await;
+                let wm = flatbuffers::root::<fb::WorkerMessage>(&set_signer_bytes)
+                    .expect("valid WorkerMessage from crypto worker");
+                assert_eq!(wm.content_type(), fb::Message::SetSignerResponse);
+                let set_signer = wm
+                    .content_as_set_signer_response()
+                    .expect("SetSignerResponse content");
                 assert!(
-                    set_signer["result"].as_str().is_some(),
-                    "set_signer should return a pubkey, got {set_signer}"
+                    set_signer.error().is_none(),
+                    "set_signer should not error, got {:?}",
+                    set_signer.error()
                 );
+                let set_signer_pubkey = set_signer
+                    .pubkey()
+                    .expect("set_signer should return a pubkey")
+                    .to_string();
+                assert!(!set_signer_pubkey.is_empty());
 
                 engine
                     .handle_message(&build_get_public_key_message())
                     .await
                     .unwrap();
-                let get_pubkey = next_crypto_raw_response(&mut event_sink_rx).await;
-                assert_eq!(get_pubkey["op"].as_str(), Some("get_public_key"));
+                let get_pubkey_bytes = next_crypto_worker_message(&mut event_sink_rx).await;
+                let wm = flatbuffers::root::<fb::WorkerMessage>(&get_pubkey_bytes)
+                    .expect("valid WorkerMessage from crypto worker");
+                assert_eq!(wm.content_type(), fb::Message::Pubkey);
+                let get_pubkey = wm.content_as_pubkey().expect("Pubkey content");
                 assert!(
-                    get_pubkey["result"].as_str().is_some(),
-                    "get_public_key should return a pubkey, got {get_pubkey}"
+                    get_pubkey.error().is_none(),
+                    "get_public_key should not error, got {:?}",
+                    get_pubkey.error()
                 );
-                assert_eq!(set_signer["result"], get_pubkey["result"]);
+                assert!(!get_pubkey.pubkey().is_empty());
+                assert_eq!(set_signer_pubkey, get_pubkey.pubkey());
             })
             .await;
     }

@@ -133,8 +133,13 @@ cacheOnly():boolean {
   return offset ? !!this.bb!.readInt8(this.bb_pos + offset) : false;
 }
 
+meshOnly():boolean {
+  const offset = this.bb!.__offset(this.bb_pos, 32);
+  return offset ? !!this.bb!.readInt8(this.bb_pos + offset) : false;
+}
+
 static startRequest(builder:flatbuffers.Builder) {
-  builder.startObject(14);
+  builder.startObject(15);
 }
 
 static addIds(builder:flatbuffers.Builder, idsOffset:flatbuffers.Offset) {
@@ -258,12 +263,16 @@ static addCacheOnly(builder:flatbuffers.Builder, cacheOnly:boolean) {
   builder.addFieldInt8(13, +cacheOnly, +false);
 }
 
+static addMeshOnly(builder:flatbuffers.Builder, meshOnly:boolean) {
+  builder.addFieldInt8(14, +meshOnly, +false);
+}
+
 static endRequest(builder:flatbuffers.Builder):flatbuffers.Offset {
   const offset = builder.endObject();
   return offset;
 }
 
-static createRequest(builder:flatbuffers.Builder, idsOffset:flatbuffers.Offset, authorsOffset:flatbuffers.Offset, kindsOffset:flatbuffers.Offset, tagsOffset:flatbuffers.Offset, limit:number, since:number, until:number, searchOffset:flatbuffers.Offset, relaysOffset:flatbuffers.Offset, closeOnEose:boolean, cacheFirst:boolean, noCache:boolean, maxRelays:number, cacheOnly:boolean):flatbuffers.Offset {
+static createRequest(builder:flatbuffers.Builder, idsOffset:flatbuffers.Offset, authorsOffset:flatbuffers.Offset, kindsOffset:flatbuffers.Offset, tagsOffset:flatbuffers.Offset, limit:number, since:number, until:number, searchOffset:flatbuffers.Offset, relaysOffset:flatbuffers.Offset, closeOnEose:boolean, cacheFirst:boolean, noCache:boolean, maxRelays:number, cacheOnly:boolean, meshOnly:boolean):flatbuffers.Offset {
   Request.startRequest(builder);
   Request.addIds(builder, idsOffset);
   Request.addAuthors(builder, authorsOffset);
@@ -279,6 +288,7 @@ static createRequest(builder:flatbuffers.Builder, idsOffset:flatbuffers.Offset, 
   Request.addNoCache(builder, noCache);
   Request.addMaxRelays(builder, maxRelays);
   Request.addCacheOnly(builder, cacheOnly);
+  Request.addMeshOnly(builder, meshOnly);
   return Request.endRequest(builder);
 }
 
@@ -297,7 +307,8 @@ unpack(): RequestT {
     this.cacheFirst(),
     this.noCache(),
     this.maxRelays(),
-    this.cacheOnly()
+    this.cacheOnly(),
+    this.meshOnly()
   );
 }
 
@@ -317,6 +328,7 @@ unpackTo(_o: RequestT): void {
   _o.noCache = this.noCache();
   _o.maxRelays = this.maxRelays();
   _o.cacheOnly = this.cacheOnly();
+  _o.meshOnly = this.meshOnly();
 }
 }
 
@@ -335,7 +347,8 @@ constructor(
   public cacheFirst: boolean = false,
   public noCache: boolean = false,
   public maxRelays: number = 0,
-  public cacheOnly: boolean = false
+  public cacheOnly: boolean = false,
+  public meshOnly: boolean = false
 ){}
 
 
@@ -361,7 +374,8 @@ pack(builder:flatbuffers.Builder): flatbuffers.Offset {
     this.cacheFirst,
     this.noCache,
     this.maxRelays,
-    this.cacheOnly
+    this.cacheOnly,
+    this.meshOnly
   );
 }
 }

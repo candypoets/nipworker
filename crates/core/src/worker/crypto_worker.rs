@@ -8,7 +8,7 @@ use crate::crypto::signers::PrivateKeySigner;
 use crate::generated::nostr::fb;
 use crate::spawn::spawn_worker;
 use crate::traits::Signer;
-use crate::types::nostr::Template;
+use crate::types::nostr::{Event, Template};
 use futures::channel::mpsc;
 use std::sync::Arc;
 use tracing::{info, warn};
@@ -401,6 +401,20 @@ fn parse_nostrconnect_url(url: &str) -> Result<NostrconnectUrl, String> {
 // ---------------------------------------------------------------------------
 // CryptoWorker
 // ---------------------------------------------------------------------------
+/// Handle to a running CryptoWorker, letting the host reach the worker's
+/// signer state from outside the worker loop (e.g. clearing it on logout).
+pub struct CryptoHandle {
+    active: std::rc::Rc<std::cell::RefCell<ActiveSigner>>,
+}
+
+impl CryptoHandle {
+    /// Drop the active signer. Subsequent signer operations fail with
+    /// "no signer configured" until a new signer is set.
+    pub fn clear_signer(&self) {
+        *self.active.borrow_mut() = ActiveSigner::Unset;
+    }
+}
+
 pub struct CryptoWorker {
     active: std::rc::Rc<std::cell::RefCell<ActiveSigner>>,
     nip46_tx: std::cell::RefCell<Option<mpsc::Sender<Vec<u8>>>>,
@@ -428,7 +442,7 @@ impl CryptoWorker {
         to_main: Box<dyn MessageSender>,
         to_parser: Box<dyn MessageSender>,
         to_connections: Box<dyn MessageSender>,
-    ) {
+    ) -> CryptoHandle {
         let to_connections_arc = Arc::new(to_connections);
 
         // -------------------------------------------------------------------
@@ -456,9 +470,11 @@ impl CryptoWorker {
                             }
                         };
 
+                        let mut request_id: Option<u32> = None;
                         let result: Result<String, String> = match msg.content_type() {
                             fb::MainContent::SignEvent => {
                                 if let Some(sign_event) = msg.content_as_sign_event() {
+                                    request_id = Some(sign_event.request_id());
                                     let template =
                                         Template::from_flatbuffer(&sign_event.template());
                                     let event_json = template.to_json();
@@ -601,30 +617,13 @@ impl CryptoWorker {
                                                             spawn_worker(async move {
                                                                 let bunker_url = nip46_for_pubkey
                                                                     .get_bunker_url();
-                                                                let raw_json =
-                                                                    match nip46_for_pubkey
-                                                                        .get_public_key()
-                                                                        .await
-                                                                    {
-                                                                        Ok(pubkey) => {
-                                                                            serde_json::json!({
-                                                                                "op": "get_public_key",
-                                                                                "result": pubkey,
-                                                                                "bunker_url": bunker_url
-                                                                            })
-                                                                            .to_string()
-                                                                        }
-                                                                        Err(e) => {
-                                                                            serde_json::json!({
-                                                                                "op": "get_public_key",
-                                                                                "error": e
-                                                                            })
-                                                                            .to_string()
-                                                                        }
-                                                                    };
-                                                                let resp = serialize_raw_message(
-                                                                    &raw_json,
-                                                                );
+                                                                let resp =
+                                                                    serialize_set_signer_response(
+                                                                        nip46_for_pubkey
+                                                                            .get_public_key()
+                                                                            .await,
+                                                                        bunker_url.as_deref(),
+                                                                    );
                                                                 if let Err(e) =
                                                                     to_main_pubkey.send(&resp)
                                                                 {
@@ -671,23 +670,17 @@ impl CryptoWorker {
                             }
                         };
 
-                        let op_name = match msg.content_type() {
-                            fb::MainContent::SignEvent => "sign_event",
-                            fb::MainContent::GetPublicKey => "get_public_key",
-                            fb::MainContent::SetSigner => "set_signer",
-                            _ => "unknown",
-                        };
-                        let raw_json = match result {
-                            Ok(r) => {
-                                let val = serde_json::json!({"op": op_name, "result": r});
-                                val.to_string()
+                        let resp = match msg.content_type() {
+                            fb::MainContent::SignEvent => serialize_signed_event_response(
+                                request_id.unwrap_or(0),
+                                result,
+                            ),
+                            fb::MainContent::GetPublicKey => serialize_pubkey_response(result),
+                            fb::MainContent::SetSigner => {
+                                serialize_set_signer_response(result, None)
                             }
-                            Err(e) => {
-                                let val = serde_json::json!({"op": op_name, "error": e});
-                                val.to_string()
-                            }
+                            _ => continue,
                         };
-                        let resp = serialize_raw_message(&raw_json);
                         if let Err(e) = to_main_engine.send(&resp) {
                             warn!("[CryptoWorker] failed to send response to main: {}", e);
                         }
@@ -858,6 +851,10 @@ impl CryptoWorker {
             }
             info!("[CryptoWorker] connections listener exiting");
         });
+
+        CryptoHandle {
+            active: self.active,
+        }
     }
 }
 
@@ -873,6 +870,105 @@ fn serialize_raw_message(raw_json: &str) -> Vec<u8> {
             type_: fb::MessageType::Raw,
             content_type: fb::Message::Raw,
             content: Some(raw.as_union_value()),
+        },
+    );
+    builder.finish(msg, None);
+    builder.finished_data().to_vec()
+}
+
+/// Typed response to a GetPublicKey request from main.
+/// On error `pubkey` is left empty (the field is required) and `error` is set.
+fn serialize_pubkey_response(result: Result<String, String>) -> Vec<u8> {
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let (pubkey_off, err_off) = match result {
+        Ok(pk) => (Some(builder.create_string(&pk)), None),
+        Err(e) => (
+            Some(builder.create_string("")),
+            Some(builder.create_string(&e)),
+        ),
+    };
+    let pubkey = fb::Pubkey::create(
+        &mut builder,
+        &fb::PubkeyArgs {
+            pubkey: pubkey_off,
+            error: err_off,
+        },
+    );
+    let msg = fb::WorkerMessage::create(
+        &mut builder,
+        &fb::WorkerMessageArgs {
+            sub_id: None,
+            url: None,
+            type_: fb::MessageType::Pubkey,
+            content_type: fb::Message::Pubkey,
+            content: Some(pubkey.as_union_value()),
+        },
+    );
+    builder.finish(msg, None);
+    builder.finished_data().to_vec()
+}
+
+/// Typed response to a SetSigner request from main.
+/// On success `pubkey` carries the signer pubkey hex (or a status string while
+/// a NIP-46 QR signer awaits discovery); `bunker_url` is set once a NIP-46 QR
+/// signer has discovered the remote signer.
+fn serialize_set_signer_response(result: Result<String, String>, bunker_url: Option<&str>) -> Vec<u8> {
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let bunker_off = bunker_url.map(|b| builder.create_string(b));
+    let (pubkey_off, err_off) = match result {
+        Ok(pk) => (Some(builder.create_string(&pk)), None),
+        Err(e) => (None, Some(builder.create_string(&e))),
+    };
+    let resp = fb::SetSignerResponse::create(
+        &mut builder,
+        &fb::SetSignerResponseArgs {
+            pubkey: pubkey_off,
+            bunker_url: bunker_off,
+            error: err_off,
+        },
+    );
+    let msg = fb::WorkerMessage::create(
+        &mut builder,
+        &fb::WorkerMessageArgs {
+            sub_id: None,
+            url: None,
+            type_: fb::MessageType::SetSignerResponse,
+            content_type: fb::Message::SetSignerResponse,
+            content: Some(resp.as_union_value()),
+        },
+    );
+    builder.finish(msg, None);
+    builder.finished_data().to_vec()
+}
+
+/// Typed response to a SignEvent request from main.
+/// `result` carries the signed event as JSON on success; it is parsed into a
+/// NostrEvent. `request_id` echoes SignEvent.request_id; failures set `error`.
+fn serialize_signed_event_response(request_id: u32, result: Result<String, String>) -> Vec<u8> {
+    let parsed = result.and_then(|json| {
+        Event::from_json(&json).map_err(|e| format!("failed to parse signed event: {}", e))
+    });
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let (event_off, err_off) = match parsed {
+        Ok(event) => (Some(event.build_flatbuffer(&mut builder)), None),
+        Err(e) => (None, Some(builder.create_string(&e))),
+    };
+    let signed = fb::SignedEvent::create(
+        &mut builder,
+        &fb::SignedEventArgs {
+            event: event_off,
+            request_id,
+            error: err_off,
+        },
+    );
+    let msg = fb::WorkerMessage::create(
+        &mut builder,
+        &fb::WorkerMessageArgs {
+            sub_id: None,
+            url: None,
+            type_: fb::MessageType::SignedEvent,
+            content_type: fb::Message::SignedEvent,
+            content: Some(signed.as_union_value()),
         },
     );
     builder.finish(msg, None);
@@ -906,13 +1002,14 @@ mod new_tests {
     use async_trait::async_trait;
     use std::sync::Arc;
 
-    fn build_sign_event_main_msg(template: &Template) -> Vec<u8> {
+    fn build_sign_event_main_msg(template: &Template, request_id: u32) -> Vec<u8> {
         let mut builder = flatbuffers::FlatBufferBuilder::new();
         let fb_template = template.build_flatbuffer(&mut builder);
         let sign_event = fb::SignEvent::create(
             &mut builder,
             &fb::SignEventArgs {
                 template: Some(fb_template),
+                request_id,
             },
         );
         let main_msg = fb::MainMessage::create(
@@ -1133,16 +1230,16 @@ mod new_tests {
                     tags: vec![],
                     created_at: 0,
                 };
-                let msg = build_sign_event_main_msg(&template);
+                let msg = build_sign_event_main_msg(&template, 42);
                 test_engine.send(&msg).await.unwrap();
 
                 let resp_bytes = test_main.recv().await.unwrap();
                 let msg = flatbuffers::root::<fb::WorkerMessage>(&resp_bytes).unwrap();
-                assert_eq!(msg.type_(), fb::MessageType::Raw);
-                let raw = msg.content_as_raw().unwrap();
-                let json: serde_json::Value = serde_json::from_str(raw.raw()).unwrap();
-                assert_eq!(json["op"], "sign_event");
-                assert!(json["error"].as_str().is_some());
+                assert_eq!(msg.type_(), fb::MessageType::SignedEvent);
+                let signed = msg.content_as_signed_event().unwrap();
+                assert_eq!(signed.request_id(), 42);
+                assert!(signed.event().is_none());
+                assert!(signed.error().is_some());
             })
             .await;
     }
@@ -1344,12 +1441,11 @@ mod new_tests {
 
                 let resp_bytes = test_main.recv().await.unwrap();
                 let msg = flatbuffers::root::<fb::WorkerMessage>(&resp_bytes).unwrap();
-                assert_eq!(msg.type_(), fb::MessageType::Raw);
-                let raw = msg.content_as_raw().unwrap();
-                let json: serde_json::Value = serde_json::from_str(raw.raw()).unwrap();
-                assert_eq!(json["op"], "get_public_key");
-                assert!(json["error"].as_str().is_some());
-                assert!(json["error"].as_str().unwrap().contains("offline"));
+                assert_eq!(msg.type_(), fb::MessageType::Pubkey);
+                let pubkey = msg.content_as_pubkey().unwrap();
+                assert_eq!(pubkey.pubkey(), "");
+                assert!(pubkey.error().is_some());
+                assert!(pubkey.error().unwrap().contains("offline"));
             })
             .await;
     }

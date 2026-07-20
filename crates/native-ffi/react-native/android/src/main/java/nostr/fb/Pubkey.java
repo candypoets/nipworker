@@ -29,16 +29,22 @@ public final class Pubkey extends com.google.flatbuffers.Table {
   public String pubkey() { int o = __offset(4); return o != 0 ? __string(o + bb_pos) : null; }
   public ByteBuffer pubkeyAsByteBuffer() { return __vector_as_bytebuffer(4, 1); }
   public ByteBuffer pubkeyInByteBuffer(ByteBuffer _bb) { return __vector_in_bytebuffer(_bb, 4, 1); }
+  public String error() { int o = __offset(6); return o != 0 ? __string(o + bb_pos) : null; }
+  public ByteBuffer errorAsByteBuffer() { return __vector_as_bytebuffer(6, 1); }
+  public ByteBuffer errorInByteBuffer(ByteBuffer _bb) { return __vector_in_bytebuffer(_bb, 6, 1); }
 
   public static int createPubkey(FlatBufferBuilder builder,
-      int pubkeyOffset) {
-    builder.startTable(1);
+      int pubkeyOffset,
+      int errorOffset) {
+    builder.startTable(2);
+    Pubkey.addError(builder, errorOffset);
     Pubkey.addPubkey(builder, pubkeyOffset);
     return Pubkey.endPubkey(builder);
   }
 
-  public static void startPubkey(FlatBufferBuilder builder) { builder.startTable(1); }
+  public static void startPubkey(FlatBufferBuilder builder) { builder.startTable(2); }
   public static void addPubkey(FlatBufferBuilder builder, int pubkeyOffset) { builder.addOffset(0, pubkeyOffset, 0); }
+  public static void addError(FlatBufferBuilder builder, int errorOffset) { builder.addOffset(1, errorOffset, 0); }
   public static int endPubkey(FlatBufferBuilder builder) {
     int o = builder.endTable();
     builder.required(o, 4);  // pubkey

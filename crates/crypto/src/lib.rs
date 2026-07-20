@@ -1,13 +1,18 @@
 use nipworker_core::{
 	channel::{WasmWorkerChannel, WorkerChannel},
-	worker::crypto_worker::CryptoWorker,
+	worker::crypto_worker::{CryptoHandle, CryptoWorker},
 };
+use std::cell::RefCell;
 use wasm_bindgen::prelude::*;
 use web_sys::MessagePort;
 
 use std::sync::Once;
 
 static INIT: Once = Once::new();
+
+thread_local! {
+	static CRYPTO_HANDLE: RefCell<Option<CryptoHandle>> = const { RefCell::new(None) };
+}
 
 #[wasm_bindgen]
 pub fn init_tracing(level: String) {
@@ -50,7 +55,7 @@ pub fn start_worker(
 	let from_connections = Box::new(conn_ch);
 
 	let worker = CryptoWorker::new();
-	worker.run(
+	let handle = worker.run(
 		from_engine,
 		from_parser,
 		from_connections,
@@ -58,4 +63,19 @@ pub fn start_worker(
 		to_parser,
 		to_connections,
 	);
+	CRYPTO_HANDLE.with(|slot| {
+		*slot.borrow_mut() = Some(handle);
+	});
+}
+
+/// Clear the active signer (logout). Safe to call before start_worker.
+#[wasm_bindgen]
+pub fn clear_signer() {
+	CRYPTO_HANDLE.with(|slot| {
+		if let Some(handle) = slot.borrow().as_ref() {
+			handle.clear_signer();
+		} else {
+			tracing::warn!("[crypto] clear_signer called before start_worker");
+		}
+	});
 }

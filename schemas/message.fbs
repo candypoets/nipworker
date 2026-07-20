@@ -42,6 +42,7 @@ enum MessageType : uint32 {
   Pubkey = 7,
   Raw = 8,
   NostrEvent = 9,
+  SetSignerResponse = 10,
 }
 
 enum ParsedDataUnion : uint32 {
@@ -145,10 +146,24 @@ table MintProofs {
 
 table Pubkey {
   pubkey: string (required);
+  error: string;
 }
 
 table SignedEvent {
-    event: NostrEvent (required);
+    event: NostrEvent;
+    // Echoes SignEvent.request_id so main can correlate concurrent requests.
+    request_id: uint;
+    error: string;
+}
+
+// Response to a SetSigner request from main.
+// On success `pubkey` carries the signer pubkey hex (or a status string while
+// a NIP-46 QR signer awaits discovery); `bunker_url` is set once a NIP-46 QR
+// signer has discovered the remote signer.
+table SetSignerResponse {
+  pubkey: string;
+  bunker_url: string;
+  error: string;
 }
 
 // a raw string message coming from relays
@@ -167,7 +182,8 @@ union Message {
   ValidProofs,
   SignedEvent,
   Pubkey,
-  Raw
+  Raw,
+  SetSignerResponse
 }
 
 table WorkerMessage {
@@ -185,6 +201,7 @@ table CacheRequest {
     event: NostrEvent;
     parsed_event: ParsedEvent;
     relays: [string];
+    close: bool;
 }
 
 // Signer service messages
@@ -247,13 +264,6 @@ table CacheResponse {
     payload: [ubyte];  // Raw bytes - typically a WorkerMessage
 }
 
-// Union for cache input messages - discriminates between WorkerMessage (saves) and CacheRequest (queries/publishes)
-union CacheInput {
-  WorkerMessage,
-  CacheRequest
-}
-
-// Wrapper for cache input with explicit type discrimination
-table CacheInputMessage {
-  content: CacheInput (required);
-}
+// Cache-input messages (parser/mesh -> cache) are framed outside FlatBuffers:
+// [1-byte tag][4-byte LE length][standalone WorkerMessage or CacheRequest
+// root]. Tag constants live in crates/core/src/cache_input.rs.

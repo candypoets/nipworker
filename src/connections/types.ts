@@ -7,7 +7,6 @@ export type ProxyConfig = {
 export type InitConnectionsMsg = {
 	type: 'init';
 	payload: {
-		mainPort: MessagePort;
 		cachePort: MessagePort;
 		parserPort: MessagePort;
 		cryptoPort: MessagePort;

@@ -60,6 +60,7 @@ public final class Request extends com.google.flatbuffers.Table {
   public boolean noCache() { int o = __offset(26); return o != 0 ? 0!=bb.get(o + bb_pos) : false; }
   public int maxRelays() { int o = __offset(28); return o != 0 ? bb.getShort(o + bb_pos) & 0xFFFF : 0; }
   public boolean cacheOnly() { int o = __offset(30); return o != 0 ? 0!=bb.get(o + bb_pos) : false; }
+  public boolean meshOnly() { int o = __offset(32); return o != 0 ? 0!=bb.get(o + bb_pos) : false; }
 
   public static int createRequest(FlatBufferBuilder builder,
       int idsOffset,
@@ -75,8 +76,9 @@ public final class Request extends com.google.flatbuffers.Table {
       boolean cacheFirst,
       boolean noCache,
       int maxRelays,
-      boolean cacheOnly) {
-    builder.startTable(14);
+      boolean cacheOnly,
+      boolean meshOnly) {
+    builder.startTable(15);
     Request.addRelays(builder, relaysOffset);
     Request.addSearch(builder, searchOffset);
     Request.addUntil(builder, until);
@@ -87,6 +89,7 @@ public final class Request extends com.google.flatbuffers.Table {
     Request.addAuthors(builder, authorsOffset);
     Request.addIds(builder, idsOffset);
     Request.addMaxRelays(builder, maxRelays);
+    Request.addMeshOnly(builder, meshOnly);
     Request.addCacheOnly(builder, cacheOnly);
     Request.addNoCache(builder, noCache);
     Request.addCacheFirst(builder, cacheFirst);
@@ -94,7 +97,7 @@ public final class Request extends com.google.flatbuffers.Table {
     return Request.endRequest(builder);
   }
 
-  public static void startRequest(FlatBufferBuilder builder) { builder.startTable(14); }
+  public static void startRequest(FlatBufferBuilder builder) { builder.startTable(15); }
   public static void addIds(FlatBufferBuilder builder, int idsOffset) { builder.addOffset(0, idsOffset, 0); }
   public static int createIdsVector(FlatBufferBuilder builder, int[] data) { builder.startVector(4, data.length, 4); for (int i = data.length - 1; i >= 0; i--) builder.addOffset(data[i]); return builder.endVector(); }
   public static void startIdsVector(FlatBufferBuilder builder, int numElems) { builder.startVector(4, numElems, 4); }
@@ -119,6 +122,7 @@ public final class Request extends com.google.flatbuffers.Table {
   public static void addNoCache(FlatBufferBuilder builder, boolean noCache) { builder.addBoolean(11, noCache, false); }
   public static void addMaxRelays(FlatBufferBuilder builder, int maxRelays) { builder.addShort(12, (short) maxRelays, (short) 0); }
   public static void addCacheOnly(FlatBufferBuilder builder, boolean cacheOnly) { builder.addBoolean(13, cacheOnly, false); }
+  public static void addMeshOnly(FlatBufferBuilder builder, boolean meshOnly) { builder.addBoolean(14, meshOnly, false); }
   public static int endRequest(FlatBufferBuilder builder) {
     int o = builder.endTable();
     return o;

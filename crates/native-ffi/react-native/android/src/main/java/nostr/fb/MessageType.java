@@ -15,5 +15,6 @@ public final class MessageType {
   public static final long Pubkey = 7L;
   public static final long Raw = 8L;
   public static final long NostrEvent = 9L;
+  public static final long SetSignerResponse = 10L;
 }
 

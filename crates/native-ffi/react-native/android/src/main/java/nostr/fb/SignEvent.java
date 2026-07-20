@@ -28,16 +28,20 @@ public final class SignEvent extends com.google.flatbuffers.Table {
 
   public nostr.fb.Template template() { return template(new nostr.fb.Template()); }
   public nostr.fb.Template template(nostr.fb.Template obj) { int o = __offset(4); return o != 0 ? obj.__assign(__indirect(o + bb_pos), bb) : null; }
+  public long requestId() { int o = __offset(6); return o != 0 ? (long)bb.getInt(o + bb_pos) & 0xFFFFFFFFL : 0L; }
 
   public static int createSignEvent(FlatBufferBuilder builder,
-      int templateOffset) {
-    builder.startTable(1);
+      int templateOffset,
+      long requestId) {
+    builder.startTable(2);
+    SignEvent.addRequestId(builder, requestId);
     SignEvent.addTemplate(builder, templateOffset);
     return SignEvent.endSignEvent(builder);
   }
 
-  public static void startSignEvent(FlatBufferBuilder builder) { builder.startTable(1); }
+  public static void startSignEvent(FlatBufferBuilder builder) { builder.startTable(2); }
   public static void addTemplate(FlatBufferBuilder builder, int templateOffset) { builder.addOffset(0, templateOffset, 0); }
+  public static void addRequestId(FlatBufferBuilder builder, long requestId) { builder.addInt(1, (int) requestId, (int) 0L); }
   public static int endSignEvent(FlatBufferBuilder builder) {
     int o = builder.endTable();
     builder.required(o, 4);  // template

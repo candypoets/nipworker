@@ -56,13 +56,21 @@ table ProofVerificationPipeConfig {
   max_proofs: uint;           // Maximum number of proofs to track
 }
 
+// Where muted words are matched against an event
+enum MuteTarget : byte {
+  Content = 0, // Match words against event content only
+  Tags = 1,    // Match words against tag values only
+  Both = 2     // Match words against both content and tag values
+}
+
 // Configuration for MuteFilterPipe
 table MuteFilterPipeConfig {
   pubkeys: [string];          // Hex pubkeys to mute
   hashtags: [string];         // Lowercase hashtags to mute (matched against "t" tags)
-  words: [string];            // Lowercase words to mute (substring match in content)
+  words: [string];            // Lowercase words to mute (substring match, see target)
   event_ids: [string];        // Hex event IDs to mute
-}
+  target: MuteTarget = Both;  // Where muted words match: content, tag values, or both
+}                              // (hashtags stay tag-only; pubkeys/event_ids unaffected)
 
 // Union of all pipe configurations
 union PipeConfig {
@@ -134,6 +142,8 @@ table Publish {
 
 table SignEvent {
   template: Template (required);
+  // Correlates the sign_event response with concurrent requests from main.
+  request_id: uint;
 }
 
 table SetSigner {

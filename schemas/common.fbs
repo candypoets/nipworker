@@ -253,6 +253,7 @@ table Request {
   no_cache: bool;
   max_relays: ushort;
   cache_only: bool;
+  mesh_only: bool;
 }
 
 table NostrEvent {

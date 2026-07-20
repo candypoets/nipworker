@@ -1,6 +1,6 @@
 /* WASM-based crypto worker runtime (dedicated Web Worker, module) */
 
-import init, { start_worker, init_tracing } from '../../crates/crypto/pkg/nipworker_crypto.js';
+import init, { start_worker, init_tracing, clear_signer } from '../../crates/crypto/pkg/nipworker_crypto.js';
 import wasmUrl from '../../crates/crypto/pkg/nipworker_crypto_bg.wasm?url';
 
 export type InitCryptoMsg = {
@@ -66,6 +66,13 @@ self.addEventListener('message', async (evt: MessageEvent<any>) => {
 
 	// Wake is a no-op; Rust loops are self-driven.
 	if (msg?.type === 'wake') {
+		return;
+	}
+
+	// Logout: drop the active signer inside the Rust crypto worker.
+	if (msg?.type === 'clear_signer') {
+		await ensureWasm();
+		clear_signer();
 		return;
 	}
 });

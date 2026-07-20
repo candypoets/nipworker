@@ -2,12 +2,14 @@ import * as flatbuffers from 'flatbuffers';
 
 import {
 	ConnectionStatus,
+	ConnectionStatusT,
 	Message,
 	MessageType,
 	SignerOp,
 	SignerRequestT,
 	SignerResponse,
-	WorkerMessage
+	WorkerMessage,
+	WorkerMessageT
 } from '../generated/nostr/fb';
 
 const AUTH_REQUEST_ID_MASK = 0x8000000000000000n;
@@ -80,7 +82,6 @@ class ProxyRuntime {
 
 	constructor(
 		private readonly proxyUrl: string,
-		private readonly mainPort: MessagePort,
 		private readonly cachePort: MessagePort,
 		private readonly parserPort: MessagePort,
 		private readonly cryptoPort: MessagePort
@@ -108,14 +109,23 @@ class ProxyRuntime {
 		}
 	}
 
+	/**
+	 * Report a proxy-originated relay status through the same path as the Rust
+	 * connections worker: a ConnectionStatus WorkerMessage (empty sub_id) sent
+	 * to the parser, which forwards relay-level statuses to the main thread.
+	 */
 	private postRelayStatus(status: string, url: string) {
-		this.mainPort.postMessage(
-			JSON.stringify({
-				type: 'relay:status',
-				status,
-				url
-			})
+		const statusT = new WorkerMessageT(
+			null,
+			null,
+			MessageType.ConnectionStatus,
+			Message.ConnectionStatus,
+			new ConnectionStatusT(url, status, null)
 		);
+		const builder = new flatbuffers.Builder(256);
+		builder.finish(statusT.pack(builder));
+		const packet = builder.asUint8Array();
+		this.parserPort.postMessage(packet, [packet.buffer]);
 	}
 
 	private openSocket() {
@@ -237,10 +247,7 @@ class ProxyRuntime {
 		}
 		const subId = message.subId(flatbuffers.Encoding.UTF8_BYTES);
 		const isNip46 = hasPrefix(subId, N46_PREFIX, N46_PREFIX_TEXT);
-		if (
-			message.type() === MessageType.ConnectionStatus &&
-			message.contentType() === Message.ConnectionStatus
-		) {
+		if (message.contentType() === Message.ConnectionStatus) {
 			const content = message.content(this.connectionStatusView);
 			const status = content?.status(flatbuffers.Encoding.UTF8_BYTES);
 			const relayUrl =
@@ -341,11 +348,11 @@ self.addEventListener(
 	(evt: MessageEvent<any | { type: 'wake'; source?: string } | string>) => {
 		const msg = evt.data;
 		if (msg?.type === 'init') {
-			const { mainPort, cachePort, parserPort, cryptoPort, proxy } = msg.payload;
+			const { cachePort, parserPort, cryptoPort, proxy } = msg.payload;
 			if (!proxy?.url) {
 				return;
 			}
-			proxyRuntime = new ProxyRuntime(proxy.url, mainPort, cachePort, parserPort, cryptoPort);
+			proxyRuntime = new ProxyRuntime(proxy.url, cachePort, parserPort, cryptoPort);
 			proxyRuntime.start();
 			return;
 		}

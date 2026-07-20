@@ -31,12 +31,23 @@ pubkey(optionalEncoding?:any):string|Uint8Array|null {
   return offset ? this.bb!.__string(this.bb_pos + offset, optionalEncoding) : null;
 }
 
+error():string|null
+error(optionalEncoding:flatbuffers.Encoding):string|Uint8Array|null
+error(optionalEncoding?:any):string|Uint8Array|null {
+  const offset = this.bb!.__offset(this.bb_pos, 6);
+  return offset ? this.bb!.__string(this.bb_pos + offset, optionalEncoding) : null;
+}
+
 static startPubkey(builder:flatbuffers.Builder) {
-  builder.startObject(1);
+  builder.startObject(2);
 }
 
 static addPubkey(builder:flatbuffers.Builder, pubkeyOffset:flatbuffers.Offset) {
   builder.addFieldOffset(0, pubkeyOffset, 0);
+}
+
+static addError(builder:flatbuffers.Builder, errorOffset:flatbuffers.Offset) {
+  builder.addFieldOffset(1, errorOffset, 0);
 }
 
 static endPubkey(builder:flatbuffers.Builder):flatbuffers.Offset {
@@ -45,35 +56,41 @@ static endPubkey(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createPubkey(builder:flatbuffers.Builder, pubkeyOffset:flatbuffers.Offset):flatbuffers.Offset {
+static createPubkey(builder:flatbuffers.Builder, pubkeyOffset:flatbuffers.Offset, errorOffset:flatbuffers.Offset):flatbuffers.Offset {
   Pubkey.startPubkey(builder);
   Pubkey.addPubkey(builder, pubkeyOffset);
+  Pubkey.addError(builder, errorOffset);
   return Pubkey.endPubkey(builder);
 }
 
 unpack(): PubkeyT {
   return new PubkeyT(
-    this.pubkey()
+    this.pubkey(),
+    this.error()
   );
 }
 
 
 unpackTo(_o: PubkeyT): void {
   _o.pubkey = this.pubkey();
+  _o.error = this.error();
 }
 }
 
 export class PubkeyT implements flatbuffers.IGeneratedObject {
 constructor(
-  public pubkey: string|Uint8Array|null = null
+  public pubkey: string|Uint8Array|null = null,
+  public error: string|Uint8Array|null = null
 ){}
 
 
 pack(builder:flatbuffers.Builder): flatbuffers.Offset {
   const pubkey = (this.pubkey !== null ? builder.createString(this.pubkey!) : 0);
+  const error = (this.error !== null ? builder.createString(this.error!) : 0);
 
   return Pubkey.createPubkey(builder,
-    pubkey
+    pubkey,
+    error
   );
 }
 }

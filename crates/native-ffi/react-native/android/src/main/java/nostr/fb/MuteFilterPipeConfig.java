@@ -42,21 +42,24 @@ public final class MuteFilterPipeConfig extends com.google.flatbuffers.Table {
   public int eventIdsLength() { int o = __offset(10); return o != 0 ? __vector_len(o) : 0; }
   public StringVector eventIdsVector() { return eventIdsVector(new StringVector()); }
   public StringVector eventIdsVector(StringVector obj) { int o = __offset(10); return o != 0 ? obj.__assign(__vector(o), 4, bb) : null; }
+  public byte target() { int o = __offset(12); return o != 0 ? bb.get(o + bb_pos) : 2; }
 
   public static int createMuteFilterPipeConfig(FlatBufferBuilder builder,
       int pubkeysOffset,
       int hashtagsOffset,
       int wordsOffset,
-      int eventIdsOffset) {
-    builder.startTable(4);
+      int eventIdsOffset,
+      byte target) {
+    builder.startTable(5);
     MuteFilterPipeConfig.addEventIds(builder, eventIdsOffset);
     MuteFilterPipeConfig.addWords(builder, wordsOffset);
     MuteFilterPipeConfig.addHashtags(builder, hashtagsOffset);
     MuteFilterPipeConfig.addPubkeys(builder, pubkeysOffset);
+    MuteFilterPipeConfig.addTarget(builder, target);
     return MuteFilterPipeConfig.endMuteFilterPipeConfig(builder);
   }
 
-  public static void startMuteFilterPipeConfig(FlatBufferBuilder builder) { builder.startTable(4); }
+  public static void startMuteFilterPipeConfig(FlatBufferBuilder builder) { builder.startTable(5); }
   public static void addPubkeys(FlatBufferBuilder builder, int pubkeysOffset) { builder.addOffset(0, pubkeysOffset, 0); }
   public static int createPubkeysVector(FlatBufferBuilder builder, int[] data) { builder.startVector(4, data.length, 4); for (int i = data.length - 1; i >= 0; i--) builder.addOffset(data[i]); return builder.endVector(); }
   public static void startPubkeysVector(FlatBufferBuilder builder, int numElems) { builder.startVector(4, numElems, 4); }
@@ -69,6 +72,7 @@ public final class MuteFilterPipeConfig extends com.google.flatbuffers.Table {
   public static void addEventIds(FlatBufferBuilder builder, int eventIdsOffset) { builder.addOffset(3, eventIdsOffset, 0); }
   public static int createEventIdsVector(FlatBufferBuilder builder, int[] data) { builder.startVector(4, data.length, 4); for (int i = data.length - 1; i >= 0; i--) builder.addOffset(data[i]); return builder.endVector(); }
   public static void startEventIdsVector(FlatBufferBuilder builder, int numElems) { builder.startVector(4, numElems, 4); }
+  public static void addTarget(FlatBufferBuilder builder, byte target) { builder.addByte(4, target, 2); }
   public static int endMuteFilterPipeConfig(FlatBufferBuilder builder) {
     int o = builder.endTable();
     return o;

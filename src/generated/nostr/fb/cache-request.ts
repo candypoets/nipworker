@@ -66,8 +66,13 @@ relaysLength():number {
   return offset ? this.bb!.__vector_len(this.bb_pos + offset) : 0;
 }
 
+close():boolean {
+  const offset = this.bb!.__offset(this.bb_pos, 14);
+  return offset ? !!this.bb!.readInt8(this.bb_pos + offset) : false;
+}
+
 static startCacheRequest(builder:flatbuffers.Builder) {
-  builder.startObject(5);
+  builder.startObject(6);
 }
 
 static addSubId(builder:flatbuffers.Builder, subIdOffset:flatbuffers.Offset) {
@@ -114,6 +119,10 @@ static startRelaysVector(builder:flatbuffers.Builder, numElems:number) {
   builder.startVector(4, numElems, 4);
 }
 
+static addClose(builder:flatbuffers.Builder, close:boolean) {
+  builder.addFieldInt8(5, +close, +false);
+}
+
 static endCacheRequest(builder:flatbuffers.Builder):flatbuffers.Offset {
   const offset = builder.endObject();
   builder.requiredField(offset, 4) // sub_id
@@ -127,7 +136,8 @@ unpack(): CacheRequestT {
     this.bb!.createObjList<Request, RequestT>(this.requests.bind(this), this.requestsLength()),
     (this.event() !== null ? this.event()!.unpack() : null),
     (this.parsedEvent() !== null ? this.parsedEvent()!.unpack() : null),
-    this.bb!.createScalarList<string>(this.relays.bind(this), this.relaysLength())
+    this.bb!.createScalarList<string>(this.relays.bind(this), this.relaysLength()),
+    this.close()
   );
 }
 
@@ -138,6 +148,7 @@ unpackTo(_o: CacheRequestT): void {
   _o.event = (this.event() !== null ? this.event()!.unpack() : null);
   _o.parsedEvent = (this.parsedEvent() !== null ? this.parsedEvent()!.unpack() : null);
   _o.relays = this.bb!.createScalarList<string>(this.relays.bind(this), this.relaysLength());
+  _o.close = this.close();
 }
 }
 
@@ -147,7 +158,8 @@ constructor(
   public requests: (RequestT)[] = [],
   public event: NostrEventT|null = null,
   public parsedEvent: ParsedEventT|null = null,
-  public relays: (string)[] = []
+  public relays: (string)[] = [],
+  public close: boolean = false
 ){}
 
 
@@ -164,6 +176,7 @@ pack(builder:flatbuffers.Builder): flatbuffers.Offset {
   CacheRequest.addEvent(builder, event);
   CacheRequest.addParsedEvent(builder, parsedEvent);
   CacheRequest.addRelays(builder, relays);
+  CacheRequest.addClose(builder, this.close);
 
   return CacheRequest.endCacheRequest(builder);
 }

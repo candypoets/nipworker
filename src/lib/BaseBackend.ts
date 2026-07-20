@@ -29,7 +29,10 @@ class SimpleEventEmitter {
 	removeEventListener(type: string, listener: any, _options?: any): void {
 		const arr = this._listeners.get(type);
 		if (!arr) return;
-		this._listeners.set(type, arr.filter((l) => l.listener !== listener));
+		this._listeners.set(
+			type,
+			arr.filter((l) => l.listener !== listener)
+		);
 	}
 	dispatchEvent(event: SimpleEvent): boolean {
 		const arr = this._listeners.get(event.type);
@@ -59,13 +62,12 @@ export interface StorageAdapter {
 export const localStorageAdapter: StorageAdapter = {
 	getItem: (key) => localStorage.getItem(key),
 	setItem: (key, value) => localStorage.setItem(key, value),
-	removeItem: (key) => localStorage.removeItem(key),
+	removeItem: (key) => localStorage.removeItem(key)
 };
 
 /**
  * Abstract base class implementing shared logic across all NIPWorker backends:
- * - NostrManager   (legacy 4-worker WASM)
- * - EngineManager  (single-worker WASM engine)
+ * - NostrManager   (4-worker WASM)
  * - ReactNativeManager (React Native native module)
  *
  * Subclasses must implement the abstract communication methods
@@ -159,7 +161,10 @@ export abstract class BaseBackend {
 		return undefined;
 	}
 
-	public getRelayStatuses(): Map<string, { status: 'connected' | 'failed' | 'close'; timestamp: number }> {
+	public getRelayStatuses(): Map<
+		string,
+		{ status: 'connected' | 'failed' | 'close'; timestamp: number }
+	> {
 		return new Map(this.relayStatuses);
 	}
 
@@ -252,6 +257,16 @@ export abstract class BaseBackend {
 
 	public setPubkey(pubkey: string): void {
 		this.setSigner('pubkey', pubkey);
+	}
+
+	/** Mesh presence is available only on native backends with BLE enabled. */
+	public setMeshProfile(_profile: NostrEvent): boolean {
+		return false;
+	}
+
+	/** Mesh presence is available only on native backends with BLE enabled. */
+	public clearMeshProfile(): boolean {
+		return false;
 	}
 
 	// ── Abstract methods (backend-specific) ────────────────────────────

@@ -30,49 +30,79 @@ event(obj?:NostrEvent):NostrEvent|null {
   return offset ? (obj || new NostrEvent()).__init(this.bb!.__indirect(this.bb_pos + offset), this.bb!) : null;
 }
 
+requestId():number {
+  const offset = this.bb!.__offset(this.bb_pos, 6);
+  return offset ? this.bb!.readUint32(this.bb_pos + offset) : 0;
+}
+
+error():string|null
+error(optionalEncoding:flatbuffers.Encoding):string|Uint8Array|null
+error(optionalEncoding?:any):string|Uint8Array|null {
+  const offset = this.bb!.__offset(this.bb_pos, 8);
+  return offset ? this.bb!.__string(this.bb_pos + offset, optionalEncoding) : null;
+}
+
 static startSignedEvent(builder:flatbuffers.Builder) {
-  builder.startObject(1);
+  builder.startObject(3);
 }
 
 static addEvent(builder:flatbuffers.Builder, eventOffset:flatbuffers.Offset) {
   builder.addFieldOffset(0, eventOffset, 0);
 }
 
+static addRequestId(builder:flatbuffers.Builder, requestId:number) {
+  builder.addFieldInt32(1, requestId, 0);
+}
+
+static addError(builder:flatbuffers.Builder, errorOffset:flatbuffers.Offset) {
+  builder.addFieldOffset(2, errorOffset, 0);
+}
+
 static endSignedEvent(builder:flatbuffers.Builder):flatbuffers.Offset {
   const offset = builder.endObject();
-  builder.requiredField(offset, 4) // event
   return offset;
 }
 
-static createSignedEvent(builder:flatbuffers.Builder, eventOffset:flatbuffers.Offset):flatbuffers.Offset {
+static createSignedEvent(builder:flatbuffers.Builder, eventOffset:flatbuffers.Offset, requestId:number, errorOffset:flatbuffers.Offset):flatbuffers.Offset {
   SignedEvent.startSignedEvent(builder);
   SignedEvent.addEvent(builder, eventOffset);
+  SignedEvent.addRequestId(builder, requestId);
+  SignedEvent.addError(builder, errorOffset);
   return SignedEvent.endSignedEvent(builder);
 }
 
 unpack(): SignedEventT {
   return new SignedEventT(
-    (this.event() !== null ? this.event()!.unpack() : null)
+    (this.event() !== null ? this.event()!.unpack() : null),
+    this.requestId(),
+    this.error()
   );
 }
 
 
 unpackTo(_o: SignedEventT): void {
   _o.event = (this.event() !== null ? this.event()!.unpack() : null);
+  _o.requestId = this.requestId();
+  _o.error = this.error();
 }
 }
 
 export class SignedEventT implements flatbuffers.IGeneratedObject {
 constructor(
-  public event: NostrEventT|null = null
+  public event: NostrEventT|null = null,
+  public requestId: number = 0,
+  public error: string|Uint8Array|null = null
 ){}
 
 
 pack(builder:flatbuffers.Builder): flatbuffers.Offset {
   const event = (this.event !== null ? this.event!.pack(builder) : 0);
+  const error = (this.error !== null ? builder.createString(this.error!) : 0);
 
   return SignedEvent.createSignedEvent(builder,
-    event
+    event,
+    this.requestId,
+    error
   );
 }
 }

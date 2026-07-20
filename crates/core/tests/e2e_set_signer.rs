@@ -50,26 +50,15 @@ fn build_set_private_key_message(secret: &str) -> Vec<u8> {
     builder.finished_data().to_vec()
 }
 
-/// Poll the event sink for the next crypto response and return the parsed JSON result.
+/// Poll the event sink for the next crypto response WorkerMessage.
 /// Consumes *any* crypto sub_id response (including SetSigner acks).
 async fn poll_crypto_response(
     event_sink_rx: &mut futures::channel::mpsc::Receiver<(String, Vec<u8>)>,
-) -> serde_json::Value {
+) -> Vec<u8> {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
     while tokio::time::Instant::now() < deadline {
         match tokio::time::timeout(Duration::from_millis(200), event_sink_rx.next()).await {
-            Ok(Some((sub_id, bytes))) if sub_id == "crypto" => {
-                let wm = flatbuffers::root::<fb::WorkerMessage>(&bytes)
-                    .expect("valid WorkerMessage from crypto worker");
-                if wm.type_() == fb::MessageType::Raw {
-                    if let Some(raw) = wm.content_as_raw() {
-                        let json_str = raw.raw();
-                        if let Ok(val) = serde_json::from_str::<serde_json::Value>(json_str) {
-                            return val;
-                        }
-                    }
-                }
-            }
+            Ok(Some((sub_id, bytes))) if sub_id == "crypto" => return bytes,
             Ok(Some(_)) => continue,
             _ => continue,
         }
@@ -77,27 +66,26 @@ async fn poll_crypto_response(
     panic!("Timed out waiting for crypto response");
 }
 
-/// Drain all pending crypto responses until a GetPublicKey response is found.
+/// Drain all pending crypto responses until a Pubkey response is found.
 async fn drain_until_get_pubkey(
     event_sink_rx: &mut futures::channel::mpsc::Receiver<(String, Vec<u8>)>,
-) -> serde_json::Value {
+) -> String {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
     while tokio::time::Instant::now() < deadline {
         match tokio::time::timeout(Duration::from_millis(200), event_sink_rx.next()).await {
             Ok(Some((sub_id, bytes))) if sub_id == "crypto" => {
                 let wm = flatbuffers::root::<fb::WorkerMessage>(&bytes)
                     .expect("valid WorkerMessage from crypto worker");
-                if wm.type_() == fb::MessageType::Raw {
-                    if let Some(raw) = wm.content_as_raw() {
-                        let json_str = raw.raw();
-                        if let Ok(val) = serde_json::from_str::<serde_json::Value>(json_str) {
-                            if val["op"].as_str() == Some("get_public_key") {
-                                return val;
-                            }
-                            // Otherwise it's a set_signer ack or something else — drain it
-                        }
-                    }
+                if wm.type_() == fb::MessageType::Pubkey {
+                    let pubkey = wm.content_as_pubkey().expect("Pubkey content");
+                    assert!(
+                        pubkey.error().is_none(),
+                        "get_public_key should not error, got {:?}",
+                        pubkey.error()
+                    );
+                    return pubkey.pubkey().to_string();
                 }
+                // Otherwise it's a SetSignerResponse ack or something else — drain it
             }
             Ok(Some(_)) => continue,
             _ => continue,
@@ -125,10 +113,13 @@ async fn test_set_signer_hot_swap() {
                 .unwrap();
 
             let resp = poll_crypto_response(&mut event_sink_rx).await;
+            let wm = flatbuffers::root::<fb::WorkerMessage>(&resp)
+                .expect("valid WorkerMessage from crypto worker");
+            assert_eq!(wm.type_(), fb::MessageType::Pubkey);
+            let pubkey = wm.content_as_pubkey().expect("Pubkey content");
             assert!(
-                resp["error"].as_str().is_some(),
-                "GetPublicKey should error when no signer configured, got: {}",
-                resp
+                pubkey.error().is_some(),
+                "GetPublicKey should error when no signer configured"
             );
 
             // 2) Set signer A via FlatBuffers message.
@@ -146,10 +137,7 @@ async fn test_set_signer_hot_swap() {
                 .await
                 .unwrap();
 
-            let resp_a = drain_until_get_pubkey(&mut event_sink_rx).await;
-            let pubkey_a = resp_a["result"]
-                .as_str()
-                .expect("pubkey A should be present");
+            let pubkey_a = drain_until_get_pubkey(&mut event_sink_rx).await;
             assert!(
                 !pubkey_a.is_empty(),
                 "Signer A should return a non-empty pubkey"
@@ -170,10 +158,7 @@ async fn test_set_signer_hot_swap() {
                 .await
                 .unwrap();
 
-            let resp_b = drain_until_get_pubkey(&mut event_sink_rx).await;
-            let pubkey_b = resp_b["result"]
-                .as_str()
-                .expect("pubkey B should be present");
+            let pubkey_b = drain_until_get_pubkey(&mut event_sink_rx).await;
             assert!(
                 !pubkey_b.is_empty(),
                 "Signer B should return a non-empty pubkey"

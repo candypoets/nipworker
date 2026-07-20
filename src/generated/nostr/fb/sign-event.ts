@@ -30,12 +30,21 @@ template(obj?:Template):Template|null {
   return offset ? (obj || new Template()).__init(this.bb!.__indirect(this.bb_pos + offset), this.bb!) : null;
 }
 
+requestId():number {
+  const offset = this.bb!.__offset(this.bb_pos, 6);
+  return offset ? this.bb!.readUint32(this.bb_pos + offset) : 0;
+}
+
 static startSignEvent(builder:flatbuffers.Builder) {
-  builder.startObject(1);
+  builder.startObject(2);
 }
 
 static addTemplate(builder:flatbuffers.Builder, templateOffset:flatbuffers.Offset) {
   builder.addFieldOffset(0, templateOffset, 0);
+}
+
+static addRequestId(builder:flatbuffers.Builder, requestId:number) {
+  builder.addFieldInt32(1, requestId, 0);
 }
 
 static endSignEvent(builder:flatbuffers.Builder):flatbuffers.Offset {
@@ -44,27 +53,31 @@ static endSignEvent(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createSignEvent(builder:flatbuffers.Builder, templateOffset:flatbuffers.Offset):flatbuffers.Offset {
+static createSignEvent(builder:flatbuffers.Builder, templateOffset:flatbuffers.Offset, requestId:number):flatbuffers.Offset {
   SignEvent.startSignEvent(builder);
   SignEvent.addTemplate(builder, templateOffset);
+  SignEvent.addRequestId(builder, requestId);
   return SignEvent.endSignEvent(builder);
 }
 
 unpack(): SignEventT {
   return new SignEventT(
-    (this.template() !== null ? this.template()!.unpack() : null)
+    (this.template() !== null ? this.template()!.unpack() : null),
+    this.requestId()
   );
 }
 
 
 unpackTo(_o: SignEventT): void {
   _o.template = (this.template() !== null ? this.template()!.unpack() : null);
+  _o.requestId = this.requestId();
 }
 }
 
 export class SignEventT implements flatbuffers.IGeneratedObject {
 constructor(
-  public template: TemplateT|null = null
+  public template: TemplateT|null = null,
+  public requestId: number = 0
 ){}
 
 
@@ -72,7 +85,8 @@ pack(builder:flatbuffers.Builder): flatbuffers.Offset {
   const template = (this.template !== null ? this.template!.pack(builder) : 0);
 
   return SignEvent.createSignEvent(builder,
-    template
+    template,
+    this.requestId
   );
 }
 }

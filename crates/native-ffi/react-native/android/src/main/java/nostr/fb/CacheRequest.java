@@ -42,23 +42,26 @@ public final class CacheRequest extends com.google.flatbuffers.Table {
   public int relaysLength() { int o = __offset(12); return o != 0 ? __vector_len(o) : 0; }
   public StringVector relaysVector() { return relaysVector(new StringVector()); }
   public StringVector relaysVector(StringVector obj) { int o = __offset(12); return o != 0 ? obj.__assign(__vector(o), 4, bb) : null; }
+  public boolean close() { int o = __offset(14); return o != 0 ? 0!=bb.get(o + bb_pos) : false; }
 
   public static int createCacheRequest(FlatBufferBuilder builder,
       int subIdOffset,
       int requestsOffset,
       int eventOffset,
       int parsedEventOffset,
-      int relaysOffset) {
-    builder.startTable(5);
+      int relaysOffset,
+      boolean close) {
+    builder.startTable(6);
     CacheRequest.addRelays(builder, relaysOffset);
     CacheRequest.addParsedEvent(builder, parsedEventOffset);
     CacheRequest.addEvent(builder, eventOffset);
     CacheRequest.addRequests(builder, requestsOffset);
     CacheRequest.addSubId(builder, subIdOffset);
+    CacheRequest.addClose(builder, close);
     return CacheRequest.endCacheRequest(builder);
   }
 
-  public static void startCacheRequest(FlatBufferBuilder builder) { builder.startTable(5); }
+  public static void startCacheRequest(FlatBufferBuilder builder) { builder.startTable(6); }
   public static void addSubId(FlatBufferBuilder builder, int subIdOffset) { builder.addOffset(0, subIdOffset, 0); }
   public static void addRequests(FlatBufferBuilder builder, int requestsOffset) { builder.addOffset(1, requestsOffset, 0); }
   public static int createRequestsVector(FlatBufferBuilder builder, int[] data) { builder.startVector(4, data.length, 4); for (int i = data.length - 1; i >= 0; i--) builder.addOffset(data[i]); return builder.endVector(); }
@@ -68,6 +71,7 @@ public final class CacheRequest extends com.google.flatbuffers.Table {
   public static void addRelays(FlatBufferBuilder builder, int relaysOffset) { builder.addOffset(4, relaysOffset, 0); }
   public static int createRelaysVector(FlatBufferBuilder builder, int[] data) { builder.startVector(4, data.length, 4); for (int i = data.length - 1; i >= 0; i--) builder.addOffset(data[i]); return builder.endVector(); }
   public static void startRelaysVector(FlatBufferBuilder builder, int numElems) { builder.startVector(4, numElems, 4); }
+  public static void addClose(FlatBufferBuilder builder, boolean close) { builder.addBoolean(5, close, false); }
   public static int endCacheRequest(FlatBufferBuilder builder) {
     int o = builder.endTable();
     builder.required(o, 4);  // sub_id

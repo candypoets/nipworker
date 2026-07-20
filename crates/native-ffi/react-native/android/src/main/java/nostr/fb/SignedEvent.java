@@ -28,19 +28,28 @@ public final class SignedEvent extends com.google.flatbuffers.Table {
 
   public nostr.fb.NostrEvent event() { return event(new nostr.fb.NostrEvent()); }
   public nostr.fb.NostrEvent event(nostr.fb.NostrEvent obj) { int o = __offset(4); return o != 0 ? obj.__assign(__indirect(o + bb_pos), bb) : null; }
+  public long requestId() { int o = __offset(6); return o != 0 ? (long)bb.getInt(o + bb_pos) & 0xFFFFFFFFL : 0L; }
+  public String error() { int o = __offset(8); return o != 0 ? __string(o + bb_pos) : null; }
+  public ByteBuffer errorAsByteBuffer() { return __vector_as_bytebuffer(8, 1); }
+  public ByteBuffer errorInByteBuffer(ByteBuffer _bb) { return __vector_in_bytebuffer(_bb, 8, 1); }
 
   public static int createSignedEvent(FlatBufferBuilder builder,
-      int eventOffset) {
-    builder.startTable(1);
+      int eventOffset,
+      long requestId,
+      int errorOffset) {
+    builder.startTable(3);
+    SignedEvent.addError(builder, errorOffset);
+    SignedEvent.addRequestId(builder, requestId);
     SignedEvent.addEvent(builder, eventOffset);
     return SignedEvent.endSignedEvent(builder);
   }
 
-  public static void startSignedEvent(FlatBufferBuilder builder) { builder.startTable(1); }
+  public static void startSignedEvent(FlatBufferBuilder builder) { builder.startTable(3); }
   public static void addEvent(FlatBufferBuilder builder, int eventOffset) { builder.addOffset(0, eventOffset, 0); }
+  public static void addRequestId(FlatBufferBuilder builder, long requestId) { builder.addInt(1, (int) requestId, (int) 0L); }
+  public static void addError(FlatBufferBuilder builder, int errorOffset) { builder.addOffset(2, errorOffset, 0); }
   public static int endSignedEvent(FlatBufferBuilder builder) {
     int o = builder.endTable();
-    builder.required(o, 4);  // event
     return o;
   }
 

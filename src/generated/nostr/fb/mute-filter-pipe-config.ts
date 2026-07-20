@@ -4,6 +4,7 @@
 
 import * as flatbuffers from 'flatbuffers';
 
+import { MuteTarget } from '../../nostr/fb/mute-target.js';
 
 
 export class MuteFilterPipeConfig implements flatbuffers.IUnpackableObject<MuteFilterPipeConfigT> {
@@ -72,8 +73,13 @@ eventIdsLength():number {
   return offset ? this.bb!.__vector_len(this.bb_pos + offset) : 0;
 }
 
+target():MuteTarget {
+  const offset = this.bb!.__offset(this.bb_pos, 12);
+  return offset ? this.bb!.readInt8(this.bb_pos + offset) : MuteTarget.Both;
+}
+
 static startMuteFilterPipeConfig(builder:flatbuffers.Builder) {
-  builder.startObject(4);
+  builder.startObject(5);
 }
 
 static addPubkeys(builder:flatbuffers.Builder, pubkeysOffset:flatbuffers.Offset) {
@@ -140,17 +146,22 @@ static startEventIdsVector(builder:flatbuffers.Builder, numElems:number) {
   builder.startVector(4, numElems, 4);
 }
 
+static addTarget(builder:flatbuffers.Builder, target:MuteTarget) {
+  builder.addFieldInt8(4, target, MuteTarget.Both);
+}
+
 static endMuteFilterPipeConfig(builder:flatbuffers.Builder):flatbuffers.Offset {
   const offset = builder.endObject();
   return offset;
 }
 
-static createMuteFilterPipeConfig(builder:flatbuffers.Builder, pubkeysOffset:flatbuffers.Offset, hashtagsOffset:flatbuffers.Offset, wordsOffset:flatbuffers.Offset, eventIdsOffset:flatbuffers.Offset):flatbuffers.Offset {
+static createMuteFilterPipeConfig(builder:flatbuffers.Builder, pubkeysOffset:flatbuffers.Offset, hashtagsOffset:flatbuffers.Offset, wordsOffset:flatbuffers.Offset, eventIdsOffset:flatbuffers.Offset, target:MuteTarget):flatbuffers.Offset {
   MuteFilterPipeConfig.startMuteFilterPipeConfig(builder);
   MuteFilterPipeConfig.addPubkeys(builder, pubkeysOffset);
   MuteFilterPipeConfig.addHashtags(builder, hashtagsOffset);
   MuteFilterPipeConfig.addWords(builder, wordsOffset);
   MuteFilterPipeConfig.addEventIds(builder, eventIdsOffset);
+  MuteFilterPipeConfig.addTarget(builder, target);
   return MuteFilterPipeConfig.endMuteFilterPipeConfig(builder);
 }
 
@@ -159,7 +170,8 @@ unpack(): MuteFilterPipeConfigT {
     this.bb!.createScalarList<string>(this.pubkeys.bind(this), this.pubkeysLength()),
     this.bb!.createScalarList<string>(this.hashtags.bind(this), this.hashtagsLength()),
     this.bb!.createScalarList<string>(this.words.bind(this), this.wordsLength()),
-    this.bb!.createScalarList<string>(this.eventIds.bind(this), this.eventIdsLength())
+    this.bb!.createScalarList<string>(this.eventIds.bind(this), this.eventIdsLength()),
+    this.target()
   );
 }
 
@@ -169,6 +181,7 @@ unpackTo(_o: MuteFilterPipeConfigT): void {
   _o.hashtags = this.bb!.createScalarList<string>(this.hashtags.bind(this), this.hashtagsLength());
   _o.words = this.bb!.createScalarList<string>(this.words.bind(this), this.wordsLength());
   _o.eventIds = this.bb!.createScalarList<string>(this.eventIds.bind(this), this.eventIdsLength());
+  _o.target = this.target();
 }
 }
 
@@ -177,7 +190,8 @@ constructor(
   public pubkeys: (string)[] = [],
   public hashtags: (string)[] = [],
   public words: (string)[] = [],
-  public eventIds: (string)[] = []
+  public eventIds: (string)[] = [],
+  public target: MuteTarget = MuteTarget.Both
 ){}
 
 
@@ -191,7 +205,8 @@ pack(builder:flatbuffers.Builder): flatbuffers.Offset {
     pubkeys,
     hashtags,
     words,
-    eventIds
+    eventIds,
+    this.target
   );
 }
 }

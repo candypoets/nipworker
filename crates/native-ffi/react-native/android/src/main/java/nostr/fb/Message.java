@@ -16,8 +16,9 @@ public final class Message {
   public static final byte SignedEvent = 8;
   public static final byte Pubkey = 9;
   public static final byte Raw = 10;
+  public static final byte SetSignerResponse = 11;
 
-  public static final String[] names = { "NONE", "ParsedEvent", "NostrEvent", "ConnectionStatus", "CountResponse", "Eoce", "BufferFull", "ValidProofs", "SignedEvent", "Pubkey", "Raw", };
+  public static final String[] names = { "NONE", "ParsedEvent", "NostrEvent", "ConnectionStatus", "CountResponse", "Eoce", "BufferFull", "ValidProofs", "SignedEvent", "Pubkey", "Raw", "SetSignerResponse", };
 
   public static String name(int e) { return names[e]; }
 }

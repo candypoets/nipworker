@@ -9,32 +9,43 @@ import type { InitCacheMsg } from './cache/index';
 import type { InitConnectionsMsg } from './connections/types';
 import type { InitCryptoMsg } from './crypto/index';
 import {
+	BufferFullT,
 	ConnectionStatus,
 	GetPublicKeyT,
 	MainContent,
 	MainMessageT,
+	Message,
 	MessageType,
 	Nip07T,
 	Nip46BunkerT,
 	Nip46QRT,
+	NostrEvent as FbNostrEvent,
 	PipelineConfigT,
 	PrivateKeyT,
+	Pubkey,
 	PublishT,
 	Raw,
 	RequestT,
+	SetSignerResponse,
 	SetSignerT,
+	SignedEvent,
 	SignEventT,
 	SignerType,
+	StringVec,
 	StringVecT,
 	SubscribeT,
 	SubscriptionConfigT,
 	TemplateT,
 	UnsubscribeT,
-	WorkerMessage
+	WorkerMessage,
+	WorkerMessageT
 } from './generated/nostr/fb';
 import type { InitParserMsg } from './parser/index';
 import { scheduleMicrotask } from './lib/scheduleMicrotask';
 import { setManager } from './manager';
+
+// Shared decoder for parser→main frames (avoids per-frame allocation).
+const textDecoder = new TextDecoder();
 
 /**
  * NostrManager handles worker orchestration and session persistence.
@@ -44,14 +55,12 @@ export class NostrManager extends BaseBackend {
 	private cache: Worker;
 	private parser: Worker;
 	private crypto: Worker;
-	private signCB = (_event: any) => {};
+	private signRequests = new Map<number, (event: NostrEvent) => void>();
+	private nextSignRequestId = 1;
 	private lastWakeAt = 0;
 
 	// MessageChannel for parser-main communication
 	private parserMainPort: MessagePort;
-
-	// MessageChannel for connections-main communication (relay status)
-	private connectionsMainPort: MessagePort;
 
 	// MessageChannel for crypto-main communication
 	private cryptoMainPort: MessagePort;
@@ -67,8 +76,7 @@ export class NostrManager extends BaseBackend {
 		const cache_connections = new MessageChannel(); // cache ↔ connections
 		const crypto_connections = new MessageChannel(); // crypto ↔ connections
 		const crypto_main = new MessageChannel(); // crypto ↔ main
-		const parser_main = new MessageChannel(); // parser ↔ main (for batched events)
-		const connections_main = new MessageChannel(); // connections ↔ main (for relay status)
+		const parser_main = new MessageChannel(); // parser ↔ main (for batched events + relay status)
 
 		const useProxyConnections = !!config.proxy;
 		// Keep literal paths so Vite can statically rewrite worker URLs in production builds.
@@ -78,22 +86,17 @@ export class NostrManager extends BaseBackend {
 		const cacheURL = new URL('./cache/index.js', import.meta.url);
 		const parserURL = new URL('./parser/index.js', import.meta.url);
 		const cryptoURL = new URL('./crypto/index.js', import.meta.url);
-		console.log('constructing crates');
 		this.connections = new Worker(connectionURL, { type: 'module' });
 		this.cache = new Worker(cacheURL, { type: 'module' });
 		this.parser = new Worker(parserURL, { type: 'module' });
 		this.crypto = new Worker(cryptoURL, { type: 'module' });
 
-		console.log('connectionMode', useProxyConnections ? 'proxy' : 'rust');
-
-		console.log(this.connections, this.cache, this.parser, this.crypto);
 		// Transfer ports to connections worker
-		// Needs: mainPort, cachePort, parserPort, cryptoPort
+		// Needs: cachePort, parserPort, cryptoPort
 		this.connections.postMessage(
 			{
 				type: 'init',
 				payload: {
-					mainPort: connections_main.port2,
 					cachePort: cache_connections.port1,
 					parserPort: parser_connections.port1,
 					cryptoPort: crypto_connections.port1,
@@ -101,12 +104,7 @@ export class NostrManager extends BaseBackend {
 					...(config.proxy ? { proxy: config.proxy } : {})
 				}
 			} as InitConnectionsMsg,
-			[
-				connections_main.port2,
-				cache_connections.port1,
-				parser_connections.port1,
-				crypto_connections.port1
-			]
+			[cache_connections.port1, parser_connections.port1, crypto_connections.port1]
 		);
 
 		// Transfer ports to cache worker
@@ -129,7 +127,8 @@ export class NostrManager extends BaseBackend {
 		this.parserMainPort = parser_main.port1;
 
 		// Set up message handler for incoming messages from parser
-		// Core parser sends tagged bytes: [4 bytes subIdLen LE][subId][data]
+		// Parser worker sends batched frames, concatenated in a single ArrayBuffer:
+		// [4 bytes frameLen LE][4 bytes subIdLen LE][subId][WorkerMessage] ...
 		this.parserMainPort.onmessage = (event) => {
 			const buffer = event.data as ArrayBuffer;
 			if (!buffer || !(buffer instanceof ArrayBuffer)) {
@@ -137,80 +136,24 @@ export class NostrManager extends BaseBackend {
 				return;
 			}
 			const view = new DataView(buffer);
-			if (buffer.byteLength < 4) return;
-			const subIdLen = view.getUint32(0, true);
-			if (buffer.byteLength < 4 + subIdLen) return;
+			let offset = 0;
+			while (offset + 4 <= buffer.byteLength) {
+				const frameLen = view.getUint32(offset, true);
+				if (frameLen === 0 || offset + 4 + frameLen > buffer.byteLength) return;
+				const frameStart = offset + 4;
+				if (frameLen < 4) return;
+				const subIdLen = view.getUint32(frameStart, true);
+				if (4 + subIdLen > frameLen) return;
 
-			const subId = new TextDecoder().decode(new Uint8Array(buffer, 4, subIdLen));
-			const data = new Uint8Array(buffer, 4 + subIdLen);
-			if (data.length === 0) return;
-
-			// Try to parse as WorkerMessage to detect ConnectionStatus
-			try {
-				const bb = new flatbuffers.ByteBuffer(data);
-				const wm = WorkerMessage.getRootAsWorkerMessage(bb);
-				if (wm.type() === MessageType.ConnectionStatus) {
-					const cs = wm.content(new ConnectionStatus());
-					if (cs) {
-						const url = cs.relayUrl() || '';
-						const status = cs.status() || '';
-						if (url && status) {
-							this.relayStatuses.set(url, { status, timestamp: Date.now() });
-							this.dispatch('relay:status', { status, url });
-						}
-					}
-					// Relay-level statuses have no subscription; subscription-tied
-					// statuses (EOSE, OK, etc.) should also flow to the sub buffer.
-					if (!subId) {
-						return;
-					}
-				}
-			} catch (e) {
-				// Not a WorkerMessage, treat as batched event data
-			}
-
-			// Regular batched event data
-			// Parser worker sends raw FlatBuffer bytes; prepend 4-byte LE length
-			// so ArrayBufferReader.readMessages can parse them correctly.
-			const lengthPrefixed = new Uint8Array(4 + data.length);
-			const lpView = new DataView(lengthPrefixed.buffer);
-			lpView.setUint32(0, data.length, true);
-			lengthPrefixed.set(data, 4);
-
-			const subscription = this.subscriptions.get(subId);
-			if (subscription) {
-				const written = ArrayBufferReader.writeBatchedData(
-					subscription.buffer,
-					lengthPrefixed,
-					subId
+				const subId = textDecoder.decode(
+					new Uint8Array(buffer, frameStart + 4, subIdLen)
 				);
-				if (written) {
-					this.dispatch(`subscription:${subId}`, subId);
-				} else {
-					this.closeSubscription(subId);
+				const data = new Uint8Array(buffer, frameStart + 4 + subIdLen, frameLen - 4 - subIdLen);
+				if (data.length > 0) {
+					this.handleParserMainFrame(subId, data);
 				}
-				return;
+				offset = frameStart + frameLen;
 			}
-
-			const publish = this.publishes.get(subId);
-			if (publish) {
-				const written = ArrayBufferReader.writeBatchedData(publish.buffer, lengthPrefixed, subId);
-				if (written) {
-					this.dispatch(`publish:${subId}`, subId);
-				} else {
-					this.publishes.delete(subId);
-				}
-				return;
-			}
-
-			return;
-		};
-
-		// connectionsMainPort is no longer used for relay status in the new architecture
-		// (status comes through parserMainPort as ConnectionStatus WorkerMessages)
-		this.connectionsMainPort = connections_main.port1;
-		this.connectionsMainPort.onmessage = () => {
-			// no-op
 		};
 
 		// Transfer ports to parser worker
@@ -254,19 +197,7 @@ export class NostrManager extends BaseBackend {
 			const bytes = new Uint8Array(data);
 			const bb = new flatbuffers.ByteBuffer(bytes);
 			const wm = WorkerMessage.getRootAsWorkerMessage(bb);
-			if (wm.type() !== MessageType.Raw) return;
-			const raw = wm.content(new Raw());
-			if (!raw) return;
-			const jsonStr = raw.raw();
-			if (!jsonStr) return;
-			try {
-				const msg = JSON.parse(jsonStr);
-				if (msg.op) {
-					this.handleCryptoResponse(msg);
-				}
-			} catch (e) {
-				console.warn('[main] Failed to parse crypto Raw message:', jsonStr);
-			}
+			this.handleCryptoResponse(wm);
 		};
 
 		this.setupWorkerListener();
@@ -346,6 +277,81 @@ export class NostrManager extends BaseBackend {
 		}
 	}
 
+	/**
+	 * Handle a single parser→main frame: a (subId, WorkerMessage) pair decoded
+	 * from the batched wire format. ConnectionStatus frames update relay status;
+	 * everything else lands in the subscription/publish ring buffer.
+	 */
+	private handleParserMainFrame(subId: string, data: Uint8Array): void {
+		// Try to parse as WorkerMessage to detect ConnectionStatus
+		try {
+			const bb = new flatbuffers.ByteBuffer(data);
+			const wm = WorkerMessage.getRootAsWorkerMessage(bb);
+			if (wm.contentType() === Message.ConnectionStatus) {
+				const cs = wm.content(new ConnectionStatus());
+				if (cs) {
+					const url = cs.relayUrl() || '';
+					const status = cs.status() || '';
+					if (url && status) {
+						this.relayStatuses.set(url, { status, timestamp: Date.now() });
+						this.dispatch('relay:status', { status, url });
+					}
+				}
+				// Relay-level statuses have no subscription; subscription-tied
+				// statuses (EOSE, OK, etc.) should also flow to the sub buffer.
+				if (!subId) {
+					return;
+				}
+			}
+		} catch (e) {
+			// Not a WorkerMessage, treat as batched event data
+		}
+
+		// Regular batched event data
+		// Parser worker sends raw FlatBuffer bytes; writePayload prepends the
+		// 4-byte LE length directly in the target buffer (no intermediate copy).
+		const subscription = this.subscriptions.get(subId);
+		if (subscription) {
+			const written = ArrayBufferReader.writePayload(subscription.buffer, data, subId);
+			if (written) {
+				this.dispatch(`subscription:${subId}`, subId);
+			} else {
+				// The subscription buffer is full: events are being dropped.
+				// Best-effort: append a typed BufferFull marker to the buffer so
+				// hooks can surface it via isBufferFull (it may not fit - fine),
+				// and always notify listeners directly before closing.
+				const bufferFullT = new WorkerMessageT(
+					this.textEncoder.encode(subId),
+					null,
+					MessageType.BufferFull,
+					Message.BufferFull,
+					new BufferFullT(0)
+				);
+				const bfBuilder = new flatbuffers.Builder(256);
+				bfBuilder.finish(bufferFullT.pack(bfBuilder));
+				const bfPayload = bfBuilder.asUint8Array();
+				if (ArrayBufferReader.writePayload(subscription.buffer, bfPayload, subId)) {
+					this.dispatch(`subscription:${subId}`, subId);
+				}
+				this.dispatch('bufferfull', { subId });
+				this.closeSubscription(subId);
+			}
+			return;
+		}
+
+		const publish = this.publishes.get(subId);
+		if (publish) {
+			const written = ArrayBufferReader.writePayload(publish.buffer, data, subId);
+			if (written) {
+				this.dispatch(`publish:${subId}`, subId);
+			} else {
+				this.dispatch('bufferfull', { subId });
+				this.publishes.delete(subId);
+			}
+			return;
+		}
+	}
+
 	private closeSubscription(subId: string): void {
 		const unsubscribeT = new UnsubscribeT(this.textEncoder.encode(subId));
 		const mainT = new MainMessageT(MainContent.Unsubscribe, unsubscribeT);
@@ -398,31 +404,101 @@ export class NostrManager extends BaseBackend {
 		});
 	}
 
-	private handleCryptoResponse(msg: any) {
-		if (msg.op === 'get_public_key') {
-			console.log('[main] get_public_key:', msg.result ? 'success' : 'failed', msg.result);
-			const secretKey =
-				this._pendingSession?.type === 'privkey' ? this._pendingSession.payload : undefined;
-			if (this.isPubkeyResult(msg.result)) {
-				this.handleSignerPubkey(msg.result, secretKey, msg.bunker_url);
+	private handleCryptoResponse(wm: WorkerMessage) {
+		switch (wm.contentType()) {
+			case Message.SetSignerResponse: {
+				const resp = wm.content(new SetSignerResponse());
+				if (!resp) return;
+				const pubkey = resp.pubkey() || '';
+				const secretKey =
+					this._pendingSession?.type === 'privkey' ? this._pendingSession.payload : undefined;
+				if (this.isPubkeyResult(pubkey)) {
+					this.handleSignerPubkey(pubkey, secretKey, resp.bunkerUrl());
+				} else if (resp.error()) {
+					this.dispatch('auth', { pubkey: null, hasSigner: false });
+				}
+				// Otherwise pubkey carries a NIP-46 QR status string
+				// ('awaiting discovery') - a second SetSignerResponse with the real
+				// pubkey and bunker_url arrives once discovery completes.
 				return;
 			}
-			this.dispatch('auth', { pubkey: this.activePubkey, hasSigner: false });
-		} else if (msg.op === 'set_signer') {
-			console.log('[main] set_signer:', msg.result ? 'success' : 'failed', msg.result);
-			const secretKey =
-				this._pendingSession?.type === 'privkey' ? this._pendingSession.payload : undefined;
-			if (this.isPubkeyResult(msg.result)) {
-				this.handleSignerPubkey(msg.result, secretKey, msg.bunker_url);
-			} else if (this._pendingSession?.type === 'nip46' && msg.result) {
-				this.getPublicKey();
-			} else if (msg.error) {
-				this.dispatch('auth', { pubkey: null, hasSigner: false });
+			case Message.Pubkey: {
+				const resp = wm.content(new Pubkey());
+				const pubkey = resp?.pubkey() || '';
+				const secretKey =
+					this._pendingSession?.type === 'privkey' ? this._pendingSession.payload : undefined;
+				if (this.isPubkeyResult(pubkey)) {
+					this.handleSignerPubkey(pubkey, secretKey);
+					return;
+				}
+				this.dispatch('auth', { pubkey: this.activePubkey, hasSigner: false });
+				return;
 			}
-		} else if (msg.op === 'sign_event' && msg.result) {
-			const parsed = JSON.parse(msg.result);
-			this.signCB(parsed);
+			case Message.SignedEvent: {
+				const resp = wm.content(new SignedEvent());
+				if (!resp) return;
+				const eventObj = resp.event();
+				if (!eventObj) {
+					if (resp.error()) {
+						console.warn('[main] sign_event failed:', resp.error());
+					}
+					return;
+				}
+				const cb = this.takeSignCallback(resp.requestId() || undefined);
+				if (cb) {
+					cb(this.fbEventToNostrEvent(eventObj));
+				}
+				return;
+			}
+			case Message.Raw: {
+				// Only emitted for malformed MainMessage payloads.
+				const raw = wm.content(new Raw());
+				console.warn('[main] crypto worker error:', raw?.raw());
+				return;
+			}
 		}
+	}
+
+	private fbEventToNostrEvent(eventObj: FbNostrEvent): NostrEvent {
+		const signedEvent: NostrEvent = {
+			id: eventObj.id() || '',
+			pubkey: eventObj.pubkey() || '',
+			created_at: eventObj.createdAt(),
+			kind: eventObj.kind(),
+			tags: [],
+			content: eventObj.content() || '',
+			sig: eventObj.sig() || ''
+		};
+		for (let i = 0; i < eventObj.tagsLength(); i++) {
+			const tag = eventObj.tags(i, new StringVec());
+			if (!tag) continue;
+			const values: string[] = [];
+			for (let j = 0; j < tag.itemsLength(); j++) {
+				const value = tag.items(j);
+				if (value !== null) values.push(value);
+			}
+			signedEvent.tags.push(values);
+		}
+		return signedEvent;
+	}
+
+	/**
+	 * Resolve the callback for a sign_event response. Prefers an exact
+	 * request-id match; falls back to the oldest pending request for
+	 * responses that carry no id (legacy/native producers).
+	 */
+	private takeSignCallback(id?: number): ((event: NostrEvent) => void) | undefined {
+		if (id !== undefined) {
+			const cb = this.signRequests.get(id);
+			if (cb) {
+				this.signRequests.delete(id);
+				return cb;
+			}
+		}
+		const first = this.signRequests.entries().next();
+		if (first.done) return undefined;
+		this.signRequests.delete(first.value[0]);
+		return first.value[1];
 	}
 
 	private setupWorkerListener() {
@@ -430,7 +506,6 @@ export class NostrManager extends BaseBackend {
 		// (these require main thread access to window.nostr)
 		this.crypto.onmessage = async (event) => {
 			const msg = event.data;
-			console.log('[main] crypto.onmessage:', msg?.type, msg);
 
 			// Handle NIP-07 extension requests from the worker
 			if (msg?.type === 'extension_request') {
@@ -529,7 +604,8 @@ export class NostrManager extends BaseBackend {
 						r.cacheFirst,
 						r.noCache,
 						undefined,
-						options.cacheOnly
+						options.cacheOnly,
+						r.meshOnly
 					)
 			),
 			optionsT
@@ -619,14 +695,15 @@ export class NostrManager extends BaseBackend {
 	}
 
 	signEvent(event: EventTemplate, cb: (event: NostrEvent) => void) {
-		this.signCB = cb;
+		const requestId = this.nextSignRequestId++;
+		this.signRequests.set(requestId, cb);
 		const templateT = new TemplateT(
 			event.kind,
 			event.created_at,
 			this.textEncoder.encode(event.content),
 			event.tags.map((t) => new StringVecT(t)) || []
 		);
-		const signEventT = new SignEventT(templateT);
+		const signEventT = new SignEventT(templateT, requestId);
 		this.sendCryptoMessage(MainContent.SignEvent, signEventT);
 	}
 

@@ -225,6 +225,7 @@ async fn test_signer_slow_response() {
                 &mut builder,
                 &fb::SignEventArgs {
                     template: Some(template_offset),
+                    request_id: 0,
                 },
             );
             let main_msg = fb::MainMessage::create(

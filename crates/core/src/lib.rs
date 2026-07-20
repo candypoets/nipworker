@@ -1,3 +1,6 @@
+extern crate alloc;
+
+pub mod cache_input;
 pub mod channel;
 pub mod generated;
 pub mod platform;

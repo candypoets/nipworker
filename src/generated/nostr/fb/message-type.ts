@@ -12,5 +12,6 @@ export enum MessageType {
   SignedEvent = 6,
   Pubkey = 7,
   Raw = 8,
-  NostrEvent = 9
+  NostrEvent = 9,
+  SetSignerResponse = 10
 }

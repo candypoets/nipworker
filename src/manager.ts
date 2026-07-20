@@ -3,8 +3,7 @@ import type { RequestObject, SubscriptionConfig } from './types';
 
 /**
  * Common interface implemented by all backend variants:
- * - NostrManager   (legacy 4-worker WASM)
- * - EngineManager  (single-worker WASM engine)
+ * - NostrManager   (4-worker WASM)
  * - ReactNativeManager (React Native native module)
  */
 export interface NostrManagerLike {
@@ -48,6 +47,10 @@ export interface NostrManagerLike {
 	switchAccount(pubkey: string): void;
 	logout(): void;
 	removeAccount(): void;
+	/** Pin a signed kind-0 profile as this device's visible nearby identity. */
+	setMeshProfile(profile: NostrEvent): boolean;
+	/** Stop sharing this device's profile while leaving mesh relay participation active. */
+	clearMeshProfile(): boolean;
 	cleanup(): void;
 }
 

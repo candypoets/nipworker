@@ -1,10 +1,13 @@
+use crate::cache_input;
 use crate::channel::{MessageSender, WorkerChannel};
 use crate::generated::nostr::fb;
 use crate::spawn::spawn_worker;
 use crate::traits::Storage;
 use crate::types::network::Request;
 use serde_json::{json, Map, Value};
-use std::sync::Arc;
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use tracing::{debug, info, warn};
 
 const DEFAULT_RELAYS: &[&str] = &[
@@ -13,104 +16,423 @@ const DEFAULT_RELAYS: &[&str] = &[
     "wss://relay.primal.net",
 ];
 
+fn resolve_publish_relays(requested_relays: Option<Vec<String>>) -> Vec<String> {
+    match requested_relays {
+        Some(relays) if !relays.is_empty() => relays,
+        _ => DEFAULT_RELAYS
+            .iter()
+            .map(|relay| relay.to_string())
+            .collect(),
+    }
+}
+const MAX_MESH_WATCHES: usize = 128;
+const MAX_DELIVERED_IDS_PER_WATCH: usize = 4096;
+const MESH_EVENT_TTL: Duration = Duration::from_secs(10 * 60);
+const MESH_PIN_PROFILE_SUB_ID: &str = "mesh_pin_profile";
+const MESH_CLEAR_PROFILE_SUB_ID: &str = "mesh_clear_profile";
+
+struct MeshTtlIndex {
+    ttl: Duration,
+    live: HashMap<String, Instant>,
+    expiry_queue: VecDeque<(Instant, String)>,
+    pinned_event_id: Option<String>,
+}
+
+impl MeshTtlIndex {
+    fn new(ttl: Duration) -> Self {
+        Self {
+            ttl,
+            live: HashMap::new(),
+            expiry_queue: VecDeque::new(),
+            pinned_event_id: None,
+        }
+    }
+
+    fn observe(&mut self, event_id: String, now: Instant) {
+        let expires_at = now + self.ttl;
+        self.live.insert(event_id.clone(), expires_at);
+        self.expiry_queue.push_back((expires_at, event_id));
+    }
+
+    fn is_live(&mut self, event_id: &str, now: Instant) -> bool {
+        if self.pinned_event_id.as_deref() == Some(event_id) {
+            return true;
+        }
+        self.prune(now);
+        self.live
+            .get(event_id)
+            .is_some_and(|expires_at| *expires_at > now)
+    }
+
+    fn pin(&mut self, event_id: String) {
+        self.live.remove(&event_id);
+        self.pinned_event_id = Some(event_id);
+    }
+
+    fn clear_pin(&mut self) {
+        self.pinned_event_id = None;
+    }
+
+    fn prune(&mut self, now: Instant) {
+        while self
+            .expiry_queue
+            .front()
+            .is_some_and(|(expires_at, _)| *expires_at <= now)
+        {
+            let Some((expires_at, event_id)) = self.expiry_queue.pop_front() else {
+                break;
+            };
+            if self.live.get(&event_id) == Some(&expires_at) {
+                self.live.remove(&event_id);
+            }
+        }
+    }
+}
+
+#[derive(Default)]
+struct MeshWatchRegistry {
+    watches: HashMap<String, MeshWatch>,
+}
+
+struct MeshWatch {
+    requests: Vec<Request>,
+    delivered_ids: HashSet<String>,
+    delivered_order: VecDeque<String>,
+}
+
+impl MeshWatch {
+    fn new(requests: Vec<Request>) -> Self {
+        Self {
+            requests,
+            delivered_ids: HashSet::new(),
+            delivered_order: VecDeque::new(),
+        }
+    }
+
+    fn remember(&mut self, id: &str) -> bool {
+        if !self.delivered_ids.insert(id.to_string()) {
+            return false;
+        }
+        self.delivered_order.push_back(id.to_string());
+        if self.delivered_order.len() > MAX_DELIVERED_IDS_PER_WATCH {
+            if let Some(oldest) = self.delivered_order.pop_front() {
+                self.delivered_ids.remove(&oldest);
+            }
+        }
+        true
+    }
+}
+
 pub struct CacheWorker {
     _storage: Arc<dyn Storage>,
+    mesh_storage: Option<Arc<dyn Storage>>,
 }
 
 impl CacheWorker {
     pub fn new(storage: Arc<dyn Storage>) -> Self {
-        Self { _storage: storage }
+        Self {
+            _storage: storage,
+            mesh_storage: None,
+        }
+    }
+
+    pub fn with_mesh_storage(storage: Arc<dyn Storage>, mesh_storage: Arc<dyn Storage>) -> Self {
+        Self {
+            _storage: storage,
+            mesh_storage: Some(mesh_storage),
+        }
     }
 
     pub fn run(
         self,
-        mut from_parser: Box<dyn WorkerChannel>,
+        from_parser: Box<dyn WorkerChannel>,
         to_parser: Box<dyn MessageSender>,
         to_connections: Box<dyn MessageSender>,
     ) {
-        spawn_worker(async move {
-            info!("[CacheWorker] started");
-            if let Err(e) = self._storage.initialize().await {
-                warn!("[CacheWorker] failed to initialize storage: {}", e);
-            }
+        self.run_client_endpoint(from_parser, to_parser, to_connections);
+    }
 
-            while let Ok(bytes) = from_parser.recv().await {
-                // 1) Try WorkerMessage first (persist path)
-                if let Ok(worker_msg) = flatbuffers::root::<fb::WorkerMessage>(&bytes) {
-                    if worker_msg.sub_id() == Some("save_to_db") {
-                        if let Err(e) = self._storage.persist(&bytes).await {
-                            warn!("[CacheWorker] persist failed: {}", e);
-                        }
-                        continue;
-                    }
+    /// Run the existing client-cache endpoint and a mesh-cache endpoint in the
+    /// same worker. Both endpoints use the same query implementation, but the
+    /// mesh endpoint is isolated to `mesh_storage` and has no upstream relay
+    /// sender, so a mesh cache miss can never escape to WebSocket connections.
+    pub fn run_with_mesh(
+        self,
+        from_parser: Box<dyn WorkerChannel>,
+        to_parser: Box<dyn MessageSender>,
+        to_connections: Box<dyn MessageSender>,
+        from_mesh: Box<dyn WorkerChannel>,
+        to_mesh: Box<dyn MessageSender>,
+    ) {
+        let mesh_storage = self
+            .mesh_storage
+            .clone()
+            .expect("run_with_mesh requires CacheWorker::with_mesh_storage");
+        let client_storage = self._storage.clone();
+        let watches = Arc::new(Mutex::new(MeshWatchRegistry::default()));
+        let mesh_ttl = Arc::new(Mutex::new(MeshTtlIndex::new(MESH_EVENT_TTL)));
+        let parser_out: Arc<dyn MessageSender> = Arc::from(to_parser);
+
+        spawn_cache_endpoint(
+            "client",
+            client_storage,
+            Some(mesh_storage.clone()),
+            from_parser,
+            parser_out.clone(),
+            Some(to_connections),
+            Some(watches.clone()),
+            true,
+            None,
+            Some(mesh_ttl.clone()),
+            false,
+        );
+        spawn_cache_endpoint(
+            "mesh",
+            mesh_storage,
+            None,
+            from_mesh,
+            Arc::from(to_mesh),
+            None,
+            Some(watches),
+            false,
+            Some(parser_out),
+            Some(mesh_ttl),
+            true,
+        );
+    }
+
+    fn run_client_endpoint(
+        self,
+        from_parser: Box<dyn WorkerChannel>,
+        to_parser: Box<dyn MessageSender>,
+        to_connections: Box<dyn MessageSender>,
+    ) {
+        spawn_cache_endpoint(
+            "client",
+            self._storage,
+            None,
+            from_parser,
+            Arc::from(to_parser),
+            Some(to_connections),
+            None,
+            false,
+            None,
+            None,
+            false,
+        );
+    }
+}
+
+fn spawn_cache_endpoint(
+    name: &'static str,
+    storage: Arc<dyn Storage>,
+    mesh_query_storage: Option<Arc<dyn Storage>>,
+    mut requests_in: Box<dyn WorkerChannel>,
+    results_out: Arc<dyn MessageSender>,
+    upstream_out: Option<Box<dyn MessageSender>>,
+    watches: Option<Arc<Mutex<MeshWatchRegistry>>>,
+    allow_mesh_only_queries: bool,
+    mesh_notifications_out: Option<Arc<dyn MessageSender>>,
+    mesh_ttl: Option<Arc<Mutex<MeshTtlIndex>>>,
+    track_mesh_ingress: bool,
+) {
+    spawn_worker(async move {
+        info!(endpoint = name, "[CacheWorker] endpoint started");
+        if let Err(e) = storage.initialize().await {
+            warn!(
+                endpoint = name,
+                "[CacheWorker] failed to initialize storage: {}", e
+            );
+        }
+
+        while let Ok(bytes) = requests_in.recv().await {
+            let (tag, inner) = match cache_input::split(&bytes) {
+                Some(framed) => framed,
+                None => {
+                    warn!(
+                        "[CacheWorker] malformed cache input header (len={})",
+                        bytes.len()
+                    );
+                    continue;
                 }
+            };
 
-                // 2) Try CacheRequest
-                let cache_req = match flatbuffers::root::<fb::CacheRequest>(&bytes) {
-                    Ok(r) => r,
+            // Persist path: inner bytes are a standalone WorkerMessage root
+            // and are stored as-is (zero-copy pass-through).
+            if tag == cache_input::TAG_PERSIST {
+                let worker_msg = match flatbuffers::root::<fb::WorkerMessage>(inner) {
+                    Ok(m) => m,
                     Err(e) => {
-                        warn!("[CacheWorker] failed to decode CacheRequest: {}", e);
+                        warn!("[CacheWorker] failed to decode WorkerMessage: {}", e);
                         continue;
                     }
                 };
+                let sub_id = worker_msg.sub_id().map(str::to_string);
 
-                // Publish path (event field present)
-                if let Some(fb_event) = cache_req.event() {
-                    let tags_vec = fb_event.tags();
-                    let mut tags_json = Vec::with_capacity(tags_vec.len());
-                    for i in 0..tags_vec.len() {
-                        let sv = tags_vec.get(i);
-                        if let Some(items) = sv.items() {
-                            let arr: Vec<Value> = (0..items.len())
-                                .map(|j| Value::String(items.get(j).to_string()))
-                                .collect();
-                            tags_json.push(Value::Array(arr));
-                        } else {
-                            tags_json.push(Value::Array(vec![]));
+                if track_mesh_ingress && sub_id.as_deref() == Some(MESH_CLEAR_PROFILE_SUB_ID) {
+                    if let Some(mesh_ttl) = mesh_ttl.as_ref() {
+                        if let Ok(mut index) = mesh_ttl.lock() {
+                            index.clear_pin();
                         }
-                    }
-
-                    let event_json = json!({
-                        "id": fb_event.id(),
-                        "pubkey": fb_event.pubkey(),
-                        "kind": fb_event.kind(),
-                        "content": fb_event.content(),
-                        "tags": tags_json,
-                        "created_at": fb_event.created_at(),
-                        "sig": fb_event.sig(),
-                    });
-
-                    let frame = json!(["EVENT", event_json]);
-                    let frame_str =
-                        serde_json::to_string(&frame).unwrap_or_else(|_| "[]".to_string());
-
-                    let relays: Vec<String> = cache_req
-                        .relays()
-                        .map(|r| (0..r.len()).map(|i| r.get(i).to_string()).collect())
-                        .filter(|v: &Vec<String>| !v.is_empty())
-                        .unwrap_or_else(|| DEFAULT_RELAYS.iter().map(|s| s.to_string()).collect());
-
-                    let envelope = json!({ "relays": relays, "frames": [frame_str] });
-                    let env_str =
-                        serde_json::to_string(&envelope).unwrap_or_else(|_| "{}".to_string());
-
-                    if let Err(e) = to_connections.send(env_str.as_bytes()) {
-                        warn!("[CacheWorker] failed to send publish envelope: {}", e);
                     }
                     continue;
                 }
 
-                // Query path (requests field present)
-                let sub_id = cache_req.sub_id().to_string();
-                if let Some(reqs) = cache_req.requests() {
-                    let mut all_cached_events: Vec<Vec<u8>> = Vec::new();
-                    let mut skip_req_indices = std::collections::HashSet::new();
+                // Persisted records are the producer's original bytes, already
+                // a plain WorkerMessage root.
+                let event_bytes = inner;
 
-                    for i in 0..reqs.len() {
-                        let fb_req = reqs.get(i);
-                        let request = Request::from_flatbuffer(&fb_req);
+                if track_mesh_ingress && sub_id.as_deref() == Some(MESH_PIN_PROFILE_SUB_ID) {
+                    let event_id = worker_message_event_id(event_bytes);
+                    match storage.persist(event_bytes).await {
+                        Ok(()) => {
+                            if let (Some(mesh_ttl), Some(event_id)) = (mesh_ttl.as_ref(), event_id)
+                            {
+                                if let Ok(mut index) = mesh_ttl.lock() {
+                                    index.pin(event_id);
+                                }
+                            }
+                            if let (Some(watches), Some(out)) =
+                                (watches.as_ref(), mesh_notifications_out.as_ref())
+                            {
+                                notify_mesh_watches(watches, out.as_ref(), event_bytes);
+                            }
+                        }
+                        Err(e) => warn!("[CacheWorker] persist pinned profile failed: {}", e),
+                    }
+                    continue;
+                }
 
-                        info!(
+                match storage.persist(event_bytes).await {
+                    Ok(()) => {
+                        if track_mesh_ingress {
+                            if let (Some(mesh_ttl), Some(event_id)) =
+                                (mesh_ttl.as_ref(), worker_message_event_id(event_bytes))
+                            {
+                                if let Ok(mut index) = mesh_ttl.lock() {
+                                    index.observe(event_id, Instant::now());
+                                }
+                            }
+                        }
+                        if let (Some(watches), Some(out)) =
+                            (watches.as_ref(), mesh_notifications_out.as_ref())
+                        {
+                            notify_mesh_watches(watches, out.as_ref(), event_bytes);
+                        }
+                    }
+                    Err(e) => warn!("[CacheWorker] persist failed: {}", e),
+                }
+                continue;
+            }
+
+            // Query/publish path
+            if tag != cache_input::TAG_REQUEST {
+                warn!("[CacheWorker] unknown cache input tag: {}", tag);
+                continue;
+            }
+            let cache_req = match flatbuffers::root::<fb::CacheRequest>(inner) {
+                Ok(r) => r,
+                Err(e) => {
+                    warn!("[CacheWorker] failed to decode CacheRequest: {}", e);
+                    continue;
+                }
+            };
+
+            if cache_req.close() {
+                if let Some(watches) = watches.as_ref() {
+                    if let Ok(mut registry) = watches.lock() {
+                        registry.watches.remove(cache_req.sub_id());
+                    }
+                }
+                continue;
+            }
+
+            // Publish path (event field present)
+            if let Some(fb_event) = cache_req.event() {
+                let tags_vec = fb_event.tags();
+                let mut tags_json = Vec::with_capacity(tags_vec.len());
+                for i in 0..tags_vec.len() {
+                    let sv = tags_vec.get(i);
+                    if let Some(items) = sv.items() {
+                        let arr: Vec<Value> = (0..items.len())
+                            .map(|j| Value::String(items.get(j).to_string()))
+                            .collect();
+                        tags_json.push(Value::Array(arr));
+                    } else {
+                        tags_json.push(Value::Array(vec![]));
+                    }
+                }
+
+                let event_json = json!({
+                    "id": fb_event.id(),
+                    "pubkey": fb_event.pubkey(),
+                    "kind": fb_event.kind(),
+                    "content": fb_event.content(),
+                    "tags": tags_json,
+                    "created_at": fb_event.created_at(),
+                    "sig": fb_event.sig(),
+                });
+
+                let frame = json!(["EVENT", event_json]);
+                let frame_str = serde_json::to_string(&frame).unwrap_or_else(|_| "[]".to_string());
+
+                let requested_relays = cache_req
+                    .relays()
+                    .map(|r| (0..r.len()).map(|i| r.get(i).to_string()).collect());
+                let relays = resolve_publish_relays(requested_relays);
+
+                info!(
+                    event_id = fb_event.id(),
+                    relays = ?relays,
+                    "[CacheWorker] publishing event to exact relay set"
+                );
+
+                let envelope = json!({ "relays": relays, "frames": [frame_str] });
+                let env_str = serde_json::to_string(&envelope).unwrap_or_else(|_| "{}".to_string());
+
+                if let Some(upstream_out) = upstream_out.as_ref() {
+                    if let Err(e) = upstream_out.send(env_str.as_bytes()) {
+                        warn!("[CacheWorker] failed to send publish envelope: {}", e);
+                    }
+                }
+                continue;
+            }
+
+            // Query path (requests field present)
+            let sub_id = cache_req.sub_id().to_string();
+            if let Some(reqs) = cache_req.requests() {
+                let mut all_cached_events: Vec<Vec<u8>> = Vec::new();
+                let mut skip_req_indices = std::collections::HashSet::new();
+                if allow_mesh_only_queries {
+                    let live_mesh_requests: Vec<_> = (0..reqs.len())
+                        .map(|i| Request::from_flatbuffer(&reqs.get(i)))
+                        .filter(|request| request.mesh_only && !request.close_on_eose)
+                        .collect();
+                    if !live_mesh_requests.is_empty() {
+                        if let Some(watches) = watches.as_ref() {
+                            if let Ok(mut registry) = watches.lock() {
+                                if registry.watches.len() < MAX_MESH_WATCHES
+                                    || registry.watches.contains_key(&sub_id)
+                                {
+                                    registry
+                                        .watches
+                                        .insert(sub_id.clone(), MeshWatch::new(live_mesh_requests));
+                                } else {
+                                    warn!(
+                                        "[CacheWorker] mesh watch limit reached; rejecting {}",
+                                        sub_id
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+
+                for i in 0..reqs.len() {
+                    let fb_req = reqs.get(i);
+                    let request = Request::from_flatbuffer(&fb_req);
+
+                    info!(
 							"[CacheWorker] sub_id={} req={}/{} authors={:?} kinds={:?} cache_first={} no_cache={} cache_only={} max_relays={}",
 							sub_id,
 							i,
@@ -123,24 +445,49 @@ impl CacheWorker {
 							request.max_relays
 						);
 
-                        if request.no_cache {
-                            info!("[CacheWorker] sub_id={} req={}/{} no_cache=true -> skipping storage lookup", sub_id, i, reqs.len());
+                    let is_mesh_only = request.mesh_only;
+                    if is_mesh_only {
+                        skip_req_indices.insert(i);
+                    }
+
+                    if request.no_cache {
+                        info!("[CacheWorker] sub_id={} req={}/{} no_cache=true -> skipping storage lookup", sub_id, i, reqs.len());
+                        continue;
+                    }
+
+                    let filter = match request.to_filter() {
+                        Ok(f) => f,
+                        Err(e) => {
+                            warn!("[CacheWorker] sub_id={} req={}/{} failed to convert request to filter: {}", sub_id, i, reqs.len(), e);
                             continue;
                         }
+                    };
 
-                        let filter = match request.to_filter() {
-                            Ok(f) => f,
-                            Err(e) => {
-                                warn!("[CacheWorker] sub_id={} req={}/{} failed to convert request to filter: {}", sub_id, i, reqs.len(), e);
-                                continue;
+                    let query_storage = if is_mesh_only {
+                        mesh_query_storage.as_ref()
+                    } else {
+                        Some(&storage)
+                    };
+                    let query_result = match query_storage {
+                        Some(query_storage) => query_storage.query(vec![filter]).await,
+                        None => Ok(Vec::new()),
+                    };
+                    match query_result {
+                        Ok(mut events) => {
+                            if track_mesh_ingress || is_mesh_only {
+                                if let Some(mesh_ttl) = mesh_ttl.as_ref() {
+                                    if let Ok(mut index) = mesh_ttl.lock() {
+                                        let now = Instant::now();
+                                        events.retain(|event| {
+                                            worker_message_event_id(event)
+                                                .is_some_and(|id| index.is_live(&id, now))
+                                        });
+                                    }
+                                }
                             }
-                        };
-
-                        match self._storage.query(vec![filter]).await {
-                            Ok(events) => {
-                                let skip_network = (request.cache_first && !events.is_empty())
-                                    || request.cache_only;
-                                info!(
+                            let skip_network =
+                                (request.cache_first && !events.is_empty()) || request.cache_only;
+                            info!(
 									"[CacheWorker] sub_id={} req={}/{} cached_results={} skip_network={} cache_first={} cache_only={}",
 									sub_id,
 									i,
@@ -151,111 +498,128 @@ impl CacheWorker {
 									request.cache_only
 								);
 
+                            if tracing::enabled!(tracing::Level::DEBUG) {
                                 for ev in &events {
                                     if let Ok(wm) = flatbuffers::root::<fb::WorkerMessage>(ev) {
                                         match wm.content_type() {
                                             fb::Message::ParsedEvent => {
                                                 if let Some(p) = wm.content_as_parsed_event() {
                                                     debug!(
-														"[CacheWorker] sub_id={} cached_event kind={} pubkey={} id={}",
-														sub_id,
-														p.kind(),
-														p.pubkey(),
-														p.id()
-													);
+															"[CacheWorker] sub_id={} cached_event kind={} pubkey={} id={}",
+															sub_id,
+															p.kind(),
+															p.pubkey(),
+															p.id()
+														);
                                                 }
                                             }
                                             fb::Message::NostrEvent => {
                                                 if let Some(n) = wm.content_as_nostr_event() {
                                                     debug!(
-														"[CacheWorker] sub_id={} cached_event kind={} pubkey={} id={}",
-														sub_id,
-														n.kind(),
-														n.pubkey(),
-														n.id()
-													);
+															"[CacheWorker] sub_id={} cached_event kind={} pubkey={} id={}",
+															sub_id,
+															n.kind(),
+															n.pubkey(),
+															n.id()
+														);
                                                 }
                                             }
                                             _ => {}
                                         }
                                     }
                                 }
-
-                                if request.cache_first && !events.is_empty() {
-                                    skip_req_indices.insert(i);
-                                }
-                                if request.cache_only {
-                                    skip_req_indices.insert(i);
-                                }
-                                all_cached_events.extend(events);
                             }
-                            Err(e) => warn!(
-                                "[CacheWorker] sub_id={} req={}/{} query failed: {}",
-                                sub_id,
-                                i,
-                                reqs.len(),
-                                e
-                            ),
+
+                            if request.cache_first && !events.is_empty() {
+                                skip_req_indices.insert(i);
+                            }
+                            if request.cache_only {
+                                skip_req_indices.insert(i);
+                            }
+                            if is_mesh_only && !request.close_on_eose {
+                                if let Some(watches) = watches.as_ref() {
+                                    if let Ok(mut registry) = watches.lock() {
+                                        if let Some(watch) = registry.watches.get_mut(&sub_id) {
+                                            events.retain(|event| {
+                                                match worker_message_event_id(event) {
+                                                    Some(id) => watch.remember(&id),
+                                                    None => true,
+                                                }
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                            all_cached_events.extend(events);
                         }
+                        Err(e) => warn!(
+                            "[CacheWorker] sub_id={} req={}/{} query failed: {}",
+                            sub_id,
+                            i,
+                            reqs.len(),
+                            e
+                        ),
+                    }
+                }
+
+                // Send batched cached events to parser
+                if !all_cached_events.is_empty() {
+                    let total_bytes: usize = all_cached_events.iter().map(|e| 4 + e.len()).sum();
+                    let mut batched = Vec::with_capacity(total_bytes);
+                    for ev in &all_cached_events {
+                        batched.extend_from_slice(&(ev.len() as u32).to_le_bytes());
+                        batched.extend_from_slice(ev);
                     }
 
-                    // Send batched cached events to parser
-                    if !all_cached_events.is_empty() {
-                        let total_bytes: usize =
-                            all_cached_events.iter().map(|e| 4 + e.len()).sum();
-                        let mut batched = Vec::with_capacity(total_bytes);
-                        for ev in &all_cached_events {
-                            batched.extend_from_slice(&(ev.len() as u32).to_le_bytes());
-                            batched.extend_from_slice(ev);
-                        }
-
-                        let resp_bytes = serialize_cache_response(&sub_id, &batched);
-                        if let Err(e) = to_parser.send(&resp_bytes) {
-                            warn!("[CacheWorker] failed to send batched CacheResponse: {}", e);
-                        }
+                    let resp_bytes = serialize_cache_response(&sub_id, &batched);
+                    if let Err(e) = results_out.send(&resp_bytes) {
+                        warn!("[CacheWorker] failed to send batched CacheResponse: {}", e);
                     }
+                }
 
-                    // Send REQ frames to connections
-                    for i in 0..reqs.len() {
-                        if skip_req_indices.contains(&i) {
-                            continue;
-                        }
-                        let fb_req = reqs.get(i);
-                        let filter_json = fb_request_to_json(&fb_req);
-                        let frame = json!(["REQ", &sub_id, filter_json]);
-                        let frame_str =
-                            serde_json::to_string(&frame).unwrap_or_else(|_| "[]".to_string());
+                // Send REQ frames to connections
+                for i in 0..reqs.len() {
+                    if skip_req_indices.contains(&i) {
+                        continue;
+                    }
+                    let fb_req = reqs.get(i);
+                    let filter_json = fb_request_to_json(&fb_req);
+                    let frame = json!(["REQ", &sub_id, filter_json]);
+                    let frame_str =
+                        serde_json::to_string(&frame).unwrap_or_else(|_| "[]".to_string());
 
-                        let relays: Vec<String> = fb_req
-                            .relays()
-                            .map(|r| (0..r.len()).map(|j| r.get(j).to_string()).collect())
-                            .filter(|v: &Vec<String>| !v.is_empty())
-                            .or_else(|| self._storage.get_relays(&fb_req))
-                            .filter(|v: &Vec<String>| !v.is_empty())
-                            .unwrap_or_else(|| {
-                                DEFAULT_RELAYS.iter().map(|s| s.to_string()).collect()
-                            });
+                    let relays: Vec<String> = fb_req
+                        .relays()
+                        .map(|r| (0..r.len()).map(|j| r.get(j).to_string()).collect())
+                        .filter(|v: &Vec<String>| !v.is_empty())
+                        .or_else(|| storage.get_relays(&fb_req))
+                        .filter(|v: &Vec<String>| !v.is_empty())
+                        .unwrap_or_else(|| DEFAULT_RELAYS.iter().map(|s| s.to_string()).collect());
 
-                        let envelope = json!({ "relays": relays, "frames": [frame_str] });
-                        let env_str =
-                            serde_json::to_string(&envelope).unwrap_or_else(|_| "{}".to_string());
+                    let envelope = json!({ "relays": relays, "frames": [frame_str] });
+                    let env_str =
+                        serde_json::to_string(&envelope).unwrap_or_else(|_| "{}".to_string());
 
-                        if let Err(e) = to_connections.send(env_str.as_bytes()) {
+                    if let Some(upstream_out) = upstream_out.as_ref() {
+                        if let Err(e) = upstream_out.send(env_str.as_bytes()) {
                             warn!("[CacheWorker] failed to send REQ envelope: {}", e);
                         }
                     }
+                }
 
-                    // Emit EOCE signal
-                    let resp_bytes = serialize_cache_response(&sub_id, &[]);
-                    if let Err(e) = to_parser.send(&resp_bytes) {
-                        warn!("[CacheWorker] failed to send EOCE CacheResponse: {}", e);
-                    }
+                // Emit EOCE signal
+                let resp_bytes = serialize_cache_response(&sub_id, &[]);
+                if let Err(e) = results_out.send(&resp_bytes) {
+                    warn!("[CacheWorker] failed to send EOCE CacheResponse: {}", e);
                 }
             }
+        }
 
-            info!("[CacheWorker] channel closed, exiting");
-        });
-    }
+        info!(
+            endpoint = name,
+            "[CacheWorker] endpoint channel closed, exiting"
+        );
+    });
 }
 
 fn serialize_cache_response(sub_id: &str, payload: &[u8]) -> Vec<u8> {
@@ -271,6 +635,99 @@ fn serialize_cache_response(sub_id: &str, payload: &[u8]) -> Vec<u8> {
     );
     builder.finish(resp, None);
     builder.finished_data().to_vec()
+}
+
+fn worker_message_event_id(bytes: &[u8]) -> Option<String> {
+    let message = flatbuffers::root::<fb::WorkerMessage>(bytes).ok()?;
+    match message.content_type() {
+        fb::Message::NostrEvent => message
+            .content_as_nostr_event()
+            .map(|event| event.id().to_string()),
+        fb::Message::ParsedEvent => message
+            .content_as_parsed_event()
+            .map(|event| event.id().to_string()),
+        _ => None,
+    }
+}
+
+fn request_matches_event(request: &Request, event: &fb::NostrEvent<'_>) -> bool {
+    if !request.ids.is_empty() && !request.ids.iter().any(|id| event.id().starts_with(id)) {
+        return false;
+    }
+    if !request.authors.is_empty()
+        && !request
+            .authors
+            .iter()
+            .any(|author| event.pubkey().starts_with(author))
+    {
+        return false;
+    }
+    if !request.kinds.is_empty() && !request.kinds.contains(&(event.kind() as i32)) {
+        return false;
+    }
+    if request
+        .since
+        .is_some_and(|since| event.created_at() < since)
+        || request
+            .until
+            .is_some_and(|until| event.created_at() > until)
+    {
+        return false;
+    }
+    if request.search.as_ref().is_some_and(|search| {
+        !event
+            .content()
+            .to_lowercase()
+            .contains(&search.to_lowercase())
+    }) {
+        return false;
+    }
+
+    request.tags.iter().all(|(filter_key, wanted_values)| {
+        let key = filter_key.strip_prefix('#').unwrap_or(filter_key);
+        event.tags().iter().any(|tag| {
+            let Some(items) = tag.items() else {
+                return false;
+            };
+            items.len() >= 2
+                && items.get(0) == key
+                && (1..items.len()).any(|i| wanted_values.iter().any(|v| v == items.get(i)))
+        })
+    })
+}
+
+fn notify_mesh_watches(
+    registry: &Arc<Mutex<MeshWatchRegistry>>,
+    results_out: &dyn MessageSender,
+    event_bytes: &[u8],
+) {
+    let Ok(message) = flatbuffers::root::<fb::WorkerMessage>(event_bytes) else {
+        return;
+    };
+    let Some(event) = message.content_as_nostr_event() else {
+        return;
+    };
+    let id = event.id();
+    let Ok(mut registry) = registry.lock() else {
+        return;
+    };
+
+    for (sub_id, watch) in &mut registry.watches {
+        if watch
+            .requests
+            .iter()
+            .any(|request| request_matches_event(request, &event))
+            && watch.remember(id)
+        {
+            let mut payload = Vec::with_capacity(4 + event_bytes.len());
+            payload.extend_from_slice(&(event_bytes.len() as u32).to_le_bytes());
+            payload.extend_from_slice(event_bytes);
+            let response = serialize_cache_response(sub_id, &payload);
+            if let Err(error) = results_out.send(&response) {
+                warn!("[CacheWorker] failed to deliver live mesh event: {}", error);
+            }
+        }
+    }
 }
 
 fn fb_request_to_json(fb_req: &fb::Request<'_>) -> Value {
@@ -355,6 +812,24 @@ mod tests {
     use serde_json::{json, Value};
     use std::sync::{Arc, Mutex};
 
+    #[test]
+    fn publish_with_explicit_relays_uses_only_those_relays() {
+        let requested = vec!["wss://community.example".to_string()];
+
+        assert_eq!(resolve_publish_relays(Some(requested.clone())), requested);
+    }
+
+    #[test]
+    fn publish_without_explicit_relays_uses_defaults() {
+        let expected: Vec<String> = DEFAULT_RELAYS
+            .iter()
+            .map(|relay| relay.to_string())
+            .collect();
+
+        assert_eq!(resolve_publish_relays(None), expected);
+        assert_eq!(resolve_publish_relays(Some(Vec::new())), expected);
+    }
+
     #[derive(Debug, Clone)]
     struct PersistCall {
         bytes: Vec<u8>,
@@ -422,6 +897,55 @@ mod tests {
             },
         );
         builder.finish(msg, None);
+        builder.finished_data().to_vec()
+    }
+
+    fn build_nostr_worker_message_bytes(
+        id: &str,
+        pubkey: &str,
+        kind: u16,
+        created_at: i32,
+        content: &str,
+        tags: &[&[&str]],
+    ) -> Vec<u8> {
+        let mut builder = flatbuffers::FlatBufferBuilder::new();
+        let tag_offsets: Vec<_> = tags
+            .iter()
+            .map(|tag| {
+                let items: Vec<_> = tag.iter().map(|item| builder.create_string(item)).collect();
+                let items = builder.create_vector(&items);
+                fb::StringVec::create(&mut builder, &fb::StringVecArgs { items: Some(items) })
+            })
+            .collect();
+        let tags = builder.create_vector(&tag_offsets);
+        let id = builder.create_string(id);
+        let pubkey = builder.create_string(pubkey);
+        let content = builder.create_string(content);
+        let sig = builder.create_string("sig");
+        let event = fb::NostrEvent::create(
+            &mut builder,
+            &fb::NostrEventArgs {
+                id: Some(id),
+                pubkey: Some(pubkey),
+                kind,
+                content: Some(content),
+                tags: Some(tags),
+                created_at,
+                sig: Some(sig),
+            },
+        );
+        let sub_id = builder.create_string("save_to_db");
+        let message = fb::WorkerMessage::create(
+            &mut builder,
+            &fb::WorkerMessageArgs {
+                sub_id: Some(sub_id),
+                type_: fb::MessageType::NostrEvent,
+                content_type: fb::Message::NostrEvent,
+                content: Some(event.as_union_value()),
+                ..Default::default()
+            },
+        );
+        builder.finish(message, None);
         builder.finished_data().to_vec()
     }
 
@@ -493,6 +1017,14 @@ mod tests {
         builder.finished_data().to_vec()
     }
 
+    fn frame_persist(inner: &[u8]) -> Vec<u8> {
+        cache_input::frame(cache_input::TAG_PERSIST, inner)
+    }
+
+    fn frame_request(inner: &[u8]) -> Vec<u8> {
+        cache_input::frame(cache_input::TAG_REQUEST, inner)
+    }
+
     #[tokio::test]
     async fn test_save_to_db_persists_worker_message() {
         let local = tokio::task::LocalSet::new();
@@ -511,13 +1043,18 @@ mod tests {
                 );
 
                 let bytes = build_worker_message_bytes("save_to_db");
-                from_parser_tx.send(&bytes).await.unwrap();
+                from_parser_tx
+                    .send(&frame_persist(&bytes))
+                    .await
+                    .unwrap();
 
                 tokio::task::yield_now().await;
                 tokio::task::yield_now().await;
 
                 let persist_calls = storage.persist_calls.lock().unwrap();
                 assert_eq!(persist_calls.len(), 1);
+                // Persisted bytes are the producer's original WorkerMessage
+                // buffer (zero-copy pass-through).
                 assert_eq!(persist_calls[0].bytes, bytes);
             })
             .await;
@@ -549,7 +1086,10 @@ mod tests {
                     "0000000000000000000000000000000000000000000000000000000000000003",
                     &["wss://r"],
                 );
-                from_parser_tx.send(&bytes).await.unwrap();
+                from_parser_tx
+                    .send(&frame_request(&bytes))
+                    .await
+                    .unwrap();
 
                 let env_bytes = to_connections_rx.recv().await.unwrap();
                 let envelope: Value = serde_json::from_slice(&env_bytes).unwrap();
@@ -610,7 +1150,10 @@ mod tests {
                     },
                 ];
                 let bytes = build_query_request_bytes("s1", requests);
-                from_parser_tx.send(&bytes).await.unwrap();
+                from_parser_tx
+                    .send(&frame_request(&bytes))
+                    .await
+                    .unwrap();
 
                 let resp_bytes = to_parser_rx.recv().await.unwrap();
                 let resp = flatbuffers::root::<fb::CacheResponse>(&resp_bytes).unwrap();
@@ -680,7 +1223,10 @@ mod tests {
                     },
                 ];
                 let bytes = build_query_request_bytes("s1", requests);
-                from_parser_tx.send(&bytes).await.unwrap();
+                from_parser_tx
+                    .send(&frame_request(&bytes))
+                    .await
+                    .unwrap();
 
                 // Consume batched response
                 let _ = to_parser_rx.recv().await.unwrap();
@@ -724,7 +1270,10 @@ mod tests {
                     ..Default::default()
                 }];
                 let bytes = build_query_request_bytes("s1", requests);
-                from_parser_tx.send(&bytes).await.unwrap();
+                from_parser_tx
+                    .send(&frame_request(&bytes))
+                    .await
+                    .unwrap();
 
                 // REQ envelope should still be sent
                 let env_bytes = to_connections_rx.recv().await.unwrap();
@@ -780,7 +1329,10 @@ mod tests {
                     },
                 ];
                 let bytes = build_query_request_bytes("s1", requests);
-                from_parser_tx.send(&bytes).await.unwrap();
+                from_parser_tx
+                    .send(&frame_request(&bytes))
+                    .await
+                    .unwrap();
 
                 // Consume batched response
                 let _ = to_parser_rx.recv().await.unwrap();
@@ -839,7 +1391,10 @@ mod tests {
                     ..Default::default()
                 }];
                 let bytes = build_query_request_bytes("s1", requests);
-                from_parser_tx.send(&bytes).await.unwrap();
+                from_parser_tx
+                    .send(&frame_request(&bytes))
+                    .await
+                    .unwrap();
 
                 // EOCE should be sent (empty payload since query failed)
                 let eoce_bytes = to_parser_rx.recv().await.unwrap();
@@ -894,7 +1449,10 @@ mod tests {
 
                 // Send WorkerMessage with sub_id="save_to_db"
                 let bytes = build_worker_message_bytes("save_to_db");
-                from_parser_tx.send(&bytes).await.unwrap();
+                from_parser_tx
+                    .send(&frame_persist(&bytes))
+                    .await
+                    .unwrap();
 
                 // Yield to let worker process
                 tokio::task::yield_now().await;
@@ -906,7 +1464,10 @@ mod tests {
                     ..Default::default()
                 }];
                 let bytes2 = build_query_request_bytes("s2", requests);
-                from_parser_tx.send(&bytes2).await.unwrap();
+                from_parser_tx
+                    .send(&frame_request(&bytes2))
+                    .await
+                    .unwrap();
 
                 // If worker crashed/panicked, we wouldn't receive this message
                 // The test completing without panic means the worker continued
@@ -956,7 +1517,10 @@ mod tests {
                     ..Default::default()
                 }];
                 let bytes = build_query_request_bytes("s1", requests);
-                from_parser_tx.send(&bytes).await.unwrap();
+                from_parser_tx
+                    .send(&frame_request(&bytes))
+                    .await
+                    .unwrap();
 
                 // EOCE should be sent
                 let eoce_bytes = to_parser_rx.recv().await.unwrap();
@@ -1029,7 +1593,10 @@ mod tests {
                     },
                 ];
                 let bytes = build_query_request_bytes("s1", requests);
-                from_parser_tx.send(&bytes).await.unwrap();
+                from_parser_tx
+                    .send(&frame_request(&bytes))
+                    .await
+                    .unwrap();
 
                 // Verify second filter's results are still sent (batched response)
                 let resp_bytes = to_parser_rx.recv().await.unwrap();
@@ -1056,5 +1623,339 @@ mod tests {
                 assert_eq!(envelope2["relays"], json!(["wss://r2"]));
             })
             .await;
+    }
+
+    #[tokio::test]
+    async fn test_mesh_endpoint_uses_mesh_storage_and_never_forwards_misses() {
+        let local = tokio::task::LocalSet::new();
+        local
+            .run_until(async {
+                let client_storage = Arc::new(MockStorage::new());
+                let profile = "0000000000000000000000000000000000000000000000000000000000000001";
+                let mesh_event =
+                    build_nostr_worker_message_bytes("mesh-event", profile, 0, 10, "{}", &[]);
+                let mesh_storage = Arc::new(MockStorage::with_query_results(vec![Ok(vec![
+                    mesh_event.clone(),
+                ])]));
+                let worker =
+                    CacheWorker::with_mesh_storage(client_storage.clone(), mesh_storage.clone());
+
+                let (_from_parser_tx, from_parser_rx) = TokioWorkerChannel::new_pair();
+                let (to_parser_tx, _to_parser_rx) = TokioWorkerChannel::new_pair();
+                let (to_connections_tx, mut to_connections_rx) = TokioWorkerChannel::new_pair();
+                let (mut from_mesh_tx, from_mesh_rx) = TokioWorkerChannel::new_pair();
+                let (to_mesh_tx, mut to_mesh_rx) = TokioWorkerChannel::new_pair();
+
+                worker.run_with_mesh(
+                    Box::new(from_parser_rx),
+                    to_parser_tx.clone_sender(),
+                    to_connections_tx.clone_sender(),
+                    Box::new(from_mesh_rx),
+                    to_mesh_tx.clone_sender(),
+                );
+
+                // Only events observed by this process are live. Persisting the
+                // unchanged FlatBuffer registers its event ID in the TTL index.
+                from_mesh_tx
+                    .send(&frame_persist(&mesh_event))
+                    .await
+                    .unwrap();
+                tokio::task::yield_now().await;
+
+                let request = Request {
+                    kinds: vec![0],
+                    authors: vec![profile.to_string()],
+                    ..Default::default()
+                };
+                let bytes = build_query_request_bytes("mesh-profile", vec![request]);
+                from_mesh_tx
+                    .send(&frame_request(&bytes))
+                    .await
+                    .unwrap();
+
+                let response_bytes = to_mesh_rx.recv().await.unwrap();
+                let response = flatbuffers::root::<fb::CacheResponse>(&response_bytes).unwrap();
+                let payload = response.payload().unwrap().bytes();
+                let event_len =
+                    u32::from_le_bytes([payload[0], payload[1], payload[2], payload[3]]) as usize;
+                assert_eq!(&payload[4..4 + event_len], mesh_event.as_slice());
+
+                let eose_bytes = to_mesh_rx.recv().await.unwrap();
+                let eose = flatbuffers::root::<fb::CacheResponse>(&eose_bytes).unwrap();
+                assert!(eose.payload().unwrap().bytes().is_empty());
+
+                assert!(client_storage.query_calls.lock().unwrap().is_empty());
+                let mesh_queries = mesh_storage.query_calls.lock().unwrap();
+                assert_eq!(mesh_queries.len(), 1);
+                assert_eq!(mesh_queries[0].filters[0].kinds, Some(vec![0]));
+                let authors = mesh_queries[0].filters[0].authors.as_ref().unwrap();
+                assert_eq!(authors.len(), 1);
+                assert_eq!(authors[0].to_hex(), profile);
+                drop(mesh_queries);
+
+                assert!(tokio::time::timeout(
+                    std::time::Duration::from_millis(20),
+                    to_connections_rx.recv()
+                )
+                .await
+                .is_err());
+            })
+            .await;
+    }
+
+    #[test]
+    fn mesh_ttl_expires_events_by_id() {
+        let start = Instant::now();
+        let mut index = MeshTtlIndex::new(Duration::from_secs(10));
+        index.observe("event-1".to_string(), start);
+
+        assert!(index.is_live("event-1", start + Duration::from_secs(9)));
+        assert!(!index.is_live("event-1", start + Duration::from_secs(10)));
+    }
+
+    #[test]
+    fn mesh_ttl_refresh_ignores_stale_queue_entry() {
+        let start = Instant::now();
+        let mut index = MeshTtlIndex::new(Duration::from_secs(10));
+        index.observe("event-1".to_string(), start);
+        index.observe("event-1".to_string(), start + Duration::from_secs(5));
+
+        assert!(index.is_live("event-1", start + Duration::from_secs(10)));
+        assert!(!index.is_live("event-1", start + Duration::from_secs(15)));
+    }
+
+    #[test]
+    fn mesh_pinned_profile_ignores_ttl_until_cleared() {
+        let start = Instant::now();
+        let mut index = MeshTtlIndex::new(Duration::from_secs(10));
+        index.pin("profile".to_string());
+
+        assert!(index.is_live("profile", start + Duration::from_secs(60)));
+        index.clear_pin();
+        assert!(!index.is_live("profile", start + Duration::from_secs(60)));
+    }
+
+    #[tokio::test]
+    async fn test_mesh_endpoint_persists_worker_message_only_in_mesh_storage() {
+        let local = tokio::task::LocalSet::new();
+        local
+            .run_until(async {
+                let client_storage = Arc::new(MockStorage::new());
+                let mesh_storage = Arc::new(MockStorage::new());
+                let worker =
+                    CacheWorker::with_mesh_storage(client_storage.clone(), mesh_storage.clone());
+
+                let (_from_parser_tx, from_parser_rx) = TokioWorkerChannel::new_pair();
+                let (to_parser_tx, _to_parser_rx) = TokioWorkerChannel::new_pair();
+                let (to_connections_tx, _to_connections_rx) = TokioWorkerChannel::new_pair();
+                let (from_mesh_tx, from_mesh_rx) = TokioWorkerChannel::new_pair();
+                let (to_mesh_tx, _to_mesh_rx) = TokioWorkerChannel::new_pair();
+
+                worker.run_with_mesh(
+                    Box::new(from_parser_rx),
+                    to_parser_tx.clone_sender(),
+                    to_connections_tx.clone_sender(),
+                    Box::new(from_mesh_rx),
+                    to_mesh_tx.clone_sender(),
+                );
+
+                let bytes = build_worker_message_bytes("save_to_db");
+                from_mesh_tx
+                    .send(&frame_persist(&bytes))
+                    .await
+                    .unwrap();
+                tokio::task::yield_now().await;
+                tokio::task::yield_now().await;
+
+                assert!(client_storage.persist_calls.lock().unwrap().is_empty());
+                let mesh_persists = mesh_storage.persist_calls.lock().unwrap();
+                assert_eq!(mesh_persists.len(), 1);
+                // Persisted bytes are the producer's original WorkerMessage
+                // buffer (zero-copy pass-through).
+                assert_eq!(mesh_persists[0].bytes, bytes);
+            })
+            .await;
+    }
+
+    #[tokio::test]
+    async fn test_mesh_only_query_is_live_deduplicated_and_unsubscribable() {
+        let local = tokio::task::LocalSet::new();
+        local
+            .run_until(async {
+                let client_storage = Arc::new(MockStorage::new());
+                let mesh_storage = Arc::new(MockStorage::new());
+                let worker =
+                    CacheWorker::with_mesh_storage(client_storage.clone(), mesh_storage.clone());
+
+                let (from_parser_tx, from_parser_rx) = TokioWorkerChannel::new_pair();
+                let (to_parser_tx, mut to_parser_rx) = TokioWorkerChannel::new_pair();
+                let (to_connections_tx, mut to_connections_rx) = TokioWorkerChannel::new_pair();
+                let (from_mesh_tx, from_mesh_rx) = TokioWorkerChannel::new_pair();
+                let (to_mesh_tx, _to_mesh_rx) = TokioWorkerChannel::new_pair();
+
+                worker.run_with_mesh(
+                    Box::new(from_parser_rx),
+                    to_parser_tx.clone_sender(),
+                    to_connections_tx.clone_sender(),
+                    Box::new(from_mesh_rx),
+                    to_mesh_tx.clone_sender(),
+                );
+
+                let author = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+                let request = Request {
+                    authors: vec![author.to_string()],
+                    kinds: vec![1],
+                    tags: [("#t".to_string(), vec!["nearby".to_string()])]
+                        .into_iter()
+                        .collect(),
+                    mesh_only: true,
+                    close_on_eose: false,
+                    ..Default::default()
+                };
+                from_parser_tx
+                    .send(&frame_request(&build_query_request_bytes(
+                        "nearby",
+                        vec![request],
+                    )))
+                    .await
+                    .unwrap();
+
+                let eose = to_parser_rx.recv().await.unwrap();
+                assert!(flatbuffers::root::<fb::CacheResponse>(&eose)
+                    .unwrap()
+                    .payload()
+                    .unwrap()
+                    .bytes()
+                    .is_empty());
+                assert!(client_storage.query_calls.lock().unwrap().is_empty());
+                assert_eq!(mesh_storage.query_calls.lock().unwrap().len(), 1);
+                assert!(tokio::time::timeout(
+                    std::time::Duration::from_millis(20),
+                    to_connections_rx.recv()
+                )
+                .await
+                .is_err());
+
+                let matching = build_nostr_worker_message_bytes(
+                    "event-1",
+                    author,
+                    1,
+                    10,
+                    "hello mesh",
+                    &[&["t", "nearby"]],
+                );
+                from_mesh_tx
+                    .send(&frame_persist(&matching))
+                    .await
+                    .unwrap();
+                let live = to_parser_rx.recv().await.unwrap();
+                let live = flatbuffers::root::<fb::CacheResponse>(&live).unwrap();
+                assert_eq!(live.sub_id(), "nearby");
+                assert!(!live.payload().unwrap().bytes().is_empty());
+
+                from_mesh_tx
+                    .send(&frame_persist(&matching))
+                    .await
+                    .unwrap();
+                assert!(tokio::time::timeout(
+                    std::time::Duration::from_millis(20),
+                    to_parser_rx.recv()
+                )
+                .await
+                .is_err());
+
+                let non_matching = build_nostr_worker_message_bytes(
+                    "event-2",
+                    "someone-else",
+                    1,
+                    11,
+                    "hello mesh",
+                    &[&["t", "nearby"]],
+                );
+                from_mesh_tx
+                    .send(&frame_persist(&non_matching))
+                    .await
+                    .unwrap();
+                assert!(tokio::time::timeout(
+                    std::time::Duration::from_millis(20),
+                    to_parser_rx.recv()
+                )
+                .await
+                .is_err());
+
+                let mut builder = flatbuffers::FlatBufferBuilder::new();
+                let sub_id = builder.create_string("nearby");
+                let close = fb::CacheRequest::create(
+                    &mut builder,
+                    &fb::CacheRequestArgs {
+                        sub_id: Some(sub_id),
+                        close: true,
+                        ..Default::default()
+                    },
+                );
+                builder.finish(close, None);
+                from_parser_tx
+                    .send(&frame_request(builder.finished_data()))
+                    .await
+                    .unwrap();
+                tokio::task::yield_now().await;
+
+                let after_close = build_nostr_worker_message_bytes(
+                    "event-3",
+                    author,
+                    1,
+                    12,
+                    "hello mesh",
+                    &[&["t", "nearby"]],
+                );
+                from_mesh_tx
+                    .send(&frame_persist(&after_close))
+                    .await
+                    .unwrap();
+                assert!(tokio::time::timeout(
+                    std::time::Duration::from_millis(20),
+                    to_parser_rx.recv()
+                )
+                .await
+                .is_err());
+            })
+            .await;
+    }
+
+    #[test]
+    fn test_mesh_live_matcher_respects_standard_filter_conjunction() {
+        let bytes = build_nostr_worker_message_bytes(
+            "abcdef",
+            "123456",
+            42,
+            100,
+            "Nearby Nostr",
+            &[&["p", "peer"], &["t", "mesh"]],
+        );
+        let message = flatbuffers::root::<fb::WorkerMessage>(&bytes).unwrap();
+        let event = message.content_as_nostr_event().unwrap();
+        let request = Request {
+            ids: vec!["abc".into()],
+            authors: vec!["123".into()],
+            kinds: vec![42],
+            tags: [
+                ("#p".into(), vec!["peer".into()]),
+                ("t".into(), vec!["mesh".into()]),
+            ]
+            .into_iter()
+            .collect(),
+            since: Some(90),
+            until: Some(110),
+            search: Some("nostr".into()),
+            ..Default::default()
+        };
+        assert!(request_matches_event(&request, &event));
+
+        let mut wrong_kind = request.clone();
+        wrong_kind.kinds = vec![1];
+        assert!(!request_matches_event(&wrong_kind, &event));
+        let mut wrong_tag = request;
+        wrong_tag.tags.insert("p".into(), vec!["other".into()]);
+        assert!(!request_matches_event(&wrong_tag, &event));
     }
 }

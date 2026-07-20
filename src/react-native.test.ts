@@ -3,17 +3,33 @@ import * as flatbuffers from 'flatbuffers';
 
 import { createNostrManager } from './react-native';
 import { setManager } from './manager';
-import { useSubscription } from './hooks';
-import { Eoce, Message, MessageType, WorkerMessage } from './generated/nostr/fb';
+import { useSignEvent, useSubscription } from './hooks';
+import {
+	Eoce,
+	Message,
+	MessageType,
+	NostrEventT,
+	SignedEventT,
+	StringVecT,
+	WorkerMessage,
+	WorkerMessageT
+} from './generated/nostr/fb';
 
 let nativeEventListener: ((event: any) => void) | undefined;
 let appStateListener: ((state: 'active' | 'background' | 'inactive') => void) | undefined;
 const queuedBuffers: ArrayBuffer[] = [];
 const nativeBuffers = new Map<string, ArrayBuffer>();
+const { initEngine, startMesh, setMeshProfile, clearMeshProfile } = vi.hoisted(() => ({
+	initEngine: vi.fn(),
+	startMesh: vi.fn(() => true),
+	setMeshProfile: vi.fn(() => true),
+	clearMeshProfile: vi.fn(() => true)
+}));
 
 vi.mock('react-native', () => {
 	const turboModule = {
 		init: vi.fn(),
+		initEngine,
 		handleMessage: vi.fn(),
 		installByteRuntime: vi.fn(() => {
 			(globalThis as any).__nipworkerReactNativeByteRuntime = {
@@ -54,6 +70,10 @@ vi.mock('react-native', () => {
 			};
 			return true;
 		}),
+		startMesh,
+		stopMesh: vi.fn(),
+		setMeshProfile,
+		clearMeshProfile,
 		setPrivateKey: vi.fn(),
 		getStorageItem: vi.fn(() => null),
 		setStorageItem: vi.fn(() => true),
@@ -110,6 +130,57 @@ function buildEoceMessage(subId: string): Uint8Array {
 	return builder.asUint8Array();
 }
 
+function buildSignedEventMessage(): ArrayBuffer {
+	const builder = new flatbuffers.Builder(1024);
+	const message = new WorkerMessageT(
+		'',
+		'',
+		MessageType.SignedEvent,
+		Message.SignedEvent,
+		new SignedEventT(
+			new NostrEventT(
+				'a'.repeat(64),
+				'b'.repeat(64),
+				9734,
+				'hello',
+				[new StringVecT(['p', 'c'.repeat(64)])],
+				123,
+				'd'.repeat(128)
+			)
+		)
+	);
+	builder.finish(message.pack(builder));
+	const payload = builder.asUint8Array();
+	const framed = new Uint8Array(4 + payload.length);
+	new DataView(framed.buffer).setUint32(0, payload.length, true);
+	framed.set(payload, 4);
+	return framed.buffer;
+}
+
+function buildTypedSignedEventMessage(): Uint8Array {
+	const builder = new flatbuffers.Builder(1024);
+	const message = new WorkerMessageT(
+		'crypto',
+		'',
+		MessageType.SignedEvent,
+		Message.SignedEvent,
+		new SignedEventT(
+			new NostrEventT(
+				'a'.repeat(64),
+				'b'.repeat(64),
+				9734,
+				'hello',
+				[new StringVecT(['p', 'c'.repeat(64)])],
+				123,
+				'd'.repeat(128)
+			),
+			1
+		)
+	);
+	builder.finish(message.pack(builder));
+	return builder.asUint8Array();
+}
+
 function createSubscriptionBuffer(payload: Uint8Array): ArrayBuffer {
 	const buffer = new ArrayBuffer(4 + 4 + payload.length);
 	const view = new DataView(buffer);
@@ -135,7 +206,46 @@ describe('react-native byte runtime subscription path', () => {
 		appStateListener = undefined;
 		queuedBuffers.length = 0;
 		nativeBuffers.clear();
+		initEngine.mockClear();
+		startMesh.mockClear();
+		setMeshProfile.mockClear();
+		clearMeshProfile.mockClear();
 		delete (globalThis as any).__nipworkerReactNativeByteRuntime;
+	});
+
+	it('forwards the mesh opt-in before installing the shared byte runtime', () => {
+		const manager = createNostrManager({
+			defaultRelays: ['wss://default.example'],
+			indexerRelays: ['wss://indexer.example'],
+			meshBLEEnabled: true
+		});
+
+		expect(initEngine).toHaveBeenCalledWith(
+			['wss://default.example'],
+			['wss://indexer.example'],
+			true
+		);
+		expect(startMesh).toHaveBeenCalled();
+		manager.deinit();
+	});
+
+	it('configures and clears the visible mesh profile independently of BLE', () => {
+		const manager = createNostrManager();
+		const profile = {
+			id: 'a'.repeat(64),
+			pubkey: 'b'.repeat(64),
+			created_at: 123,
+			kind: 0,
+			tags: [],
+			content: '{"name":"Nearby"}',
+			sig: 'c'.repeat(128)
+		};
+
+		expect(manager.setMeshProfile(profile)).toBe(true);
+		expect(setMeshProfile).toHaveBeenCalledWith(JSON.stringify(profile));
+		expect(manager.clearMeshProfile()).toBe(true);
+		expect(clearMeshProfile).toHaveBeenCalled();
+		manager.deinit();
 	});
 
 	it('drains queued ArrayBuffers and delivers parsed messages to useSubscription', async () => {
@@ -269,6 +379,46 @@ describe('react-native byte runtime subscription path', () => {
 
 		manager.releasePublish?.('publish-1');
 		expect(byteRuntime.releaseSubscription).toHaveBeenCalledWith('publish-1');
+		manager.deinit();
+	});
+
+	it('delivers direct signed-event responses to useSignEvent', () => {
+		const manager = createNostrManager();
+		setManager(manager);
+		const callback = vi.fn();
+
+		useSignEvent(
+			{ kind: 9734, created_at: 123, content: 'hello', tags: [['p', 'c'.repeat(64)]] },
+			callback
+		);
+		(manager as any).handleDirectResponse(new Uint8Array(buildSignedEventMessage()));
+
+		expect(callback).toHaveBeenCalledWith({
+			id: 'a'.repeat(64),
+			pubkey: 'b'.repeat(64),
+			created_at: 123,
+			kind: 9734,
+			tags: [['p', 'c'.repeat(64)]],
+			content: 'hello',
+			sig: 'd'.repeat(128)
+		});
+		manager.deinit();
+	});
+
+	it('routes typed signed-event responses to useSignEvent', () => {
+		const manager = createNostrManager();
+		setManager(manager);
+		const callback = vi.fn();
+
+		useSignEvent(
+			{ kind: 9734, created_at: 123, content: 'hello', tags: [['p', 'c'.repeat(64)]] },
+			callback
+		);
+		(manager as any).handleNativePayload(buildTypedSignedEventMessage());
+
+		expect(callback).toHaveBeenCalledWith(
+			expect.objectContaining({ kind: 9734, id: 'a'.repeat(64), sig: 'd'.repeat(128) })
+		);
 		manager.deinit();
 	});
 });
