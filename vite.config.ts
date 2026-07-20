@@ -93,14 +93,12 @@ export default defineConfig({
 				proxyServer: resolve(__dirname, 'src/proxy/server.ts'),
 				proxyVite: resolve(__dirname, 'src/proxy/vite.ts'),
 				reactNative: resolve(__dirname, 'src/react-native.ts'),
-				engine: resolve(__dirname, 'src/engine.ts'),
 				legacy: resolve(__dirname, 'src/legacy.ts'),
 				connections: resolve(__dirname, 'src/connections/index.ts'),
 				// proxy.ts is handled by selfContainedEntries
 				cache: resolve(__dirname, 'src/cache/index.ts'),
 				parser: resolve(__dirname, 'src/parser/index.ts'),
-				crypto: resolve(__dirname, 'src/crypto/index.ts'),
-				engineWorker: resolve(__dirname, 'src/engine/index.ts')
+				crypto: resolve(__dirname, 'src/crypto/index.ts')
 			},
 			output: {
 				entryFileNames: (chunkInfo: any) => {
@@ -112,13 +110,11 @@ export default defineConfig({
 						proxyServer: 'proxy/server.js',
 						proxyVite: 'proxy/vite.js',
 						reactNative: 'react-native.js',
-						engine: 'engine.js',
 						legacy: 'legacy.js',
 						connections: 'connections/index.js',
 						cache: 'cache/index.js',
 						parser: 'parser/index.js',
-						crypto: 'crypto/index.js',
-						engineWorker: 'engine/index.js'
+						crypto: 'crypto/index.js'
 					};
 					return entryNameMap[chunkInfo.name as string] || '[name].js';
 				},

@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-test('useSubscription via EngineManager receives events and EOCE', async ({ page }) => {
+test('useSubscription via NostrManager receives events and EOCE', async ({ page }) => {
 	test.setTimeout(30000);
 
 	const logs: string[] = [];

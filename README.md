@@ -97,17 +97,6 @@ workers for:
 
 Workers communicate with `MessageChannel` ports and FlatBuffers messages.
 
-### Browser, Single-Worker Engine
-
-Pass `engine: true` to use `EngineManager`, which runs the newer engine inside one WASM worker:
-
-```ts
-const manager = createNostrManager({ engine: true });
-setManager(manager);
-```
-
-This keeps the same public manager and hook surface while reducing worker topology.
-
 ### React Native
 
 React Native must import from the native entry point. This path avoids browser WASM worker imports
@@ -135,7 +124,6 @@ setManager(
 | `@candypoets/nipworker/proxy/server` | Node relay proxy server. |
 | `@candypoets/nipworker/proxy/vite` | Vite plugin for relay proxy integration. |
 | `@candypoets/nipworker/react-native` | React Native native backend. |
-| `@candypoets/nipworker/engine` | Engine entry point. |
 | `@candypoets/nipworker/legacy` | Legacy compatibility entry point. |
 
 ## Signers
@@ -199,7 +187,6 @@ Common commands:
 ```bash
 npm run build          # Build WASM crates, native artifacts, and TypeScript bundle
 npm run build:crates   # Build browser WASM crates only
-npm run build:engine   # Build the single-worker engine WASM
 npm run build:native   # Build Android and iOS native artifacts
 npm run build:types    # Emit TypeScript declarations
 npm test               # Run unit tests
@@ -223,13 +210,11 @@ When editing files in `schemas/`, regenerate the affected FlatBuffers outputs be
 | Path | Purpose |
 | --- | --- |
 | `src/NostrManager.ts` | Default browser multi-worker manager. |
-| `src/EngineManager.ts` | Browser single-worker engine manager. |
 | `src/react-native.ts` | React Native manager and native bridge. |
 | `src/hooks.ts` | Framework-agnostic callback helpers. |
 | `src/types/index.ts` | Public TypeScript types. |
 | `src/lib/` | Shared TypeScript helpers. |
 | `src/generated/` | Generated TypeScript FlatBuffers code. |
-| `src/engine/` | Single-worker Rust WASM engine. |
 | `crates/connections/` | Browser relay connection WASM crate. |
 | `crates/cache/` | Browser cache WASM crate. |
 | `crates/parser/` | Browser parser WASM crate. |

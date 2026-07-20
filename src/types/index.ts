@@ -38,6 +38,8 @@ export type RequestObject = {
 	noContext?: boolean;
 	noCache?: boolean;
 	maxRelays?: number;
+	/** Only return events learned through the nearby Bluetooth mesh. */
+	meshOnly?: boolean;
 };
 
 // export type PipeConfig = {
@@ -78,12 +80,12 @@ export type ProxyConfig = {
 
 export type NostrManagerConfig = {
 	proxy?: ProxyConfig;
-	/** Use the new single-worker WASM engine instead of the 4-worker architecture */
-	engine?: boolean;
 	/** Log level for Rust WASM workers (trace, debug, info, warn, error). Defaults to 'warn'. */
 	logLevel?: 'trace' | 'debug' | 'info' | 'warn' | 'error';
 	/** Default relays used when a request has no explicit relays and no better relay hints exist. */
 	defaultRelays?: string[];
 	/** Relays used to discover metadata, contacts, and relay-list events (kinds 0, 3, 10002). */
 	indexerRelays?: string[];
+	/** Enable the on-device Bluetooth mesh relay. Disabled by default. */
+	meshBLEEnabled?: boolean;
 };

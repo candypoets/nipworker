@@ -20,7 +20,7 @@ interface TestResults {
 (window as any).__signEventCalls = [];
 (window as any).__getPublicKeyCalls = 0;
 
-// Mock window.nostr BEFORE booting the engine
+// Mock window.nostr BEFORE booting the workers
 (window as any).nostr = {
 	getPublicKey: async (): Promise<string> => {
 		(window as any).__getPublicKeyCalls++;
@@ -63,11 +63,11 @@ async function runTest(): Promise<TestResults> {
 		localStorage.removeItem('nostr_active_pubkey');
 		localStorage.removeItem('nostr_signer_accounts');
 
-		statusEl.textContent = 'Booting engine...';
-		const manager = createNostrManager({ engine: true });
+		statusEl.textContent = 'Booting workers...';
+		const manager = createNostrManager();
 		setManager(manager);
 
-		log('✓ EngineManager created');
+		log('✓ NostrManager created');
 
 		// Wait for initial auth (pubkey null from restoreSession)
 		await new Promise<void>((resolve) => {

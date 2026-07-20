@@ -41,11 +41,6 @@
       "import": "./dist/react-native.js",
       "default": "./dist/react-native.js"
     },
-    "./engine": {
-      "types": "./dist/engine.d.ts",
-      "import": "./dist/engine.js",
-      "default": "./dist/engine.js"
-    },
     "./legacy": {
       "types": "./dist/legacy.d.ts",
       "import": "./dist/legacy.js",
@@ -86,13 +81,12 @@
     }
   },
   "scripts": {
-    "build": "npm-run-all --parallel build:connections build:cache build:parser build:crypto build:engine build:native:android build:native:ios && vite build",
+    "build": "npm-run-all --parallel build:connections build:cache build:parser build:crypto build:native:android build:native:ios && vite build",
     "build:package": "npm run build:crates && vite build",
-    "build:crates": "npm-run-all --parallel build:connections build:cache build:parser build:crypto build:engine",
+    "build:crates": "npm-run-all --parallel build:connections build:cache build:parser build:crypto",
     "build:native:android": "cd crates/native-ffi/android && ./build-android-aar.sh",
     "build:native:ios": "cd crates/native-ffi/ios && ./build-ios.sh",
     "build:native": "npm-run-all --parallel build:native:android build:native:ios",
-    "build:engine": "wasm-pack build ./src/engine --release --target web --no-opt",
     "build:connections": "wasm-pack build ./crates/connections --release --target web --no-opt",
     "build:cache": "wasm-pack build ./crates/cache --release --target web --no-opt",
     "build:parser": "wasm-pack build ./crates/parser --release --target web --no-opt",

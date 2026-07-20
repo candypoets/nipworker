@@ -41,10 +41,10 @@ async function runTest(): Promise<TestResults> {
 	const log = (s: string) => { logEl.textContent += s + '\n'; console.log(s); };
 
 	try {
-		statusEl.textContent = 'Booting engine...';
-		const manager = createNostrManager({ engine: true });
+		statusEl.textContent = 'Booting workers...';
+		const manager = createNostrManager();
 		setManager(manager);
-		log('✓ EngineManager ready');
+		log('✓ NostrManager ready');
 
 		// Wait for worker init
 		await new Promise((r) => setTimeout(r, 1500));
@@ -75,7 +75,7 @@ async function runTest(): Promise<TestResults> {
 			);
 
 			// Wait full duration — don't resolve early on EOCE,
-			// as events can arrive after EOCE in some engine paths
+			// as events can arrive after EOCE in some worker paths
 			setTimeout(() => {
 				unsub();
 				resolve();
