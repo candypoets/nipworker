@@ -1896,6 +1896,7 @@ public struct nostr_fb_Request: FlatBufferTable, FlatbuffersVectorInitializable,
     case noCache = 26
     case maxRelays = 28
     case cacheOnly = 30
+    case meshOnly = 32
     var v: Int32 { Int32(self.rawValue) }
     var p: VOffset { self.rawValue }
   }
@@ -1916,7 +1917,8 @@ public struct nostr_fb_Request: FlatBufferTable, FlatbuffersVectorInitializable,
   public var noCache: Bool { let o = _accessor.offset(VTOFFSET.noCache.v); return o == 0 ? false : _accessor.readBuffer(of: Bool.self, at: o) }
   public var maxRelays: UInt16 { let o = _accessor.offset(VTOFFSET.maxRelays.v); return o == 0 ? 0 : _accessor.readBuffer(of: UInt16.self, at: o) }
   public var cacheOnly: Bool { let o = _accessor.offset(VTOFFSET.cacheOnly.v); return o == 0 ? false : _accessor.readBuffer(of: Bool.self, at: o) }
-  public static func startRequest(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 14) }
+  public var meshOnly: Bool { let o = _accessor.offset(VTOFFSET.meshOnly.v); return o == 0 ? false : _accessor.readBuffer(of: Bool.self, at: o) }
+  public static func startRequest(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 15) }
   public static func addVectorOf(ids: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: ids, at: VTOFFSET.ids.p) }
   public static func addVectorOf(authors: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: authors, at: VTOFFSET.authors.p) }
   public static func addVectorOf(kinds: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: kinds, at: VTOFFSET.kinds.p) }
@@ -1935,6 +1937,8 @@ public struct nostr_fb_Request: FlatBufferTable, FlatbuffersVectorInitializable,
   public static func add(maxRelays: UInt16, _ fbb: inout FlatBufferBuilder) { fbb.add(element: maxRelays, def: 0, at: VTOFFSET.maxRelays.p) }
   public static func add(cacheOnly: Bool, _ fbb: inout FlatBufferBuilder) { fbb.add(element: cacheOnly, def: false,
    at: VTOFFSET.cacheOnly.p) }
+  public static func add(meshOnly: Bool, _ fbb: inout FlatBufferBuilder) { fbb.add(element: meshOnly, def: false,
+   at: VTOFFSET.meshOnly.p) }
   public static func endRequest(_ fbb: inout FlatBufferBuilder, start: UOffset) -> Offset { let end = Offset(offset: fbb.endTable(at: start)); return end }
   public static func createRequest(
     _ fbb: inout FlatBufferBuilder,
@@ -1951,7 +1955,8 @@ public struct nostr_fb_Request: FlatBufferTable, FlatbuffersVectorInitializable,
     cacheFirst: Bool = false,
     noCache: Bool = false,
     maxRelays: UInt16 = 0,
-    cacheOnly: Bool = false
+    cacheOnly: Bool = false,
+    meshOnly: Bool = false
   ) -> Offset {
     let __start = nostr_fb_Request.startRequest(&fbb)
     nostr_fb_Request.addVectorOf(ids: ids, &fbb)
@@ -1968,6 +1973,7 @@ public struct nostr_fb_Request: FlatBufferTable, FlatbuffersVectorInitializable,
     nostr_fb_Request.add(noCache: noCache, &fbb)
     nostr_fb_Request.add(maxRelays: maxRelays, &fbb)
     nostr_fb_Request.add(cacheOnly: cacheOnly, &fbb)
+    nostr_fb_Request.add(meshOnly: meshOnly, &fbb)
     return nostr_fb_Request.endRequest(&fbb, start: __start)
   }
 
@@ -1987,6 +1993,7 @@ public struct nostr_fb_Request: FlatBufferTable, FlatbuffersVectorInitializable,
     try _v.visit(field: VTOFFSET.noCache.p, fieldName: "noCache", required: false, type: Bool.self)
     try _v.visit(field: VTOFFSET.maxRelays.p, fieldName: "maxRelays", required: false, type: UInt16.self)
     try _v.visit(field: VTOFFSET.cacheOnly.p, fieldName: "cacheOnly", required: false, type: Bool.self)
+    try _v.visit(field: VTOFFSET.meshOnly.p, fieldName: "meshOnly", required: false, type: Bool.self)
     _v.finish()
   }
 }
@@ -6273,6 +6280,7 @@ public struct nostr_fb_CacheRequest: FlatBufferTable, FlatbuffersVectorInitializ
     case event = 8
     case parsedEvent = 10
     case relays = 12
+    case close = 14
     var v: Int32 { Int32(self.rawValue) }
     var p: VOffset { self.rawValue }
   }
@@ -6283,12 +6291,15 @@ public struct nostr_fb_CacheRequest: FlatBufferTable, FlatbuffersVectorInitializ
   public var event: nostr_fb_NostrEvent? { let o = _accessor.offset(VTOFFSET.event.v); return o == 0 ? nil : nostr_fb_NostrEvent(_accessor.bb, o: _accessor.indirect(o + _accessor.position)) }
   public var parsedEvent: nostr_fb_ParsedEvent? { let o = _accessor.offset(VTOFFSET.parsedEvent.v); return o == 0 ? nil : nostr_fb_ParsedEvent(_accessor.bb, o: _accessor.indirect(o + _accessor.position)) }
   public var relays: FlatbufferVector<String?> { return _accessor.vector(at: VTOFFSET.relays.v, byteSize: 4) }
-  public static func startCacheRequest(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 5) }
+  public var close: Bool { let o = _accessor.offset(VTOFFSET.close.v); return o == 0 ? false : _accessor.readBuffer(of: Bool.self, at: o) }
+  public static func startCacheRequest(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 6) }
   public static func add(subId: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: subId, at: VTOFFSET.subId.p) }
   public static func addVectorOf(requests: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: requests, at: VTOFFSET.requests.p) }
   public static func add(event: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: event, at: VTOFFSET.event.p) }
   public static func add(parsedEvent: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: parsedEvent, at: VTOFFSET.parsedEvent.p) }
   public static func addVectorOf(relays: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: relays, at: VTOFFSET.relays.p) }
+  public static func add(close: Bool, _ fbb: inout FlatBufferBuilder) { fbb.add(element: close, def: false,
+   at: VTOFFSET.close.p) }
   public static func endCacheRequest(_ fbb: inout FlatBufferBuilder, start: UOffset) -> Offset { let end = Offset(offset: fbb.endTable(at: start)); fbb.require(table: end, fields: [4]); return end }
   public static func createCacheRequest(
     _ fbb: inout FlatBufferBuilder,
@@ -6296,7 +6307,8 @@ public struct nostr_fb_CacheRequest: FlatBufferTable, FlatbuffersVectorInitializ
     requestsVectorOffset requests: Offset = Offset(),
     eventOffset event: Offset = Offset(),
     parsedEventOffset parsedEvent: Offset = Offset(),
-    relaysVectorOffset relays: Offset = Offset()
+    relaysVectorOffset relays: Offset = Offset(),
+    close: Bool = false
   ) -> Offset {
     let __start = nostr_fb_CacheRequest.startCacheRequest(&fbb)
     nostr_fb_CacheRequest.add(subId: subId, &fbb)
@@ -6304,6 +6316,7 @@ public struct nostr_fb_CacheRequest: FlatBufferTable, FlatbuffersVectorInitializ
     nostr_fb_CacheRequest.add(event: event, &fbb)
     nostr_fb_CacheRequest.add(parsedEvent: parsedEvent, &fbb)
     nostr_fb_CacheRequest.addVectorOf(relays: relays, &fbb)
+    nostr_fb_CacheRequest.add(close: close, &fbb)
     return nostr_fb_CacheRequest.endCacheRequest(&fbb, start: __start)
   }
 
@@ -6314,6 +6327,7 @@ public struct nostr_fb_CacheRequest: FlatBufferTable, FlatbuffersVectorInitializ
     try _v.visit(field: VTOFFSET.event.p, fieldName: "event", required: false, type: ForwardOffset<nostr_fb_NostrEvent>.self)
     try _v.visit(field: VTOFFSET.parsedEvent.p, fieldName: "parsedEvent", required: false, type: ForwardOffset<nostr_fb_ParsedEvent>.self)
     try _v.visit(field: VTOFFSET.relays.p, fieldName: "relays", required: false, type: ForwardOffset<Vector<ForwardOffset<String>, String>>.self)
+    try _v.visit(field: VTOFFSET.close.p, fieldName: "close", required: false, type: Bool.self)
     _v.finish()
   }
 }

@@ -1,5 +1,6 @@
 #[cfg(target_os = "android")]
 mod jni;
+mod mesh_ffi;
 
 use futures::StreamExt;
 use nipworker_core::service::engine::NostrEngine;
@@ -57,8 +58,17 @@ fn new_core_storage(
     default_relays: Vec<String>,
     indexer_relays: Vec<String>,
 ) -> NostrDbStorage {
+    new_named_core_storage("nipworker", max_buffer_size, default_relays, indexer_relays)
+}
+
+fn new_named_core_storage(
+    name: &str,
+    max_buffer_size: usize,
+    default_relays: Vec<String>,
+    indexer_relays: Vec<String>,
+) -> NostrDbStorage {
     NostrDbStorage::new(
-        "nipworker".to_string(),
+        name.to_string(),
         max_buffer_size,
         fallback_relays(default_relays, DEFAULT_RELAYS),
         fallback_relays(indexer_relays, INDEXER_RELAYS),
@@ -161,6 +171,7 @@ struct NipworkerState {
     destroyed: bool,
     cmd_tx: Option<UnboundedSender<EngineCommand>>,
     subscriptions: Arc<Mutex<NativeSubscriptionStore>>,
+    mesh_tx: Option<tokio::sync::mpsc::UnboundedSender<mesh_ffi::MeshCommand>>,
 }
 
 /// Opaque handle
@@ -297,6 +308,25 @@ pub extern "C" fn nipworker_init_with_config(
     default_relays: *const c_char,
     indexer_relays: *const c_char,
 ) -> *mut c_void {
+    nipworker_init_with_options(
+        callback,
+        userdata,
+        storage_path,
+        default_relays,
+        indexer_relays,
+        false,
+    )
+}
+
+#[no_mangle]
+pub extern "C" fn nipworker_init_with_options(
+    callback: extern "C" fn(*mut c_void, *const u8, usize),
+    userdata: *mut c_void,
+    storage_path: *const c_char,
+    default_relays: *const c_char,
+    indexer_relays: *const c_char,
+    mesh_enabled: bool,
+) -> *mut c_void {
     // Initialize tracing subscriber for native builds
     #[cfg(target_vendor = "apple")]
     {
@@ -348,6 +378,12 @@ pub extern "C" fn nipworker_init_with_config(
     }));
 
     let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel::<EngineCommand>();
+    let (mesh_tx, mesh_rx) = if mesh_enabled {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<mesh_ffi::MeshCommand>();
+        (Some(tx), Some(rx))
+    } else {
+        (None, None)
+    };
     let subscriptions = Arc::new(Mutex::new(NativeSubscriptionStore::new()));
 
     // Cast userdata to usize so it can be moved into the spawned thread.
@@ -365,11 +401,12 @@ pub extern "C" fn nipworker_init_with_config(
             let (async_event_tx, mut async_event_rx) =
                 futures::channel::mpsc::channel::<(String, Vec<u8>)>(256);
 
-            let storage_path = storage_path.clone();
-            let engine = Arc::new(NostrEngine::new_threaded(
-                || Arc::new(NativeTransport::new()),
-                move || {
-                    if let Some(path) = storage_path.clone() {
+            let client_storage_path = storage_path.clone();
+            let mesh_storage_path = storage_path.clone();
+            let mesh_default_relays = default_relays.clone();
+            let mesh_indexer_relays = indexer_relays.clone();
+            let client_storage_factory = move || {
+                    if let Some(path) = client_storage_path.clone() {
                         Arc::new(PersistentNostrDbStorage::new(
                             new_core_storage(
                                 8 * 1024 * 1024,
@@ -385,9 +422,36 @@ pub extern "C" fn nipworker_init_with_config(
                             indexer_relays.clone(),
                         )) as Arc<dyn nipworker_core::traits::Storage>
                     }
+                };
+            let engine = if let Some(mesh_rx) = mesh_rx {
+                let (engine, mesh_endpoint) = NostrEngine::new_threaded_with_mesh(
+                    || Arc::new(NativeTransport::new()),
+                    client_storage_factory,
+                    move || {
+                    let storage = new_named_core_storage(
+                        "nipworker-mesh",
+                        8 * 1024 * 1024,
+                        mesh_default_relays.clone(),
+                        mesh_indexer_relays.clone(),
+                    );
+                    if let Some(path) = mesh_storage_path.clone() {
+                        Arc::new(PersistentNostrDbStorage::new(storage, FileBlobStore::new(path)))
+                            as Arc<dyn nipworker_core::traits::Storage>
+                    } else {
+                        Arc::new(storage) as Arc<dyn nipworker_core::traits::Storage>
+                    }
                 },
-                async_event_tx,
-            ));
+                    async_event_tx,
+                );
+                tokio::task::spawn_local(mesh_ffi::run_mesh_runtime(mesh_endpoint, mesh_rx));
+                Arc::new(engine)
+            } else {
+                Arc::new(NostrEngine::new_threaded(
+                    || Arc::new(NativeTransport::new()),
+                    client_storage_factory,
+                    async_event_tx,
+                ))
+            };
 
             // Bridge async events to sync callback thread.
             // The callback receives an owned buffer; the host must call
@@ -398,12 +462,16 @@ pub extern "C" fn nipworker_init_with_config(
                     let mut should_unsubscribe = false;
                     let sub_id_len = sub_id.len();
                     let payload_len = bytes.len();
-                    if let Ok(mut subscriptions) = callback_subscriptions.lock() {
-                        match subscriptions.append_payload(&sub_id, &bytes) {
-                            Ok(()) => {}
-                            Err(close_on_cleanup) => {
-                                should_forward = false;
-                                should_unsubscribe = close_on_cleanup;
+                    // Direct crypto responses are delivered as callback payloads and do not
+                    // own a registered subscription buffer.
+                    if !sub_id.is_empty() && sub_id != "crypto" {
+                        if let Ok(mut subscriptions) = callback_subscriptions.lock() {
+                            match subscriptions.append_payload(&sub_id, &bytes) {
+                                Ok(()) => {}
+                                Err(close_on_cleanup) => {
+                                    should_forward = false;
+                                    should_unsubscribe = close_on_cleanup;
+                                }
                             }
                         }
                     }
@@ -464,6 +532,7 @@ pub extern "C" fn nipworker_init_with_config(
             destroyed: false,
             cmd_tx: Some(cmd_tx),
             subscriptions,
+            mesh_tx,
         }),
     });
     Box::into_raw(handle) as *mut c_void
@@ -747,16 +816,24 @@ pub unsafe extern "C" fn nipworker_cleanup_subscriptions(handle: *mut c_void) {
         return;
     }
 
+    let mut removed = Vec::new();
     if let Ok(state) = handle.state.lock() {
         if let Ok(mut subscriptions) = state.subscriptions.lock() {
-            for sub_id in &to_delete {
-                subscriptions.subscriptions.remove(&sub_id.0);
+            for (sub_id, close_on_cleanup) in &to_delete {
+                let still_releasable = subscriptions
+                    .subscriptions
+                    .get(sub_id)
+                    .is_some_and(|subscription| subscription.ref_count <= 0);
+                if still_releasable {
+                    subscriptions.subscriptions.remove(sub_id);
+                    removed.push((sub_id.clone(), *close_on_cleanup));
+                }
             }
         }
     }
 
     if let Some(tx) = tx {
-        for (sub_id, close_on_cleanup) in to_delete {
+        for (sub_id, close_on_cleanup) in removed {
             if close_on_cleanup {
                 let _ = tx.send(EngineCommand::HandleMessage(build_unsubscribe_message(
                     &sub_id,

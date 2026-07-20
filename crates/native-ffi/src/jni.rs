@@ -37,6 +37,16 @@ extern "C" {
         indexer_relays: *mut c_void,
     ) -> i64;
 
+    fn impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerInitWithOptions(
+        env: *mut c_void,
+        cls: *mut c_void,
+        userdata: i64,
+        storage_path: *mut c_void,
+        default_relays: *mut c_void,
+        indexer_relays: *mut c_void,
+        mesh_enabled: u8,
+    ) -> i64;
+
     fn impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerHandleMessage(
         env: *mut c_void,
         cls: *mut c_void,
@@ -69,6 +79,44 @@ extern "C" {
         ptr: i64,
         len: i64,
     );
+
+    fn impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nativeMeshPeerConnected(
+        env: *mut c_void,
+        cls: *mut c_void,
+        handle: i64,
+        peer: *mut c_void,
+        mtu: i32,
+    ) -> u8;
+    fn impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nativeMeshPeerDisconnected(
+        env: *mut c_void,
+        cls: *mut c_void,
+        handle: i64,
+        peer: *mut c_void,
+    );
+    fn impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nativeMeshReceiveFragment(
+        env: *mut c_void,
+        cls: *mut c_void,
+        handle: i64,
+        peer: *mut c_void,
+        fragment: *mut c_void,
+    ) -> u8;
+    fn impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nativeMeshPopOutbound(
+        env: *mut c_void,
+        cls: *mut c_void,
+        handle: i64,
+        peer: *mut c_void,
+    ) -> *mut c_void;
+    fn impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nativeMeshSetProfile(
+        env: *mut c_void,
+        cls: *mut c_void,
+        handle: i64,
+        profile_json: *mut c_void,
+    ) -> u8;
+    fn impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nativeMeshClearProfile(
+        env: *mut c_void,
+        cls: *mut c_void,
+        handle: i64,
+    ) -> u8;
 }
 
 #[no_mangle]
@@ -133,6 +181,29 @@ pub extern "C" fn Java_com_candypoets_nipworker_reactnative_NipworkerReactNative
 }
 
 #[no_mangle]
+pub extern "C" fn Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerInitWithOptions(
+    env: *mut c_void,
+    cls: *mut c_void,
+    userdata: i64,
+    storage_path: *mut c_void,
+    default_relays: *mut c_void,
+    indexer_relays: *mut c_void,
+    mesh_enabled: u8,
+) -> i64 {
+    unsafe {
+        impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerInitWithOptions(
+            env,
+            cls,
+            userdata,
+            storage_path,
+            default_relays,
+            indexer_relays,
+            mesh_enabled,
+        )
+    }
+}
+
+#[no_mangle]
 pub extern "C" fn Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerHandleMessage(
     env: *mut c_void,
     cls: *mut c_void,
@@ -180,7 +251,9 @@ pub extern "C" fn Java_com_candypoets_nipworker_reactnative_NipworkerReactNative
     handle: i64,
 ) {
     unsafe {
-        impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerWake(env, cls, handle)
+        impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerWake(
+            env, cls, handle,
+        )
     }
 }
 
@@ -194,6 +267,86 @@ pub extern "C" fn Java_com_candypoets_nipworker_reactnative_NipworkerReactNative
     unsafe {
         impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerFreeBytes(
             env, cls, ptr, len,
+        )
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nativeMeshPeerConnected(
+    env: *mut c_void,
+    cls: *mut c_void,
+    handle: i64,
+    peer: *mut c_void,
+    mtu: i32,
+) -> u8 {
+    unsafe {
+        impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nativeMeshPeerConnected(env, cls, handle, peer, mtu)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nativeMeshPeerDisconnected(
+    env: *mut c_void,
+    cls: *mut c_void,
+    handle: i64,
+    peer: *mut c_void,
+) {
+    unsafe {
+        impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nativeMeshPeerDisconnected(env, cls, handle, peer)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nativeMeshReceiveFragment(
+    env: *mut c_void,
+    cls: *mut c_void,
+    handle: i64,
+    peer: *mut c_void,
+    fragment: *mut c_void,
+) -> u8 {
+    unsafe {
+        impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nativeMeshReceiveFragment(env, cls, handle, peer, fragment)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nativeMeshPopOutbound(
+    env: *mut c_void,
+    cls: *mut c_void,
+    handle: i64,
+    peer: *mut c_void,
+) -> *mut c_void {
+    unsafe {
+        impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nativeMeshPopOutbound(env, cls, handle, peer)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nativeMeshSetProfile(
+    env: *mut c_void,
+    cls: *mut c_void,
+    handle: i64,
+    profile_json: *mut c_void,
+) -> u8 {
+    unsafe {
+        impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nativeMeshSetProfile(
+            env,
+            cls,
+            handle,
+            profile_json,
+        )
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nativeMeshClearProfile(
+    env: *mut c_void,
+    cls: *mut c_void,
+    handle: i64,
+) -> u8 {
+    unsafe {
+        impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nativeMeshClearProfile(
+            env, cls, handle,
         )
     }
 }

@@ -8,6 +8,8 @@
 
 #include <memory>
 #include <mutex>
+#include <string>
+#include <utility>
 #include <vector>
 #include <atomic>
 
@@ -23,6 +25,7 @@ extern "C" {
 void* nipworker_init(void (*callback)(void* userdata, const uint8_t* ptr, size_t len), void* userdata);
 void* nipworker_init_with_storage_path(void (*callback)(void* userdata, const uint8_t* ptr, size_t len), void* userdata, const char* storage_path);
 void* nipworker_init_with_config(void (*callback)(void* userdata, const uint8_t* ptr, size_t len), void* userdata, const char* storage_path, const char* default_relays, const char* indexer_relays);
+void* nipworker_init_with_options(void (*callback)(void* userdata, const uint8_t* ptr, size_t len), void* userdata, const char* storage_path, const char* default_relays, const char* indexer_relays, bool mesh_enabled);
 void nipworker_handle_message(void* handle, const uint8_t* ptr, size_t len);
 bool nipworker_subscribe_message(void* handle, const uint8_t* ptr, size_t len);
 bool nipworker_publish_message(void* handle, const uint8_t* ptr, size_t len);
@@ -37,10 +40,13 @@ void nipworker_release_subscription(void* handle, const char* sub_id);
 uint8_t* nipworker_subscription_buffer_ptr(void* handle, const char* sub_id);
 size_t nipworker_subscription_buffer_len(void* handle, const char* sub_id);
 void nipworker_cleanup_subscriptions(void* handle);
+bool nipworker_mesh_set_profile_json(void* handle, const char* profile_json);
+bool nipworker_mesh_clear_profile(void* handle);
 }
 
 static NSString * const NipworkerEventName = @"NipworkerEvent";
 static NSString * const NipworkerStoragePrefix = @"nipworker.";
+static NSString * const NipworkerMeshProfileKey = @"nipworker.meshProfile";
 NSNotificationName const NipworkerRuntimeDataNotification = @"NipworkerRuntimeDataNotification";
 NSString * const NipworkerRuntimeDataKey = @"data";
 static std::mutex NipworkerQueuedPacketsMutex;
@@ -51,7 +57,7 @@ static void* NipworkerEngineHandle = NULL;
 static NSHashTable<NipworkerReactNativeModule*>* NipworkerListenerModules;
 
 static void NipworkerReactNativeCallbackForwarder(void* userdata, const uint8_t* ptr, size_t len);
-static void* NipworkerGetEngineHandle(void* userdata, NSArray<NSString*>* defaultRelays, NSArray<NSString*>* indexerRelays);
+static void* NipworkerGetEngineHandle(void* userdata, NSArray<NSString*>* defaultRelays, NSArray<NSString*>* indexerRelays, BOOL meshBLEEnabled);
 static void* NipworkerGetEngineHandleDefault(void* userdata);
 static void NipworkerNotifyQueuedPacket(void);
 static NSString* NipworkerStorageDirectory(void);
@@ -87,18 +93,19 @@ static NSString* NipworkerRelayCSV(NSArray<NSString*>* relays) {
 	return [clean componentsJoinedByString:@","];
 }
 
-static void* NipworkerGetEngineHandle(void* userdata, NSArray<NSString*>* defaultRelays, NSArray<NSString*>* indexerRelays) {
+static void* NipworkerGetEngineHandle(void* userdata, NSArray<NSString*>* defaultRelays, NSArray<NSString*>* indexerRelays, BOOL meshBLEEnabled) {
 	@synchronized ([NipworkerReactNativeModule class]) {
 		if (!NipworkerEngineHandle) {
 			NSString* path = NipworkerStorageDirectory();
 			NSString* defaultRelayCSV = NipworkerRelayCSV(defaultRelays);
 			NSString* indexerRelayCSV = NipworkerRelayCSV(indexerRelays);
-			NipworkerEngineHandle = nipworker_init_with_config(
+			NipworkerEngineHandle = nipworker_init_with_options(
 				NipworkerReactNativeCallbackForwarder,
 				userdata,
 				[path UTF8String],
 				[defaultRelayCSV UTF8String],
-				[indexerRelayCSV UTF8String]
+				[indexerRelayCSV UTF8String],
+				meshBLEEnabled
 			);
 		}
 		return NipworkerEngineHandle;
@@ -106,7 +113,7 @@ static void* NipworkerGetEngineHandle(void* userdata, NSArray<NSString*>* defaul
 }
 
 static void* NipworkerGetEngineHandleDefault(void* userdata) {
-	return NipworkerGetEngineHandle(userdata, @[], @[]);
+	return NipworkerGetEngineHandle(userdata, @[], @[], NO);
 }
 
 static NSString* NipworkerStorageDirectory(void) {
@@ -157,7 +164,14 @@ private:
 
 class NipworkerExternalMutableBuffer final : public facebook::jsi::MutableBuffer {
 public:
-	NipworkerExternalMutableBuffer(uint8_t* ptr, size_t len) : ptr_(ptr), len_(len) {}
+	NipworkerExternalMutableBuffer(void* engineHandle, std::string subId, uint8_t* ptr, size_t len)
+		: engineHandle_(engineHandle), subId_(std::move(subId)), ptr_(ptr), len_(len) {}
+
+	~NipworkerExternalMutableBuffer() override {
+		if (engineHandle_ && !subId_.empty()) {
+			nipworker_release_subscription(engineHandle_, subId_.c_str());
+		}
+	}
 
 	size_t size() const override {
 		return len_;
@@ -168,9 +182,24 @@ public:
 	}
 
 private:
+	void* engineHandle_;
+	std::string subId_;
 	uint8_t* ptr_;
 	size_t len_;
 };
+
+static std::shared_ptr<NipworkerExternalMutableBuffer> NipworkerCreatePinnedBuffer(
+	void* engineHandle,
+	const std::string& subId,
+	uint8_t* ptr,
+	size_t len
+) {
+	if (!engineHandle || subId.empty() || !ptr || len == 0 ||
+		!nipworker_retain_subscription(engineHandle, subId.c_str())) {
+		return nullptr;
+	}
+	return std::make_shared<NipworkerExternalMutableBuffer>(engineHandle, subId, ptr, len);
+}
 
 static void NipworkerInstallByteRuntime(facebook::jsi::Runtime& runtime, void* engineHandle) {
 	facebook::jsi::Object byteRuntime(runtime);
@@ -288,7 +317,11 @@ static void NipworkerInstallByteRuntime(facebook::jsi::Runtime& runtime, void* e
 				if (!ptr || len == 0) {
 					return facebook::jsi::Value::undefined();
 				}
-				auto nativeBuffer = std::make_shared<NipworkerExternalMutableBuffer>(ptr, len);
+				auto nativeBuffer = NipworkerCreatePinnedBuffer(engineHandle, subId, ptr, len);
+				if (!nativeBuffer) {
+					nipworker_release_subscription(engineHandle, subId.c_str());
+					return facebook::jsi::Value::undefined();
+				}
 				facebook::jsi::ArrayBuffer buffer(runtime, std::move(nativeBuffer));
 				return facebook::jsi::Value(runtime, std::move(buffer));
 			}
@@ -315,7 +348,11 @@ static void NipworkerInstallByteRuntime(facebook::jsi::Runtime& runtime, void* e
 				if (!ptr || len == 0) {
 					return facebook::jsi::Value::undefined();
 				}
-				auto nativeBuffer = std::make_shared<NipworkerExternalMutableBuffer>(ptr, len);
+				auto nativeBuffer = NipworkerCreatePinnedBuffer(engineHandle, publishId, ptr, len);
+				if (!nativeBuffer) {
+					nipworker_release_subscription(engineHandle, publishId.c_str());
+					return facebook::jsi::Value::undefined();
+				}
 				facebook::jsi::ArrayBuffer buffer(runtime, std::move(nativeBuffer));
 				return facebook::jsi::Value(runtime, std::move(buffer));
 			}
@@ -358,7 +395,11 @@ static void NipworkerInstallByteRuntime(facebook::jsi::Runtime& runtime, void* e
 					nipworker_release_subscription(engineHandle, subId.c_str());
 					return facebook::jsi::Value::undefined();
 				}
-				auto nativeBuffer = std::make_shared<NipworkerExternalMutableBuffer>(ptr, len);
+				auto nativeBuffer = NipworkerCreatePinnedBuffer(engineHandle, subId, ptr, len);
+				if (!nativeBuffer) {
+					nipworker_release_subscription(engineHandle, subId.c_str());
+					return facebook::jsi::Value::undefined();
+				}
 				facebook::jsi::ArrayBuffer buffer(runtime, std::move(nativeBuffer));
 				return facebook::jsi::Value(runtime, std::move(buffer));
 			}
@@ -398,7 +439,10 @@ static void NipworkerInstallByteRuntime(facebook::jsi::Runtime& runtime, void* e
 				if (!ptr || len == 0) {
 					return facebook::jsi::Value::undefined();
 				}
-				auto nativeBuffer = std::make_shared<NipworkerExternalMutableBuffer>(ptr, len);
+				auto nativeBuffer = NipworkerCreatePinnedBuffer(engineHandle, subId, ptr, len);
+				if (!nativeBuffer) {
+					return facebook::jsi::Value::undefined();
+				}
 				facebook::jsi::ArrayBuffer buffer(runtime, std::move(nativeBuffer));
 				return facebook::jsi::Value(runtime, std::move(buffer));
 			}
@@ -497,8 +541,9 @@ static void NipworkerReactNativeCallbackForwarder(void* userdata, const uint8_t*
 
 + (void *)sharedHandleWithDefaultRelays:(NSArray<NSString *> *)defaultRelays
                           indexerRelays:(NSArray<NSString *> *)indexerRelays
+                         meshBLEEnabled:(BOOL)meshBLEEnabled
                                userdata:(void *)userdata {
-	return NipworkerGetEngineHandle(userdata, defaultRelays, indexerRelays);
+	return NipworkerGetEngineHandle(userdata, defaultRelays, indexerRelays, meshBLEEnabled);
 }
 
 + (void)handleMessage:(NSData *)data {
@@ -570,10 +615,15 @@ RCT_EXPORT_MODULE(NipworkerReactNativeModule)
 	}
 }
 
-RCT_EXPORT_METHOD(initEngine:(NSArray<NSString *> *)defaultRelays indexerRelays:(NSArray<NSString *> *)indexerRelays) {
+RCT_EXPORT_METHOD(initEngine:(NSArray<NSString *> *)defaultRelays indexerRelays:(NSArray<NSString *> *)indexerRelays meshBLEEnabled:(BOOL)meshBLEEnabled) {
 	self.engineHandle = [NipworkerRuntime sharedHandleWithDefaultRelays:defaultRelays
-														   indexerRelays:indexerRelays
-																userdata:(__bridge void*)self];
+													   indexerRelays:indexerRelays
+													  meshBLEEnabled:meshBLEEnabled
+														userdata:(__bridge void*)self];
+	NSString* profile = [[NSUserDefaults standardUserDefaults] stringForKey:NipworkerMeshProfileKey];
+	if (self.engineHandle && profile.length > 0) {
+		nipworker_mesh_set_profile_json(self.engineHandle, profile.UTF8String);
+	}
 }
 
 RCT_EXPORT_BLOCKING_SYNCHRONOUS_METHOD(installByteRuntime) {
@@ -599,6 +649,28 @@ RCT_EXPORT_BLOCKING_SYNCHRONOUS_METHOD(installByteRuntime) {
 	NipworkerByteRuntimeAddress = &runtime;
 	NipworkerByteRuntimeInstalled.store(true);
 	return @YES;
+}
+
+// The CocoaPods React Native target does not own the Swift CoreBluetooth
+// adapter. iOS hosts attach it to this shared handle via NostrManager.reactNativeShared().
+RCT_EXPORT_BLOCKING_SYNCHRONOUS_METHOD(startMesh) {
+	return @NO;
+}
+
+RCT_EXPORT_METHOD(stopMesh) {}
+
+RCT_EXPORT_BLOCKING_SYNCHRONOUS_METHOD(setMeshProfile:(NSString *)profileJson) {
+	if (!self.engineHandle || profileJson.length == 0 ||
+		!nipworker_mesh_set_profile_json(self.engineHandle, profileJson.UTF8String)) {
+		return @NO;
+	}
+	[[NSUserDefaults standardUserDefaults] setObject:profileJson forKey:NipworkerMeshProfileKey];
+	return @YES;
+}
+
+RCT_EXPORT_BLOCKING_SYNCHRONOUS_METHOD(clearMeshProfile) {
+	[[NSUserDefaults standardUserDefaults] removeObjectForKey:NipworkerMeshProfileKey];
+	return @(self.engineHandle && nipworker_mesh_clear_profile(self.engineHandle));
 }
 
 RCT_EXPORT_METHOD(handleMessage:(NSArray<NSNumber *> *)bytes) {

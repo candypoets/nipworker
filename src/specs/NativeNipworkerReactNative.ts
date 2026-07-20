@@ -2,9 +2,17 @@ import type { CodegenTypes, TurboModule } from 'react-native';
 import { TurboModuleRegistry } from 'react-native';
 
 export interface Spec extends TurboModule {
-	initEngine(defaultRelays: Array<string>, indexerRelays: Array<string>): void;
+	initEngine(
+		defaultRelays: Array<string>,
+		indexerRelays: Array<string>,
+		meshBLEEnabled: boolean
+	): void;
 	handleMessage(bytes: Array<number>): void;
 	installByteRuntime(): boolean;
+	startMesh(): boolean;
+	stopMesh(): void;
+	setMeshProfile(profileJson: string): boolean;
+	clearMeshProfile(): boolean;
 	wake(): void;
 	setPrivateKey(secret: string): void;
 	getStorageItem(key: string): string | null;

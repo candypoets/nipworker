@@ -3,8 +3,10 @@
 
 #include <cstdint>
 #include <cstring>
+#include <memory>
 #include <mutex>
 #include <string>
+#include <utility>
 #include <vector>
 
 extern "C" void nipworker_handle_message(void* handle, const uint8_t* ptr, size_t len);
@@ -50,7 +52,14 @@ private:
 
 class ExternalMutableBuffer final : public MutableBuffer {
 public:
-	ExternalMutableBuffer(uint8_t* ptr, size_t len) : ptr_(ptr), len_(len) {}
+	ExternalMutableBuffer(void* engineHandle, std::string subId, uint8_t* ptr, size_t len)
+		: engineHandle_(engineHandle), subId_(std::move(subId)), ptr_(ptr), len_(len) {}
+
+	~ExternalMutableBuffer() override {
+		if (engineHandle_ != nullptr && !subId_.empty()) {
+			nipworker_release_subscription(engineHandle_, subId_.c_str());
+		}
+	}
 
 	size_t size() const override {
 		return len_;
@@ -61,9 +70,24 @@ public:
 	}
 
 private:
+	void* engineHandle_;
+	std::string subId_;
 	uint8_t* ptr_;
 	size_t len_;
 };
+
+std::shared_ptr<ExternalMutableBuffer> createPinnedBuffer(
+	void* engineHandle,
+	const std::string& subId,
+	uint8_t* ptr,
+	size_t len
+) {
+	if (engineHandle == nullptr || subId.empty() || ptr == nullptr || len == 0 ||
+		!nipworker_retain_subscription(engineHandle, subId.c_str())) {
+		return nullptr;
+	}
+	return std::make_shared<ExternalMutableBuffer>(engineHandle, subId, ptr, len);
+}
 
 std::mutex gQueueMutex;
 std::vector<std::vector<uint8_t>> gQueuedPackets;
@@ -366,7 +390,11 @@ Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nativeInsta
 				uint8_t* ptr = nipworker_subscription_buffer_ptr(engineHandle, subId.c_str());
 				size_t len = nipworker_subscription_buffer_len(engineHandle, subId.c_str());
 				if (ptr == nullptr || len == 0) return Value::undefined();
-				auto nativeBuffer = std::make_shared<ExternalMutableBuffer>(ptr, len);
+				auto nativeBuffer = createPinnedBuffer(engineHandle, subId, ptr, len);
+				if (!nativeBuffer) {
+					nipworker_release_subscription(engineHandle, subId.c_str());
+					return Value::undefined();
+				}
 				ArrayBuffer buffer(runtime, std::move(nativeBuffer));
 				return Value(runtime, std::move(buffer));
 			}
@@ -408,7 +436,11 @@ Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nativeInsta
 				uint8_t* ptr = nipworker_subscription_buffer_ptr(engineHandle, publishId.c_str());
 				size_t len = nipworker_subscription_buffer_len(engineHandle, publishId.c_str());
 				if (ptr == nullptr || len == 0) return Value::undefined();
-				auto nativeBuffer = std::make_shared<ExternalMutableBuffer>(ptr, len);
+				auto nativeBuffer = createPinnedBuffer(engineHandle, publishId, ptr, len);
+				if (!nativeBuffer) {
+					nipworker_release_subscription(engineHandle, publishId.c_str());
+					return Value::undefined();
+				}
 				ArrayBuffer buffer(runtime, std::move(nativeBuffer));
 				return Value(runtime, std::move(buffer));
 			}
@@ -449,7 +481,11 @@ Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nativeInsta
 					nipworker_release_subscription(engineHandle, subId.c_str());
 					return Value::undefined();
 				}
-				auto nativeBuffer = std::make_shared<ExternalMutableBuffer>(ptr, len);
+				auto nativeBuffer = createPinnedBuffer(engineHandle, subId, ptr, len);
+				if (!nativeBuffer) {
+					nipworker_release_subscription(engineHandle, subId.c_str());
+					return Value::undefined();
+				}
 				ArrayBuffer buffer(runtime, std::move(nativeBuffer));
 				return Value(runtime, std::move(buffer));
 			}
@@ -485,7 +521,8 @@ Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nativeInsta
 				uint8_t* ptr = nipworker_subscription_buffer_ptr(engineHandle, subId.c_str());
 				size_t len = nipworker_subscription_buffer_len(engineHandle, subId.c_str());
 				if (ptr == nullptr || len == 0) return Value::undefined();
-				auto nativeBuffer = std::make_shared<ExternalMutableBuffer>(ptr, len);
+				auto nativeBuffer = createPinnedBuffer(engineHandle, subId, ptr, len);
+				if (!nativeBuffer) return Value::undefined();
 				ArrayBuffer buffer(runtime, std::move(nativeBuffer));
 				return Value(runtime, std::move(buffer));
 			}

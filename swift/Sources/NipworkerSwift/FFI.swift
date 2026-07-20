@@ -10,6 +10,16 @@ func nipworker_init(
     _ userdata: UnsafeMutableRawPointer?
 ) -> UnsafeMutableRawPointer?
 
+@_silgen_name("nipworker_init_with_options")
+func nipworker_init_with_options(
+    _ callback: @convention(c) (UnsafeMutableRawPointer?, UnsafePointer<UInt8>?, Int) -> Void,
+    _ userdata: UnsafeMutableRawPointer?,
+    _ storagePath: UnsafePointer<Int8>?,
+    _ defaultRelays: UnsafePointer<Int8>?,
+    _ indexerRelays: UnsafePointer<Int8>?,
+    _ meshEnabled: Bool
+) -> UnsafeMutableRawPointer?
+
 @_silgen_name("nipworker_handle_message")
 func nipworker_handle_message(
     _ handle: UnsafeMutableRawPointer?,
@@ -42,6 +52,15 @@ func nipworker_deinit(_ handle: UnsafeMutableRawPointer?)
 
 @_silgen_name("nipworker_free_bytes")
 func nipworker_free_bytes(_ ptr: UnsafeMutablePointer<UInt8>?, _ len: Int)
+
+@_silgen_name("nipworker_mesh_set_profile_json")
+func nipworker_mesh_set_profile_json(
+    _ handle: UnsafeMutableRawPointer?,
+    _ profileJSON: UnsafePointer<Int8>?
+) -> Bool
+
+@_silgen_name("nipworker_mesh_clear_profile")
+func nipworker_mesh_clear_profile(_ handle: UnsafeMutableRawPointer?) -> Bool
 
 @_silgen_name("nipworker_register_subscription")
 func nipworker_register_subscription(
@@ -83,6 +102,40 @@ func nipworker_subscription_buffer_len(
 
 @_silgen_name("nipworker_cleanup_subscriptions")
 func nipworker_cleanup_subscriptions(_ handle: UnsafeMutableRawPointer?)
+
+@_silgen_name("nipworker_mesh_init")
+func nipworker_mesh_init(_ engineHandle: UnsafeMutableRawPointer?) -> UnsafeMutableRawPointer?
+
+@_silgen_name("nipworker_mesh_peer_connected")
+func nipworker_mesh_peer_connected(
+    _ handle: UnsafeMutableRawPointer?,
+    _ peer: UnsafePointer<Int8>?,
+    _ mtu: Int
+) -> Bool
+
+@_silgen_name("nipworker_mesh_peer_disconnected")
+func nipworker_mesh_peer_disconnected(
+    _ handle: UnsafeMutableRawPointer?,
+    _ peer: UnsafePointer<Int8>?
+)
+
+@_silgen_name("nipworker_mesh_pop_outbound")
+func nipworker_mesh_pop_outbound(
+    _ handle: UnsafeMutableRawPointer?,
+    _ peer: UnsafePointer<Int8>?,
+    _ outputLength: UnsafeMutablePointer<Int>?
+) -> UnsafeMutablePointer<UInt8>?
+
+@_silgen_name("nipworker_mesh_receive_fragment")
+func nipworker_mesh_receive_fragment(
+    _ handle: UnsafeMutableRawPointer?,
+    _ peer: UnsafePointer<Int8>?,
+    _ fragment: UnsafePointer<UInt8>?,
+    _ fragmentLength: Int
+) -> Bool
+
+@_silgen_name("nipworker_mesh_deinit")
+func nipworker_mesh_deinit(_ handle: UnsafeMutableRawPointer?)
 
 func nipworker_react_native_shared_handle_if_available() -> UnsafeMutableRawPointer? {
     let runtimeClassName = "NipworkerRuntime"

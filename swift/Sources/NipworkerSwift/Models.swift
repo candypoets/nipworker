@@ -14,6 +14,7 @@ public struct RequestObject {
     public var cacheFirst: Bool?
     public var noCache: Bool?
     public var maxRelays: UInt16?
+    public var meshOnly: Bool?
 
     public init(
         ids: [String]? = nil,
@@ -28,7 +29,8 @@ public struct RequestObject {
         closeOnEOSE: Bool? = nil,
         cacheFirst: Bool? = nil,
         noCache: Bool? = nil,
-        maxRelays: UInt16? = nil
+        maxRelays: UInt16? = nil,
+        meshOnly: Bool? = nil
     ) {
         self.ids = ids
         self.authors = authors
@@ -43,6 +45,7 @@ public struct RequestObject {
         self.cacheFirst = cacheFirst
         self.noCache = noCache
         self.maxRelays = maxRelays
+        self.meshOnly = meshOnly
     }
 }
 
@@ -135,7 +138,12 @@ public struct NostrEvent: Identifiable, Equatable, Sendable {
 
 public struct NostrManagerConfig {
     public var logLevel: String?
-    public init(logLevel: String? = nil) { self.logLevel = logLevel }
+    public var meshBLEEnabled: Bool
+
+    public init(logLevel: String? = nil, meshBLEEnabled: Bool = false) {
+        self.logLevel = logLevel
+        self.meshBLEEnabled = meshBLEEnabled
+    }
 }
 
 public enum SignerTypeName: Sendable {

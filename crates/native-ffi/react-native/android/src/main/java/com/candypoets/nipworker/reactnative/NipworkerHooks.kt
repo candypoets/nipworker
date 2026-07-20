@@ -6,6 +6,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import nostr.fb.MainContent
 import nostr.fb.MainMessage
+import nostr.fb.CounterPipeConfig
 import nostr.fb.MessageType
 import nostr.fb.MuteFilterPipeConfig
 import nostr.fb.ParsePipeConfig
@@ -36,6 +37,7 @@ data class NipworkerRequest(
 	val cacheFirst: Boolean = true,
 	val noCache: Boolean = false,
 	val maxRelays: Int = 0,
+	val meshOnly: Boolean = false,
 )
 
 data class NipworkerSubscriptionOptions(
@@ -49,6 +51,8 @@ data class NipworkerSubscriptionOptions(
 	val isSlow: Boolean = false,
 	val pagination: String? = null,
 	val cacheOnly: Boolean = false,
+	val counterKinds: List<Int> = emptyList(),
+	val counterPubkey: String = "",
 )
 
 data class NipworkerEventTemplate(
@@ -173,7 +177,7 @@ private fun buildSubscribeMessage(
 	val builder = FlatBufferBuilder(2048)
 	val requestOffsets = requests.map { request -> buildRequest(builder, request, options) }.toIntArray()
 	val requestsOffset = Subscribe.createRequestsVector(builder, requestOffsets)
-	val pipelineOffset = buildDefaultPipeline(builder, subId)
+	val pipelineOffset = buildDefaultPipeline(builder, subId, options)
 	val paginationOffset = options.pagination?.let { builder.createString(it) } ?: 0
 	val configOffset = SubscriptionConfig.createSubscriptionConfig(
 		builder,
@@ -230,10 +234,11 @@ private fun buildRequest(
 		request.noCache,
 		request.maxRelays,
 		options.cacheOnly,
+		request.meshOnly,
 	)
 }
 
-private fun buildDefaultPipeline(builder: FlatBufferBuilder, subId: String): Int {
+private fun buildDefaultPipeline(builder: FlatBufferBuilder, subId: String, options: NipworkerSubscriptionOptions): Int {
 	val muteStart = MuteFilterPipeConfig.startMuteFilterPipeConfig(builder)
 	val muteConfig = MuteFilterPipeConfig.endMuteFilterPipeConfig(builder)
 	val mutePipe = Pipe.createPipe(builder, PipeConfig.MuteFilterPipeConfig, muteConfig)
@@ -248,10 +253,18 @@ private fun buildDefaultPipeline(builder: FlatBufferBuilder, subId: String): Int
 
 	val serializeConfig = SerializeEventsPipeConfig.createSerializeEventsPipeConfig(builder, builder.createString(subId))
 	val serializePipe = Pipe.createPipe(builder, PipeConfig.SerializeEventsPipeConfig, serializeConfig)
+	val pipes = mutableListOf(mutePipe, parsePipe, savePipe)
+	if (options.counterKinds.isNotEmpty()) {
+		val kinds = CounterPipeConfig.createKindsVector(builder, options.counterKinds.toIntArray())
+		val pubkey = if (options.counterPubkey.isEmpty()) 0 else builder.createString(options.counterPubkey)
+		val counter = CounterPipeConfig.createCounterPipeConfig(builder, kinds, pubkey)
+		pipes.add(Pipe.createPipe(builder, PipeConfig.CounterPipeConfig, counter))
+	}
+	pipes.add(serializePipe)
 
 	return PipelineConfig.createPipelineConfig(
 		builder,
-		PipelineConfig.createPipesVector(builder, intArrayOf(mutePipe, parsePipe, savePipe, serializePipe)),
+		PipelineConfig.createPipesVector(builder, pipes.toIntArray()),
 	)
 }
 

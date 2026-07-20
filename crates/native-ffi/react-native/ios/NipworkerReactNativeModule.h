@@ -12,6 +12,7 @@ FOUNDATION_EXPORT void *nipworker_react_native_shared_handle(void);
 + (void *)sharedHandle;
 + (void *)sharedHandleWithDefaultRelays:(NSArray<NSString *> *)defaultRelays
                           indexerRelays:(NSArray<NSString *> *)indexerRelays
+                         meshBLEEnabled:(BOOL)meshBLEEnabled
                                userdata:(void *)userdata;
 + (void)handleMessage:(NSData *)data;
 + (void)setPrivateKey:(NSString *)secret;

@@ -19,13 +19,25 @@ static def toPlatformFileString(String path) {
 }
 
 def reactNativeRootDir = resolveReactNativeDirectory()
-def packageRootDir = file("../../../..")
+def packageRootDir = new File(projectDir, "../../../..").canonicalFile
 
 react {
 	root = packageRootDir
 	jsRootDir = file("${packageRootDir}/src/specs")
 	libraryName = "NipworkerReactNativeSpec"
 	codegenJavaPackageName = "com.candypoets.nipworker.reactnative"
+}
+
+// This project can be linked from outside node_modules (as in nuts-rn). In that
+// layout the RN Gradle plugin discovers the consuming app's package.json and
+// silently generates the app spec for this library. Pin the task inputs to the
+// nipworker package so autolinking and the generated CMake target agree.
+tasks.named("generateCodegenSchemaFromJavaScript").configure {
+	jsRootDir.set(file("${packageRootDir}/src/specs"))
+}
+
+tasks.named("generateCodegenArtifactsFromSchema").configure {
+	packageJsonFile.set(file("${packageRootDir}/package.json"))
 }
 
 android {

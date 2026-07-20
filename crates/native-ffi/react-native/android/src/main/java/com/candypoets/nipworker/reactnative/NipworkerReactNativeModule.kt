@@ -27,6 +27,7 @@ object NipworkerRuntime {
 
 	@Volatile
 	private var sharedUserdata: Long = 0L
+	private var meshTransport: MeshBluetoothTransport? = null
 
 	val handle: Long
 		get() = sharedHandle
@@ -59,20 +60,51 @@ object NipworkerRuntime {
 		}
 	}
 
-	fun init(context: Context, defaultRelays: ReadableArray? = null, indexerRelays: ReadableArray? = null): Long {
+	fun init(
+		context: Context,
+		defaultRelays: ReadableArray? = null,
+		indexerRelays: ReadableArray? = null,
+		meshBLEEnabled: Boolean = false
+	): Long {
 		synchronized(this) {
 			if (sharedHandle == 0L) {
 				sharedUserdata = nextUserdata.getAndIncrement()
 				val cacheDir = context.filesDir.resolve("nipworker")
-				sharedHandle = NipworkerReactNativeModule.nipworkerInitWithConfig(
+				sharedHandle = NipworkerReactNativeModule.nipworkerInitWithOptions(
 					sharedUserdata,
 					cacheDir.absolutePath,
 					readableArrayToCsv(defaultRelays),
-					readableArrayToCsv(indexerRelays)
+					readableArrayToCsv(indexerRelays),
+					meshBLEEnabled
 				)
+			}
+			if (meshBLEEnabled && sharedHandle != 0L) {
+				val transport = meshTransport ?: MeshBluetoothTransport(context.applicationContext, sharedHandle)
+				meshTransport = transport
+				transport.start()
 			}
 			return sharedHandle
 		}
+	}
+
+	fun startMesh(context: Context): Boolean = synchronized(this) {
+		if (sharedHandle == 0L) return@synchronized false
+		val transport = meshTransport ?: MeshBluetoothTransport(context.applicationContext, sharedHandle)
+		meshTransport = transport
+		transport.start()
+	}
+
+	fun stopMesh() = synchronized(this) {
+		meshTransport?.stop()
+		meshTransport = null
+	}
+
+	fun setMeshProfile(profileJson: String): Boolean = synchronized(this) {
+		sharedHandle != 0L && NipworkerReactNativeModule.nativeMeshSetProfile(sharedHandle, profileJson)
+	}
+
+	fun clearMeshProfile(): Boolean = synchronized(this) {
+		sharedHandle != 0L && NipworkerReactNativeModule.nativeMeshClearProfile(sharedHandle)
 	}
 
 	fun handleMessage(bytes: ByteArray) {
@@ -149,6 +181,7 @@ object NipworkerRuntime {
 
 	fun deinit() {
 		synchronized(this) {
+			stopMesh()
 			if (sharedHandle != 0L) {
 				NipworkerReactNativeModule.nipworkerDeinit(sharedHandle)
 				sharedHandle = 0L
@@ -217,11 +250,12 @@ object NipworkerRuntime {
 @ReactModule(name = NipworkerReactNativeModule.NAME)
 class NipworkerReactNativeModule(
 	private val reactContext: ReactApplicationContext
-) : ReactContextBaseJavaModule(reactContext), TurboModule {
+) : NativeNipworkerReactNativeSpec(reactContext) {
 	companion object {
 		const val NAME = "NipworkerReactNativeModule"
 		private const val EVENT_NAME = "NipworkerEvent"
 		private const val STORAGE_NAME = "nipworker_storage"
+		private const val MESH_PROFILE_STORAGE_KEY = "nipworker_mesh_profile"
 
 		init {
 			System.loadLibrary("nipworker_native_ffi")
@@ -245,6 +279,15 @@ class NipworkerReactNativeModule(
 			storagePath: String,
 			defaultRelays: String,
 			indexerRelays: String
+		): Long
+
+		@JvmStatic
+		external fun nipworkerInitWithOptions(
+			userdata: Long,
+			storagePath: String,
+			defaultRelays: String,
+			indexerRelays: String,
+			meshBLEEnabled: Boolean
 		): Long
 
 		@JvmStatic
@@ -291,6 +334,24 @@ class NipworkerReactNativeModule(
 
 		@JvmStatic
 		external fun nativeGetSubscriptionBuffer(handle: Long, subId: String): ByteBuffer?
+
+		@JvmStatic
+		external fun nativeMeshPeerConnected(handle: Long, peer: String, mtu: Int): Boolean
+
+		@JvmStatic
+		external fun nativeMeshPeerDisconnected(handle: Long, peer: String)
+
+		@JvmStatic
+		external fun nativeMeshReceiveFragment(handle: Long, peer: String, fragment: ByteArray): Boolean
+
+		@JvmStatic
+		external fun nativeMeshPopOutbound(handle: Long, peer: String): ByteArray?
+
+		@JvmStatic
+		external fun nativeMeshSetProfile(handle: Long, profileJson: String): Boolean
+
+		@JvmStatic
+		external fun nativeMeshClearProfile(handle: Long): Boolean
 	}
 
 	private var removeRuntimeListener: (() -> Unit)? = null
@@ -312,9 +373,14 @@ class NipworkerReactNativeModule(
 	}
 
 	@ReactMethod
-	fun initEngine(defaultRelays: ReadableArray, indexerRelays: ReadableArray) {
+	override fun initEngine(
+		defaultRelays: ReadableArray,
+		indexerRelays: ReadableArray,
+		meshBLEEnabled: Boolean
+	) {
 		ensureRuntimeListener()
-		NipworkerRuntime.init(reactContext, defaultRelays, indexerRelays)
+		NipworkerRuntime.init(reactContext, defaultRelays, indexerRelays, meshBLEEnabled)
+		storage.getString(MESH_PROFILE_STORAGE_KEY, null)?.let(NipworkerRuntime::setMeshProfile)
 	}
 
 	private fun ensureRuntimeListener() {
@@ -326,8 +392,8 @@ class NipworkerReactNativeModule(
 	}
 
 	@ReactMethod(isBlockingSynchronousMethod = true)
-	fun installByteRuntime(): Boolean {
-		initEngine(Arguments.createArray(), Arguments.createArray())
+	override fun installByteRuntime(): Boolean {
+		NipworkerRuntime.init(reactContext)
 		val runtimePtr = reactContext.javaScriptContextHolder?.get() ?: 0L
 		val handle = NipworkerRuntime.handle
 		if (runtimePtr == 0L || handle == 0L) {
@@ -336,8 +402,28 @@ class NipworkerReactNativeModule(
 		return nativeInstallByteRuntime(runtimePtr, handle)
 	}
 
+	@ReactMethod(isBlockingSynchronousMethod = true)
+	override fun startMesh(): Boolean = NipworkerRuntime.startMesh(reactContext)
+
 	@ReactMethod
-	fun handleMessage(bytes: ReadableArray) {
+	override fun stopMesh() {
+		NipworkerRuntime.stopMesh()
+	}
+
+	@ReactMethod(isBlockingSynchronousMethod = true)
+	override fun setMeshProfile(profileJson: String): Boolean {
+		if (!NipworkerRuntime.setMeshProfile(profileJson)) return false
+		return storage.edit().putString(MESH_PROFILE_STORAGE_KEY, profileJson).commit()
+	}
+
+	@ReactMethod(isBlockingSynchronousMethod = true)
+	override fun clearMeshProfile(): Boolean {
+		val cleared = storage.edit().remove(MESH_PROFILE_STORAGE_KEY).commit()
+		return NipworkerRuntime.clearMeshProfile() && cleared
+	}
+
+	@ReactMethod
+	override fun handleMessage(bytes: ReadableArray) {
 		val data = ByteArray(bytes.size())
 		for (i in 0 until bytes.size()) {
 			data[i] = (bytes.getInt(i) and 0xff).toByte()
@@ -346,32 +432,33 @@ class NipworkerReactNativeModule(
 	}
 
 	@ReactMethod
-	fun wake() {
+	override fun wake() {
 		NipworkerRuntime.wake()
 	}
 
 	@ReactMethod
-	fun setPrivateKey(secret: String) {
+	override fun setPrivateKey(secret: String) {
 		NipworkerRuntime.setPrivateKey(secret)
 	}
 
 	@ReactMethod(isBlockingSynchronousMethod = true)
-	fun getStorageItem(key: String): String? {
+	override fun getStorageItem(key: String): String? {
 		return storage.getString(key, null)
 	}
 
 	@ReactMethod(isBlockingSynchronousMethod = true)
-	fun setStorageItem(key: String, value: String): Boolean {
+	override fun setStorageItem(key: String, value: String): Boolean {
 		return storage.edit().putString(key, value).commit()
 	}
 
 	@ReactMethod(isBlockingSynchronousMethod = true)
-	fun removeStorageItem(key: String): Boolean {
+	override fun removeStorageItem(key: String): Boolean {
 		return storage.edit().remove(key).commit()
 	}
 
 	@ReactMethod
-	fun deinitEngine() {
+	override fun deinitEngine() {
+		NipworkerRuntime.stopMesh()
 		removeRuntimeListener?.invoke()
 		removeRuntimeListener = null
 	}
@@ -398,8 +485,6 @@ class NipworkerReactNativeModule(
 	}
 
 	private fun emitData(payload: com.facebook.react.bridge.WritableMap) {
-		reactContext
-			.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
-			.emit(EVENT_NAME, payload)
+		emitOnData(payload)
 	}
 }

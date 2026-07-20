@@ -42,7 +42,8 @@ func buildSubscribeMessage(
             cacheFirst: req.cacheFirst ?? true,
             noCache: req.noCache ?? false,
             maxRelays: req.maxRelays ?? 0,
-            cacheOnly: options.cacheOnly
+            cacheOnly: options.cacheOnly,
+            meshOnly: req.meshOnly ?? false
         )
     }
 

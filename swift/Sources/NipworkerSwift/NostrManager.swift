@@ -21,6 +21,7 @@ private final class ManagerBox {
 public actor NostrManager {
     private static let sharedRuntimeNotification = "NipworkerRuntimeDataNotification"
     private static let sharedRuntimeDataKey = "data"
+    private static let meshProfileStorageKey = "nipworker.meshProfile"
 
     private static var reactNativeSharedManager: NostrManager?
 
@@ -37,13 +38,17 @@ public actor NostrManager {
 
     private var boxPtr: UnsafeMutablePointer<ManagerBox>
 
+    func nativeHandleForMesh() -> UnsafeMutableRawPointer? {
+        handle
+    }
+
     public init(config: NostrManagerConfig = NostrManagerConfig()) {
         self.handle = nil
         self.ownsHandle = true
         self.boxPtr = UnsafeMutablePointer<ManagerBox>.allocate(capacity: 1)
         self.boxPtr.initialize(to: ManagerBox(manager: self))
 
-        self.handle = nipworker_init({ userdata, ptr, len in
+        self.handle = nipworker_init_with_options({ userdata, ptr, len in
             guard let ptr = ptr else { return }
             let data = Data(bytes: ptr, count: len)
             nipworker_free_bytes(UnsafeMutablePointer(mutating: ptr), len)
@@ -54,7 +59,11 @@ public actor NostrManager {
             Task {
                 await manager.handleNativeMessage(data)
             }
-        }, self.boxPtr)
+        }, self.boxPtr, nil, nil, nil, config.meshBLEEnabled)
+        let initializedHandle = self.handle
+        if let profileJSON = UserDefaults.standard.string(forKey: Self.meshProfileStorageKey) {
+            _ = profileJSON.withCString { nipworker_mesh_set_profile_json(initializedHandle, $0) }
+        }
     }
 
     private init(borrowedHandle: UnsafeMutableRawPointer?) {
@@ -190,6 +199,43 @@ public actor NostrManager {
                 _ = try? await getPublicKey()
             }
         }
+    }
+
+    /// Pin a signed kind-0 event as this device's visible nearby identity.
+    @discardableResult
+    public func setMeshProfile(_ event: NostrEvent) -> Bool {
+        guard event.kind == 0,
+              JSONSerialization.isValidJSONObject([
+                "id": event.id,
+                "pubkey": event.pubkey,
+                "kind": event.kind,
+                "content": event.content,
+                "tags": event.tags,
+                "created_at": event.createdAt,
+                "sig": event.sig
+              ]),
+              let data = try? JSONSerialization.data(withJSONObject: [
+                "id": event.id,
+                "pubkey": event.pubkey,
+                "kind": event.kind,
+                "content": event.content,
+                "tags": event.tags,
+                "created_at": event.createdAt,
+                "sig": event.sig
+              ]),
+              let json = String(data: data, encoding: .utf8) else { return false }
+        let accepted = json.withCString { nipworker_mesh_set_profile_json(handle, $0) }
+        if accepted {
+            UserDefaults.standard.set(json, forKey: Self.meshProfileStorageKey)
+        }
+        return accepted
+    }
+
+    /// Stop sharing the local profile without disabling BLE mesh relay participation.
+    @discardableResult
+    public func clearMeshProfile() -> Bool {
+        UserDefaults.standard.removeObject(forKey: Self.meshProfileStorageKey)
+        return nipworker_mesh_clear_profile(handle)
     }
 
     public func getPublicKey() async throws -> String {

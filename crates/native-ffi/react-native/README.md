@@ -8,9 +8,34 @@ Native native module named `NipworkerReactNativeModule`.
 ```ts
 import { createNostrManager, setManager } from '@candypoets/nipworker/react-native';
 
-const manager = createNostrManager();
+const manager = createNostrManager({ meshBLEEnabled: true });
 setManager(manager);
+
+// Supply the already-signed kind-0 event that represents this phone nearby.
+manager.setMeshProfile(profileEvent);
+
+// Stop appearing nearby without disabling the device's mesh relay.
+manager.clearMeshProfile();
 ```
+
+The native layer validates and persists the configured profile, then restores it
+when the process restarts. `clearMeshProfile()` removes that persisted identity;
+other recently relayed profiles continue to follow the mesh cache TTL.
+
+`meshBLEEnabled` must be supplied before the shared native manager is first
+created. It enables the Rust mesh runtime, dedicated mesh storage, and cache
+endpoint on the same handle used by React Native. It defaults to `false`.
+
+On Android, enabling the flag starts BLE scanning and advertising when the
+required runtime permissions are already granted. If permissions are granted
+after manager creation, retry with `startMeshBLE()`; use `stopMeshBLE()` to stop
+the transport. Android 12+ requires `BLUETOOTH_SCAN`, `BLUETOOTH_CONNECT`, and
+`BLUETOOTH_ADVERTISE`; Android 11 and earlier require fine location. The
+library manifest declares them, while the host application remains responsible
+for presenting and requesting runtime permission.
+
+On iOS, the host attaches CoreBluetooth to the same handle with
+`NostrManager.reactNativeShared()` and `MeshBluetoothTransport.create(for:)`.
 
 ## Event Transport
 
