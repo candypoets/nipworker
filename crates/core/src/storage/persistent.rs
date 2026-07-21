@@ -1,6 +1,6 @@
 use crate::generated::nostr::fb::Request;
 use crate::platform::now_millis;
-use crate::storage::db::sharded_storage::{ShardId, ShardedRingBufferStorage};
+use crate::storage::db::sharded_storage::ShardId;
 use crate::storage::NostrDbStorage;
 use crate::traits::{Storage, StorageError};
 use crate::types::nostr::{Filter, EVENT_DELETION};
@@ -52,26 +52,6 @@ impl<B> PersistentNostrDbStorage<B> {
         &self.core
     }
 
-    fn shard_ids(_storage: &ShardedRingBufferStorage) -> [ShardId; 5] {
-        [
-            ShardId::Default,
-            ShardId::Kind0,
-            ShardId::Kind4,
-            ShardId::Kind7375,
-            ShardId::Kind10002,
-        ]
-    }
-
-    fn shard_key(shard_id: ShardId) -> &'static str {
-        match shard_id {
-            ShardId::Default => "shard:default",
-            ShardId::Kind0 => "shard:kind0",
-            ShardId::Kind4 => "shard:kind4",
-            ShardId::Kind7375 => "shard:kind7375",
-            ShardId::Kind10002 => "shard:kind10002",
-        }
-    }
-
     fn now_ms() -> u64 {
         now_millis()
     }
@@ -94,8 +74,19 @@ impl<B: BlobStore> PersistentNostrDbStorage<B> {
         let sharded = self.core.sharded_storage();
         let mut shard_bytes = HashMap::new();
 
-        for shard_id in Self::shard_ids(sharded) {
-            if let Some(bytes) = self.blob_store.get(Self::shard_key(shard_id)).await? {
+        for &shard_id in ShardId::persistent_ids() {
+            let key = shard_id
+                .persistence_key()
+                .expect("persistent shard must have a blob key");
+            let mut stored = self.blob_store.get(key).await?;
+
+            // v0.97 and earlier persisted kind 10002 separately. Fold that
+            // data into the replacement shard on first startup after upgrade.
+            if stored.is_none() && shard_id == ShardId::Replaceable {
+                stored = self.blob_store.get("shard:kind10002").await?;
+            }
+
+            if let Some(bytes) = stored {
                 if !bytes.is_empty() {
                     shard_bytes.insert(shard_id, bytes);
                 }
@@ -119,9 +110,10 @@ impl<B: BlobStore> PersistentNostrDbStorage<B> {
         let shard_bytes = sharded.save_all_shards();
 
         for (shard_id, bytes) in shard_bytes {
-            self.blob_store
-                .put(Self::shard_key(shard_id), &bytes)
-                .await?;
+            let key = shard_id
+                .persistence_key()
+                .expect("snapshot must only contain persistent shards");
+            self.blob_store.put(key, &bytes).await?;
         }
 
         Ok(())
@@ -422,5 +414,58 @@ mod tests {
         );
         storage.initialize().await.unwrap();
         assert!(storage.load_tombstones().await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn ephemeral_events_are_available_only_for_the_current_session() {
+        let blob = MemBlobStore::default();
+        let event = build_parsed_worker_message(&hex_id(10), &hex_id(11), 20001, 1000, &[]);
+        let storage1 = PersistentNostrDbStorage::new(
+            NostrDbStorage::new("ephemeral-test".to_string(), 1024 * 1024, vec![], vec![]),
+            blob.clone(),
+        );
+        storage1.initialize().await.unwrap();
+        storage1.persist(&event).await.unwrap();
+
+        assert_eq!(query_kind(&storage1, 20001).len(), 1);
+        storage1.sync_to_blob_store().await.unwrap();
+        assert!(!blob.data.lock().unwrap().contains_key("shard:ephemeral"));
+
+        let storage2 = PersistentNostrDbStorage::new(
+            NostrDbStorage::new("ephemeral-test".to_string(), 1024 * 1024, vec![], vec![]),
+            blob,
+        );
+        storage2.initialize().await.unwrap();
+        assert!(query_kind(&storage2, 20001).is_empty());
+    }
+
+    #[tokio::test]
+    async fn legacy_kind10002_blob_is_folded_into_replaceable_shard() {
+        let blob = MemBlobStore::default();
+        let event = build_parsed_worker_message(&hex_id(20), &hex_id(21), 10002, 1000, &[]);
+
+        let legacy_source =
+            NostrDbStorage::new("legacy-source".to_string(), 1024 * 1024, vec![], vec![]);
+        legacy_source.initialize().await.unwrap();
+        legacy_source.persist(&event).await.unwrap();
+        let legacy_bytes = legacy_source
+            .sharded_storage()
+            .save_all_shards()
+            .remove(&ShardId::Replaceable)
+            .expect("kind 10002 should route to replaceable storage");
+        blob.data
+            .lock()
+            .unwrap()
+            .insert("shard:kind10002".to_string(), legacy_bytes);
+
+        let storage = PersistentNostrDbStorage::new(
+            NostrDbStorage::new("legacy-target".to_string(), 1024 * 1024, vec![], vec![]),
+            blob.clone(),
+        );
+        storage.initialize().await.unwrap();
+        assert_eq!(query_kind(&storage, 10002).len(), 1);
+
+        storage.sync_to_blob_store().await.unwrap();
+        assert!(blob.data.lock().unwrap().contains_key("shard:replaceable"));
     }
 }

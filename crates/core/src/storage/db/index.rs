@@ -69,11 +69,7 @@ impl NostrDB<ShardedRingBufferStorage> {
     ) -> Self {
         let storage = ShardedRingBufferStorage::new_default(
             &db_name,
-            max_buffer_size, // default kinds ring size
-            2 * 1024 * 1024, // kind 0 ring size
-            2 * 1024 * 1024, // kind 4 ring size
-            1 * 1024 * 1024, // kind 7375 ring size
-            1 * 1024 * 1024,
+            max_buffer_size,
             DatabaseConfig::default(),
         );
 
