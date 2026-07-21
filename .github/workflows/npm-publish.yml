@@ -10,31 +10,32 @@ permissions:
   pull-requests: write
 
 jobs:
+  native-build:
+    uses: ./.github/workflows/native-build.yml
+
   publish-npm:
+    needs: native-build
     runs-on: ubuntu-latest
     env:
       NODE_OPTIONS: '--max-old-space-size=4096'
       CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
-      SKIP_NATIVE_BUILD: 'true'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
       # Setup Node.js
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           registry-url: https://registry.npmjs.org/
 
       # Setup Rust
       - name: Setup Rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
-          target: wasm32-unknown-unknown
-          override: true
+          targets: wasm32-unknown-unknown
 
       # Install wasm-pack
       - name: Install wasm-pack
@@ -90,55 +91,33 @@ jobs:
         run: npm run build:package
 
       # ──────────────────────────────────────────
-      # Wait for native builds and bundle artifacts
+      # Bundle the native artifacts produced by the reusable native-build job.
       # ──────────────────────────────────────────
-      - name: Wait for native build workflow
-        if: ${{ steps.check_publish.outputs.should_publish == 'true' && env.SKIP_NATIVE_BUILD != 'true' }}
-        run: |
-          for i in {1..60}; do
-            RUN_JSON=$(gh run list --workflow=native-build.yml --json databaseId,headSha,conclusion,status --jq ".[] | select(.headSha == \"${GITHUB_SHA}\") | {conclusion,status}" | head -1)
-            CONCLUSION=$(echo "$RUN_JSON" | jq -r '.conclusion // empty')
-            STATUS=$(echo "$RUN_JSON" | jq -r '.status // empty')
-
-            if [ "$CONCLUSION" == "success" ]; then
-              echo "Native build succeeded"
-              exit 0
-            elif [ "$CONCLUSION" == "failure" ] || [ "$CONCLUSION" == "cancelled" ]; then
-              echo "Native build failed: $CONCLUSION"
-              exit 1
-            fi
-            echo "Waiting for native build... status=$STATUS ($i/60)"
-            sleep 10
-          done
-          echo "Timed out waiting for native build"
-          exit 1
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Download native artifacts
-        if: ${{ steps.check_publish.outputs.should_publish == 'true' && env.SKIP_NATIVE_BUILD != 'true' }}
-        uses: dawidd6/action-download-artifact@v3
+        if: ${{ steps.check_publish.outputs.should_publish == 'true' }}
+        uses: actions/download-artifact@v8
         with:
-          workflow: native-build.yml
-          commit: ${{ github.sha }}
           path: ./prebuilt-temp
 
       - name: Organize native artifacts
-        if: ${{ steps.check_publish.outputs.should_publish == 'true' && env.SKIP_NATIVE_BUILD != 'true' }}
+        if: ${{ steps.check_publish.outputs.should_publish == 'true' }}
         run: |
+          set -euo pipefail
+
           rm -rf crates/native-ffi/android/src/main/jniLibs
           rm -rf crates/native-ffi/ios/NipworkerNativeFFI.xcframework
 
           if [ -d "prebuilt-temp/android-jniLibs" ]; then
-            mkdir -p crates/native-ffi/android/src/main
-            mv prebuilt-temp/android-jniLibs/jniLibs crates/native-ffi/android/src/main/
+            mkdir -p crates/native-ffi/android/src/main/jniLibs
+            cp -R prebuilt-temp/android-jniLibs/. crates/native-ffi/android/src/main/jniLibs/
           else
             echo "Missing android-jniLibs artifact"
             exit 1
           fi
 
           if [ -d "prebuilt-temp/ios-xcframework" ]; then
-            mv prebuilt-temp/ios-xcframework/NipworkerNativeFFI.xcframework crates/native-ffi/ios/
+            mkdir -p crates/native-ffi/ios/NipworkerNativeFFI.xcframework
+            cp -R prebuilt-temp/ios-xcframework/. crates/native-ffi/ios/NipworkerNativeFFI.xcframework/
           else
             echo "Missing ios-xcframework artifact"
             exit 1
@@ -155,13 +134,15 @@ jobs:
           find crates/native-ffi/ios/NipworkerNativeFFI.xcframework -type f | sort
 
       - name: Verify React Native native artifacts
-        if: ${{ steps.check_publish.outputs.should_publish == 'true' && env.SKIP_NATIVE_BUILD != 'true' }}
+        if: ${{ steps.check_publish.outputs.should_publish == 'true' }}
         run: |
           set -euo pipefail
 
+          test -f NipworkerReactNative.podspec
           for abi in arm64-v8a armeabi-v7a x86 x86_64; do
             test -f "crates/native-ffi/android/src/main/jniLibs/${abi}/libnipworker_native_ffi.so"
           done
+          test -f crates/native-ffi/ios/NipworkerNativeFFI.xcframework/Info.plist
           test -f crates/native-ffi/ios/NipworkerNativeFFI.xcframework/ios-arm64/libnipworker_native_ffi.a
           test -f crates/native-ffi/ios/NipworkerNativeFFI.xcframework/ios-arm64_x86_64-simulator/libnipworker_native_ffi.a
 
@@ -199,6 +180,34 @@ jobs:
             }
           '
 
+      - name: Verify npm tarball includes native artifacts
+        if: ${{ steps.check_publish.outputs.should_publish == 'true' }}
+        run: |
+          npm pack --dry-run --json > "$RUNNER_TEMP/npm-pack.json"
+          node -e '
+            const fs = require("fs");
+            const report = JSON.parse(fs.readFileSync(process.argv[1], "utf8"))[0];
+            const packed = new Set(report.files.map((file) => file.path));
+            const required = [
+              "react-native.config.cjs",
+              "NipworkerReactNative.podspec",
+              "crates/native-ffi/react-native/ios/NipworkerReactNativeModule.h",
+              "crates/native-ffi/react-native/ios/NipworkerReactNativeModule.mm",
+              "crates/native-ffi/android/src/main/jniLibs/arm64-v8a/libnipworker_native_ffi.so",
+              "crates/native-ffi/android/src/main/jniLibs/armeabi-v7a/libnipworker_native_ffi.so",
+              "crates/native-ffi/android/src/main/jniLibs/x86/libnipworker_native_ffi.so",
+              "crates/native-ffi/android/src/main/jniLibs/x86_64/libnipworker_native_ffi.so",
+              "crates/native-ffi/ios/NipworkerNativeFFI.xcframework/Info.plist",
+              "crates/native-ffi/ios/NipworkerNativeFFI.xcframework/ios-arm64/libnipworker_native_ffi.a",
+              "crates/native-ffi/ios/NipworkerNativeFFI.xcframework/ios-arm64_x86_64-simulator/libnipworker_native_ffi.a",
+            ];
+            const missing = required.filter((path) => !packed.has(path));
+            if (missing.length) {
+              console.error("Native files missing from npm tarball:\n" + missing.join("\n"));
+              process.exit(1);
+            }
+          ' "$RUNNER_TEMP/npm-pack.json"
+
       # Publish package to npm
       - name: Publish package to npm
         if: ${{ steps.check_publish.outputs.should_publish == 'true' }}
@@ -211,7 +220,16 @@ jobs:
       - name: Update GitHub Release body
         if: ${{ steps.publish.outcome == 'success' }}
         run: |
+          release_notes="$RUNNER_TEMP/npm-release-notes.md"
+          {
+            echo "🚀 **Release ${GITHUB_REF_NAME}**"
+            echo
+            echo "## 📦 Published Package"
+            echo "- **[@candypoets/nipworker](https://www.npmjs.com/package/@candypoets/nipworker)** - ${GITHUB_REF_NAME}"
+            echo
+            gh release view "${GITHUB_REF_NAME}" --json body -q '.body'
+          } > "$release_notes"
           gh release edit "${GITHUB_REF_NAME}" \
-            --notes "🚀 **Release ${{ github.ref_name }}**\n\n## 📦 Published Package\n- **[@candypoets/nipworker](https://www.npmjs.com/package/@candypoets/nipworker)** - ${{ github.ref_name }}\n\n$(gh release view "${GITHUB_REF_NAME}" --json body -q '.body')"
+            --notes-file "$release_notes"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,9 +1,7 @@
 name: Native Mobile Builds
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_call:
   workflow_dispatch:
 
 permissions:
@@ -18,19 +16,19 @@ jobs:
     env:
       NDK_VERSION: '27.0.12077973'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
       - name: Setup Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: 8.10.2
 
@@ -62,16 +60,18 @@ jobs:
         run: ./validate-aar.sh
 
       - name: Upload Android AAR
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: android-aar
           path: crates/native-ffi/android/build/outputs/aar/*-release.aar
+          if-no-files-found: error
 
       - name: Upload Android JNI libraries
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: android-jniLibs
           path: crates/native-ffi/android/src/main/jniLibs/
+          if-no-files-found: error
 
   # ──────────────────────────────────────────
   # iOS — build .a for device + simulator
@@ -79,7 +79,7 @@ jobs:
   build-ios:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -98,16 +98,18 @@ jobs:
         run: ./build-ios.sh
 
       - name: Upload iOS XCFramework
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ios-xcframework
           path: crates/native-ffi/ios/NipworkerNativeFFI.xcframework/
+          if-no-files-found: error
 
       - name: Upload iOS static library
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ios-staticlib
           path: crates/native-ffi/ios/Frameworks/ios-arm64/libnipworker_native_ffi.a
+          if-no-files-found: error
 
   # ──────────────────────────────────────────
   # Linux host — build .so for local testing
@@ -115,7 +117,7 @@ jobs:
   build-linux:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -125,12 +127,13 @@ jobs:
         run: cargo build --release
 
       - name: Upload Linux artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: linux-host
           path: |
             crates/native-ffi/target/release/libnipworker_native_ffi.so
             crates/native-ffi/target/release/libnipworker_native_ffi.a
+          if-no-files-found: error
 
   # ──────────────────────────────────────────
   # Release — attach all native artifacts
@@ -140,18 +143,19 @@ jobs:
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: ./native-artifacts
           merge-multiple: false
 
       - name: Package iOS XCFramework
         run: |
-          cd native-artifacts/ios-xcframework
-          zip -r ../nipworker-native-ios.zip .
+          mv native-artifacts/ios-xcframework native-artifacts/NipworkerNativeFFI.xcframework
+          cd native-artifacts
+          zip -r nipworker-native-ios.zip NipworkerNativeFFI.xcframework
 
       - name: Package iOS static library
         run: |
@@ -164,7 +168,7 @@ jobs:
           zip -r ../nipworker-native-linux.zip .
 
       - name: Upload to GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             native-artifacts/android-aar/nipworker-native-ffi-android-release.aar
@@ -175,37 +179,28 @@ jobs:
           body: |
             ## 📱 Native Mobile Libraries
 
-            Pre-built native libraries for LynxJS integrators:
+            Pre-built native libraries for `@candypoets/nipworker`. The npm package
+            bundles the Android JNI libraries and iOS XCFramework for React Native
+            autolinking.
 
             | Platform | Download | Integration |
             |----------|----------|-------------|
-            | **Android** | `nipworker-native-ffi-android-release.aar` | Add `com.candypoets:nipworker-native-ffi-android:<version>` or include the local Gradle project |
-            | **iOS (XCFramework)** | `nipworker-native-ios.zip` | Drag `NipworkerNativeFFI.xcframework` into Xcode |
-            | **iOS (static lib)** | `nipworker-native-ios-static.zip` | Drop `libnipworker_native_ffi.a` into CocoaPods project |
+            | **Android** | `nipworker-native-ffi-android-release.aar` | Direct native integration; React Native receives the JNI libraries through npm |
+            | **iOS (XCFramework)** | `nipworker-native-ios.zip` | Direct native integration; React Native receives it through npm/CocoaPods |
+            | **iOS (static lib)** | `nipworker-native-ios-static.zip` | Low-level direct integration |
             | **Linux** | `nipworker-native-linux.zip` | For local FFI testing only |
 
-            ### Android
-            ```kotlin
-            implementation("com.candypoets:nipworker-native-ffi-android:<version>")
+            ### React Native
+            ```sh
+            npm install @candypoets/nipworker
+            cd ios && pod install
             ```
 
-            Register the module:
-            ```kotlin
-            "NipworkerLynxModule" to SparklingLynxModuleWrapper(
-              NipworkerLynxModule::class.java,
-              null
-            )
-            ```
-
-            ### iOS
-            In Xcode, add `NipworkerNativeFFI.xcframework` to **Frameworks, Libraries, and Embedded Content** (set to "Embed & Sign").
-
-            ### LynxJS TypeScript
             ```typescript
-            import { createNostrManager, setManager } from '@candypoets/nipworker';
+            import { createNostrManager, setManager } from '@candypoets/nipworker/react-native';
+
             const backend = createNostrManager();
             setManager(backend);
             ```
-            `createNostrManager()` auto-detects the Lynx native module at runtime.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
