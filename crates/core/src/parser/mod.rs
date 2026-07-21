@@ -214,6 +214,10 @@ impl Parser {
                 let (parsed, requests) = self.parse_pre_generic(&event)?;
                 (Some(ParsedData::PreGeneric(parsed)), requests)
             }
+            // NIP-09 deletion requests carry no kind-specific payload, but
+            // must flow through as ParsedEvents so the cache can resolve
+            // their tombstones (and subscribers can react to them).
+            5 => (None, None),
             _ => {
                 return Err(ParserError::InvalidKind(kind as u32));
             }
@@ -256,6 +260,52 @@ mod tests {
     use super::*;
     use crate::parser_types::parsed_event::ParsedData;
     use crate::types::nostr::{EventId, PublicKey};
+
+    #[tokio::test]
+    async fn parses_kind5_deletion_as_generic_event() {
+        let parser = Parser::new(None);
+        let event = Event {
+            id: EventId([1; 32]),
+            pubkey: PublicKey([2; 32]),
+            created_at: 1_700_000_000,
+            kind: 5,
+            tags: vec![
+                vec!["e".to_string(), hex::encode([9; 32])],
+                vec![
+                    "a".to_string(),
+                    format!("31923:{}:meetup", hex::encode([2; 32])),
+                ],
+            ],
+            content: "cancelled".to_string(),
+            sig: hex::encode([4; 64]),
+        };
+
+        let parsed = parser
+            .parse(event)
+            .await
+            .expect("kind 5 must parse so deletions reach the cache");
+        assert!(parsed.parsed.is_none(), "kind 5 carries no parsed payload");
+        assert_eq!(parsed.event.kind, 5);
+
+        // ...and must serialize as a ParsedEvent (no union) with tags intact,
+        // so SaveToDb/SerializeEvents pipes don't drop it.
+        let mut builder = flatbuffers::FlatBufferBuilder::new();
+        let offset = parsed
+            .build_flatbuffer(&mut builder)
+            .expect("kind 5 must serialize without parsed payload");
+        builder.finish(offset, None);
+        let fb_event =
+            flatbuffers::root::<crate::generated::nostr::fb::ParsedEvent>(builder.finished_data())
+                .expect("valid ParsedEvent");
+        assert_eq!(fb_event.kind(), 5);
+        assert_eq!(
+            fb_event.parsed_type(),
+            crate::generated::nostr::fb::ParsedData::NONE
+        );
+        let tags = fb_event.tags();
+        assert_eq!(tags.len(), 2);
+        assert_eq!(tags.get(1).items().unwrap().get(0), "a");
+    }
 
     #[tokio::test]
     async fn parses_kind8_badge_award() {

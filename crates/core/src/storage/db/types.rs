@@ -128,6 +128,41 @@ pub trait EventStorage {
 
 pub type EventKey = u32;
 
+/// NIP-09 deletion tombstones.
+///
+/// Deletions are resolved to index keys once, at kind-5 ingest time, so the
+/// query hot path only needs a single `FxHashSet` probe (skipped entirely when
+/// no deletions have been seen). EventKeys are session-sequential, so this
+/// state must be cleared alongside the indexes and repopulated by replaying
+/// the deletion WAL after every rebuild.
+#[derive(Debug, Clone, Default)]
+pub struct Tombstones {
+    /// Event keys suppressed from query results.
+    pub deleted_keys: FxHashSet<EventKey>,
+    /// Deletions referencing event ids whose target is not (yet) cached:
+    /// id -> (deletion author, deletion created_at). The author match is
+    /// validated when the target event arrives.
+    pub pending_ids: FxHashMap<String, (String, u32)>,
+    /// Address deletions ("kind:pubkey:d") -> deletion created_at.
+    /// The timestamp is the NIP-09 freshness guard: only targets created
+    /// at/before it count as deleted, so re-publishing after a cancel works.
+    pub deleted_addresses: FxHashMap<String, u32>,
+}
+
+impl Tombstones {
+    pub fn clear(&mut self) {
+        self.deleted_keys.clear();
+        self.pending_ids.clear();
+        self.deleted_addresses.clear();
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.deleted_keys.is_empty()
+            && self.pending_ids.is_empty()
+            && self.deleted_addresses.is_empty()
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct EventRecord {
     pub key: EventKey,

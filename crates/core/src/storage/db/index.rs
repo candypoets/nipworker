@@ -3,8 +3,9 @@ use crate::platform::now_millis;
 use crate::storage::db::sharded_storage::ShardedRingBufferStorage;
 use crate::storage::db::types::{
     DatabaseConfig, DatabaseError, DatabaseIndexes, EventKey, EventRecord, EventStorage,
-    QueryFilter, QueryResult,
+    QueryFilter, QueryResult, Tombstones,
 };
+use crate::types::nostr::EVENT_DELETION;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 type Result<T> = std::result::Result<T, DatabaseError>;
@@ -36,7 +37,9 @@ enum GatheredCandidates<'a> {
     Set(CandidateSet<'a>),
 }
 
+use std::cell::RefCell;
 use std::future::Future;
+use std::rc::Rc;
 use std::sync::{Arc, RwLock};
 use tracing::{info, warn};
 
@@ -48,6 +51,8 @@ pub struct NostrDB<S = ShardedRingBufferStorage> {
     storage: S,
     /// Initialization state
     is_initialized: Arc<RwLock<bool>>,
+    /// NIP-09 deletion tombstones, resolved to index keys at kind-5 ingest
+    tombstones: Rc<RefCell<Tombstones>>,
     /// Default relays for nostr operations
     pub default_relays: Vec<String>,
     /// Indexer relays for nostr operations
@@ -76,6 +81,7 @@ impl NostrDB<ShardedRingBufferStorage> {
             indexes: DatabaseIndexes::new(),
             storage,
             is_initialized: Arc::new(RwLock::new(false)),
+            tombstones: Rc::new(RefCell::new(Tombstones::default())),
             default_relays,
             indexer_relays,
         }
@@ -95,8 +101,10 @@ impl<S: EventStorage> NostrDB<S> {
             return Ok(());
         }
 
-        // Clear existing indexes
+        // Clear existing indexes and tombstones (EventKeys are
+        // session-sequential; the deletion WAL is replayed after rebuild)
         self.indexes.clear();
+        self.tombstones.borrow_mut().clear();
 
         self.storage.initialize_storage().await?;
 
@@ -137,6 +145,7 @@ impl<S: EventStorage> NostrDB<S> {
     /// core initialization, such as WASM IndexedDB persistence.
     pub fn rebuild_indexes_from_storage(&self) -> Result<()> {
         self.indexes.clear();
+        self.tombstones.borrow_mut().clear();
 
         let events = self.storage.load_events()?;
         if !events.is_empty() {
@@ -636,6 +645,195 @@ impl<S: EventStorage> NostrDB<S> {
     }
 
     /// Add an event to all relevant indexes
+    /// NIP-09 (kind 5) deletion processing. Resolves referenced events to
+    /// index keys once, at ingest time, so the query hot path only probes
+    /// `Tombstones::deleted_keys`. All validation uses indexes — no event-byte
+    /// reads: an e-tag deletion is valid only if the target key is in the
+    /// author's own pubkey set, and an a-tag deletion carries its author in
+    /// the address string itself.
+    fn process_deletion_tags(
+        &self,
+        author: &str,
+        deletion_created_at: u32,
+        tags: flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<fb::StringVec<'_>>>,
+    ) {
+        let mut tombstones = self.tombstones.borrow_mut();
+        for i in 0..tags.len() {
+            let tag = tags.get(i);
+            let Some(items) = tag.items() else { continue };
+            if items.len() < 2 {
+                continue;
+            }
+            let tag_value = items.get(1);
+            match items.get(0) {
+                "e" => {
+                    let record = self.indexes.events_by_id.borrow().get(tag_value).copied();
+                    match record {
+                        Some(record) => {
+                            let authored = self
+                                .indexes
+                                .events_by_pubkey
+                                .borrow()
+                                .get(author)
+                                .is_some_and(|keys| keys.contains(&record.key));
+                            if authored {
+                                tombstones.deleted_keys.insert(record.key);
+                            }
+                            // Author mismatch: drop the reference entirely.
+                        }
+                        None => {
+                            // Target not cached (yet); validate author at arrival.
+                            tombstones
+                                .pending_ids
+                                .entry(tag_value.to_string())
+                                .and_modify(|slot| {
+                                    if deletion_created_at > slot.1 {
+                                        *slot = (author.to_string(), deletion_created_at);
+                                    }
+                                })
+                                .or_insert_with(|| (author.to_string(), deletion_created_at));
+                        }
+                    }
+                }
+                "a" => {
+                    // a-tag: "kind:pubkey:d" — validate against the address author.
+                    let mut parts = tag_value.splitn(3, ':');
+                    let (Some(kind_str), Some(addr_author), Some(d)) =
+                        (parts.next(), parts.next(), parts.next())
+                    else {
+                        continue;
+                    };
+                    if addr_author != author {
+                        continue;
+                    }
+                    let Ok(kind) = kind_str.parse::<u16>() else {
+                        continue;
+                    };
+
+                    {
+                        let d_map = self.indexes.events_by_d_tag.borrow();
+                        let kind_map = self.indexes.events_by_kind.borrow();
+                        let pub_map = self.indexes.events_by_pubkey.borrow();
+                        if let (Some(d_set), Some(kind_set), Some(pub_set)) =
+                            (d_map.get(d), kind_map.get(&kind), pub_map.get(addr_author))
+                        {
+                            // Intersect d ∩ kind ∩ pubkey, iterating the smallest set.
+                            let mut sets = [d_set, kind_set, pub_set];
+                            sets.sort_by_key(|set| set.len());
+                            let (driver, others) = sets.split_first().unwrap();
+                            let events_by_key = self.indexes.events_by_key.borrow();
+                            for key in driver.iter() {
+                                if !others.iter().all(|set| set.contains(key)) {
+                                    continue;
+                                }
+                                if let Some(record) = events_by_key.get(key) {
+                                    // Freshness guard: the deletion only covers
+                                    // versions created at/before it.
+                                    if record.created_at <= deletion_created_at {
+                                        tombstones.deleted_keys.insert(*key);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    tombstones
+                        .deleted_addresses
+                        .entry(tag_value.to_string())
+                        .and_modify(|ts| *ts = (*ts).max(deletion_created_at))
+                        .or_insert(deletion_created_at);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// Check a freshly indexed event against recorded tombstones. Runs at the
+    /// end of indexing so deletions apply to events that arrive after their
+    /// kind 5 (out-of-order delivery, cache replay from another relay).
+    #[allow(clippy::too_many_arguments)]
+    fn apply_tombstones_to_event(
+        &self,
+        event_key: EventKey,
+        event_id: &str,
+        author: &str,
+        kind: u16,
+        created_at: u32,
+        d_tag: Option<&str>,
+    ) {
+        let mut tombstones = self.tombstones.borrow_mut();
+        if tombstones.is_empty() {
+            return;
+        }
+        if let Some((deletion_author, _)) = tombstones.pending_ids.get(event_id) {
+            if deletion_author == author {
+                tombstones.deleted_keys.insert(event_key);
+                return;
+            }
+        }
+        // Parameterized replaceable events (NIP-33) are deletable by address.
+        if (30000..40000).contains(&kind) {
+            if let Some(d) = d_tag {
+                let address = format!("{}:{}:{}", kind, author, d);
+                if let Some(deletion_ts) = tombstones.deleted_addresses.get(&address) {
+                    if created_at <= *deletion_ts {
+                        tombstones.deleted_keys.insert(event_key);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Apply NIP-09 deletions from a stored WorkerMessage without persisting
+    /// the event. Used to replay the deletion WAL after an index rebuild.
+    /// Returns the deletion event's id when the bytes held a kind 5.
+    pub fn apply_deletions_from_bytes(&self, bytes: &[u8]) -> Option<String> {
+        let wm = flatbuffers::root::<WorkerMessage>(bytes).ok()?;
+        match wm.content_type() {
+            fb::Message::ParsedEvent => {
+                let parsed = wm.content_as_parsed_event()?;
+                if parsed.kind() == EVENT_DELETION {
+                    self.process_deletion_tags(parsed.pubkey(), parsed.created_at(), parsed.tags());
+                    return Some(parsed.id().to_string());
+                }
+                None
+            }
+            fb::Message::NostrEvent => {
+                let event = wm.content_as_nostr_event()?;
+                if event.kind() == EVENT_DELETION {
+                    self.process_deletion_tags(
+                        event.pubkey(),
+                        event.created_at().max(0) as u32,
+                        event.tags(),
+                    );
+                    return Some(event.id().to_string());
+                }
+                None
+            }
+            _ => None,
+        }
+    }
+
+    /// Number of cached events currently suppressed by NIP-09 deletions.
+    pub fn deleted_count(&self) -> usize {
+        self.tombstones.borrow().deleted_keys.len()
+    }
+
+    /// Extract the first `d` tag value (NIP-33 identifier), if any.
+    fn first_d_tag<'a>(
+        tags: &flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<fb::StringVec<'a>>>,
+    ) -> Option<&'a str> {
+        for i in 0..tags.len() {
+            let tag = tags.get(i);
+            if let Some(items) = tag.items() {
+                if items.len() >= 2 && items.get(0) == "d" {
+                    return Some(items.get(1));
+                }
+            }
+        }
+        None
+    }
+
     fn index_parsed_event(&self, event: ParsedEvent<'_>, offset: u64) {
         let event_id = event.id();
         let event_key = self
@@ -730,6 +928,18 @@ impl<S: EventStorage> NostrDB<S> {
                     }
                 }
             }
+        }
+
+        self.apply_tombstones_to_event(
+            event_key,
+            event_id,
+            event.pubkey(),
+            event.kind(),
+            event.created_at(),
+            Self::first_d_tag(&tags),
+        );
+        if event.kind() == EVENT_DELETION {
+            self.process_deletion_tags(event.pubkey(), event.created_at(), tags);
         }
     }
 
@@ -827,6 +1037,19 @@ impl<S: EventStorage> NostrDB<S> {
                     }
                 }
             }
+        }
+
+        let created_at = event.created_at().max(0) as u32;
+        self.apply_tombstones_to_event(
+            event_key,
+            event_id,
+            event.pubkey(),
+            event.kind(),
+            created_at,
+            Self::first_d_tag(&tags),
+        );
+        if event.kind() == EVENT_DELETION {
+            self.process_deletion_tags(event.pubkey(), created_at, tags);
         }
     }
 
@@ -966,7 +1189,12 @@ impl<S: EventStorage> NostrDB<S> {
         push_candidates!(candidate_sets, start_time, &filter.kinds, &events_by_kind);
 
         // Filter by authors
-        push_candidates!(candidate_sets, start_time, &filter.authors, &events_by_pubkey);
+        push_candidates!(
+            candidate_sets,
+            start_time,
+            &filter.authors,
+            &events_by_pubkey
+        );
 
         // Filter by e_tags
         push_candidates!(candidate_sets, start_time, &filter.e_tags, &events_by_e_tag);
@@ -994,9 +1222,16 @@ impl<S: EventStorage> NostrDB<S> {
         // happens WITHOUT reading event bytes from storage.
         let use_full_scan = candidate_sets.is_empty();
         let events_by_key = self.indexes.events_by_key.borrow();
+        let tombstones = self.tombstones.borrow();
+        let has_deletions = !tombstones.deleted_keys.is_empty();
         let mut survivors: Vec<(u32, u64)> = Vec::new();
 
         let consider = |record: EventRecord, survivors: &mut Vec<(u32, u64)>| {
+            // NIP-09: skip tombstoned events (single FxHashSet probe, guarded
+            // so it costs nothing when no deletions have been seen).
+            if has_deletions && tombstones.deleted_keys.contains(&record.key) {
+                return;
+            }
             // Time range filters (from the index record, no byte reads)
             if let Some(since) = filter.since {
                 if record.created_at < since {
@@ -1065,9 +1300,7 @@ impl<S: EventStorage> NostrDB<S> {
             }
         }
 
-        let has_more = filter
-            .limit
-            .is_some_and(|limit| total_found > limit);
+        let has_more = filter.limit.is_some_and(|limit| total_found > limit);
 
         let query_time = now_millis() - start_time;
 
@@ -1452,7 +1685,6 @@ impl<S: EventStorage> NostrDB<S> {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1493,11 +1725,17 @@ mod tests {
             self.inner.initialize_storage().await
         }
 
-        async fn add_event_data(&self, event_data: &[u8]) -> std::result::Result<u64, DatabaseError> {
+        async fn add_event_data(
+            &self,
+            event_data: &[u8],
+        ) -> std::result::Result<u64, DatabaseError> {
             self.inner.add_event_data(event_data).await
         }
 
-        fn get_event(&self, event_offset: u64) -> std::result::Result<Option<Vec<u8>>, DatabaseError> {
+        fn get_event(
+            &self,
+            event_offset: u64,
+        ) -> std::result::Result<Option<Vec<u8>>, DatabaseError> {
             self.get_calls.set(self.get_calls.get() + 1);
             self.inner.get_event(event_offset)
         }
@@ -1525,6 +1763,7 @@ mod tests {
             indexes: DatabaseIndexes::new(),
             storage: CountingStorage::new(max_buffer_size),
             is_initialized: Arc::new(RwLock::new(false)),
+            tombstones: Rc::new(RefCell::new(Tombstones::default())),
             default_relays: vec![],
             indexer_relays: vec![],
         }
@@ -1615,7 +1854,10 @@ mod tests {
         assert!(result.has_more);
         assert_eq!(result.events.len(), 10);
         // Sorted newest-first: the 10 newest events (created_at 50 down to 41)
-        assert_eq!(result_created_ats(&result), (41..=50).rev().collect::<Vec<_>>());
+        assert_eq!(
+            result_created_ats(&result),
+            (41..=50).rev().collect::<Vec<_>>()
+        );
         // Only the 10 returned events were read from storage - not all 50.
         assert_eq!(db.storage.get_calls.get(), 10);
     }
@@ -1654,13 +1896,24 @@ mod tests {
 
         // Author A: 5 kind-1 events; author B: 5 kind-1 + 5 kind-6 events
         for i in 0..5u32 {
-            let a = build_parsed_worker_message(&event_id(i as usize), &pubkey_id(0), 1, i + 1, &[]);
+            let a =
+                build_parsed_worker_message(&event_id(i as usize), &pubkey_id(0), 1, i + 1, &[]);
             db.add_worker_message_bytes(&a).await.unwrap();
-            let b1 =
-                build_parsed_worker_message(&event_id(10 + i as usize), &pubkey_id(1), 1, i + 1, &[]);
+            let b1 = build_parsed_worker_message(
+                &event_id(10 + i as usize),
+                &pubkey_id(1),
+                1,
+                i + 1,
+                &[],
+            );
             db.add_worker_message_bytes(&b1).await.unwrap();
-            let b6 =
-                build_parsed_worker_message(&event_id(20 + i as usize), &pubkey_id(1), 6, i + 1, &[]);
+            let b6 = build_parsed_worker_message(
+                &event_id(20 + i as usize),
+                &pubkey_id(1),
+                6,
+                i + 1,
+                &[],
+            );
             db.add_worker_message_bytes(&b6).await.unwrap();
         }
 
@@ -1718,12 +1971,16 @@ mod tests {
             wm.content_as_parsed_event().unwrap()
         };
 
-        db.add_parsed_event_with_bytes(parsed, &bytes).await.unwrap();
+        db.add_parsed_event_with_bytes(parsed, &bytes)
+            .await
+            .unwrap();
         db.storage.reset_counters();
 
         // Re-persisting the same event must skip storage via contains_offset,
         // without copying the existing event bytes (no get_event call).
-        db.add_parsed_event_with_bytes(parsed, &bytes).await.unwrap();
+        db.add_parsed_event_with_bytes(parsed, &bytes)
+            .await
+            .unwrap();
 
         assert_eq!(db.storage.get_calls.get(), 0);
         assert!(db.storage.contains_calls.get() >= 1);
@@ -1742,7 +1999,9 @@ mod tests {
         {
             let wm = flatbuffers::root::<fb::WorkerMessage>(&bytes).unwrap();
             let parsed = wm.content_as_parsed_event().unwrap();
-            db.add_parsed_event_with_bytes(parsed, &bytes).await.unwrap();
+            db.add_parsed_event_with_bytes(parsed, &bytes)
+                .await
+                .unwrap();
         }
 
         // Evict it with filler events
@@ -1756,7 +2015,9 @@ mod tests {
         {
             let wm = flatbuffers::root::<fb::WorkerMessage>(&bytes).unwrap();
             let parsed = wm.content_as_parsed_event().unwrap();
-            db.add_parsed_event_with_bytes(parsed, &bytes).await.unwrap();
+            db.add_parsed_event_with_bytes(parsed, &bytes)
+                .await
+                .unwrap();
         }
 
         let mut filter = QueryFilter::new();
@@ -1764,5 +2025,161 @@ mod tests {
         let result = db.query_events_with_filter(filter).unwrap();
         assert_eq!(result.total_found, 1);
         assert_eq!(result_created_ats(&result), vec![42]);
+    }
+
+    // --------------------------------------------------------------------
+    // NIP-09 deletion tombstones
+    // --------------------------------------------------------------------
+
+    fn build_deletion(id: &str, author: &str, created_at: u32, tags: &[&[&str]]) -> Vec<u8> {
+        build_parsed_worker_message(id, author, EVENT_DELETION, created_at, tags)
+    }
+
+    fn query_kind(db: &NostrDB<CountingStorage>, kind: u16) -> QueryResult {
+        let mut filter = QueryFilter::new();
+        filter.kinds = Some(vec![kind]);
+        db.query_events_with_filter(filter).unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_tag_deletion_hides_cached_event() {
+        let db = new_test_db(1024 * 1024);
+        db.initialize().await.unwrap();
+
+        let author = pubkey_id(1);
+        let address = format!("31923:{}:meetup-1", author);
+        let target =
+            build_parsed_worker_message(&event_id(1), &author, 31923, 1000, &[&["d", "meetup-1"]]);
+        db.add_worker_message_bytes(&target).await.unwrap();
+
+        let deletion = build_deletion(&event_id(2), &author, 2000, &[&["a", &address]]);
+        db.add_worker_message_bytes(&deletion).await.unwrap();
+
+        let result = query_kind(&db, 31923);
+        assert!(result.events.is_empty(), "deleted event must be filtered");
+        assert_eq!(db.deleted_count(), 1);
+
+        // The deletion itself stays queryable.
+        assert_eq!(query_kind(&db, EVENT_DELETION).total_found, 1);
+    }
+
+    #[tokio::test]
+    async fn e_tag_deletion_hides_cached_event() {
+        let db = new_test_db(1024 * 1024);
+        db.initialize().await.unwrap();
+
+        let author = pubkey_id(1);
+        let target = build_parsed_worker_message(&event_id(1), &author, 1, 1000, &[]);
+        db.add_worker_message_bytes(&target).await.unwrap();
+
+        let deletion = build_deletion(&event_id(2), &author, 2000, &[&["e", &event_id(1)]]);
+        db.add_worker_message_bytes(&deletion).await.unwrap();
+
+        assert!(query_kind(&db, 1).events.is_empty());
+        assert_eq!(db.deleted_count(), 1);
+    }
+
+    #[tokio::test]
+    async fn deletion_before_target_arrival() {
+        let db = new_test_db(1024 * 1024);
+        db.initialize().await.unwrap();
+
+        let author = pubkey_id(1);
+        // Deletion references an event id the cache has not seen yet.
+        let deletion = build_deletion(&event_id(2), &author, 2000, &[&["e", &event_id(1)]]);
+        db.add_worker_message_bytes(&deletion).await.unwrap();
+
+        let target = build_parsed_worker_message(&event_id(1), &author, 1, 1000, &[]);
+        db.add_worker_message_bytes(&target).await.unwrap();
+
+        assert!(query_kind(&db, 1).events.is_empty());
+        assert_eq!(db.deleted_count(), 1);
+    }
+
+    #[tokio::test]
+    async fn author_mismatch_ignored() {
+        let db = new_test_db(1024 * 1024);
+        db.initialize().await.unwrap();
+
+        let author = pubkey_id(1);
+        let other = pubkey_id(2);
+        let target = build_parsed_worker_message(&event_id(1), &author, 1, 1000, &[]);
+        db.add_worker_message_bytes(&target).await.unwrap();
+
+        // e-tag deletion signed by someone else.
+        let bad_e = build_deletion(&event_id(2), &other, 2000, &[&["e", &event_id(1)]]);
+        db.add_worker_message_bytes(&bad_e).await.unwrap();
+        assert_eq!(query_kind(&db, 1).total_found, 1);
+        assert_eq!(db.deleted_count(), 0);
+
+        // a-tag deletion whose address author differs from the signer.
+        let address = format!("31923:{}:meetup-1", author);
+        let calendar =
+            build_parsed_worker_message(&event_id(3), &author, 31923, 1000, &[&["d", "meetup-1"]]);
+        db.add_worker_message_bytes(&calendar).await.unwrap();
+        let bad_a = build_deletion(&event_id(4), &other, 2000, &[&["a", &address]]);
+        db.add_worker_message_bytes(&bad_a).await.unwrap();
+        assert_eq!(query_kind(&db, 31923).total_found, 1);
+        assert_eq!(db.deleted_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn a_tag_freshness_guard_keeps_republish() {
+        let db = new_test_db(1024 * 1024);
+        db.initialize().await.unwrap();
+
+        let author = pubkey_id(1);
+        let address = format!("31923:{}:meetup-1", author);
+        let v1 =
+            build_parsed_worker_message(&event_id(1), &author, 31923, 1000, &[&["d", "meetup-1"]]);
+        db.add_worker_message_bytes(&v1).await.unwrap();
+
+        let deletion = build_deletion(&event_id(2), &author, 2000, &[&["a", &address]]);
+        db.add_worker_message_bytes(&deletion).await.unwrap();
+
+        // Re-published after the deletion: must survive.
+        let v2 =
+            build_parsed_worker_message(&event_id(3), &author, 31923, 3000, &[&["d", "meetup-1"]]);
+        db.add_worker_message_bytes(&v2).await.unwrap();
+
+        let result = query_kind(&db, 31923);
+        assert_eq!(result.total_found, 1);
+        assert_eq!(result_created_ats(&result), vec![3000]);
+        assert_eq!(db.deleted_count(), 1);
+    }
+
+    #[tokio::test]
+    async fn no_deletions_leaves_queries_untouched() {
+        let db = new_test_db(1024 * 1024);
+        db.initialize().await.unwrap();
+
+        let author = pubkey_id(1);
+        for i in 0..3usize {
+            let bytes = build_parsed_worker_message(&event_id(i), &author, 1, 1000 + i as u32, &[]);
+            db.add_worker_message_bytes(&bytes).await.unwrap();
+        }
+
+        let result = query_kind(&db, 1);
+        assert_eq!(result.total_found, 3);
+        assert_eq!(db.deleted_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn rebuild_replays_shard_resident_deletions() {
+        let db = new_test_db(1024 * 1024);
+        db.initialize().await.unwrap();
+
+        let author = pubkey_id(1);
+        let target = build_parsed_worker_message(&event_id(1), &author, 1, 1000, &[]);
+        db.add_worker_message_bytes(&target).await.unwrap();
+        let deletion = build_deletion(&event_id(2), &author, 2000, &[&["e", &event_id(1)]]);
+        db.add_worker_message_bytes(&deletion).await.unwrap();
+        assert!(query_kind(&db, 1).events.is_empty());
+
+        // Simulates a restart where the kind 5 is still in the shard snapshot:
+        // re-indexing must re-apply the deletion (WAL covers the evicted case).
+        db.rebuild_indexes_from_storage().unwrap();
+        assert!(query_kind(&db, 1).events.is_empty());
+        assert_eq!(db.deleted_count(), 1);
     }
 }

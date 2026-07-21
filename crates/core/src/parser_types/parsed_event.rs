@@ -199,13 +199,15 @@ impl ParsedEvent {
         &self,
         fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
     ) -> Result<flatbuffers::WIPOffset<fb::ParsedEvent<'a>>, TypesError> {
-        let parsed_data = self
-            .parsed
-            .as_ref()
-            .ok_or_else(|| TypesError::MissingField("No parsed data available".to_string()))?;
-
-        // Build the ParsedData union directly in our builder
-        let (parsed_type, parsed_union_offset) = parsed_data.build_flatbuffer(fbb)?;
+        // Events without a kind-specific payload (e.g. NIP-09 kind 5) still
+        // serialize as ParsedEvent, just without the parsed union.
+        let (parsed_type, parsed) = match self.parsed.as_ref() {
+            Some(parsed_data) => {
+                let (parsed_type, parsed_union_offset) = parsed_data.build_flatbuffer(fbb)?;
+                (parsed_type, Some(parsed_union_offset))
+            }
+            None => (fb::ParsedData::NONE, None),
+        };
 
         // Build the NostrEvent from parsed_event.event
         let id_offset = fbb.create_string(&self.event.id.to_hex());
@@ -259,7 +261,7 @@ impl ParsedEvent {
             created_at: self.event.created_at as u32,
             kind: self.event.kind as u16,
             parsed_type,
-            parsed: Some(parsed_union_offset),
+            parsed,
             requests: requests_offset,
             relays: relays_offset,
             tags: Some(tags_offset),

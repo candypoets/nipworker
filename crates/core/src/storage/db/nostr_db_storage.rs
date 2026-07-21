@@ -46,6 +46,18 @@ impl NostrDbStorage {
         self.db.rebuild_indexes_from_storage()
     }
 
+    /// Apply NIP-09 deletions from stored WorkerMessage bytes without
+    /// persisting anything (deletion WAL replay). Returns the deletion
+    /// event's id when the bytes held a kind 5.
+    pub fn apply_deletions_from_bytes(&self, bytes: &[u8]) -> Option<String> {
+        self.db.apply_deletions_from_bytes(bytes)
+    }
+
+    /// Number of cached events currently suppressed by NIP-09 deletions.
+    pub fn deleted_count(&self) -> usize {
+        self.db.deleted_count()
+    }
+
     /// Convert nostr Filter to QueryFilter for NostrDB
     fn filter_to_query_filter(filter: &Filter) -> QueryFilter {
         let mut qf = QueryFilter::new();
