@@ -17,7 +17,9 @@ export default defineConfig({
 			use: { ...devices['Desktop Chrome'] },
 		},
 	],
-	// Run `npx vite --port 5173` manually before executing tests.
+	// Run `npx vite --config tests/e2e-browser/vite.e2e.config.ts --port 5174` manually before executing tests.
+	// (The e2e config rewrites the workers' `/src/*/index.js` URLs to their `.ts` sources;
+	// a plain `npx vite` serves 404s for them and the workers never boot.)
 	// webServer: {
 	// 	command: 'npx vite --port 5173',
 	// 	url: 'http://localhost:5174',

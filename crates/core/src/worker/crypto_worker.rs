@@ -417,14 +417,19 @@ impl CryptoHandle {
 
 pub struct CryptoWorker {
     active: std::rc::Rc<std::cell::RefCell<ActiveSigner>>,
-    nip46_tx: std::cell::RefCell<Option<mpsc::Sender<Vec<u8>>>>,
+    // Shared between the engine listener (which installs the sender when a
+    // NIP-46 signer is configured) and the connections listener (which
+    // forwards relay frames to the NIP-46 pump). Must stay behind Rc: cloning
+    // a bare RefCell copies its contents, so the connections listener would
+    // keep observing None.
+    nip46_tx: std::rc::Rc<std::cell::RefCell<Option<mpsc::Sender<Vec<u8>>>>>,
 }
 
 impl CryptoWorker {
     pub fn new() -> Self {
         Self {
             active: std::rc::Rc::new(std::cell::RefCell::new(ActiveSigner::Unset)),
-            nip46_tx: std::cell::RefCell::new(None),
+            nip46_tx: std::rc::Rc::new(std::cell::RefCell::new(None)),
         }
     }
 

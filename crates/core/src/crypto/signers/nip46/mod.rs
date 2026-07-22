@@ -314,7 +314,6 @@ impl Nip46Signer {
 
     async fn await_response(&self, id: &str, timeout_ms: u32) -> Result<String, String> {
         let start = Self::unix_time_ms();
-        let mut polls = 0u32;
         let mut sleep_ms: u32 = 8;
         let max_sleep: u32 = 256;
 
@@ -331,12 +330,11 @@ impl Nip46Signer {
                 return Err("nip46 timeout waiting for response".to_string());
             }
 
-            polls += 1;
-            if polls >= sleep_ms {
-                polls = 0;
-                sleep_ms = (sleep_ms * 2).min(max_sleep);
-            }
-            futures::future::poll_fn(|_| std::task::Poll::Ready(())).await;
+            // Actually yield to the executor: the pump task that processes the
+            // response runs on this same thread, so a busy wait here would
+            // starve it and the response would never be observed.
+            crate::platform::sleep(sleep_ms as u64).await;
+            sleep_ms = (sleep_ms * 2).min(max_sleep);
         }
     }
 
