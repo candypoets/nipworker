@@ -169,7 +169,7 @@ jobs:
             echo "Maven repository is already up to date"
           else
             git -C "$worktree" commit -m "Publish Android Maven ${GITHUB_REF_NAME}"
-            git -C "$worktree" push origin HEAD:gh-pages
+            git -C "$worktree" push origin HEAD:refs/heads/gh-pages
           fi
 
       - name: Configure GitHub Pages
