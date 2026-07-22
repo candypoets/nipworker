@@ -38,6 +38,7 @@ NIPWorker is a high-performance Nostr client library using a multi-worker archit
 ### Test Commands
 - **Unit Tests**: `npm test` - Vitest
 - **E2E Tests**: `npm run test:e2e` - Playwright browser tests
+- **Benchmarks**: `npm run bench` - Rust criterion micro-benchmarks (crates/core); `npm run bench:browser` - Playwright end-to-end bench suite (mock relay, self-starting). Baselines and findings in `BENCHMARKS.md`.
 
 ### Release Commands
 - **Release**: `./release.sh <version>` - Bump version, commit, tag, and push

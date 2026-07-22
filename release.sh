@@ -78,19 +78,14 @@ if git rev-parse "v$NEW_VERSION" >/dev/null 2>&1; then
     exit 1
 fi
 
-# Update package.json version
-print_status "Updating @candypoets/nipworker version to $NEW_VERSION"
-node -e "
-const fs = require('fs');
-const pkg = require('./package.json');
-pkg.version = '$NEW_VERSION';
-fs.writeFileSync('./package.json', JSON.stringify(pkg, null, 2) + '\n');
-"
+# Keep the npm package, npm lockfile, and native crate on one release version.
+print_status "Updating npm and native versions to $NEW_VERSION"
+node scripts/release-version.mjs "$NEW_VERSION"
 
 print_success "Updated package version"
 
 # Stage the changes
-git add package.json
+git add package.json package-lock.json crates/native-ffi/Cargo.toml crates/native-ffi/Cargo.lock
 
 # Commit the version bump
 print_status "Committing version bump"

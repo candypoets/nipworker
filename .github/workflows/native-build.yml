@@ -6,6 +6,8 @@ on:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 jobs:
   # ──────────────────────────────────────────
@@ -43,6 +45,12 @@ jobs:
           add-to-path: true
           link-to-sdk: true
 
+      - name: Set native release version
+        run: |
+          node scripts/release-version.mjs --check
+          VERSION_NAME="$(node -p "require('./package.json').version")"
+          echo "VERSION_NAME=$VERSION_NAME" >> "$GITHUB_ENV"
+
       - name: Add Android Rust targets
         run: |
           rustup target add \
@@ -59,6 +67,17 @@ jobs:
         working-directory: crates/native-ffi/android
         run: ./validate-aar.sh
 
+      - name: Build local Maven repository
+        working-directory: crates/native-ffi/android
+        run: |
+          if [[ -x ./gradlew ]]; then
+            ./gradlew publishReleasePublicationToReleaseRepository
+          else
+            gradle publishReleasePublicationToReleaseRepository
+          fi
+          test -f "build/repository/com/candypoets/nipworker-native-ffi-android/${VERSION_NAME}/nipworker-native-ffi-android-${VERSION_NAME}.aar"
+          test -f "build/repository/com/candypoets/nipworker-native-ffi-android/${VERSION_NAME}/nipworker-native-ffi-android-${VERSION_NAME}.pom"
+
       - name: Upload Android AAR
         uses: actions/upload-artifact@v7
         with:
@@ -72,6 +91,98 @@ jobs:
           name: android-jniLibs
           path: crates/native-ffi/android/src/main/jniLibs/
           if-no-files-found: error
+
+      - name: Upload Android Maven repository
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-maven-repository
+          path: crates/native-ffi/android/build/repository/
+          if-no-files-found: error
+
+  # ──────────────────────────────────────────
+  # Maven — publish the versioned repository to GitHub Pages
+  # ──────────────────────────────────────────
+  publish-android-maven:
+    needs: build-android
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    concurrency:
+      group: nipworker-android-maven-pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Download Android Maven repository
+        uses: actions/download-artifact@v8
+        with:
+          name: android-maven-repository
+          path: ${{ runner.temp }}/current-maven
+
+      - name: Preserve published versions and stage this release
+        env:
+          PAGES_DIR: ${{ runner.temp }}/nipworker-pages
+        run: |
+          set -euo pipefail
+          mkdir -p "$PAGES_DIR"
+
+          if git ls-remote --exit-code origin refs/heads/gh-pages >/dev/null 2>&1; then
+            git fetch --no-tags origin \
+              refs/heads/gh-pages:refs/remotes/origin/gh-pages
+            git archive refs/remotes/origin/gh-pages | tar -x -C "$PAGES_DIR"
+          fi
+
+          cp -R "${RUNNER_TEMP}/current-maven/." "$PAGES_DIR/"
+          cp crates/native-ffi/android/repository-index.html "$PAGES_DIR/index.html"
+          touch "$PAGES_DIR/.nojekyll"
+
+          VERSION_NAME="$(node -p "require('./package.json').version")"
+          ARTIFACT_ROOT="$PAGES_DIR/com/candypoets/nipworker-native-ffi-android/$VERSION_NAME"
+          test -f "$ARTIFACT_ROOT/nipworker-native-ffi-android-$VERSION_NAME.aar"
+          test -f "$ARTIFACT_ROOT/nipworker-native-ffi-android-$VERSION_NAME.pom"
+
+      - name: Save Maven repository history
+        env:
+          PAGES_DIR: ${{ runner.temp }}/nipworker-pages
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+
+          if git show-ref --verify --quiet refs/remotes/origin/gh-pages; then
+            base_ref=refs/remotes/origin/gh-pages
+          else
+            empty_tree="$(git hash-object -t tree /dev/null)"
+            base_ref="$(git commit-tree "$empty_tree" -m 'Initialize Android Maven repository')"
+          fi
+
+          worktree="${RUNNER_TEMP}/nipworker-pages-git"
+          git worktree add --detach "$worktree" "$base_ref"
+          cp -R "$PAGES_DIR/." "$worktree/"
+          git -C "$worktree" add --all
+
+          if git -C "$worktree" diff --cached --quiet; then
+            echo "Maven repository is already up to date"
+          else
+            git -C "$worktree" commit -m "Publish Android Maven ${GITHUB_REF_NAME}"
+            git -C "$worktree" push origin HEAD:gh-pages
+          fi
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: ${{ runner.temp }}/nipworker-pages
+
+      - name: Deploy Android Maven repository
+        id: deployment
+        uses: actions/deploy-pages@v4
 
   # ──────────────────────────────────────────
   # iOS — build .a for device + simulator
@@ -96,6 +207,12 @@ jobs:
       - name: Build iOS XCFramework
         working-directory: crates/native-ffi/ios
         run: ./build-ios.sh
+
+      - name: Validate Apple SDK
+        run: |
+          test -f crates/native-ffi/ios/NipworkerNativeFFI.xcframework/Info.plist
+          find crates/native-ffi/ios/NipworkerNativeFFI.xcframework -name nipworker.h -print -quit | grep -q .
+          find crates/native-ffi/ios/NipworkerNativeFFI.xcframework -name module.modulemap -print -quit | grep -q .
 
       - name: Upload iOS XCFramework
         uses: actions/upload-artifact@v7
@@ -139,7 +256,7 @@ jobs:
   # Release — attach all native artifacts
   # ──────────────────────────────────────────
   release-native:
-    needs: [build-android, build-ios, build-linux]
+    needs: [build-android, publish-android-maven, build-ios, build-linux]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
@@ -159,36 +276,100 @@ jobs:
 
       - name: Package iOS static library
         run: |
+          cp crates/native-ffi/include/nipworker.h native-artifacts/ios-staticlib/
           cd native-artifacts/ios-staticlib
           zip -r ../nipworker-native-ios-static.zip .
 
+      - name: Package Swift SDK
+        run: |
+          cp -R swift native-artifacts/NipworkerSwift
+          mkdir -p native-artifacts/NipworkerSwift/Frameworks
+          cp -R native-artifacts/NipworkerNativeFFI.xcframework \
+            native-artifacts/NipworkerSwift/Frameworks/
+          sed -i \
+            's#path: "../crates/native-ffi/ios/NipworkerNativeFFI.xcframework"#path: "Frameworks/NipworkerNativeFFI.xcframework"#' \
+            native-artifacts/NipworkerSwift/Package.swift
+          cp LICENSE native-artifacts/NipworkerSwift/
+          test -f native-artifacts/NipworkerSwift/Frameworks/NipworkerNativeFFI.xcframework/Info.plist
+          grep -q 'path: "Frameworks/NipworkerNativeFFI.xcframework"' \
+            native-artifacts/NipworkerSwift/Package.swift
+          cd native-artifacts
+          zip -r nipworker-swift-sdk.zip NipworkerSwift
+
+      - name: Package Android Maven repository
+        run: |
+          cd native-artifacts/android-maven-repository
+          zip -r ../nipworker-native-android-maven.zip .
+
       - name: Package Linux
         run: |
+          cp crates/native-ffi/include/nipworker.h native-artifacts/linux-host/
           cd native-artifacts/linux-host
           zip -r ../nipworker-native-linux.zip .
+
+      - name: Stage public C header
+        run: cp crates/native-ffi/include/nipworker.h native-artifacts/nipworker.h
+
+      - name: Create native checksums
+        working-directory: native-artifacts
+        run: |
+          sha256sum \
+            android-aar/nipworker-native-ffi-android-release.aar \
+            nipworker-native-android-maven.zip \
+            nipworker-native-ios.zip \
+            nipworker-swift-sdk.zip \
+            nipworker-native-ios-static.zip \
+            nipworker-native-linux.zip \
+            nipworker.h \
+            > nipworker-native-checksums.txt
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v3
         with:
           files: |
             native-artifacts/android-aar/nipworker-native-ffi-android-release.aar
+            native-artifacts/nipworker-native-android-maven.zip
             native-artifacts/nipworker-native-ios.zip
+            native-artifacts/nipworker-swift-sdk.zip
             native-artifacts/nipworker-native-ios-static.zip
             native-artifacts/nipworker-native-linux.zip
+            native-artifacts/nipworker.h
+            native-artifacts/nipworker-native-checksums.txt
           append_body: true
           body: |
             ## 📱 Native Mobile Libraries
 
             Pre-built native libraries for `@candypoets/nipworker`. The npm package
-            bundles the Android JNI libraries and iOS XCFramework for React Native
-            autolinking.
+            resolves Android through the hosted Maven repository and bundles the
+            iOS XCFramework for React Native autolinking.
 
             | Platform | Download | Integration |
             |----------|----------|-------------|
-            | **Android** | `nipworker-native-ffi-android-release.aar` | Direct native integration; React Native receives the JNI libraries through npm |
-            | **iOS (XCFramework)** | `nipworker-native-ios.zip` | Direct native integration; React Native receives it through npm/CocoaPods |
+            | **Android (Gradle)** | `https://candypoets.github.io/nipworker/` | Hosted Maven repository; the zip remains available for offline builds |
+            | **Android (AAR)** | `nipworker-native-ffi-android-release.aar` | Low-level JNI/C ABI library; contains all four Android ABIs |
+            | **Apple (Swift SDK)** | `nipworker-swift-sdk.zip` | Self-contained local Swift package with sources and XCFramework |
+            | **Apple (XCFramework)** | `nipworker-native-ios.zip` | C/FFI integration for iOS device, simulator, and macOS; includes headers |
             | **iOS (static lib)** | `nipworker-native-ios-static.zip` | Low-level direct integration |
             | **Linux** | `nipworker-native-linux.zip` | For local FFI testing only |
+
+            SHA-256 hashes are in `nipworker-native-checksums.txt`.
+
+            ### Pure Android
+            Add the GitHub Pages Maven repository and dependency:
+
+            ```kotlin
+            repositories { maven { url = uri("https://candypoets.github.io/nipworker/") } }
+            dependencies {
+              implementation("com.candypoets:nipworker-native-ffi-android:VERSION")
+            }
+            ```
+
+            The Android artifact is the native FFI layer. Applications provide
+            their own Kotlin/Java host API; the React Native host API remains in npm.
+
+            ### Pure Swift
+            Unpack `nipworker-swift-sdk.zip` and add its `NipworkerSwift` directory
+            as a local package dependency in Xcode or SwiftPM.
 
             ### React Native
             ```sh

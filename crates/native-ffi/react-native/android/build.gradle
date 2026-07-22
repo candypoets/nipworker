@@ -20,6 +20,9 @@ static def toPlatformFileString(String path) {
 
 def reactNativeRootDir = resolveReactNativeDirectory()
 def packageRootDir = new File(projectDir, "../../../..").canonicalFile
+def nipworkerVersion = new groovy.json.JsonSlurper().parse(
+	new File(packageRootDir, "package.json")
+).version
 
 react {
 	root = packageRootDir
@@ -73,14 +76,10 @@ android {
 		}
 	}
 
-	sourceSets {
-		main {
-			jniLibs.srcDir '../../android/src/main/jniLibs'
-		}
-	}
 }
 
 dependencies {
 	implementation 'com.facebook.react:react-android'
+	implementation "com.candypoets:nipworker-native-ffi-android:${nipworkerVersion}"
 	api 'com.google.flatbuffers:flatbuffers-java:25.2.10'
 }

@@ -122,8 +122,11 @@ echo ""
 echo "Creating XCFramework..."
 xcodebuild -create-xcframework \
 	-library "${IOS_DIR}/Frameworks/ios-arm64/libnipworker_native_ffi.a" \
+	-headers "${CRATE_DIR}/include" \
 	-library "${IOS_DIR}/Frameworks/ios-arm64_x86_64-simulator/libnipworker_native_ffi.a" \
+	-headers "${CRATE_DIR}/include" \
 	-library "${IOS_DIR}/Frameworks/macos-arm64_x86_64/libnipworker_native_ffi.a" \
+	-headers "${CRATE_DIR}/include" \
 	-output "${IOS_DIR}/NipworkerNativeFFI.xcframework"
 
 echo "  -> ${IOS_DIR}/NipworkerNativeFFI.xcframework"
@@ -135,5 +138,5 @@ echo ""
 echo "Artifacts:"
 echo "  XCFramework:      ${IOS_DIR}/NipworkerNativeFFI.xcframework"
 echo ""
-echo "Integration: drag NipworkerNativeFFI.xcframework into your project"
-echo "  and set 'Embed & Sign' (or use CocoaPods with the provided podspec)"
+echo "Integration: add NipworkerNativeFFI.xcframework to your link phase"
+echo "  and use 'Do Not Embed' (it contains static libraries)"

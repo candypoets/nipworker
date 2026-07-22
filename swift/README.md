@@ -10,6 +10,13 @@ Swift bindings for NIPWorker — a high-performance Nostr client library powered
 
 ## Installation
 
+### Versioned release
+
+Download `nipworker-swift-sdk.zip` from the matching GitHub Release, unpack it,
+and add the contained `NipworkerSwift` directory as a local package dependency.
+The release archive already contains the XCFramework at the package-local path
+expected by its generated manifest.
+
 ### Xcode — Local Package (recommended while iterating)
 
 1. Open your iOS/macOS project in Xcode.

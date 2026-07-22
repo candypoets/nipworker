@@ -4,7 +4,10 @@ plugins {
 }
 
 group = "com.candypoets"
-version = providers.gradleProperty("VERSION_NAME").orElse(nativeFfiVersion()).get()
+version = providers.gradleProperty("VERSION_NAME")
+	.orElse(providers.environmentVariable("VERSION_NAME"))
+	.orElse(nativeFfiVersion())
+	.get()
 base.archivesName.set("nipworker-native-ffi-android")
 
 fun nativeFfiVersion(): String {
@@ -31,16 +34,31 @@ android {
 	namespace = "com.candypoets.nipworker.nativeffi"
 	compileSdk = providers.gradleProperty("ANDROID_COMPILE_SDK").map(String::toInt).orElse(35).get()
 
+	buildFeatures {
+		prefabPublishing = true
+	}
+
 	defaultConfig {
 		minSdk = providers.gradleProperty("ANDROID_MIN_SDK").map(String::toInt).orElse(23).get()
 		ndk {
 			abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
 		}
+		externalNativeBuild {
+			cmake {
+				arguments += "-DANDROID_STL=c++_shared"
+			}
+		}
 	}
 
-	sourceSets {
-		getByName("main") {
-			jniLibs.srcDir("src/main/jniLibs")
+	externalNativeBuild {
+		cmake {
+			path = file("CMakeLists.txt")
+		}
+	}
+
+	prefab {
+		create("nipworker_native_ffi") {
+			headers = "../include"
 		}
 	}
 
@@ -57,6 +75,12 @@ dependencies {
 
 afterEvaluate {
 	publishing {
+		repositories {
+			maven {
+				name = "release"
+				url = layout.buildDirectory.dir("repository").get().asFile.toURI()
+			}
+		}
 		publications {
 			create<MavenPublication>("release") {
 				from(components["release"])

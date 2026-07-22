@@ -1,0 +1,4 @@
+module NipworkerNativeFFI {
+	header "nipworker.h"
+	export *
+}
