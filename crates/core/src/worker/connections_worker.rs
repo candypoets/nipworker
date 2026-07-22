@@ -4,12 +4,19 @@ use crate::spawn::spawn_worker;
 use crate::traits::RelayTransport;
 use crate::transport::connection::RelayConnection;
 use crate::transport::fb_utils::{build_worker_message, serialize_connection_status};
+use crate::transport::frame_scan::scan_relay_frame;
+use crate::transport::sub_dedup::{scanned_event_id, SubDedup};
+use crate::worker::batch_buffer::{encode_conn_batch, BatchBufferManager};
 use futures::StreamExt;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::{Arc, RwLock};
 use tracing::{info, warn};
+
+/// How often the connections worker checks connections→parser batch buffers
+/// for timeout flushes (same discipline as the parser→main sweeper).
+const CONN_BATCH_SWEEP_MS: u64 = 4;
 
 #[derive(serde::Deserialize)]
 struct Envelope {
@@ -112,6 +119,7 @@ fn send_envelope(
     full_to_relay: &Rc<RefCell<HashMap<String, String>>>,
     relay_to_full: &Rc<RefCell<HashMap<String, String>>>,
     sub_relays: &Rc<RefCell<HashMap<String, HashSet<String>>>>,
+    sub_dedup: &Rc<RefCell<HashMap<String, SubDedup>>>,
 ) {
     let env: Envelope = match serde_json::from_slice(bytes) {
         Ok(e) => e,
@@ -156,6 +164,8 @@ fn send_envelope(
                         };
                     if should_remove {
                         sub_relays.borrow_mut().remove(&sub_id);
+                        // Free the cross-relay dedup state for this subscription.
+                        sub_dedup.borrow_mut().remove(&sub_id);
                     }
                 }
             }
@@ -210,6 +220,9 @@ impl ConnectionsWorker {
         let full_to_relay_sub_ids = Rc::new(RefCell::new(HashMap::<String, String>::new()));
         let relay_to_full_sub_ids = Rc::new(RefCell::new(HashMap::<String, String>::new()));
         let sub_relays = Rc::new(RefCell::new(HashMap::<String, HashSet<String>>::new()));
+        // Cross-relay EVENT dedup: one bounded id ring per (full) subscription id.
+        // Entries are created lazily on first EVENT and freed on CLOSE.
+        let sub_dedup = Rc::new(RefCell::new(HashMap::<String, SubDedup>::new()));
 
         // Bridge multiple callback clones into the single MessageSender
         let (parser_tx, mut parser_rx) = futures::channel::mpsc::unbounded::<Vec<u8>>();
@@ -222,6 +235,31 @@ impl ConnectionsWorker {
             }
         });
 
+        // Per-subscription batch buffers for the connections→parser channel:
+        // scanned EVENT frames are concatenated into one channel message
+        // instead of one postMessage per frame. Control frames bypass the
+        // buffers entirely (see out_writer below).
+        let parser_batches = Rc::new(RefCell::new(BatchBufferManager::new()));
+
+        // Batch timeout sweeper: flushes connections→parser batch buffers
+        // whose oldest frame exceeded the timeout so events never sit
+        // buffered forever.
+        {
+            let sweep_batches = parser_batches.clone();
+            let sweep_tx = parser_tx.clone();
+            spawn_worker(async move {
+                loop {
+                    crate::platform::sleep(CONN_BATCH_SWEEP_MS).await;
+                    let payloads = sweep_batches.borrow_mut().drain_timed_out();
+                    for payload in payloads {
+                        if sweep_tx.unbounded_send(encode_conn_batch(&payload)).is_err() {
+                            return;
+                        }
+                    }
+                }
+            });
+        }
+
         let to_crypto_rc = std::rc::Rc::new(to_crypto);
         let get_or_create_connection = {
             let transport = self.transport.clone();
@@ -229,6 +267,8 @@ impl ConnectionsWorker {
             let parser_tx = parser_tx.clone();
             let to_crypto_rc = to_crypto_rc.clone();
             let relay_to_full_sub_ids = relay_to_full_sub_ids.clone();
+            let sub_dedup = sub_dedup.clone();
+            let parser_batches = parser_batches.clone();
             move |url: &str| {
                 {
                     let map = connections.read().unwrap();
@@ -243,17 +283,63 @@ impl ConnectionsWorker {
                 let transport = transport.clone();
                 let to_crypto_messages = to_crypto_rc.clone();
                 let relay_to_full_sub_ids = relay_to_full_sub_ids.clone();
+                let sub_dedup_writer = sub_dedup.clone();
+                let parser_batches = parser_batches.clone();
 
                 let out_writer: Rc<dyn Fn(&str, &str, &str)> =
                     Rc::new(move |url: &str, sub_id: &str, msg: &str| {
                         let full_sub_id = decode_relay_sub_id(sub_id, &relay_to_full_sub_ids);
+                        if full_sub_id.starts_with("n46:") {
+                            let mut fbb = flatbuffers::FlatBufferBuilder::new();
+                            let wm = build_worker_message(&mut fbb, &full_sub_id, url, msg);
+                            fbb.finish(wm, None);
+                            // MessageSender accepts &[u8]: send the finished buffer without copying.
+                            let _ = to_crypto_messages.send(fbb.finished_data());
+                            return;
+                        }
+                        // Single zero-copy scan classifies the frame; EVENT frames
+                        // additionally probe the cross-relay dedup ring.
+                        let mut is_event = false;
+                        if let Some(scan) = scan_relay_frame(msg) {
+                            if scan.kind == "EVENT" {
+                                // Cross-relay dedup: an EVENT frame reaches the parser
+                                // only the first time its (subId, event id) pair is
+                                // seen. Non-EVENT frames and unparseable payloads pass
+                                // through untouched (parser dedup stays as safety net).
+                                if let Some(id) = scanned_event_id(&scan) {
+                                    let mut dedup = sub_dedup_writer.borrow_mut();
+                                    let entry = dedup
+                                        .entry(full_sub_id.clone())
+                                        .or_insert_with(SubDedup::new);
+                                    if !entry.mark(id) {
+                                        return;
+                                    }
+                                }
+                                is_event = true;
+                            }
+                        }
                         let mut fbb = flatbuffers::FlatBufferBuilder::new();
                         let wm = build_worker_message(&mut fbb, &full_sub_id, url, msg);
                         fbb.finish(wm, None);
-                        if full_sub_id.starts_with("n46:") {
-                            // MessageSender accepts &[u8]: send the finished buffer without copying.
-                            let _ = to_crypto_messages.send(fbb.finished_data());
+                        if is_event {
+                            // Batchable path: append to this subscription's buffer;
+                            // flushed by the size threshold (here), the sweeper
+                            // timer, or the next control frame for the sub.
+                            let flushed = parser_batches
+                                .borrow_mut()
+                                .add_message(&full_sub_id, fbb.finished_data());
+                            if let Some(payload) = flushed {
+                                let _ = tx_msg.unbounded_send(encode_conn_batch(&payload));
+                            }
                         } else {
+                            // Control frames (EOSE/CLOSED/OK/AUTH/NOTICE) must not
+                            // sit in a buffer: flush this sub's pending events
+                            // first so ordering is preserved, then forward
+                            // immediately as a bare single WorkerMessage.
+                            let flushed = parser_batches.borrow_mut().flush_sub(&full_sub_id);
+                            if let Some(payload) = flushed {
+                                let _ = tx_msg.unbounded_send(encode_conn_batch(&payload));
+                            }
                             // The mpsc bridge to the parser loop requires an owned Vec.
                             let _ = tx_msg.unbounded_send(fbb.finished_data().to_vec());
                         }
@@ -298,6 +384,7 @@ impl ConnectionsWorker {
         let full_to_relay_parser = full_to_relay_sub_ids.clone();
         let relay_to_full_parser = relay_to_full_sub_ids.clone();
         let sub_relays_parser = sub_relays.clone();
+        let sub_dedup_parser = sub_dedup.clone();
         spawn_worker(async move {
             info!("[ConnectionsWorker] parser loop started");
             loop {
@@ -332,6 +419,8 @@ impl ConnectionsWorker {
                                                     .borrow_mut()
                                                     .remove(&sub_id)
                                                     .unwrap_or_default();
+                                                // Free the cross-relay dedup state for this subscription.
+                                                sub_dedup_parser.borrow_mut().remove(&sub_id);
                                                 for relay in relays {
                                                     let conn = get_conn_parser(&relay);
                                                     let relay_text = encode_relay_frame(
@@ -414,6 +503,7 @@ impl ConnectionsWorker {
         let full_to_relay_cache = full_to_relay_sub_ids.clone();
         let relay_to_full_cache = relay_to_full_sub_ids.clone();
         let sub_relays_cache = sub_relays.clone();
+        let sub_dedup_cache = sub_dedup.clone();
         spawn_worker(async move {
             info!("[ConnectionsWorker] cache loop started");
             loop {
@@ -426,6 +516,7 @@ impl ConnectionsWorker {
                             &full_to_relay_cache,
                             &relay_to_full_cache,
                             &sub_relays_cache,
+                            &sub_dedup_cache,
                         );
                     }
                     Err(_) => break,
@@ -440,6 +531,7 @@ impl ConnectionsWorker {
         let full_to_relay_crypto = full_to_relay_sub_ids.clone();
         let relay_to_full_crypto = relay_to_full_sub_ids.clone();
         let sub_relays_crypto = sub_relays.clone();
+        let sub_dedup_crypto = sub_dedup.clone();
         spawn_worker(async move {
             info!("[ConnectionsWorker] crypto loop started");
             loop {
@@ -455,6 +547,7 @@ impl ConnectionsWorker {
                                     &full_to_relay_crypto,
                                     &relay_to_full_crypto,
                                     &sub_relays_crypto,
+                                    &sub_dedup_crypto,
                                 );
                                 continue;
                             }
@@ -496,8 +589,9 @@ mod tests {
     use crate::channel::TokioWorkerChannel;
     use crate::generated::nostr::fb;
     use crate::traits::{RelayTransport, TransportError, TransportStatus};
+    use crate::worker::batch_buffer::decode_conn_batch;
     use async_trait::async_trait;
-    use std::collections::HashMap;
+    use std::collections::{HashMap, VecDeque};
     use std::sync::{Arc, Mutex, RwLock};
     use tokio::task::LocalSet;
 
@@ -1096,7 +1190,8 @@ mod tests {
                 // Invoke the stored message callback
                 transport.invoke_message_callback("wss://r", r#"["EVENT","sub1",{}]"#.to_string());
 
-                let bytes = parser_out_test.recv().await.unwrap();
+                let mut pending = VecDeque::new();
+                let bytes = recv_worker_message(&mut parser_out_test, &mut pending).await;
                 let wm = flatbuffers::root::<fb::WorkerMessage>(&bytes).unwrap();
                 assert_eq!(wm.sub_id(), Some("sub1"), "sub_id mismatch");
             })
@@ -1174,7 +1269,8 @@ mod tests {
 
                 // Verify callbacks are set up by invoking them
                 transport.invoke_message_callback("wss://r1", r#"["EVENT","sub1",{}]"#.to_string());
-                let bytes = parser_out_test.recv().await.unwrap();
+                let mut pending = VecDeque::new();
+                let bytes = recv_worker_message(&mut parser_out_test, &mut pending).await;
                 let wm = flatbuffers::root::<fb::WorkerMessage>(&bytes).unwrap();
                 assert_eq!(
                     wm.sub_id(),
@@ -1361,6 +1457,207 @@ mod tests {
             .await;
     }
 
+    /// Unwrap one channel payload into WorkerMessage frames: a magic-prefixed
+    /// connections→parser batch yields all its frames; anything else is a
+    /// bare single WorkerMessage (relay status / control path).
+    fn unwrap_parser_payload(bytes: &[u8], pending: &mut VecDeque<Vec<u8>>) {
+        match decode_conn_batch(bytes) {
+            Some(frames) => {
+                for (_sid, data) in frames {
+                    pending.push_back(data);
+                }
+            }
+            None => pending.push_back(bytes.to_vec()),
+        }
+    }
+
+    /// Next WorkerMessage from the parser channel, transparently decoding
+    /// batched payloads. Bare status/control messages are returned as-is.
+    async fn recv_worker_message(
+        rx: &mut TokioWorkerChannel,
+        pending: &mut VecDeque<Vec<u8>>,
+    ) -> Vec<u8> {
+        if let Some(bytes) = pending.pop_front() {
+            return bytes;
+        }
+        loop {
+            let bytes = rx.recv().await.expect("parser channel closed");
+            unwrap_parser_payload(&bytes, pending);
+            if let Some(bytes) = pending.pop_front() {
+                return bytes;
+            }
+        }
+    }
+
+    async fn recv_event_payload(
+        rx: &mut TokioWorkerChannel,
+        pending: &mut VecDeque<Vec<u8>>,
+    ) -> String {
+        // Read until a Raw (EVENT) WorkerMessage arrives, skipping
+        // ConnectionStatus and other control messages.
+        loop {
+            while let Some(bytes) = pending.pop_front() {
+                let wm = flatbuffers::root::<fb::WorkerMessage>(&bytes).unwrap();
+                if wm.content_type() == fb::Message::Raw {
+                    if let Some(raw) = wm.content_as_raw() {
+                        return raw.raw().to_string();
+                    }
+                }
+            }
+            let bytes = match tokio::time::timeout(std::time::Duration::from_millis(500), rx.recv())
+                .await
+            {
+                Ok(Ok(b)) => b,
+                _ => panic!("timed out waiting for EVENT message"),
+            };
+            unwrap_parser_payload(&bytes, pending);
+        }
+    }
+
+    async fn expect_no_event(rx: &mut TokioWorkerChannel, pending: &mut VecDeque<Vec<u8>>) {
+        // Assert no Raw (EVENT) WorkerMessage arrives within a short window.
+        for bytes in pending.drain(..) {
+            let wm = flatbuffers::root::<fb::WorkerMessage>(&bytes).unwrap();
+            assert_ne!(
+                wm.content_type(),
+                fb::Message::Raw,
+                "duplicate EVENT was forwarded to parser"
+            );
+        }
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(50);
+        loop {
+            let now = std::time::Instant::now();
+            if now >= deadline {
+                return;
+            }
+            match tokio::time::timeout(deadline - now, rx.recv()).await {
+                Ok(Ok(bytes)) => {
+                    let mut frames = VecDeque::new();
+                    unwrap_parser_payload(&bytes, &mut frames);
+                    for bytes in frames {
+                        let wm = flatbuffers::root::<fb::WorkerMessage>(&bytes).unwrap();
+                        assert_ne!(
+                            wm.content_type(),
+                            fb::Message::Raw,
+                            "duplicate EVENT was forwarded to parser"
+                        );
+                    }
+                }
+                _ => return,
+            }
+        }
+    }
+
+    fn event_frame(sub_id: &str, id_hex: &str) -> String {
+        format!(
+            r#"["EVENT","{}",{{"id":"{}","pubkey":"pk","kind":1,"content":"hi","tags":[],"created_at":1,"sig":"s"}}]"#,
+            sub_id, id_hex
+        )
+    }
+
+    #[tokio::test]
+    async fn test_cross_relay_dedup_same_sub_forwards_once() {
+        let local = LocalSet::new();
+        local
+            .run_until(async {
+                let (transport, _worker, _parser_test, mut parser_out_test, cache_test, _crypto_test) =
+                    setup().await;
+
+                let id_hex = "ab".repeat(32);
+                let envelope = serde_json::json!({
+                    "relays": ["wss://r1", "wss://r2"],
+                    "frames": [r#"["REQ","s1",{}]"#]
+                });
+                cache_test.send(&serde_json::to_vec(&envelope).unwrap()).await.unwrap();
+                for _ in 0..5 {
+                    tokio::task::yield_now().await;
+                }
+
+                let mut pending = VecDeque::new();
+                // Same event id, same sub, from relay 1: forwarded
+                transport.invoke_message_callback("wss://r1", event_frame("s1", &id_hex));
+                let payload = recv_event_payload(&mut parser_out_test, &mut pending).await;
+                assert!(payload.contains(&id_hex), "first arrival should be forwarded");
+
+                // Same event id, same sub, from relay 2: suppressed
+                transport.invoke_message_callback("wss://r2", event_frame("s1", &id_hex));
+                expect_no_event(&mut parser_out_test, &mut pending).await;
+            })
+            .await;
+    }
+
+    #[tokio::test]
+    async fn test_cross_relay_dedup_different_subs_both_delivered() {
+        let local = LocalSet::new();
+        local
+            .run_until(async {
+                let (transport, _worker, _parser_test, mut parser_out_test, cache_test, _crypto_test) =
+                    setup().await;
+
+                let id_hex = "cd".repeat(32);
+                let envelope = serde_json::json!({
+                    "relays": ["wss://r1"],
+                    "frames": [r#"["REQ","s1",{}]"#, r#"["REQ","s2",{}]"#]
+                });
+                cache_test.send(&serde_json::to_vec(&envelope).unwrap()).await.unwrap();
+                for _ in 0..5 {
+                    tokio::task::yield_now().await;
+                }
+
+                // Same event id under two different subs: both delivered
+                let mut pending = VecDeque::new();
+                transport.invoke_message_callback("wss://r1", event_frame("s1", &id_hex));
+                let first = recv_event_payload(&mut parser_out_test, &mut pending).await;
+                assert!(first.contains(&id_hex));
+
+                transport.invoke_message_callback("wss://r1", event_frame("s2", &id_hex));
+                let second = recv_event_payload(&mut parser_out_test, &mut pending).await;
+                assert!(second.contains(&id_hex));
+            })
+            .await;
+    }
+
+    #[tokio::test]
+    async fn test_cross_relay_dedup_state_freed_on_close() {
+        let local = LocalSet::new();
+        local
+            .run_until(async {
+                let (transport, _worker, parser_test, mut parser_out_test, cache_test, _crypto_test) =
+                    setup().await;
+
+                let id_hex = "ef".repeat(32);
+                let envelope = serde_json::json!({
+                    "relays": ["wss://r1"],
+                    "frames": [r#"["REQ","s1",{}]"#]
+                });
+                cache_test.send(&serde_json::to_vec(&envelope).unwrap()).await.unwrap();
+                for _ in 0..5 {
+                    tokio::task::yield_now().await;
+                }
+
+                transport.invoke_message_callback("wss://r1", event_frame("s1", &id_hex));
+                let mut pending = VecDeque::new();
+                let _ = recv_event_payload(&mut parser_out_test, &mut pending).await;
+
+                // Duplicate is suppressed while the sub is open
+                transport.invoke_message_callback("wss://r1", event_frame("s1", &id_hex));
+                expect_no_event(&mut parser_out_test, &mut pending).await;
+
+                // CLOSE the subscription (parser close path): dedup state is freed
+                let close_msg = build_raw_worker_message("", r#"["CLOSE","s1"]"#);
+                parser_test.send(&close_msg).await.unwrap();
+                for _ in 0..5 {
+                    tokio::task::yield_now().await;
+                }
+
+                // Same id under a fresh subscription is delivered again
+                transport.invoke_message_callback("wss://r1", event_frame("s1", &id_hex));
+                let payload = recv_event_payload(&mut parser_out_test, &mut pending).await;
+                assert!(payload.contains(&id_hex), "event should be forwarded after CLOSE freed dedup state");
+            })
+            .await;
+    }
+
     #[tokio::test]
     async fn test_auth_event_full_flow() {
         let local = LocalSet::new();
@@ -1452,5 +1749,167 @@ mod tests {
 				assert!(req_sent, "expected original REQ frame to be sent");
 			})
 			.await;
+    }
+
+    /// Collect `n` EVENT payloads from the parser channel, transparently
+    /// unwrapping batched payloads and skipping bare status/control messages.
+    async fn recv_n_events(
+        rx: &mut TokioWorkerChannel,
+        n: usize,
+    ) -> Vec<(String, Vec<u8>)> {
+        let mut events: Vec<(String, Vec<u8>)> = Vec::new();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(2000);
+        while events.len() < n {
+            let now = std::time::Instant::now();
+            assert!(now < deadline, "timed out waiting for {n} events");
+            let bytes = tokio::time::timeout(deadline - now, rx.recv())
+                .await
+                .expect("timed out waiting for events")
+                .expect("parser channel closed");
+            if let Some(frames) = decode_conn_batch(&bytes) {
+                events.extend(frames);
+            }
+            // Bare single messages are relay statuses / control frames: skip.
+        }
+        events
+    }
+
+    #[tokio::test]
+    async fn test_event_frames_are_batched_to_parser() {
+        let local = LocalSet::new();
+        local
+            .run_until(async {
+                let (transport, _worker, _parser_test, mut parser_out_test, cache_test, _crypto_test) =
+                    setup().await;
+
+                let envelope = serde_json::json!({
+                    "relays": ["wss://r1"],
+                    "frames": [r#"["REQ","s1",{}]"#]
+                });
+                cache_test.send(&serde_json::to_vec(&envelope).unwrap()).await.unwrap();
+                for _ in 0..5 {
+                    tokio::task::yield_now().await;
+                }
+
+                // Three distinct events, same sub, in one synchronous burst:
+                // they must arrive inside batched channel messages, in order.
+                let ids: Vec<String> = (1u8..=3).map(|i| format!("{:02x}", i).repeat(32)).collect();
+                for id in &ids {
+                    transport.invoke_message_callback("wss://r1", event_frame("s1", id));
+                }
+
+                let batched = recv_n_events(&mut parser_out_test, 3).await;
+                assert_eq!(batched.len(), 3);
+                for (i, (sid, data)) in batched.iter().enumerate() {
+                    assert_eq!(sid, "s1");
+                    let wm = flatbuffers::root::<fb::WorkerMessage>(data).unwrap();
+                    let raw = wm.content_as_raw().expect("Raw content");
+                    assert!(raw.raw().contains(&ids[i]), "frame {} out of order", i);
+                }
+            })
+            .await;
+    }
+
+    #[tokio::test]
+    async fn test_control_frame_flushes_pending_events_first() {
+        let local = LocalSet::new();
+        local
+            .run_until(async {
+                let (transport, _worker, _parser_test, mut parser_out_test, cache_test, _crypto_test) =
+                    setup().await;
+
+                let envelope = serde_json::json!({
+                    "relays": ["wss://r1"],
+                    "frames": [r#"["REQ","s1",{}]"#]
+                });
+                cache_test.send(&serde_json::to_vec(&envelope).unwrap()).await.unwrap();
+                for _ in 0..5 {
+                    tokio::task::yield_now().await;
+                }
+
+                // A buffered EVENT followed by EOSE: the EOSE must flush the
+                // pending event batch ahead of itself and travel unbatched.
+                let id_hex = "0a".repeat(32);
+                transport.invoke_message_callback("wss://r1", event_frame("s1", &id_hex));
+                transport.invoke_message_callback("wss://r1", r#"["EOSE","s1"]"#.to_string());
+
+                let mut pending = VecDeque::new();
+                let event = recv_event_payload(&mut parser_out_test, &mut pending).await;
+                assert!(event.contains(&id_hex), "event must arrive before EOSE");
+
+                // The EOSE is the next message after the flushed batch, as a
+                // bare (unbatched) ConnectionStatus WorkerMessage.
+                let bytes = recv_worker_message(&mut parser_out_test, &mut pending).await;
+                let wm = flatbuffers::root::<fb::WorkerMessage>(&bytes).unwrap();
+                assert_eq!(wm.sub_id(), Some("s1"));
+                let cs = wm.content_as_connection_status().expect("EOSE as ConnectionStatus");
+                assert_eq!(cs.status(), "EOSE");
+            })
+            .await;
+    }
+
+    #[tokio::test]
+    async fn test_batch_size_threshold_flushes_large_burst() {
+        let local = LocalSet::new();
+        local
+            .run_until(async {
+                let (transport, _worker, _parser_test, mut parser_out_test, cache_test, _crypto_test) =
+                    setup().await;
+
+                let envelope = serde_json::json!({
+                    "relays": ["wss://r1"],
+                    "frames": [r#"["REQ","s1",{}]"#]
+                });
+                cache_test.send(&serde_json::to_vec(&envelope).unwrap()).await.unwrap();
+                for _ in 0..5 {
+                    tokio::task::yield_now().await;
+                }
+
+                // 20 events x ~1.5KB content: the 16KB size threshold flushes
+                // mid-burst, so the first channel payload is already a large
+                // batch; all 20 frames arrive across batches, in order.
+                let big_content = "x".repeat(1500);
+                let mut sent = Vec::new();
+                for i in 1u8..=20 {
+                    let id = format!("{:02x}", i).repeat(32);
+                    let frame = format!(
+                        r#"["EVENT","s1",{{"id":"{}","pubkey":"pk","kind":1,"content":"{}","tags":[],"created_at":1,"sig":"s"}}]"#,
+                        id, big_content
+                    );
+                    sent.push(id);
+                    transport.invoke_message_callback("wss://r1", frame);
+                }
+
+                // First payload must be a batch payload near the 16KB threshold
+                // (the burst is synchronous, so no timer flush can interleave).
+                let first = loop {
+                    let bytes = tokio::time::timeout(
+                        std::time::Duration::from_millis(500),
+                        parser_out_test.recv(),
+                    )
+                    .await
+                    .expect("timed out waiting for first batch")
+                    .expect("parser channel closed");
+                    if decode_conn_batch(&bytes).is_some() {
+                        break bytes;
+                    }
+                };
+                assert!(
+                    first.len() >= 12 * 1024,
+                    "first flush should be threshold-sized, got {} bytes",
+                    first.len()
+                );
+
+                let mut events = decode_conn_batch(&first).unwrap();
+                let rest = recv_n_events(&mut parser_out_test, 20 - events.len()).await;
+                events.extend(rest);
+                assert_eq!(events.len(), 20);
+                for (i, (_sid, data)) in events.iter().enumerate() {
+                    let wm = flatbuffers::root::<fb::WorkerMessage>(data).unwrap();
+                    let raw = wm.content_as_raw().expect("Raw content");
+                    assert!(raw.raw().contains(&sent[i]), "frame {} out of order", i);
+                }
+            })
+            .await;
     }
 }

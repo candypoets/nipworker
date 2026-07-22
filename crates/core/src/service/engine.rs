@@ -1028,7 +1028,10 @@ mod tests {
 			let event_json = r#"["EVENT","sub1",{"id":"0000000000000000000000000000000000000000000000000000000000000001","pubkey":"0000000000000000000000000000000000000000000000000000000000000001","created_at":1234567890,"kind":1,"tags":[],"content":"hello","sig":"00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001"}]"#;
 			transport.invoke_message_callback("wss://r", event_json.to_string());
 
-			// Yield to let event flow through pipeline (parse -> save_to_db -> serialize -> main)
+			// Let the connections→parser batch timer flush (8ms + sweep), then
+			// yield to let the event flow through the pipeline
+			// (parse -> save_to_db -> serialize -> main)
+			tokio::time::sleep(std::time::Duration::from_millis(30)).await;
 			for _ in 0..10 {
 				tokio::task::yield_now().await;
 			}

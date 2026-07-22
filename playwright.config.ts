@@ -8,7 +8,7 @@ export default defineConfig({
 	workers: 1,
 	reporter: 'list',
 	use: {
-		baseURL: 'http://localhost:5174',
+		baseURL: process.env.PW_BASE_URL ?? 'http://localhost:5174',
 		trace: 'on-first-retry',
 	},
 	projects: [

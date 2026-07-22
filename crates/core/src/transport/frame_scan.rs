@@ -52,17 +52,34 @@ fn skip_ws(bytes: &[u8], pos: &mut usize) {
 #[inline]
 fn skip_string(bytes: &[u8], pos: &mut usize) -> bool {
 	*pos += 1; // opening quote
-	while *pos < bytes.len() {
-		match bytes[*pos] {
-			b'\\' => *pos = (*pos + 2).min(bytes.len()),
-			b'"' => {
-				*pos += 1;
+	loop {
+		let rest = &bytes[*pos..];
+		match memchr::memchr2(b'"', b'\\', rest) {
+			Some(i) if rest[i] == b'"' => {
+				*pos += i + 1;
 				return true;
 			}
-			_ => *pos += 1,
+			Some(i) => *pos += (i + 2).min(rest.len()), // backslash: skip escape pair
+			None => {
+				*pos = bytes.len();
+				return false;
+			}
 		}
 	}
-	false
+}
+
+/// Find the next byte that matters when scanning inside an object/array:
+/// a quote (string start) or any structural brace/bracket. The memchr crate
+/// searches at most 3 bytes per pass, so two SIMD passes are merged by index.
+#[inline]
+fn find_structural(hay: &[u8]) -> Option<usize> {
+	match (
+		memchr::memchr3(b'"', b'{', b'[', hay),
+		memchr::memchr2(b'}', b']', hay),
+	) {
+		(Some(a), Some(b)) => Some(a.min(b)),
+		(a, b) => a.or(b),
+	}
 }
 
 /// Scan one element starting at `*pos` (no leading whitespace) and advance
@@ -82,7 +99,8 @@ fn scan_element<'a>(bytes: &[u8], text: &'a str, pos: &mut usize) -> Option<Scan
 		}
 		b'{' | b'[' => {
 			let mut depth = 0usize;
-			while *pos < bytes.len() {
+			while let Some(off) = find_structural(&bytes[*pos..]) {
+				*pos += off;
 				match bytes[*pos] {
 					b'"' => {
 						if !skip_string(bytes, pos) {
@@ -91,7 +109,8 @@ fn scan_element<'a>(bytes: &[u8], text: &'a str, pos: &mut usize) -> Option<Scan
 						continue;
 					}
 					b'{' | b'[' => depth += 1,
-					b'}' | b']' => {
+					_ => {
+						// b'}' | b']'
 						depth -= 1;
 						if depth == 0 {
 							*pos += 1;
@@ -101,7 +120,6 @@ fn scan_element<'a>(bytes: &[u8], text: &'a str, pos: &mut usize) -> Option<Scan
 							});
 						}
 					}
-					_ => {}
 				}
 				*pos += 1;
 			}

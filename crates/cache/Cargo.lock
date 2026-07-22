@@ -650,6 +650,7 @@ dependencies = [
  "gloo-timers",
  "hex",
  "js-sys",
+ "memchr",
  "pulldown-cmark",
  "regex",
  "reqwest",

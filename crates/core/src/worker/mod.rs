@@ -1,4 +1,4 @@
-#[cfg(feature = "parser")]
+#[cfg(any(feature = "parser", feature = "connections"))]
 pub mod batch_buffer;
 #[cfg(feature = "cache")]
 pub mod cache_worker;

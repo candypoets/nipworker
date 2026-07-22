@@ -124,6 +124,46 @@ struct Pattern {
     name: &'static str,
     regex: &'static LazyLock<Regex>,
     processor: fn(&str, &regex::Captures) -> Result<ContentBlock>,
+    /// Mandatory literals (ASCII) of which at least one must be present in the
+    /// text for the regex to be able to match at all. Compared case-sensitively
+    /// unless `ignore_case` is set (for `(?i)` regexes, literals are lowercase).
+    required: &'static [&'static str],
+    ignore_case: bool,
+}
+
+/// Conservative pre-check: returns false only when `text` provably cannot match
+/// `pattern` because none of its mandatory literals are present.
+fn might_match(pattern: &Pattern, text: &str) -> bool {
+    if pattern.ignore_case {
+        contains_any_ascii_case_insensitive(text, pattern.required)
+    } else {
+        pattern.required.iter().any(|literal| text.contains(literal))
+    }
+}
+
+/// ASCII case-insensitive "does text contain any of these needles" check.
+/// All needles must be non-empty lowercase ASCII sharing the same first byte,
+/// so a single SIMD memchr2 pass over that byte's two case variants finds all
+/// candidates. Returns false for an empty needle list.
+fn contains_any_ascii_case_insensitive(text: &str, needles: &[&str]) -> bool {
+    let Some(first) = needles.first().and_then(|n| n.as_bytes().first()) else {
+        return false;
+    };
+    let haystack = text.as_bytes();
+    let mut offset = 0;
+    while let Some(i) = memchr::memchr2(*first, first.to_ascii_uppercase(), &haystack[offset..])
+    {
+        let start = offset + i;
+        let rest = &haystack[start..];
+        if needles.iter().any(|n| {
+            let n = n.as_bytes();
+            rest.len() >= n.len() && rest[..n.len()].eq_ignore_ascii_case(n)
+        }) {
+            return true;
+        }
+        offset = start + 1;
+    }
+    false
 }
 
 // Static content patterns, compiled once instead of per event
@@ -151,42 +191,58 @@ static PATTERNS: &[Pattern] = &[
         name: "code",
         regex: &CODE_RE,
         processor: process_code,
+        required: &["`"],
+        ignore_case: false,
     },
     Pattern {
         name: "cashu",
         regex: &CASHU_RE,
         processor: process_cashu,
+        required: &["cashuA"],
+        ignore_case: false,
     },
     Pattern {
         name: "hashtag",
         regex: &HASHTAG_RE,
         processor: process_hashtag,
+        required: &["#"],
+        ignore_case: false,
     },
     Pattern {
         name: "image",
         regex: &IMAGE_RE,
         processor: process_image,
+        required: &["http"],
+        ignore_case: true,
     },
     Pattern {
         name: "video",
         regex: &VIDEO_RE,
         processor: process_video,
+        required: &["http"],
+        ignore_case: true,
     },
     Pattern {
         name: "link",
         regex: &LINK_RE,
         processor: process_link,
+        required: &["http"],
+        ignore_case: true,
     },
     Pattern {
         name: "nostr",
         regex: &NOSTR_RE,
         processor: process_nostr,
+        required: &["nostr:", "npub1", "note1", "nevent1", "naddr1", "nprofile1"],
+        ignore_case: true,
     },
     Pattern {
         name: "emoji",
         // NIP-30 shortcode format: :shortcode: where shortcode is alphanumeric, hyphens, underscores
         regex: &EMOJI_RE,
         processor: process_emoji_placeholder,
+        required: &[":"],
+        ignore_case: false,
     },
 ];
 
@@ -253,76 +309,81 @@ impl ContentParser {
                     continue;
                 }
 
-                // Find matches in this text block
-                let matches: Vec<_> = pattern.regex.find_iter(&block.text).collect();
-                if matches.is_empty() {
-                    // No matches, keep block as is
+                // Cheap literal pre-check: skip the regex scan when none of the
+                // pattern's mandatory literals are present in the text.
+                if !might_match(pattern, &block.text) {
                     new_blocks.push(block);
                     continue;
                 }
 
-                // Process matches and split the text
+                // Find matches in this text block. captures_iter yields the
+                // same leftmost-first non-overlapping matches as find_iter, but
+                // hands us the capture groups directly - no Vec collect and no
+                // second regex scan per match.
                 let mut last_end = 0;
+                let mut any_match = false;
 
-                for m in matches {
+                for caps in pattern.regex.captures_iter(&block.text) {
+                    let m = caps.get(0).expect("full match is always group 0");
+                    any_match = true;
+
                     // Add text before the match if any
                     if m.start() > last_end {
-                        let text_before = block.text[last_end..m.start()].to_string();
-                        if !text_before.is_empty() {
-                            new_blocks.push(ContentBlock::new("text".to_string(), text_before));
-                        }
+                        new_blocks.push(ContentBlock::new(
+                            "text".to_string(),
+                            block.text[last_end..m.start()].to_string(),
+                        ));
                     }
 
-                    // Process and add the match
-                    if let Some(caps) = pattern.regex.captures(&block.text[m.start()..m.end()]) {
-                        // For emoji pattern, resolve shortcode using emoji_map if available
-                        if pattern.name == "emoji" && !self.emoji_map.is_empty() {
-                            match process_emoji_with_map(m.as_str(), &caps, &self.emoji_map) {
-                                Ok(match_block) => new_blocks.push(match_block),
-                                Err(_) => {
-                                    // If we can't resolve the emoji, treat it as text
-                                    new_blocks.push(ContentBlock::new(
-                                        "text".to_string(),
-                                        m.as_str().to_string(),
-                                    ));
-                                }
-                            }
-                        } else {
-                            match (pattern.processor)(m.as_str(), &caps) {
-                                Ok(match_block) => new_blocks.push(match_block),
-                                Err(_) => {
-                                    // If we can't process the match, treat it as text
-                                    new_blocks.push(ContentBlock::new(
-                                        "text".to_string(),
-                                        m.as_str().to_string(),
-                                    ));
-                                }
+                    // For emoji pattern, resolve shortcode using emoji_map if available
+                    if pattern.name == "emoji" && !self.emoji_map.is_empty() {
+                        match process_emoji_with_map(m.as_str(), &caps, &self.emoji_map) {
+                            Ok(match_block) => new_blocks.push(match_block),
+                            Err(_) => {
+                                // If we can't resolve the emoji, treat it as text
+                                new_blocks.push(ContentBlock::new(
+                                    "text".to_string(),
+                                    m.as_str().to_string(),
+                                ));
                             }
                         }
                     } else {
-                        // Fallback to text if regex capture fails
-                        new_blocks.push(ContentBlock::new(
-                            "text".to_string(),
-                            m.as_str().to_string(),
-                        ));
+                        match (pattern.processor)(m.as_str(), &caps) {
+                            Ok(match_block) => new_blocks.push(match_block),
+                            Err(_) => {
+                                // If we can't process the match, treat it as text
+                                new_blocks.push(ContentBlock::new(
+                                    "text".to_string(),
+                                    m.as_str().to_string(),
+                                ));
+                            }
+                        }
                     }
 
                     last_end = m.end();
                 }
 
+                if !any_match {
+                    // No matches, keep block as is
+                    new_blocks.push(block);
+                    continue;
+                }
+
                 // Add remaining text after last match
                 if last_end < block.text.len() {
-                    let remaining_text = block.text[last_end..].to_string();
-                    if !remaining_text.is_empty() {
-                        new_blocks.push(ContentBlock::new("text".to_string(), remaining_text));
-                    }
+                    new_blocks.push(ContentBlock::new(
+                        "text".to_string(),
+                        block.text[last_end..].to_string(),
+                    ));
                 }
             }
 
             blocks = new_blocks;
             if pattern.name == "code" {
                 for b in blocks.iter_mut() {
-                    if b.block_type == "text" {
+                    // Guard: str::replace always allocates, so skip blocks that
+                    // can't contain an escaped whitespace sequence at all.
+                    if b.block_type == "text" && b.text.contains('\\') {
                         b.text = normalize_escaped_whitespace(&b.text);
                     }
                 }
@@ -356,125 +417,95 @@ impl ContentParser {
 
     fn group_media(&self, blocks: Vec<ContentBlock>) -> Vec<ContentBlock> {
         let mut processed_blocks = Vec::new();
-        let mut media_group = Vec::new();
+        let mut media_group: Vec<ContentBlock> = Vec::new();
 
-        for (i, block) in blocks.iter().enumerate() {
+        let mut iter = blocks.into_iter().peekable();
+        while let Some(block) = iter.next() {
             // If this is an image or video
             if block.block_type == "image" || block.block_type == "video" {
-                media_group.push(block.clone());
+                media_group.push(block);
                 continue;
             }
 
             // If this is whitespace or newlines between media, check what follows
-            if block.block_type == "text" {
-                let is_whitespace = block.text.chars().all(|c| c.is_whitespace());
-
-                if is_whitespace && !media_group.is_empty() && i + 1 < blocks.len() {
-                    let next_block = &blocks[i + 1];
+            if block.block_type == "text"
+                && !media_group.is_empty()
+                && block.text.chars().all(|c| c.is_whitespace())
+            {
+                if let Some(next_block) = iter.peek() {
                     if next_block.block_type == "image" || next_block.block_type == "video" {
                         continue;
                     }
                 }
             }
 
-            // If we have collected media and the current block breaks the sequence
-            if !media_group.is_empty() {
-                // Add media group if it contains more than one item
-                if media_group.len() > 1 {
-                    let media_texts: Vec<_> = media_group.iter().map(|m| m.text.clone()).collect();
-
-                    processed_blocks.push(
-                        ContentBlock::new("mediaGrid".to_string(), media_texts.join("\n"))
-                            .with_data(ContentData::MediaGrid {
-                                items: media_group
-                                    .iter()
-                                    .filter_map(|block| match &block.data {
-                                        Some(ContentData::Image { url, alt, dim }) => {
-                                            Some(MediaItem {
-                                                image: Some(Image {
-                                                    url: url.clone(),
-                                                    alt: alt.clone(),
-                                                    dim: dim.clone(),
-                                                }),
-                                                video: None,
-                                            })
-                                        }
-                                        Some(ContentData::Video {
-                                            url,
-                                            thumbnail,
-                                            dim,
-                                        }) => Some(MediaItem {
-                                            image: None,
-                                            video: Some(Video {
-                                                url: url.clone(),
-                                                thumbnail: thumbnail.clone(),
-                                                dim: dim.clone(),
-                                            }),
-                                        }),
-                                        _ => None,
-                                    })
-                                    .collect(),
-                            }),
-                    );
-                } else {
-                    // Just add the single media item
-                    processed_blocks.push(media_group[0].clone());
-                }
-                media_group.clear();
-            }
+            // The current block breaks the media sequence: flush the group
+            Self::flush_media_group(&mut processed_blocks, &mut media_group);
 
             // Add the current non-media block
-            processed_blocks.push(block.clone());
+            processed_blocks.push(block);
         }
 
         // Don't forget any remaining media
-        if !media_group.is_empty() {
-            if media_group.len() > 1 {
-                let media_texts: Vec<_> = media_group.iter().map(|m| m.text.clone()).collect();
-
-                processed_blocks.push(
-                    ContentBlock::new("mediaGrid".to_string(), media_texts.join("\n")).with_data(
-                        ContentData::MediaGrid {
-                            items: media_group
-                                .iter()
-                                .filter_map(|block| match &block.data {
-                                    Some(ContentData::Image { url, alt, dim }) => Some(MediaItem {
-                                        image: Some(Image {
-                                            url: url.clone(),
-                                            alt: alt.clone(),
-                                            dim: dim.clone(),
-                                        }),
-                                        video: None,
-                                    }),
-                                    Some(ContentData::Video {
-                                        url,
-                                        thumbnail,
-                                        dim,
-                                    }) => Some(MediaItem {
-                                        image: None,
-                                        video: Some(Video {
-                                            url: url.clone(),
-                                            thumbnail: thumbnail.clone(),
-                                            dim: dim.clone(),
-                                        }),
-                                    }),
-                                    _ => None,
-                                })
-                                .collect(),
-                        },
-                    ),
-                );
-            } else {
-                processed_blocks.push(media_group[0].clone());
-            }
-        }
+        Self::flush_media_group(&mut processed_blocks, &mut media_group);
 
         processed_blocks
     }
 
+    /// Flush collected media blocks: a single item passes through as is,
+    /// multiple items are grouped into one mediaGrid block. Moves the blocks
+    /// (and their Strings) instead of cloning them.
+    fn flush_media_group(
+        processed_blocks: &mut Vec<ContentBlock>,
+        media_group: &mut Vec<ContentBlock>,
+    ) {
+        if media_group.is_empty() {
+            return;
+        }
+
+        if media_group.len() == 1 {
+            processed_blocks.push(media_group.pop().expect("len checked"));
+            return;
+        }
+
+        let media_text = media_group
+            .iter()
+            .map(|m| m.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let items = media_group
+            .drain(..)
+            .filter_map(|block| match block.data {
+                Some(ContentData::Image { url, alt, dim }) => Some(MediaItem {
+                    image: Some(Image { url, alt, dim }),
+                    video: None,
+                }),
+                Some(ContentData::Video {
+                    url,
+                    thumbnail,
+                    dim,
+                }) => Some(MediaItem {
+                    image: None,
+                    video: Some(Video {
+                        url,
+                        thumbnail,
+                        dim,
+                    }),
+                }),
+                _ => None,
+            })
+            .collect();
+
+        processed_blocks.push(
+            ContentBlock::new("mediaGrid".to_string(), media_text)
+                .with_data(ContentData::MediaGrid { items }),
+        );
+    }
+
     pub fn shorten_content(
         &self,
-        blocks: Vec<ContentBlock>,
+        blocks: &[ContentBlock],
         max_length: usize,
         max_images: usize,
         max_lines: usize,
@@ -495,13 +526,58 @@ impl ContentParser {
                 && matches!(b.data, Some(ContentData::Nostr { .. }))
         };
 
+        // Borrow-only pre-pass: aggregate text size and tail presence without
+        // cloning anything, so the common "fits, nothing to shorten" case
+        // returns before a single allocation happens.
+        let mut total_chars = 0usize;
+        let mut total_lines = 0usize;
+        let mut has_media = false;
+        let mut has_quote = false;
+        let mut has_link = false;
+        for b in blocks {
+            match (&b.block_type[..], &b.data) {
+                ("image", Some(ContentData::Image { .. }))
+                | ("video", Some(ContentData::Video { .. })) => has_media = true,
+                ("mediaGrid", Some(ContentData::MediaGrid { items })) => {
+                    if items.iter().any(|it| it.image.is_some() || it.video.is_some()) {
+                        has_media = true;
+                    }
+                }
+                ("link", _) => has_link = true,
+                _ => {
+                    if is_quote_block(b) {
+                        has_quote = true;
+                    } else if is_textish(b) {
+                        total_chars += b.text.len();
+                        total_lines += b.text.lines().count();
+                    }
+                }
+            }
+        }
+
+        let text_budget = if has_media || has_quote || has_link {
+            max_length.saturating_sub(tail_text_reserve)
+        } else {
+            max_length
+        };
+
+        // If text fits and no tail (media/quote/link), caller can use full content
+        if !has_media
+            && !has_quote
+            && !has_link
+            && total_chars <= text_budget
+            && total_lines <= max_lines
+        {
+            return Vec::new();
+        }
+
         // Partition: collect textish, media (image+video), single quote (tail), and last link (tail)
         let mut textish_blocks: Vec<ContentBlock> = Vec::new();
         let mut media_items: Vec<MediaItem> = Vec::new();
         let mut tail_quote: Option<ContentBlock> = None;
         let mut tail_link: Option<ContentBlock> = None;
 
-        for b in &blocks {
+        for b in blocks {
             match (&b.block_type[..], &b.data) {
                 ("image", Some(ContentData::Image { url, alt, dim })) => {
                     media_items.push(MediaItem {
@@ -571,44 +647,17 @@ impl ContentParser {
             }
         }
 
-        // Budgets
-        let has_media = !media_items.is_empty();
-        let has_quote = tail_quote.is_some();
-        let text_budget = if has_media || has_quote || tail_link.is_some() {
-            max_length.saturating_sub(tail_text_reserve)
-        } else {
-            max_length
-        };
-
-        // Aggregate current text size
-        let mut total_chars = 0usize;
-        let mut total_lines = 0usize;
-        for b in &textish_blocks {
-            total_chars += b.text.len();
-            total_lines += b.text.lines().count();
-        }
-
-        // If text fits and no tail (media/quote/link), caller can use full content
-        if !has_media
-            && !has_quote
-            && tail_link.is_none()
-            && total_chars <= text_budget
-            && total_lines <= max_lines
-        {
-            return Vec::new();
-        }
-
         // Build text preview up to budgets (truncate last included block if needed)
         let mut out: Vec<ContentBlock> = Vec::new();
         let mut used_chars = 0usize;
         let mut used_lines = 0usize;
 
-        for b in textish_blocks.into_iter() {
+        for mut b in textish_blocks.into_iter() {
             if used_chars >= text_budget || used_lines >= max_lines {
                 break;
             }
 
-            let mut text = b.text.clone();
+            let mut text = std::mem::take(&mut b.text);
             let mut truncated = false;
 
             // Trim by remaining line budget
@@ -623,20 +672,16 @@ impl ContentParser {
             let rem_chars = text_budget.saturating_sub(used_chars);
             if text.len() > rem_chars {
                 let budget = rem_chars.saturating_sub(3);
-                let t = safe_truncate(&text, budget).to_string();
-                text = if t.is_empty() {
-                    "...".to_string()
-                } else {
-                    format!("{}...", t)
-                };
+                let mut t = safe_truncate(&text, budget).to_string();
+                t.push_str("...");
+                text = t;
                 truncated = true;
             } else if truncated && !text.ends_with("...") {
                 text.push_str("...");
             }
 
-            let mut block = b.clone();
-            block.text = text;
-            out.push(block);
+            b.text = text;
+            out.push(b);
 
             used_chars = used_chars.saturating_add(out.last().unwrap().text.len());
             used_lines = used_lines.saturating_add(out.last().unwrap().text.lines().count());
@@ -733,9 +778,9 @@ fn process_cashu(text: &str, _caps: &regex::Captures) -> Result<ContentBlock> {
     )
 }
 
-fn process_hashtag(_text: &str, caps: &regex::Captures) -> Result<ContentBlock> {
-    // Now we have capture groups: full match, prefix, hashtag
-    let prefix = caps.get(1).map_or("", |m| m.as_str());
+fn process_hashtag(text: &str, caps: &regex::Captures) -> Result<ContentBlock> {
+    // Capture groups: full match, prefix, hashtag. The full match is exactly
+    // prefix + hashtag, so `text` can be used as the block text directly.
     let hashtag = caps.get(2).map_or("", |m| m.as_str());
     let tag = if hashtag.starts_with('#') {
         &hashtag[1..]
@@ -743,12 +788,12 @@ fn process_hashtag(_text: &str, caps: &regex::Captures) -> Result<ContentBlock> 
         hashtag
     };
 
-    // Include the prefix in the text but only process the hashtag part
-    let full_text = format!("{}{}", prefix, hashtag);
     Ok(
-        ContentBlock::new("hashtag".to_string(), full_text).with_data(ContentData::Hashtag {
-            tag: tag.to_string(),
-        }),
+        ContentBlock::new("hashtag".to_string(), text.to_string()).with_data(
+            ContentData::Hashtag {
+                tag: tag.to_string(),
+            },
+        ),
     )
 }
 
@@ -773,7 +818,10 @@ fn process_video(text: &str, _caps: &regex::Captures) -> Result<ContentBlock> {
 }
 
 fn process_nostr(text: &str, _caps: &regex::Captures) -> Result<ContentBlock> {
-    let entity_str = if text.to_lowercase().starts_with("nostr:") {
+    let entity_str = if text
+        .get(..6)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("nostr:"))
+    {
         // Extract the identifier after nostr:
         &text[6..]
     } else {
@@ -840,22 +888,24 @@ fn process_nostr(text: &str, _caps: &regex::Captures) -> Result<ContentBlock> {
 }
 
 fn process_link(text: &str, _caps: &regex::Captures) -> Result<ContentBlock> {
-    let url = if text.to_lowercase().starts_with("http") {
+    let url = if text
+        .get(..4)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("http"))
+    {
         text.to_string()
     } else {
         format!("https://{}", text)
     };
 
-    // Create a placeholder preview
-    let preview = get_link_preview(&url);
-
+    // Placeholder preview fields (a real preview is not implemented); the
+    // proxy URL that LinkPreview::new builds is never read, so skip it.
     Ok(
         ContentBlock::new("link".to_string(), text.to_string()).with_data(
             ContentData::LinkPreview {
                 url,
-                title: preview.title,
-                description: preview.description,
-                image: preview.image,
+                title: Some("Link Preview".to_string()),
+                description: Some("Link preview not implemented".to_string()),
+                image: None,
             },
         ),
     )
@@ -915,10 +965,6 @@ fn process_emoji_with_map(
         // Emoji shortcode not found in tags - return as plain text
         Ok(ContentBlock::new("text".to_string(), text.to_string()))
     }
-}
-
-fn get_link_preview(url: &str) -> LinkPreview {
-    LinkPreview::new(url)
 }
 
 // Public function to parse content with emoji support
@@ -1288,7 +1334,7 @@ mod tests {
             .join("\n");
         let blocks = vec![ContentBlock::new("text".to_string(), text)];
 
-        let shortened = parser.shorten_content(blocks, 500, 3, 10);
+        let shortened = parser.shorten_content(&blocks, 500, 3, 10);
         assert_eq!(shortened.len(), 1);
         assert_eq!(shortened[0].block_type, "text");
         assert!(shortened[0].text.lines().count() <= 10);
@@ -1312,7 +1358,7 @@ mod tests {
             }),
         ];
 
-        let shortened = parser.shorten_content(blocks, 500, 3, 10);
+        let shortened = parser.shorten_content(&blocks, 500, 3, 10);
         assert!(!shortened.is_empty());
         assert_eq!(shortened[0].block_type, "text");
         assert_eq!(shortened[0].text, text);

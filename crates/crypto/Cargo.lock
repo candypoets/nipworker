@@ -881,6 +881,7 @@ dependencies = [
  "hmac",
  "js-sys",
  "k256",
+ "memchr",
  "pulldown-cmark",
  "regex",
  "reqwest",

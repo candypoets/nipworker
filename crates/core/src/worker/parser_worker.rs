@@ -8,6 +8,9 @@ use crate::pipeline::Pipeline;
 use crate::spawn::spawn_worker;
 use crate::types::{network::Request, nostr::Template};
 use crate::worker::batch_buffer::BatchBufferManager;
+// The tagged framing helpers live in batch_buffer (shared with the
+// connections worker); re-export so existing paths keep working.
+pub use crate::worker::batch_buffer::{decode_conn_batch, decode_tagged, decode_tagged_batch, encode_tagged};
 use flatbuffers::FlatBufferBuilder;
 use futures::channel::mpsc;
 use futures::lock::Mutex;
@@ -27,7 +30,7 @@ const NUM_SHARDS: usize = 10;
 const SHARD_CAP: usize = BATCH_SIZE * 4;
 const SLOW_SHARDS: usize = 2;
 /// How often the parser checks parser→main batch buffers for timeout flushes.
-const MAIN_BATCH_SWEEP_MS: u64 = 25;
+const MAIN_BATCH_SWEEP_MS: u64 = 4;
 
 struct Sub {
     pipeline: Arc<Mutex<Pipeline>>,
@@ -248,82 +251,117 @@ impl ParserWorker {
                     Some((bytes, source)) => {
                         match source {
                             ShardSource::Network => {
-                                let wm = match flatbuffers::root::<fb::WorkerMessage>(&bytes) {
-                                    Ok(w) => w,
-                                    Err(_) => {
-                                        warn!("WorkerMessage decode failed from network; dropping frame");
-                                        continue;
-                                    }
-                                };
+                                // Connections→parser traffic is either a
+                                // magic-prefixed batch of tagged WorkerMessages
+                                // (batched EVENT forwarding) or a bare single
+                                // WorkerMessage (control frames, relay status,
+                                // TS proxy path).
+                                let frames: Vec<(String, Arc<Vec<u8>>)> =
+                                    match decode_conn_batch(&bytes) {
+                                        Some(batch) => {
+                                            info!(
+                                                "[network] Received batch from network: {} frames",
+                                                batch.len()
+                                            );
+                                            batch
+                                                .into_iter()
+                                                .map(|(sid, data)| (sid, Arc::new(data)))
+                                                .collect()
+                                        }
+                                        None => {
+                                            let wm = match flatbuffers::root::<fb::WorkerMessage>(
+                                                &bytes,
+                                            ) {
+                                                Ok(w) => w,
+                                                Err(_) => {
+                                                    warn!("WorkerMessage decode failed from network; dropping frame");
+                                                    continue;
+                                                }
+                                            };
+                                            let sid = wm.sub_id().unwrap_or("").to_string();
+                                            info!(
+                                                "[network] Received from network: type={:?}, sub_id={}",
+                                                wm.content_type(),
+                                                sid
+                                            );
+                                            vec![(sid, Arc::new(bytes))]
+                                        }
+                                    };
 
-                                let sid = wm.sub_id().unwrap_or("").to_string();
-                                let content_type = wm.content_type();
-                                info!(
-                                    "[network] Received from network: type={:?}, sub_id={}",
-                                    content_type, sid
-                                );
-                                // ConnectionStatus with empty sub_id is a relay status message
-                                // (not tied to a subscription). Forward directly to main.
-                                if sid.is_empty() {
-                                    if content_type == fb::Message::ConnectionStatus {
-                                        this_ingress.send_output_to_main("", &bytes);
-                                        // Relay-level statuses are control messages:
-                                        // never let them sit behind the batch timer.
-                                        this_ingress.flush_main("");
-                                        continue;
-                                    }
-                                    warn!("Invalid message: Missing sub_id");
-                                    continue;
-                                }
-
-                                let (shard_idx, is_slow_lane) = {
-                                    let forced = subs
-                                        .read()
-                                        .ok()
-                                        .and_then(|g| g.get(&sid).and_then(|s| s.forced_shard));
-
-                                    if let Some(idx) = forced {
-                                        let clamped = idx.min(NUM_SHARDS - 1);
-                                        let slow_start =
-                                            NUM_SHARDS.saturating_sub(SLOW_SHARDS.max(1));
-                                        (clamped, clamped >= slow_start)
-                                    } else {
-                                        use std::hash::{Hash, Hasher};
-                                        let mut hasher =
-                                            std::collections::hash_map::DefaultHasher::new();
-                                        sid.hash(&mut hasher);
-                                        let fast_count = NUM_SHARDS.saturating_sub(SLOW_SHARDS);
-                                        let shard = if fast_count > 0 {
-                                            (hasher.finish() as usize) % fast_count
-                                        } else {
-                                            (hasher.finish() as usize) % NUM_SHARDS
+                                for (sid, bytes) in frames {
+                                    // ConnectionStatus with empty sub_id is a relay status message
+                                    // (not tied to a subscription). Forward directly to main.
+                                    if sid.is_empty() {
+                                        let wm = match flatbuffers::root::<fb::WorkerMessage>(
+                                            &bytes,
+                                        ) {
+                                            Ok(w) => w,
+                                            Err(_) => {
+                                                warn!("WorkerMessage decode failed from network; dropping frame");
+                                                continue;
+                                            }
                                         };
-                                        (shard, false)
+                                        if wm.content_type() == fb::Message::ConnectionStatus {
+                                            this_ingress.send_output_to_main("", &bytes);
+                                            // Relay-level statuses are control messages:
+                                            // never let them sit behind the batch timer.
+                                            this_ingress.flush_main("");
+                                            continue;
+                                        }
+                                        warn!("Invalid message: Missing sub_id");
+                                        continue;
                                     }
-                                };
 
-                                info!(
-                                    "[network] Dispatching to shard {} (slow={}): sub_id={}",
-                                    shard_idx, is_slow_lane, sid
-                                );
-                                let sub_span = info_span!("sub_request", sub_id = %sid);
-                                let task: ShardTask =
-                                    (sid, Arc::new(bytes), ShardSource::Network, sub_span);
+                                    let (shard_idx, is_slow_lane) = {
+                                        let forced = subs
+                                            .read()
+                                            .ok()
+                                            .and_then(|g| g.get(&sid).and_then(|s| s.forced_shard));
 
-                                let mut lane_tx = if is_slow_lane {
-                                    slow_tx.clone()
-                                } else {
-                                    fast_tx.clone()
-                                };
+                                        if let Some(idx) = forced {
+                                            let clamped = idx.min(NUM_SHARDS - 1);
+                                            let slow_start =
+                                                NUM_SHARDS.saturating_sub(SLOW_SHARDS.max(1));
+                                            (clamped, clamped >= slow_start)
+                                        } else {
+                                            use std::hash::{Hash, Hasher};
+                                            let mut hasher =
+                                                std::collections::hash_map::DefaultHasher::new();
+                                            sid.hash(&mut hasher);
+                                            let fast_count =
+                                                NUM_SHARDS.saturating_sub(SLOW_SHARDS);
+                                            let shard = if fast_count > 0 {
+                                                (hasher.finish() as usize) % fast_count
+                                            } else {
+                                                (hasher.finish() as usize) % NUM_SHARDS
+                                            };
+                                            (shard, false)
+                                        }
+                                    };
 
-                                if let Err(_e) = lane_tx.try_send((shard_idx, task.clone())) {
-                                    if let Err(e) = lane_tx.send((shard_idx, task)).await {
-                                        warn!(
-                                            "{} lane enqueue failed for shard {}: {:?}",
-                                            if is_slow_lane { "Slow" } else { "Fast" },
-                                            shard_idx,
-                                            e
-                                        );
+                                    info!(
+                                        "[network] Dispatching to shard {} (slow={}): sub_id={}",
+                                        shard_idx, is_slow_lane, sid
+                                    );
+                                    let sub_span = info_span!("sub_request", sub_id = %sid);
+                                    let task: ShardTask =
+                                        (sid, bytes, ShardSource::Network, sub_span);
+
+                                    let mut lane_tx = if is_slow_lane {
+                                        slow_tx.clone()
+                                    } else {
+                                        fast_tx.clone()
+                                    };
+
+                                    if let Err(_e) = lane_tx.try_send((shard_idx, task.clone())) {
+                                        if let Err(e) = lane_tx.send((shard_idx, task)).await {
+                                            warn!(
+                                                "{} lane enqueue failed for shard {}: {:?}",
+                                                if is_slow_lane { "Slow" } else { "Fast" },
+                                                shard_idx,
+                                                e
+                                            );
+                                        }
                                     }
                                 }
                             }
@@ -987,66 +1025,6 @@ impl ParserWorker {
     }
 }
 
-/// Encode a (sub_id, data) pair into a single Vec<u8> using a simple length-prefix format:
-/// [4 bytes: sub_id_len LE][sub_id_bytes][data_bytes]
-pub fn encode_tagged(sub_id: &str, data: &[u8]) -> Vec<u8> {
-    let sub_bytes = sub_id.as_bytes();
-    let mut buf = Vec::with_capacity(4 + sub_bytes.len() + data.len());
-    buf.extend_from_slice(&(sub_bytes.len() as u32).to_le_bytes());
-    buf.extend_from_slice(sub_bytes);
-    buf.extend_from_slice(data);
-    buf
-}
-
-/// Decode a tagged byte stream back into (sub_id, data).
-/// Returns None if the buffer is too short or malformed.
-pub fn decode_tagged(bytes: &[u8]) -> Option<(String, Vec<u8>)> {
-    if bytes.len() < 4 {
-        return None;
-    }
-    let sub_len = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as usize;
-    if bytes.len() < 4 + sub_len {
-        return None;
-    }
-    let sub_id = String::from_utf8_lossy(&bytes[4..4 + sub_len]).to_string();
-    let data = bytes[4 + sub_len..].to_vec();
-    Some((sub_id, data))
-}
-
-/// Decode a batched parser→main payload: concatenated frames of
-/// `[4-byte frame len LE][encode_tagged(sub_id, data)]`.
-/// Malformed trailing bytes stop decoding; frames decoded so far are returned.
-pub fn decode_tagged_batch(bytes: &[u8]) -> Vec<(String, Vec<u8>)> {
-    let mut frames = Vec::new();
-    let mut offset = 0;
-
-    while offset + 4 <= bytes.len() {
-        let len = u32::from_le_bytes([
-            bytes[offset],
-            bytes[offset + 1],
-            bytes[offset + 2],
-            bytes[offset + 3],
-        ]) as usize;
-
-        if len == 0 || offset + 4 + len > bytes.len() {
-            warn!(
-                "Invalid batched frame length: {} at offset {} (payload {} bytes)",
-                len,
-                offset,
-                bytes.len()
-            );
-            break;
-        }
-
-        if let Some(frame) = decode_tagged(&bytes[offset + 4..offset + 4 + len]) {
-            frames.push(frame);
-        }
-
-        offset += 4 + len;
-    }
-
-    frames
-}
 
 fn request_from_t(rt: &fb::RequestT) -> Request {
     Request {

@@ -1,26 +1,32 @@
-//! BatchBuffer for accumulating parser→main frames before sending.
+//! BatchBuffer for accumulating frames before sending on a worker channel.
 //!
 //! Live (post-EOSE) events used to be forwarded one channel message per event.
 //! This module batches them so a single channel message carries many events,
-//! cutting cross-thread postMessage traffic on the parser→main channel.
+//! cutting cross-thread postMessage traffic. Used on the parser→main channel
+//! and on the connections→parser channel.
 //!
 //! Batching criteria (per subscription):
 //! - Buffer size reaches 16KB (flushed synchronously on add), OR
-//! - 50ms elapsed since the first buffered frame (flushed by the caller's sweep)
+//! - 8ms elapsed since the first buffered frame (flushed by the caller's sweep)
 //!
 //! Wire format of a flushed payload: concatenated frames of
 //!   [4-byte frame len LE][4-byte subIdLen LE][subId][WorkerMessage]
 //! i.e. length-prefixed `encode_tagged` frames, decoded by
-//! `parser_worker::decode_tagged_batch` and the main-thread ArrayBufferReader.
+//! `decode_tagged_batch` and the main-thread ArrayBufferReader.
+//!
+//! On the connections→parser channel a flushed payload is additionally
+//! wrapped with `CONN_BATCH_MAGIC` (`encode_conn_batch`) so the parser can
+//! tell a batch apart from a bare single WorkerMessage (the TS proxy path
+//! still sends those).
 
 use crate::platform::now_millis;
-use crate::worker::parser_worker::encode_tagged;
 use rustc_hash::FxHashMap;
+use tracing::warn;
 
 /// Flush once a subscription's buffer reaches 16KB.
 pub const BATCH_SIZE_THRESHOLD: usize = 16 * 1024;
-/// Flush once the oldest buffered frame is 50ms old.
-pub const BATCH_TIMEOUT_MS: u64 = 50;
+/// Flush once the oldest buffered frame is 8ms old.
+pub const BATCH_TIMEOUT_MS: u64 = 8;
 
 /// Per-subscription accumulator of length-prefixed tagged frames.
 struct BatchBuffer {
@@ -127,10 +133,94 @@ impl BatchBufferManager {
     }
 }
 
+/// Encode a (sub_id, data) pair into a single Vec<u8> using a simple length-prefix format:
+/// [4 bytes: sub_id_len LE][sub_id_bytes][data_bytes]
+pub fn encode_tagged(sub_id: &str, data: &[u8]) -> Vec<u8> {
+    let sub_bytes = sub_id.as_bytes();
+    let mut buf = Vec::with_capacity(4 + sub_bytes.len() + data.len());
+    buf.extend_from_slice(&(sub_bytes.len() as u32).to_le_bytes());
+    buf.extend_from_slice(sub_bytes);
+    buf.extend_from_slice(data);
+    buf
+}
+
+/// Decode a tagged byte stream back into (sub_id, data).
+/// Returns None if the buffer is too short or malformed.
+pub fn decode_tagged(bytes: &[u8]) -> Option<(String, Vec<u8>)> {
+    if bytes.len() < 4 {
+        return None;
+    }
+    let sub_len = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as usize;
+    if bytes.len() < 4 + sub_len {
+        return None;
+    }
+    let sub_id = String::from_utf8_lossy(&bytes[4..4 + sub_len]).to_string();
+    let data = bytes[4 + sub_len..].to_vec();
+    Some((sub_id, data))
+}
+
+/// Decode a batched payload: concatenated frames of
+/// `[4-byte frame len LE][encode_tagged(sub_id, data)]`.
+/// Malformed trailing bytes stop decoding; frames decoded so far are returned.
+pub fn decode_tagged_batch(bytes: &[u8]) -> Vec<(String, Vec<u8>)> {
+    let mut frames = Vec::new();
+    let mut offset = 0;
+
+    while offset + 4 <= bytes.len() {
+        let len = u32::from_le_bytes([
+            bytes[offset],
+            bytes[offset + 1],
+            bytes[offset + 2],
+            bytes[offset + 3],
+        ]) as usize;
+
+        if len == 0 || offset + 4 + len > bytes.len() {
+            warn!(
+                "Invalid batched frame length: {} at offset {} (payload {} bytes)",
+                len,
+                offset,
+                bytes.len()
+            );
+            break;
+        }
+
+        if let Some(frame) = decode_tagged(&bytes[offset + 4..offset + 4 + len]) {
+            frames.push(frame);
+        }
+
+        offset += 4 + len;
+    }
+
+    frames
+}
+
+/// Magic prefix marking a batched connections→parser payload. A bare
+/// FlatBuffers WorkerMessage always starts with a small non-zero root-table
+/// uoffset, so 0xFFFFFFFF can never collide with one (the TS proxy path and
+/// relay status frames still travel as bare single messages).
+pub const CONN_BATCH_MAGIC: [u8; 4] = [0xFF, 0xFF, 0xFF, 0xFF];
+
+/// Wrap a flushed batch payload with the connections→parser batch magic.
+pub fn encode_conn_batch(payload: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(4 + payload.len());
+    out.extend_from_slice(&CONN_BATCH_MAGIC);
+    out.extend_from_slice(payload);
+    out
+}
+
+/// If `bytes` is a magic-prefixed connections→parser batch, decode it into
+/// (sub_id, WorkerMessage) frames. Returns None for a bare single
+/// WorkerMessage, which callers handle on the legacy path.
+pub fn decode_conn_batch(bytes: &[u8]) -> Option<Vec<(String, Vec<u8>)>> {
+    if bytes.len() < 4 || bytes[0..4] != CONN_BATCH_MAGIC {
+        return None;
+    }
+    Some(decode_tagged_batch(&bytes[4..]))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::worker::parser_worker::decode_tagged_batch;
 
     #[test]
     fn buffers_until_explicit_flush() {
@@ -212,5 +302,31 @@ mod tests {
         let fb = decode_tagged_batch(&pb);
         assert_eq!(fb.len(), 1);
         assert_eq!(fb[0].0, "b");
+    }
+
+    #[test]
+    fn conn_batch_roundtrip() {
+        let mut mgr = BatchBufferManager::new();
+        assert!(mgr.add_message("s1", b"ev1").is_none());
+        assert!(mgr.add_message("s1", b"ev2").is_none());
+        let payload = mgr.flush_sub("s1").expect("pending batch");
+
+        let wrapped = encode_conn_batch(&payload);
+        assert_eq!(&wrapped[0..4], &CONN_BATCH_MAGIC);
+
+        let frames = decode_conn_batch(&wrapped).expect("should decode as conn batch");
+        assert_eq!(frames.len(), 2);
+        assert_eq!(frames[0], ("s1".to_string(), b"ev1".to_vec()));
+        assert_eq!(frames[1], ("s1".to_string(), b"ev2".to_vec()));
+    }
+
+    #[test]
+    fn bare_worker_message_is_not_a_conn_batch() {
+        // A bare FlatBuffers WorkerMessage starts with a small non-zero
+        // root-table uoffset, never with 0xFFFFFFFF.
+        let bare = vec![0x0C, 0x00, 0x00, 0x00, 1, 2, 3];
+        assert!(decode_conn_batch(&bare).is_none());
+        // Too short to carry the magic at all.
+        assert!(decode_conn_batch(&[0xFF, 0xFF]).is_none());
     }
 }

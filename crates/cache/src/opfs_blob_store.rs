@@ -1,12 +1,12 @@
 use async_trait::async_trait;
 use js_sys::Uint8Array;
 use nipworker_core::{storage::BlobStore, traits::StorageError};
-use wasm_bindgen::JsCast;
+use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{
     Blob, DedicatedWorkerGlobalScope, FileSystemDirectoryHandle, FileSystemFileHandle,
     FileSystemGetDirectoryOptions, FileSystemGetFileOptions, FileSystemWritableFileStream,
-    WorkerGlobalScope,
+    StorageManager, WorkerGlobalScope,
 };
 
 pub struct OpfsBlobStore {
@@ -23,7 +23,29 @@ impl OpfsBlobStore {
             .dyn_into::<DedicatedWorkerGlobalScope>()
             .map_err(|_| StorageError::Other("OPFS requires a dedicated worker".into()))?;
         let worker_scope: WorkerGlobalScope = worker.unchecked_into();
-        let storage = worker_scope.navigator().storage();
+        let navigator = worker_scope.navigator();
+
+        // `navigator.storage` is undefined outside secure contexts (plain
+        // HTTP), and `getDirectory` is missing on browsers without OPFS.
+        // Check via Reflect so these surface as a StorageError instead of an
+        // uncaught TypeError crossing the JS/WASM boundary.
+        let storage = js_sys::Reflect::get(navigator.as_ref(), &JsValue::from_str("storage"))
+            .map_err(|_| StorageError::Other("OPFS unavailable: navigator.storage inaccessible".into()))?;
+        if storage.is_null() || storage.is_undefined() {
+            return Err(StorageError::Other(
+                "OPFS unavailable: navigator.storage is undefined (secure context required)"
+                    .into(),
+            ));
+        }
+        let get_directory = js_sys::Reflect::get(&storage, &JsValue::from_str("getDirectory"))
+            .map_err(|_| StorageError::Other("OPFS unavailable".into()))?;
+        if !get_directory.is_function() {
+            return Err(StorageError::Other(
+                "OPFS unavailable: navigator.storage.getDirectory is not supported".into(),
+            ));
+        }
+        let storage: StorageManager = storage.unchecked_into();
+
         let root = JsFuture::from(storage.get_directory())
             .await
             .map_err(|e| StorageError::Other(format!("OPFS getDirectory failed: {:?}", e)))?

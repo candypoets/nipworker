@@ -1,0 +1,14 @@
+{
+  "name": "nipworker-compare-bench",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Head-to-head benchmark contenders (nostr-tools, NDK, Welshman, Nostrify). Isolated from the root package.",
+  "dependencies": {
+    "@nostr-dev-kit/ndk": "^3.0.3",
+    "@welshman/lib": "^0.9.0-pre1",
+    "@welshman/net": "^0.9.0-pre1",
+    "nostr-tools": "^2.24.1",
+    "nostrify": "npm:@jsr/nostrify__nostrify@^0.46.5"
+  }
+}

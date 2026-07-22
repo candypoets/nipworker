@@ -649,7 +649,15 @@ impl RelayConnection {
         // Enqueue CLOSE frame; drainer will send when connected
         let frame = format!(r#"["CLOSE","{}"]"#, sub_id);
         if let Some(tx) = self.queue_tx.read().unwrap().as_ref() {
-            let _ = tx.clone().try_send(frame);
+            if let Err(e) = tx.clone().try_send(frame) {
+                warn!(
+                    relay = %self.url,
+                    sub_id,
+                    "CLOSE frame dropped: send queue {} ({})",
+                    if e.is_full() { "full (64)" } else { "closed" },
+                    e
+                );
+            }
         }
 
         true

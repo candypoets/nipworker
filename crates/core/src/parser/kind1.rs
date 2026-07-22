@@ -85,6 +85,18 @@ fn push_unique_relay(relays: &mut Vec<String>, relay: &str) {
     }
 }
 
+/// Cheap literal pre-check for the mention/reference regexes below: each regex
+/// has a mandatory case-sensitive bech32 prefix, so when that prefix is absent
+/// the regex provably cannot match and we hand it an empty string instead of
+/// scanning the full content.
+fn prescan_content<'a>(content: &'a str, required_literal: &str) -> &'a str {
+    if content.contains(required_literal) {
+        content
+    } else {
+        ""
+    }
+}
+
 impl Parser {
     pub fn parse_kind_1(&self, event: &Event) -> Result<(Kind1Parsed, Option<Vec<Request>>)> {
         if event.kind != 1 {
@@ -163,42 +175,27 @@ impl Parser {
         // Extract imeta tags from event for image metadata enrichment
         let imeta_map = extract_imeta_tags(&event.tags);
 
-        // Extract emoji tags for NIP-30 custom emoji support
-        let emoji_tags: Vec<Vec<String>> = event
-            .tags
-            .iter()
-            .filter(|tag| tag.len() >= 3 && tag[0] == "emoji")
-            .cloned()
-            .collect();
-
-        // Parse content into structured blocks with emoji support
-        let content_parser = ContentParser::with_emojis(&emoji_tags);
+        // Extract emoji tags for NIP-30 custom emoji support (ContentParser
+        // filters non-emoji tags itself, so pass the tag list by reference)
+        let content_parser = ContentParser::with_emojis(&event.tags);
         match content_parser.parse_content(&event.content) {
             Ok(mut content_blocks) => {
                 // Enrich media with imeta data (images and videos)
                 enrich_media_with_imeta(&mut content_blocks, &imeta_map);
 
-                let parsed_blocks: Vec<ContentBlock> = content_blocks
-                    .into_iter()
-                    .map(|block| ContentBlock {
-                        block_type: block.block_type,
-                        text: block.text,
-                        data: block.data,
-                    })
-                    .collect();
+                let parsed_blocks: Vec<ContentBlock> = content_blocks;
 
                 // Create shortened content if needed
                 let content_parser = ContentParser::new();
-                let shortened_blocks =
-                    content_parser.shorten_content(parsed_blocks.clone(), 500, 3, 10);
+                let shortened_blocks = content_parser.shorten_content(&parsed_blocks, 500, 3, 10);
 
-                parsed.parsed_content = parsed_blocks.clone();
-                parsed.shortened_content =
-                    if should_use_shortened_content(&parsed_blocks, &shortened_blocks) {
-                        shortened_blocks
-                    } else {
-                        Vec::new()
-                    };
+                let use_shortened = should_use_shortened_content(&parsed_blocks, &shortened_blocks);
+                parsed.parsed_content = parsed_blocks;
+                parsed.shortened_content = if use_shortened {
+                    shortened_blocks
+                } else {
+                    Vec::new()
+                };
             }
             Err(err) => {
                 return Err(ParserError::Other(format!(
@@ -223,7 +220,7 @@ impl Parser {
         let mut profile_mentions = Vec::new();
 
         // Look for nostr:npub... or npub... patterns
-        for caps in PROFILE_RE.captures_iter(content) {
+        for caps in PROFILE_RE.captures_iter(prescan_content(content, "npub1")) {
             if let Some(npub) = caps.get(1) {
                 if let Ok(decoded) = nostr::nips::nip19::FromBech32::from_bech32(npub.as_str()) {
                     if let nostr::nips::nip19::Nip19::Pubkey(pubkey) = decoded {
@@ -249,7 +246,7 @@ impl Parser {
         }
 
         // Also look for nprofile references
-        for caps in NPROFILE_RE.captures_iter(content) {
+        for caps in NPROFILE_RE.captures_iter(prescan_content(content, "nprofile1")) {
             if let Some(nprofile) = caps.get(1) {
                 if let Ok(decoded) = nostr::nips::nip19::FromBech32::from_bech32(nprofile.as_str())
                 {
@@ -294,7 +291,7 @@ impl Parser {
         let mut event_refs = Vec::new();
 
         // Look for nostr:note... or note... patterns
-        for caps in NOTE_RE.captures_iter(content) {
+        for caps in NOTE_RE.captures_iter(prescan_content(content, "note1")) {
             if let Some(note) = caps.get(1) {
                 if let Ok(decoded) = nostr::nips::nip19::FromBech32::from_bech32(note.as_str()) {
                     if let nostr::nips::nip19::Nip19::EventId(event_id) = decoded {
@@ -324,7 +321,7 @@ impl Parser {
         }
 
         // Also look for nevent references
-        for caps in NEVENT_RE.captures_iter(content) {
+        for caps in NEVENT_RE.captures_iter(prescan_content(content, "nevent1")) {
             if let Some(nevent) = caps.get(1) {
                 if let Ok(decoded) = nostr::nips::nip19::FromBech32::from_bech32(nevent.as_str()) {
                     if let nostr::nips::nip19::Nip19::Event(event) = decoded {
@@ -371,7 +368,7 @@ impl Parser {
     ) -> Vec<AddressPointer> {
         let mut address_refs = Vec::new();
 
-        for caps in NADDR_RE.captures_iter(content) {
+        for caps in NADDR_RE.captures_iter(prescan_content(content, "naddr1")) {
             if let Some(naddr) = caps.get(1) {
                 if let Ok(decoded) = nostr::nips::nip19::FromBech32::from_bech32(naddr.as_str()) {
                     if let nostr::nips::nip19::Nip19::Coordinate(coord) = decoded {
@@ -617,7 +614,9 @@ pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
 }
 
 fn is_hex64(s: &str) -> bool {
-    s.len() == 64 && s.chars().all(|c| c.is_ascii_hexdigit()) && s == s.to_lowercase()
+    s.len() == 64
+        && s.bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
 fn looks_like_marker(s: &str) -> bool {
