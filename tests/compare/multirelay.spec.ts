@@ -3,8 +3,8 @@ import { writeFileSync } from 'node:fs';
 import { test, expect } from '@playwright/test';
 import WebSocket from 'ws';
 
-// Multi-relay head-to-head: every contender x {5, 10, 25} mock relays, fresh
-// page per test; nipworker additionally runs x80 (real apps use ~80 relays).
+// Multi-relay head-to-head: every contender x {5, 10, 25, 80} mock relays,
+// fresh page per test (80 relays approximates real-world Nostr clients).
 // The relays are spawned by this spec in --seed-by filter --unique-fraction
 // 0.2 mode: all relays serve the same 2,000-event kinds:[1] set with 80%
 // byte-identical overlap and a 20% deterministic per-relay unique tail, so
@@ -13,9 +13,8 @@ import WebSocket from 'ws';
 // taken by other processes on shared boxes). The single-relay compare suite
 // (port 7711, default --seed-by sub mode) is unaffected.
 
-const CONTENDERS = ['nipworker', 'nostr-tools', 'ndk', 'welshman', 'nostrify'];
-const RELAY_COUNTS = [5, 10, 25];
-const NIPWORKER_RELAY_COUNTS = [5, 10, 25, 80];
+const CONTENDERS = ['nipworker', 'nostr-tools', 'ndk', 'welshman', 'nostrify', 'applesauce', 'innis'];
+const RELAY_COUNTS = [5, 10, 25, 80];
 const BASE_PORT = 7721;
 const EXT_PORT = 7801;
 const MAX_RELAYS = 80;
@@ -30,6 +29,19 @@ const UNIQUE_FRACTION = 0.2;
 const expectedUnique = (r: number) =>
 	Math.round(N * (1 - UNIQUE_FRACTION)) + Math.round(N * UNIQUE_FRACTION) * r;
 const RUN_TIMEOUT_MS = 180000;
+/**
+ * Per-scenario runner timeouts. The x80 row pushes 160k EVENT frames through
+ * main-thread JS; the slowest contenders (welshman's per-socket 200 msg/s
+ * delivery queue, NDK's superlinear bookkeeping) need minutes there. On
+ * timeout the runner records partial results with a note instead of failing.
+ */
+function runTimeoutFor(contender: string, relayCount: number): number {
+	if (relayCount >= 80) {
+		if (contender === 'welshman' || contender === 'ndk') return 480000;
+		return 300000;
+	}
+	return RUN_TIMEOUT_MS;
+}
 
 const allResults: Record<string, any> = {};
 const children: ChildProcess[] = [];
@@ -162,12 +174,10 @@ test.afterAll(() => {
 });
 
 for (const contender of CONTENDERS) {
-	// Only nipworker is benched at x80; the other contenders are hopeless at
-	// scale and would just slow the suite down.
-	const relayCounts = contender === 'nipworker' ? NIPWORKER_RELAY_COUNTS : RELAY_COUNTS;
-	for (const relayCount of relayCounts) {
+	for (const relayCount of RELAY_COUNTS) {
 		test(`multirelay: ${contender} x${relayCount}`, async ({ page }) => {
-			test.setTimeout(RUN_TIMEOUT_MS + 180000);
+			const runTimeout = runTimeoutFor(contender, relayCount);
+			test.setTimeout(runTimeout + 180000);
 
 			const relays = Array.from(
 				{ length: relayCount },
@@ -180,14 +190,14 @@ for (const contender of CONTENDERS) {
 			await page.goto(
 				`/tests/compare/multirelay.html?contender=${contender}` +
 					`&relays=${encodeURIComponent(relays.join(','))}` +
-					`&n=${N}&runTimeout=${RUN_TIMEOUT_MS}`
+					`&n=${N}&runTimeout=${runTimeout}`
 			);
 
 			await page.waitForFunction(
 				() =>
 					(window as any).__multiResults !== null &&
 					(window as any).__multiResults !== undefined,
-				{ timeout: RUN_TIMEOUT_MS + 120000 }
+				{ timeout: runTimeout + 120000 }
 			);
 
 			const r = await page.evaluate(() => (window as any).__multiResults);
@@ -205,7 +215,7 @@ for (const contender of CONTENDERS) {
 					`${key}: every unique event must reach the app (${expectedUnique(relayCount)} expected)`
 				).toBe(expectedUnique(relayCount));
 				// Libs with real cross-relay dedup must not leak a single duplicate.
-				if (['nipworker', 'nostr-tools', 'ndk'].includes(contender)) {
+				if (['nipworker', 'nostr-tools', 'ndk', 'applesauce'].includes(contender)) {
 					expect(r.dupsLeaked, `${key}: ${contender} should not leak duplicates`).toBe(0);
 				}
 			} else {

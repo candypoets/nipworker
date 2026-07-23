@@ -71,6 +71,10 @@ async function loadRunner(name: string): Promise<MultiRelayRunner> {
 			return (await import('./runners/welshman')).createWelshmanMultiRunner();
 		case 'nostrify':
 			return (await import('./runners/nostrify')).createNostrifyMultiRunner();
+		case 'applesauce':
+			return (await import('./runners/applesauce')).createApplesauceMultiRunner();
+		case 'innis':
+			return (await import('./runners/innis')).createInnisMultiRunner();
 		default:
 			throw new Error(`unknown contender: ${name}`);
 	}

@@ -4,7 +4,7 @@ import { test, expect } from '@playwright/test';
 // heap measurements. The compare page runs the same scenario (kinds:[1],
 // limit n in {1000, 10000}) against the deterministic mock relay.
 
-const CONTENDERS = ['nipworker', 'nostr-tools', 'ndk', 'welshman', 'nostrify'];
+const CONTENDERS = ['nipworker', 'nostr-tools', 'ndk', 'welshman', 'nostrify', 'applesauce', 'innis'];
 const RELAY = 'ws://localhost:7711';
 const EXPECTED = [1000, 10000];
 

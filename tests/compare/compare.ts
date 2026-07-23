@@ -62,6 +62,10 @@ async function loadRunner(name: string): Promise<ContenderRunner> {
 			return (await import('./runners/welshman')).createWelshmanRunner();
 		case 'nostrify':
 			return (await import('./runners/nostrify')).createNostrifyRunner();
+		case 'applesauce':
+			return (await import('./runners/applesauce')).createApplesauceRunner();
+		case 'innis':
+			return (await import('./runners/innis')).createInnisRunner();
 		default:
 			throw new Error(`unknown contender: ${name}`);
 	}

@@ -3,11 +3,14 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "Head-to-head benchmark contenders (nostr-tools, NDK, Welshman, Nostrify). Isolated from the root package.",
+  "description": "Isolated dependencies for the NIPWorker head-to-head client benchmarks.",
   "dependencies": {
+    "@innis/nostr-relay-pool": "npm:@jsr/innis__nostr-relay-pool@0.1.4",
     "@nostr-dev-kit/ndk": "^3.0.3",
     "@welshman/lib": "^0.9.0-pre1",
     "@welshman/net": "^0.9.0-pre1",
+    "applesauce-core": "^6.2.0",
+    "applesauce-relay": "^6.2.1",
     "nostr-tools": "^2.24.1",
     "nostrify": "npm:@jsr/nostrify__nostrify@^0.46.5"
   }
