@@ -42,6 +42,9 @@ struct Sub {
 #[derive(Clone, Copy, Debug)]
 enum ShardSource {
     Network,
+    /// Compact-envelope network frame: the payload is a raw EVENT JSON
+    /// object, not a WorkerMessage FlatBuffer.
+    NetworkRaw,
     Cache,
 }
 
@@ -191,9 +194,9 @@ impl ParserWorker {
                             shard_idx, sid
                         );
                     }
-                    let processed_batch: Vec<(String, Arc<Vec<u8>>, Span)> = batch
+                    let processed_batch: Vec<(String, Arc<Vec<u8>>, ShardSource, Span)> = batch
                         .into_iter()
-                        .map(|(sid, bytes, _source, span)| (sid, bytes, span))
+                        .map(|(sid, bytes, source, span)| (sid, bytes, source, span))
                         .collect();
                     this_shard.handle_message_batch(processed_batch).await;
                 }
@@ -250,23 +253,36 @@ impl ParserWorker {
                 match bytes_result {
                     Some((bytes, source)) => {
                         match source {
-                            ShardSource::Network => {
+                            // NetworkRaw is a per-frame marker that only
+                            // appears inside the Network arm below; the
+                            // channel-level source is always Network here.
+                            ShardSource::Network | ShardSource::NetworkRaw => {
                                 // Connections→parser traffic is either a
-                                // magic-prefixed batch of tagged WorkerMessages
-                                // (batched EVENT forwarding) or a bare single
-                                // WorkerMessage (control frames, relay status,
-                                // TS proxy path).
-                                let frames: Vec<(String, Arc<Vec<u8>>)> =
+                                // magic-prefixed batch of tagged frames
+                                // (WorkerMessage or raw EVENT JSON payloads)
+                                // or a bare single WorkerMessage (control
+                                // frames, relay status, TS proxy path).
+                                let (source, frames): (ShardSource, Vec<(String, Arc<Vec<u8>>)>) =
                                     match decode_conn_batch(&bytes) {
                                         Some(batch) => {
+                                            let source = if batch.raw_events {
+                                                ShardSource::NetworkRaw
+                                            } else {
+                                                ShardSource::Network
+                                            };
                                             info!(
-                                                "[network] Received batch from network: {} frames",
-                                                batch.len()
+                                                "[network] Received batch from network: {} frames (raw={})",
+                                                batch.frames.len(),
+                                                batch.raw_events
                                             );
-                                            batch
-                                                .into_iter()
-                                                .map(|(sid, data)| (sid, Arc::new(data)))
-                                                .collect()
+                                            (
+                                                source,
+                                                batch
+                                                    .frames
+                                                    .into_iter()
+                                                    .map(|(sid, data)| (sid, Arc::new(data)))
+                                                    .collect(),
+                                            )
                                         }
                                         None => {
                                             let wm = match flatbuffers::root::<fb::WorkerMessage>(
@@ -284,7 +300,7 @@ impl ParserWorker {
                                                 wm.content_type(),
                                                 sid
                                             );
-                                            vec![(sid, Arc::new(bytes))]
+                                            (ShardSource::Network, vec![(sid, Arc::new(bytes))])
                                         }
                                     };
 
@@ -345,7 +361,7 @@ impl ParserWorker {
                                     );
                                     let sub_span = info_span!("sub_request", sub_id = %sid);
                                     let task: ShardTask =
-                                        (sid, bytes, ShardSource::Network, sub_span);
+                                        (sid, bytes, source, sub_span);
 
                                     let mut lane_tx = if is_slow_lane {
                                         slow_tx.clone()
@@ -463,14 +479,58 @@ impl ParserWorker {
         });
     }
 
-    async fn handle_message_batch(&self, messages: Vec<(String, Arc<Vec<u8>>, Span)>) {
-        for (sid, fb_bytes_arc, span) in messages {
+    async fn handle_message_batch(&self, messages: Vec<(String, Arc<Vec<u8>>, ShardSource, Span)>) {
+        for (sid, fb_bytes_arc, source, span) in messages {
             let _guard = span.enter();
-            self.handle_message_single(sid, fb_bytes_arc).await;
+            self.handle_message_single(sid, fb_bytes_arc, source).await;
         }
     }
 
-    async fn handle_message_single(&self, sid: String, fb_bytes_arc: Arc<Vec<u8>>) {
+    async fn handle_message_single(&self, sid: String, fb_bytes_arc: Arc<Vec<u8>>, source: ShardSource) {
+        // Compact-envelope EVENT frames from the connections worker carry the
+        // raw event-object JSON instead of a WorkerMessage envelope: feed it
+        // straight into the pipeline.
+        if matches!(source, ShardSource::NetworkRaw) {
+            let raw = match std::str::from_utf8(&fb_bytes_arc) {
+                Ok(r) if !r.is_empty() => r,
+                _ => {
+                    warn!("Empty or invalid raw event for sub {}", sid);
+                    return;
+                }
+            };
+            if sid.is_empty() {
+                warn!("Invalid message: Missing sub_id");
+                return;
+            }
+            let pipeline_arc = {
+                let guard = match self.subscriptions.read() {
+                    Ok(g) => g,
+                    Err(_) => {
+                        warn!("Subscriptions lock poisoned");
+                        return;
+                    }
+                };
+                let Some(sub) = guard.get(&sid) else {
+                    warn!("Sub not found for {}", sid);
+                    return;
+                };
+                Arc::clone(&sub.pipeline)
+            };
+            let mut pipeline_guard = pipeline_arc.lock().await;
+            match pipeline_guard.process(raw).await {
+                Ok(Some(output)) => {
+                    // Buffered; flushed by the batch size/time thresholds so
+                    // live events don't cost one postMessage each.
+                    self.send_output_to_main(&sid, &output);
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    warn!("Pipeline process failed for sub {}: {:?}", sid, e);
+                }
+            }
+            return;
+        }
+
         info!(
             "[handle_message_single] Processing message for sub_id={}",
             sid

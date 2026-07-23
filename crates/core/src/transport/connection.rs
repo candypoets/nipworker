@@ -74,7 +74,10 @@ fn parse_incoming_relay_text(text: &str) -> Option<(String, Option<String>, Opti
                 Some(parts.join(","))
             }
         }
-        _ => scan.args[1].map(|v| v.raw.to_string()),
+        // EVENT/EOSE/CLOSED: the content is never read downstream
+        // (handle_first_response only consults it for AUTH and OK), so skip
+        // copying the entire event object into a String on the hot path.
+        _ => None,
     };
 
     Some((kind, sub_id, content))

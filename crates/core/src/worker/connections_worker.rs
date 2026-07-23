@@ -6,7 +6,7 @@ use crate::transport::connection::RelayConnection;
 use crate::transport::fb_utils::{build_worker_message, serialize_connection_status};
 use crate::transport::frame_scan::scan_relay_frame;
 use crate::transport::sub_dedup::{scanned_event_id, SubDedup};
-use crate::worker::batch_buffer::{encode_conn_batch, BatchBufferManager};
+use crate::worker::batch_buffer::{encode_raw_conn_batch, BatchBufferManager};
 use futures::StreamExt;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -252,7 +252,7 @@ impl ConnectionsWorker {
                     crate::platform::sleep(CONN_BATCH_SWEEP_MS).await;
                     let payloads = sweep_batches.borrow_mut().drain_timed_out();
                     for payload in payloads {
-                        if sweep_tx.unbounded_send(encode_conn_batch(&payload)).is_err() {
+                        if sweep_tx.unbounded_send(encode_raw_conn_batch(&payload)).is_err() {
                             return;
                         }
                     }
@@ -297,51 +297,71 @@ impl ConnectionsWorker {
                             let _ = to_crypto_messages.send(fbb.finished_data());
                             return;
                         }
-                        // Single zero-copy scan classifies the frame; EVENT frames
-                        // additionally probe the cross-relay dedup ring.
-                        let mut is_event = false;
-                        if let Some(scan) = scan_relay_frame(msg) {
-                            if scan.kind == "EVENT" {
+
+                        // Route for this frame, decided by a single zero-copy scan.
+                        enum Route<'a> {
+                            /// Non-EVENT frame or malformed EVENT: WorkerMessage path.
+                            Control,
+                            /// Well-formed EVENT: batch the raw event-object JSON slice.
+                            Raw(&'a str),
+                        }
+
+                        let route = match scan_relay_frame(msg) {
+                            Some(scan) if scan.kind == "EVENT" => {
                                 // Cross-relay dedup: an EVENT frame reaches the parser
                                 // only the first time its (subId, event id) pair is
                                 // seen. Non-EVENT frames and unparseable payloads pass
                                 // through untouched (parser dedup stays as safety net).
                                 if let Some(id) = scanned_event_id(&scan) {
                                     let mut dedup = sub_dedup_writer.borrow_mut();
-                                    let entry = dedup
-                                        .entry(full_sub_id.clone())
-                                        .or_insert_with(SubDedup::new);
+                                    if !dedup.contains_key(&full_sub_id) {
+                                        dedup.insert(full_sub_id.clone(), SubDedup::new());
+                                    }
+                                    let entry = dedup.get_mut(&full_sub_id).unwrap();
                                     if !entry.mark(id) {
                                         return;
                                     }
                                 }
-                                is_event = true;
+                                match scan.args[1] {
+                                    Some(v) if !v.is_string => Route::Raw(v.raw),
+                                    _ => Route::Control,
+                                }
                             }
-                        }
-                        let mut fbb = flatbuffers::FlatBufferBuilder::new();
-                        let wm = build_worker_message(&mut fbb, &full_sub_id, url, msg);
-                        fbb.finish(wm, None);
-                        if is_event {
-                            // Batchable path: append to this subscription's buffer;
-                            // flushed by the size threshold (here), the sweeper
-                            // timer, or the next control frame for the sub.
-                            let flushed = parser_batches
-                                .borrow_mut()
-                                .add_message(&full_sub_id, fbb.finished_data());
-                            if let Some(payload) = flushed {
-                                let _ = tx_msg.unbounded_send(encode_conn_batch(&payload));
+                            _ => Route::Control,
+                        };
+
+                        match route {
+                            Route::Raw(event_json) => {
+                                // Compact envelope: the raw event-object slice goes
+                                // straight into this subscription's batch buffer —
+                                // no FlatBuffer build on the hot path. Flushed by
+                                // the size threshold (here), the sweeper timer, or
+                                // the next control frame for the sub.
+                                let flushed = parser_batches
+                                    .borrow_mut()
+                                    .add_message(&full_sub_id, event_json.as_bytes());
+                                if let Some(payload) = flushed {
+                                    let _ =
+                                        tx_msg.unbounded_send(encode_raw_conn_batch(&payload));
+                                }
                             }
-                        } else {
-                            // Control frames (EOSE/CLOSED/OK/AUTH/NOTICE) must not
-                            // sit in a buffer: flush this sub's pending events
-                            // first so ordering is preserved, then forward
-                            // immediately as a bare single WorkerMessage.
-                            let flushed = parser_batches.borrow_mut().flush_sub(&full_sub_id);
-                            if let Some(payload) = flushed {
-                                let _ = tx_msg.unbounded_send(encode_conn_batch(&payload));
+                            Route::Control => {
+                                // Control frames (EOSE/CLOSED/OK/AUTH/NOTICE) and
+                                // malformed EVENTs must not sit in a buffer: flush
+                                // this sub's pending events first so ordering is
+                                // preserved, then forward immediately as a bare
+                                // single WorkerMessage.
+                                let mut fbb = flatbuffers::FlatBufferBuilder::new();
+                                let wm = build_worker_message(&mut fbb, &full_sub_id, url, msg);
+                                fbb.finish(wm, None);
+                                let flushed = parser_batches.borrow_mut().flush_sub(&full_sub_id);
+                                if let Some(payload) = flushed {
+                                    let _ =
+                                        tx_msg.unbounded_send(encode_raw_conn_batch(&payload));
+                                }
+                                // The mpsc bridge to the parser loop requires an owned Vec.
+                                let _ = tx_msg.unbounded_send(fbb.finished_data().to_vec());
                             }
-                            // The mpsc bridge to the parser loop requires an owned Vec.
-                            let _ = tx_msg.unbounded_send(fbb.finished_data().to_vec());
                         }
                     });
 
@@ -1190,10 +1210,11 @@ mod tests {
                 // Invoke the stored message callback
                 transport.invoke_message_callback("wss://r", r#"["EVENT","sub1",{}]"#.to_string());
 
+                // EVENT frames travel in the compact envelope: the raw event
+                // object JSON, batched, no WorkerMessage wrapper.
                 let mut pending = VecDeque::new();
-                let bytes = recv_worker_message(&mut parser_out_test, &mut pending).await;
-                let wm = flatbuffers::root::<fb::WorkerMessage>(&bytes).unwrap();
-                assert_eq!(wm.sub_id(), Some("sub1"), "sub_id mismatch");
+                let payload = recv_event_payload(&mut parser_out_test, &mut pending).await;
+                assert_eq!(payload, "{}", "event object mismatch");
             })
             .await;
     }
@@ -1270,13 +1291,8 @@ mod tests {
                 // Verify callbacks are set up by invoking them
                 transport.invoke_message_callback("wss://r1", r#"["EVENT","sub1",{}]"#.to_string());
                 let mut pending = VecDeque::new();
-                let bytes = recv_worker_message(&mut parser_out_test, &mut pending).await;
-                let wm = flatbuffers::root::<fb::WorkerMessage>(&bytes).unwrap();
-                assert_eq!(
-                    wm.sub_id(),
-                    Some("sub1"),
-                    "callback should work before disconnect"
-                );
+                let payload = recv_event_payload(&mut parser_out_test, &mut pending).await;
+                assert_eq!(payload, "{}", "callback should work before disconnect");
 
                 // Send ConnectionStatus with status="CLOSE" to trigger disconnect
                 let close_msg = build_close_worker_message("wss://r1");
@@ -1457,50 +1473,68 @@ mod tests {
             .await;
     }
 
-    /// Unwrap one channel payload into WorkerMessage frames: a magic-prefixed
+    /// One frame unwrapped from a parser-channel payload.
+    enum ParserFrame {
+        /// Raw EVENT JSON object (compact-envelope batch frame).
+        Raw(String),
+        /// WorkerMessage FlatBuffer bytes (bare singles and WM batches).
+        Wm(Vec<u8>),
+    }
+
+    /// Unwrap one channel payload into frames: a magic-prefixed
     /// connections→parser batch yields all its frames; anything else is a
     /// bare single WorkerMessage (relay status / control path).
-    fn unwrap_parser_payload(bytes: &[u8], pending: &mut VecDeque<Vec<u8>>) {
+    fn unwrap_parser_payload(bytes: &[u8], pending: &mut VecDeque<ParserFrame>) {
         match decode_conn_batch(bytes) {
-            Some(frames) => {
-                for (_sid, data) in frames {
-                    pending.push_back(data);
+            Some(batch) => {
+                for (_sid, data) in batch.frames {
+                    if batch.raw_events {
+                        pending.push_back(ParserFrame::Raw(
+                            String::from_utf8(data).expect("raw event is utf8"),
+                        ));
+                    } else {
+                        pending.push_back(ParserFrame::Wm(data));
+                    }
                 }
             }
-            None => pending.push_back(bytes.to_vec()),
+            None => pending.push_back(ParserFrame::Wm(bytes.to_vec())),
         }
     }
 
     /// Next WorkerMessage from the parser channel, transparently decoding
-    /// batched payloads. Bare status/control messages are returned as-is.
+    /// batched payloads and skipping raw EVENT frames.
     async fn recv_worker_message(
         rx: &mut TokioWorkerChannel,
-        pending: &mut VecDeque<Vec<u8>>,
+        pending: &mut VecDeque<ParserFrame>,
     ) -> Vec<u8> {
-        if let Some(bytes) = pending.pop_front() {
-            return bytes;
-        }
         loop {
+            while let Some(frame) = pending.pop_front() {
+                if let ParserFrame::Wm(bytes) = frame {
+                    return bytes;
+                }
+            }
             let bytes = rx.recv().await.expect("parser channel closed");
             unwrap_parser_payload(&bytes, pending);
-            if let Some(bytes) = pending.pop_front() {
-                return bytes;
-            }
         }
     }
 
     async fn recv_event_payload(
         rx: &mut TokioWorkerChannel,
-        pending: &mut VecDeque<Vec<u8>>,
+        pending: &mut VecDeque<ParserFrame>,
     ) -> String {
-        // Read until a Raw (EVENT) WorkerMessage arrives, skipping
-        // ConnectionStatus and other control messages.
+        // Read until an EVENT payload arrives (raw batch frame or legacy Raw
+        // WorkerMessage), skipping ConnectionStatus and other control messages.
         loop {
-            while let Some(bytes) = pending.pop_front() {
-                let wm = flatbuffers::root::<fb::WorkerMessage>(&bytes).unwrap();
-                if wm.content_type() == fb::Message::Raw {
-                    if let Some(raw) = wm.content_as_raw() {
-                        return raw.raw().to_string();
+            while let Some(frame) = pending.pop_front() {
+                match frame {
+                    ParserFrame::Raw(json) => return json,
+                    ParserFrame::Wm(bytes) => {
+                        let wm = flatbuffers::root::<fb::WorkerMessage>(&bytes).unwrap();
+                        if wm.content_type() == fb::Message::Raw {
+                            if let Some(raw) = wm.content_as_raw() {
+                                return raw.raw().to_string();
+                            }
+                        }
                     }
                 }
             }
@@ -1514,15 +1548,20 @@ mod tests {
         }
     }
 
-    async fn expect_no_event(rx: &mut TokioWorkerChannel, pending: &mut VecDeque<Vec<u8>>) {
-        // Assert no Raw (EVENT) WorkerMessage arrives within a short window.
-        for bytes in pending.drain(..) {
-            let wm = flatbuffers::root::<fb::WorkerMessage>(&bytes).unwrap();
-            assert_ne!(
-                wm.content_type(),
-                fb::Message::Raw,
-                "duplicate EVENT was forwarded to parser"
-            );
+    async fn expect_no_event(rx: &mut TokioWorkerChannel, pending: &mut VecDeque<ParserFrame>) {
+        // Assert no EVENT frame arrives within a short window.
+        for frame in pending.drain(..) {
+            match frame {
+                ParserFrame::Raw(_) => panic!("duplicate EVENT was forwarded to parser"),
+                ParserFrame::Wm(bytes) => {
+                    let wm = flatbuffers::root::<fb::WorkerMessage>(&bytes).unwrap();
+                    assert_ne!(
+                        wm.content_type(),
+                        fb::Message::Raw,
+                        "duplicate EVENT was forwarded to parser"
+                    );
+                }
+            }
         }
         let deadline = std::time::Instant::now() + std::time::Duration::from_millis(50);
         loop {
@@ -1534,13 +1573,20 @@ mod tests {
                 Ok(Ok(bytes)) => {
                     let mut frames = VecDeque::new();
                     unwrap_parser_payload(&bytes, &mut frames);
-                    for bytes in frames {
-                        let wm = flatbuffers::root::<fb::WorkerMessage>(&bytes).unwrap();
-                        assert_ne!(
-                            wm.content_type(),
-                            fb::Message::Raw,
-                            "duplicate EVENT was forwarded to parser"
-                        );
+                    for frame in frames {
+                        match frame {
+                            ParserFrame::Raw(_) => {
+                                panic!("duplicate EVENT was forwarded to parser")
+                            }
+                            ParserFrame::Wm(bytes) => {
+                                let wm = flatbuffers::root::<fb::WorkerMessage>(&bytes).unwrap();
+                                assert_ne!(
+                                    wm.content_type(),
+                                    fb::Message::Raw,
+                                    "duplicate EVENT was forwarded to parser"
+                                );
+                            }
+                        }
                     }
                 }
                 _ => return,
@@ -1766,8 +1812,8 @@ mod tests {
                 .await
                 .expect("timed out waiting for events")
                 .expect("parser channel closed");
-            if let Some(frames) = decode_conn_batch(&bytes) {
-                events.extend(frames);
+            if let Some(batch) = decode_conn_batch(&bytes) {
+                events.extend(batch.frames);
             }
             // Bare single messages are relay statuses / control frames: skip.
         }
@@ -1802,9 +1848,8 @@ mod tests {
                 assert_eq!(batched.len(), 3);
                 for (i, (sid, data)) in batched.iter().enumerate() {
                     assert_eq!(sid, "s1");
-                    let wm = flatbuffers::root::<fb::WorkerMessage>(data).unwrap();
-                    let raw = wm.content_as_raw().expect("Raw content");
-                    assert!(raw.raw().contains(&ids[i]), "frame {} out of order", i);
+                    let json = std::str::from_utf8(data).expect("raw event is utf8");
+                    assert!(json.contains(&ids[i]), "frame {} out of order", i);
                 }
             })
             .await;
@@ -1900,15 +1945,42 @@ mod tests {
                     first.len()
                 );
 
-                let mut events = decode_conn_batch(&first).unwrap();
+                let mut events = decode_conn_batch(&first).unwrap().frames;
                 let rest = recv_n_events(&mut parser_out_test, 20 - events.len()).await;
                 events.extend(rest);
                 assert_eq!(events.len(), 20);
                 for (i, (_sid, data)) in events.iter().enumerate() {
-                    let wm = flatbuffers::root::<fb::WorkerMessage>(data).unwrap();
-                    let raw = wm.content_as_raw().expect("Raw content");
-                    assert!(raw.raw().contains(&sent[i]), "frame {} out of order", i);
+                    let json = std::str::from_utf8(data).expect("raw event is utf8");
+                    assert!(json.contains(&sent[i]), "frame {} out of order", i);
                 }
+            })
+            .await;
+    }
+
+    #[tokio::test]
+    async fn test_malformed_event_frame_takes_worker_message_path() {
+        let local = LocalSet::new();
+        local
+            .run_until(async {
+                let (transport, _worker, _parser_test, mut parser_out_test, cache_test, _crypto_test) =
+                    setup().await;
+
+                let envelope = serde_json::json!({
+                    "relays": ["wss://r1"],
+                    "frames": [r#"["REQ","s1",{}]"#]
+                });
+                cache_test.send(&serde_json::to_vec(&envelope).unwrap()).await.unwrap();
+                for _ in 0..5 {
+                    tokio::task::yield_now().await;
+                }
+
+                // EVENT frame without an event object: forwarded untouched as
+                // a bare WorkerMessage so the parser handles it exactly as before.
+                transport.invoke_message_callback("wss://r1", r#"["EVENT","s1"]"#.to_string());
+
+                let mut pending = VecDeque::new();
+                let payload = recv_event_payload(&mut parser_out_test, &mut pending).await;
+                assert_eq!(payload, r#"["EVENT","s1"]"#);
             })
             .await;
     }

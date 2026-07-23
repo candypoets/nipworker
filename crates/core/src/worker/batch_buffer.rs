@@ -194,28 +194,66 @@ pub fn decode_tagged_batch(bytes: &[u8]) -> Vec<(String, Vec<u8>)> {
     frames
 }
 
-/// Magic prefix marking a batched connections→parser payload. A bare
-/// FlatBuffers WorkerMessage always starts with a small non-zero root-table
-/// uoffset, so 0xFFFFFFFF can never collide with one (the TS proxy path and
-/// relay status frames still travel as bare single messages).
+/// Magic prefix marking a batched connections→parser payload whose frames are
+/// WorkerMessage FlatBuffers. A bare FlatBuffers WorkerMessage always starts
+/// with a small non-zero root-table uoffset, so 0xFFFFFFFF can never collide
+/// with one (the TS proxy path and relay status frames still travel as bare
+/// single messages).
 pub const CONN_BATCH_MAGIC: [u8; 4] = [0xFF, 0xFF, 0xFF, 0xFF];
 
-/// Wrap a flushed batch payload with the connections→parser batch magic.
-pub fn encode_conn_batch(payload: &[u8]) -> Vec<u8> {
+/// Magic prefix marking a batched connections→parser payload whose frames are
+/// raw Nostr EVENT JSON objects (compact envelope): the connections worker
+/// skips the FlatBuffer build entirely and the parser feeds the slice
+/// straight into the pipeline's JSON scanners. Control frames (EOSE/CLOSED/
+/// OK/AUTH/NOTICE) keep the WorkerMessage envelope and never travel in batches.
+pub const CONN_RAW_BATCH_MAGIC: [u8; 4] = [0xFE, 0xFF, 0xFF, 0xFF];
+
+/// A decoded connections→parser batch payload.
+pub struct ConnBatch {
+    /// True when frames are raw EVENT JSON objects, false when they are
+    /// WorkerMessage FlatBuffers.
+    pub raw_events: bool,
+    /// (sub_id, frame data) pairs in arrival order.
+    pub frames: Vec<(String, Vec<u8>)>,
+}
+
+/// Wrap a flushed batch payload with a connections→parser batch magic.
+fn wrap_conn_batch(magic: [u8; 4], payload: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(4 + payload.len());
-    out.extend_from_slice(&CONN_BATCH_MAGIC);
+    out.extend_from_slice(&magic);
     out.extend_from_slice(payload);
     out
 }
 
-/// If `bytes` is a magic-prefixed connections→parser batch, decode it into
-/// (sub_id, WorkerMessage) frames. Returns None for a bare single
-/// WorkerMessage, which callers handle on the legacy path.
-pub fn decode_conn_batch(bytes: &[u8]) -> Option<Vec<(String, Vec<u8>)>> {
-    if bytes.len() < 4 || bytes[0..4] != CONN_BATCH_MAGIC {
+/// Wrap a flushed batch payload of WorkerMessage frames with the
+/// connections→parser batch magic.
+pub fn encode_conn_batch(payload: &[u8]) -> Vec<u8> {
+    wrap_conn_batch(CONN_BATCH_MAGIC, payload)
+}
+
+/// Wrap a flushed batch payload of raw EVENT JSON frames with the
+/// connections→parser raw-batch magic.
+pub fn encode_raw_conn_batch(payload: &[u8]) -> Vec<u8> {
+    wrap_conn_batch(CONN_RAW_BATCH_MAGIC, payload)
+}
+
+/// If `bytes` is a magic-prefixed connections→parser batch, decode it.
+/// Returns None for a bare single WorkerMessage, which callers handle on the
+/// legacy path.
+pub fn decode_conn_batch(bytes: &[u8]) -> Option<ConnBatch> {
+    if bytes.len() < 4 {
         return None;
     }
-    Some(decode_tagged_batch(&bytes[4..]))
+    let magic: [u8; 4] = bytes[0..4].try_into().unwrap();
+    let raw_events = match magic {
+        CONN_BATCH_MAGIC => false,
+        CONN_RAW_BATCH_MAGIC => true,
+        _ => return None,
+    };
+    Some(ConnBatch {
+        raw_events,
+        frames: decode_tagged_batch(&bytes[4..]),
+    })
 }
 
 #[cfg(test)]
@@ -314,10 +352,27 @@ mod tests {
         let wrapped = encode_conn_batch(&payload);
         assert_eq!(&wrapped[0..4], &CONN_BATCH_MAGIC);
 
-        let frames = decode_conn_batch(&wrapped).expect("should decode as conn batch");
-        assert_eq!(frames.len(), 2);
-        assert_eq!(frames[0], ("s1".to_string(), b"ev1".to_vec()));
-        assert_eq!(frames[1], ("s1".to_string(), b"ev2".to_vec()));
+        let batch = decode_conn_batch(&wrapped).expect("should decode as conn batch");
+        assert!(!batch.raw_events);
+        assert_eq!(batch.frames.len(), 2);
+        assert_eq!(batch.frames[0], ("s1".to_string(), b"ev1".to_vec()));
+        assert_eq!(batch.frames[1], ("s1".to_string(), b"ev2".to_vec()));
+    }
+
+    #[test]
+    fn raw_conn_batch_roundtrip() {
+        let mut mgr = BatchBufferManager::new();
+        assert!(mgr.add_message("s1", br#"{"id":"a"}"#).is_none());
+        let payload = mgr.flush_sub("s1").expect("pending batch");
+
+        let wrapped = encode_raw_conn_batch(&payload);
+        assert_eq!(&wrapped[0..4], &CONN_RAW_BATCH_MAGIC);
+
+        let batch = decode_conn_batch(&wrapped).expect("should decode as raw conn batch");
+        assert!(batch.raw_events);
+        assert_eq!(batch.frames.len(), 1);
+        assert_eq!(batch.frames[0].0, "s1");
+        assert_eq!(batch.frames[0].1, br#"{"id":"a"}"#.to_vec());
     }
 
     #[test]
