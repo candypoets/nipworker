@@ -1003,7 +1003,7 @@ dependencies = [
 
 [[package]]
 name = "nipworker-native-ffi"
-version = "0.97.4"
+version = "0.97.5"
 dependencies = [
  "android_logger",
  "async-trait",
