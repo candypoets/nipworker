@@ -1,6 +1,6 @@
 [package]
 name = "nipworker-native-ffi"
-version = "0.97.3"
+version = "0.97.4"
 edition = "2021"
 
 [lib]
