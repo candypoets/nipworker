@@ -99,13 +99,28 @@ impl NativeSubscription {
         }
     }
 
-    fn append_payload(&mut self, payload: &[u8]) -> bool {
-        let write_pos = u32::from_le_bytes([
+    fn write_pos(&self) -> u32 {
+        u32::from_le_bytes([
             self.buffer[0],
             self.buffer[1],
             self.buffer[2],
             self.buffer[3],
-        ]) as usize;
+        ])
+    }
+
+    /// Reset the write cursor back to 4 so drained space can be reused, but only
+    /// if the cursor still matches `expected_write_pos` (i.e. the engine has not
+    /// appended since the host last read).
+    fn try_reset(&mut self, expected_write_pos: u32) -> bool {
+        if self.write_pos() != expected_write_pos {
+            return false;
+        }
+        self.buffer[0..4].copy_from_slice(&4u32.to_le_bytes());
+        true
+    }
+
+    fn append_payload(&mut self, payload: &[u8]) -> bool {
+        let write_pos = self.write_pos() as usize;
         let required = 4 + payload.len();
         if write_pos + required > self.buffer.len() {
             return false;
@@ -239,6 +254,66 @@ fn build_route_wake_frame(sub_id: &str) -> Vec<u8> {
     frame.extend_from_slice(&(sub_id_bytes.len() as u32).to_le_bytes());
     frame.extend_from_slice(sub_id_bytes);
     frame
+}
+
+/// One callback emission derived from a drained batch of async events.
+enum CallbackAction {
+    /// Direct callback payload (empty sub_id or "crypto") delivered as-is.
+    Payload(Vec<u8>),
+    /// Route wake telling the host that `sub_id`'s buffer has new data.
+    Wake(String),
+}
+
+/// Result of applying a drained batch of async events to the subscription store.
+struct BatchOutcome {
+    /// Callbacks to emit, in channel order with at most one wake per sub_id.
+    actions: Vec<CallbackAction>,
+    /// Sub ids whose buffer filled up with `close_on_cleanup` set; the caller
+    /// should send an unsubscribe EngineCommand for each.
+    unsubscribes: Vec<String>,
+}
+
+/// Append a drained batch of async events to their subscription buffers and
+/// coalesce the resulting callbacks: one route wake per sub_id for the whole
+/// batch, while crypto/empty-sub messages pass through individually.
+/// Appends happen in channel order; wakes point at data already appended.
+fn apply_event_batch(
+    subscriptions: &mut NativeSubscriptionStore,
+    batch: Vec<(String, Vec<u8>)>,
+) -> BatchOutcome {
+    let mut actions = Vec::with_capacity(batch.len());
+    let mut unsubscribes = Vec::new();
+    let mut woken = std::collections::HashSet::new();
+    for (sub_id, bytes) in batch {
+        // Direct crypto responses are delivered as callback payloads and do not
+        // own a registered subscription buffer.
+        if sub_id.is_empty() || sub_id == "crypto" {
+            actions.push(CallbackAction::Payload(bytes));
+            continue;
+        }
+        match subscriptions.append_payload(&sub_id, &bytes) {
+            Ok(()) => {
+                if woken.insert(sub_id.clone()) {
+                    actions.push(CallbackAction::Wake(sub_id));
+                }
+            }
+            Err(close_on_cleanup) => {
+                log::warn!(
+                    "[nipworker-native] native buffer full for subId={} (subIdLen={}, payloadLen={})",
+                    sub_id,
+                    sub_id.len(),
+                    bytes.len()
+                );
+                if close_on_cleanup {
+                    unsubscribes.push(sub_id);
+                }
+            }
+        }
+    }
+    BatchOutcome {
+        actions,
+        unsubscribes,
+    }
 }
 
 fn subscription_buffer_size_from_message(bytes: &[u8]) -> Option<(String, usize)> {
@@ -456,53 +531,64 @@ pub extern "C" fn nipworker_init_with_options(
             // Bridge async events to sync callback thread.
             // The callback receives an owned buffer; the host must call
             // nipworker_free_bytes() after copying to avoid leaking memory.
+            // Pending events are drained and coalesced so a burst emits a
+            // single route wake per sub_id instead of one FFI call per event.
             tokio::task::spawn_local(async move {
-                while let Some((sub_id, bytes)) = async_event_rx.next().await {
-                    let mut should_forward = true;
-                    let mut should_unsubscribe = false;
-                    let sub_id_len = sub_id.len();
-                    let payload_len = bytes.len();
-                    // Direct crypto responses are delivered as callback payloads and do not
-                    // own a registered subscription buffer.
-                    if !sub_id.is_empty() && sub_id != "crypto" {
-                        if let Ok(mut subscriptions) = callback_subscriptions.lock() {
-                            match subscriptions.append_payload(&sub_id, &bytes) {
-                                Ok(()) => {}
-                                Err(close_on_cleanup) => {
-                                    should_forward = false;
-                                    should_unsubscribe = close_on_cleanup;
+                while let Some(first) = async_event_rx.next().await {
+                    let mut batch = vec![first];
+                    while let Ok(pending) = async_event_rx.try_recv() {
+                        batch.push(pending);
+                    }
+                    let batch_len = batch.len();
+                    let outcome = match callback_subscriptions.lock() {
+                        Ok(mut subscriptions) => apply_event_batch(&mut subscriptions, batch),
+                        Err(_) => {
+                            // Lock poisoned: forward without appending, same as before.
+                            let mut actions = Vec::with_capacity(batch_len);
+                            let mut woken = std::collections::HashSet::new();
+                            for (sub_id, bytes) in batch {
+                                if sub_id.is_empty() || sub_id == "crypto" {
+                                    actions.push(CallbackAction::Payload(bytes));
+                                } else if woken.insert(sub_id.clone()) {
+                                    actions.push(CallbackAction::Wake(sub_id));
                                 }
                             }
+                            BatchOutcome {
+                                actions,
+                                unsubscribes: Vec::new(),
+                            }
                         }
-                    }
-                    if !should_forward {
-                        log::warn!(
-                            "[nipworker-native] native buffer full for subId={} (subIdLen={}, payloadLen={})",
-                            sub_id,
-                            sub_id_len,
-                            payload_len
-                        );
-                        if should_unsubscribe {
-                            let _ = callback_cmd_tx.send(EngineCommand::HandleMessage(
-                                build_unsubscribe_message(&sub_id),
-                            ));
-                        }
-                        continue;
-                    }
-                    log::debug!(
-                        "[nipworker-native] queueing callback for subId={} (subIdLen={}, payloadLen={})",
-                        sub_id,
-                        sub_id_len,
-                        payload_len
-                    );
-                    let callback_bytes = if sub_id.is_empty() || sub_id == "crypto" {
-                        bytes
-                    } else {
-                        build_route_wake_frame(&sub_id)
                     };
-                    let len = callback_bytes.len();
-                    let ptr = Box::into_raw(callback_bytes.into_boxed_slice()) as *const u8;
-                    callback(userdata as *mut c_void, ptr, len);
+                    let wake_count = outcome
+                        .actions
+                        .iter()
+                        .filter(|action| matches!(action, CallbackAction::Wake(_)))
+                        .count();
+                    let passthrough_count = outcome
+                        .actions
+                        .iter()
+                        .filter(|action| matches!(action, CallbackAction::Payload(_)))
+                        .count();
+                    log::debug!(
+                        "[nipworker-native] dispatching event batch (messages={}, wakes={}, passthrough={})",
+                        batch_len,
+                        wake_count,
+                        passthrough_count
+                    );
+                    for sub_id in outcome.unsubscribes {
+                        let _ = callback_cmd_tx.send(EngineCommand::HandleMessage(
+                            build_unsubscribe_message(&sub_id),
+                        ));
+                    }
+                    for action in outcome.actions {
+                        let callback_bytes = match action {
+                            CallbackAction::Payload(bytes) => bytes,
+                            CallbackAction::Wake(sub_id) => build_route_wake_frame(&sub_id),
+                        };
+                        let len = callback_bytes.len();
+                        let ptr = Box::into_raw(callback_bytes.into_boxed_slice()) as *const u8;
+                        callback(userdata as *mut c_void, ptr, len);
+                    }
                 }
             });
 
@@ -786,6 +872,35 @@ pub unsafe extern "C" fn nipworker_subscription_buffer_len(
     0
 }
 
+/// Reset a subscription buffer's write cursor back to 4 so drained space can be
+/// reused. The host must call this only after fully draining the buffer up to
+/// `expected_write_pos`. Returns false when the sub is missing or the engine
+/// appended since the host last read (cursor != expected_write_pos) — in that
+/// case the host should re-read the buffer instead of resetting.
+#[no_mangle]
+pub unsafe extern "C" fn nipworker_subscription_try_reset(
+    handle: *mut c_void,
+    sub_id: *const c_char,
+    expected_write_pos: u32,
+) -> bool {
+    if handle.is_null() || sub_id.is_null() {
+        return false;
+    }
+    let handle = unsafe { &*(handle as *mut NipworkerHandle) };
+    let sub_id = unsafe { CStr::from_ptr(sub_id) }.to_string_lossy();
+    if let Ok(state) = handle.state.lock() {
+        if state.destroyed {
+            return false;
+        }
+        if let Ok(mut subscriptions) = state.subscriptions.lock() {
+            if let Some(subscription) = subscriptions.subscriptions.get_mut(sub_id.as_ref()) {
+                return subscription.try_reset(expected_write_pos);
+            }
+        }
+    }
+    false
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn nipworker_cleanup_subscriptions(handle: *mut c_void) {
     if handle.is_null() {
@@ -867,7 +982,46 @@ pub extern "C" fn nipworker_deinit(handle: *mut c_void) {
 
 #[cfg(test)]
 mod tests {
-    use super::{NativeSubscription, NativeSubscriptionStore};
+    use super::{
+        apply_event_batch, nipworker_subscription_try_reset, BatchOutcome, CallbackAction,
+        NativeSubscription, NativeSubscriptionStore, NipworkerHandle, NipworkerState,
+    };
+    use std::ffi::{c_void, CString};
+    use std::sync::{Arc, Mutex};
+
+    fn wake_ids(outcome: &BatchOutcome) -> Vec<String> {
+        outcome
+            .actions
+            .iter()
+            .filter_map(|action| match action {
+                CallbackAction::Wake(sub_id) => Some(sub_id.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn payloads(outcome: &BatchOutcome) -> Vec<Vec<u8>> {
+        outcome
+            .actions
+            .iter()
+            .filter_map(|action| match action {
+                CallbackAction::Payload(bytes) => Some(bytes.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn test_handle() -> *mut c_void {
+        let handle = Box::new(NipworkerHandle {
+            state: Mutex::new(NipworkerState {
+                destroyed: false,
+                cmd_tx: None,
+                subscriptions: Arc::new(Mutex::new(NativeSubscriptionStore::new())),
+                mesh_tx: None,
+            }),
+        });
+        Box::into_raw(handle) as *mut c_void
+    }
 
     #[test]
     fn new_subscription_initializes_header_to_four() {
@@ -932,5 +1086,183 @@ mod tests {
             &store.subscriptions.get("sub-1").unwrap().buffer[0..4],
             &4u32.to_le_bytes()
         );
+    }
+
+    #[test]
+    fn batch_coalesces_multiple_messages_for_same_sub_into_one_wake() {
+        let mut store = NativeSubscriptionStore::new();
+        store.register("sub-1".to_string(), 64, true);
+        let batch = vec![
+            ("sub-1".to_string(), b"aa".to_vec()),
+            ("sub-1".to_string(), b"bb".to_vec()),
+            ("sub-1".to_string(), b"cc".to_vec()),
+        ];
+
+        let outcome = apply_event_batch(&mut store, batch);
+
+        assert_eq!(wake_ids(&outcome), vec!["sub-1".to_string()]);
+        assert!(payloads(&outcome).is_empty());
+        assert!(outcome.unsubscribes.is_empty());
+    }
+
+    #[test]
+    fn batch_emits_one_wake_per_sub_across_subs() {
+        let mut store = NativeSubscriptionStore::new();
+        store.register("sub-a".to_string(), 64, true);
+        store.register("sub-b".to_string(), 64, true);
+        let batch = vec![
+            ("sub-a".to_string(), b"1".to_vec()),
+            ("sub-b".to_string(), b"2".to_vec()),
+            ("sub-a".to_string(), b"3".to_vec()),
+            ("sub-b".to_string(), b"4".to_vec()),
+        ];
+
+        let outcome = apply_event_batch(&mut store, batch);
+
+        let wakes = wake_ids(&outcome);
+        assert_eq!(wakes.len(), 2);
+        assert!(wakes.contains(&"sub-a".to_string()));
+        assert!(wakes.contains(&"sub-b".to_string()));
+        assert_eq!(outcome.actions.len(), 2);
+    }
+
+    #[test]
+    fn batch_passes_crypto_and_empty_sub_messages_through_uncoalesced() {
+        let mut store = NativeSubscriptionStore::new();
+        store.register("sub-1".to_string(), 64, true);
+        let batch = vec![
+            ("".to_string(), b"x".to_vec()),
+            ("crypto".to_string(), b"y".to_vec()),
+            ("sub-1".to_string(), b"z".to_vec()),
+            ("".to_string(), b"w".to_vec()),
+        ];
+
+        let outcome = apply_event_batch(&mut store, batch);
+
+        assert_eq!(
+            payloads(&outcome),
+            vec![b"x".to_vec(), b"y".to_vec(), b"w".to_vec()]
+        );
+        assert_eq!(wake_ids(&outcome), vec!["sub-1".to_string()]);
+        assert_eq!(outcome.actions.len(), 4);
+        // Passthrough payloads are not appended to any subscription buffer.
+        assert_eq!(
+            &store.subscriptions.get("sub-1").unwrap().buffer[0..4],
+            &(9u32).to_le_bytes()
+        );
+    }
+
+    #[test]
+    fn batch_buffer_full_triggers_unsubscribe_without_wake() {
+        let mut store = NativeSubscriptionStore::new();
+        store.register("sub-full".to_string(), 8, true);
+        store.register("sub-full-keep".to_string(), 8, false);
+        let batch = vec![
+            ("sub-full".to_string(), vec![0u8; 16]),
+            ("sub-full-keep".to_string(), vec![0u8; 16]),
+        ];
+
+        let outcome = apply_event_batch(&mut store, batch);
+
+        assert_eq!(outcome.unsubscribes, vec!["sub-full".to_string()]);
+        assert!(wake_ids(&outcome).is_empty());
+        assert!(payloads(&outcome).is_empty());
+    }
+
+    #[test]
+    fn batch_appends_payloads_in_channel_order() {
+        let mut store = NativeSubscriptionStore::new();
+        store.register("sub-1".to_string(), 64, true);
+        let batch = vec![
+            ("sub-1".to_string(), b"first".to_vec()),
+            ("sub-1".to_string(), b"second".to_vec()),
+        ];
+
+        apply_event_batch(&mut store, batch);
+
+        let buffer = &store.subscriptions.get("sub-1").unwrap().buffer;
+        // 4-byte header, then [len][payload] frames in append order.
+        assert_eq!(&buffer[4..8], &5u32.to_le_bytes());
+        assert_eq!(&buffer[8..13], b"first");
+        assert_eq!(&buffer[13..17], &6u32.to_le_bytes());
+        assert_eq!(&buffer[17..23], b"second");
+        assert_eq!(&buffer[0..4], &(23u32).to_le_bytes());
+    }
+
+    #[test]
+    fn try_reset_succeeds_when_positions_match() {
+        let handle = test_handle();
+        let sub_id = CString::new("sub-1").unwrap();
+        let handle_ref = unsafe { &*(handle as *mut NipworkerHandle) };
+        if let Ok(state) = handle_ref.state.lock() {
+            if let Ok(mut subscriptions) = state.subscriptions.lock() {
+                subscriptions.register("sub-1".to_string(), 64, true);
+                assert!(subscriptions.append_payload("sub-1", b"payload").is_ok());
+            }
+        }
+
+        let reset = unsafe { nipworker_subscription_try_reset(handle, sub_id.as_ptr(), 15) };
+
+        assert!(reset, "cursor still at 15, reset should succeed");
+        if let Ok(state) = handle_ref.state.lock() {
+            if let Ok(mut subscriptions) = state.subscriptions.lock() {
+                let subscription = subscriptions.subscriptions.get("sub-1").unwrap();
+                assert_eq!(&subscription.buffer[0..4], &4u32.to_le_bytes());
+                // A subsequent append starts writing at offset 4 again.
+                assert!(subscriptions.append_payload("sub-1", b"next").is_ok());
+                let subscription = subscriptions.subscriptions.get("sub-1").unwrap();
+                assert_eq!(&subscription.buffer[4..8], &4u32.to_le_bytes());
+                assert_eq!(&subscription.buffer[8..12], b"next");
+                assert_eq!(&subscription.buffer[0..4], &(12u32).to_le_bytes());
+            }
+        }
+        let _ = unsafe { Box::from_raw(handle as *mut NipworkerHandle) };
+    }
+
+    #[test]
+    fn try_reset_fails_when_engine_appended_after_expected() {
+        let handle = test_handle();
+        let sub_id = CString::new("sub-1").unwrap();
+        let handle_ref = unsafe { &*(handle as *mut NipworkerHandle) };
+        if let Ok(state) = handle_ref.state.lock() {
+            if let Ok(mut subscriptions) = state.subscriptions.lock() {
+                subscriptions.register("sub-1".to_string(), 64, true);
+                assert!(subscriptions.append_payload("sub-1", b"payload").is_ok());
+                // Engine appends again after the host drained at cursor 15.
+                assert!(subscriptions.append_payload("sub-1", b"more").is_ok());
+            }
+        }
+
+        let reset = unsafe { nipworker_subscription_try_reset(handle, sub_id.as_ptr(), 15) };
+
+        assert!(!reset, "cursor moved past 15, reset must fail");
+        if let Ok(state) = handle_ref.state.lock() {
+            if let Ok(subscriptions) = state.subscriptions.lock() {
+                assert_eq!(
+                    &subscriptions.subscriptions.get("sub-1").unwrap().buffer[0..4],
+                    &(23u32).to_le_bytes()
+                );
+            }
+        }
+        let _ = unsafe { Box::from_raw(handle as *mut NipworkerHandle) };
+    }
+
+    #[test]
+    fn try_reset_returns_false_for_unknown_sub_and_null_args() {
+        let handle = test_handle();
+        let sub_id = CString::new("missing").unwrap();
+
+        let reset = unsafe { nipworker_subscription_try_reset(handle, sub_id.as_ptr(), 4) };
+        assert!(!reset, "unknown sub must return false");
+
+        let reset_null_handle =
+            unsafe { nipworker_subscription_try_reset(std::ptr::null_mut(), sub_id.as_ptr(), 4) };
+        assert!(!reset_null_handle, "null handle must return false");
+
+        let reset_null_sub =
+            unsafe { nipworker_subscription_try_reset(handle, std::ptr::null(), 4) };
+        assert!(!reset_null_sub, "null sub_id must return false");
+
+        let _ = unsafe { Box::from_raw(handle as *mut NipworkerHandle) };
     }
 }
