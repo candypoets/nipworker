@@ -20,7 +20,7 @@ Pod::Spec.new do |s|
   # This pod is the sole native-binary owner in a React Native application.
   # Its Objective-C++ and Swift facades therefore call into the same Rust image.
   s.vendored_frameworks = 'crates/native-ffi/ios/NipworkerNativeFFI.xcframework'
-  s.dependency 'FlatBuffers', '~> 25.2.10'
+  s.dependency 'FlatBuffers', '~> 25.12.19'
   s.dependency 'React-Core'
   s.dependency 'ReactCodegen'
   s.dependency 'RCTRequired'
