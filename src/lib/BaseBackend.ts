@@ -175,6 +175,19 @@ export abstract class BaseBackend {
 		}
 	}
 
+	/**
+	 * Recycle a fully drained subscription buffer when no writer or second
+	 * consumer has moved it since `expectedWritePosition`.
+	 */
+	public tryResetSubscriptionBuffer(subId: string, expectedWritePosition: number): boolean {
+		const subscription = this.subscriptions.get(subId);
+		if (!subscription || subscription.refCount !== 1) return false;
+		const view = new DataView(subscription.buffer);
+		if (view.getUint32(0, true) !== expectedWritePosition) return false;
+		view.setUint32(0, 4, true);
+		return true;
+	}
+
 	// ── Session / account management ───────────────────────────────────
 
 	public getAccounts(): Record<string, { type: string; payload: any }> {

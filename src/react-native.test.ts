@@ -66,6 +66,14 @@ vi.mock('react-native', () => {
 				retainSubscription: vi.fn(() => true),
 				releaseSubscription: vi.fn(),
 				getSubscriptionBuffer: vi.fn((subId: string) => nativeBuffers.get(subId)),
+				tryResetSubscription: vi.fn((subId: string, expectedWritePosition: number) => {
+					const buffer = nativeBuffers.get(subId);
+					if (!buffer) return false;
+					const view = new DataView(buffer);
+					if (view.getUint32(0, true) !== expectedWritePosition) return false;
+					view.setUint32(0, 4, true);
+					return true;
+				}),
 				cleanupSubscriptions: vi.fn()
 			};
 			return true;
@@ -271,6 +279,11 @@ describe('react-native byte runtime subscription path', () => {
 		const message = callback.mock.calls[0][0] as WorkerMessage;
 		expect(message.type()).toBe(MessageType.Eoce);
 		expect(message.content(new Eoce())?.subscriptionId()).toBe('turbo-sub');
+		expect(byteRuntime.tryResetSubscription).toHaveBeenCalledWith(
+			'turbo-sub',
+			expect.any(Number)
+		);
+		expect(new DataView(nativeBuffers.get('turbo-sub')!).getUint32(0, true)).toBe(4);
 
 		unsubscribe();
 		manager.deinit();

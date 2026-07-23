@@ -1,6 +1,7 @@
 #include <jni.h>
 #include <jsi/jsi.h>
 
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <memory>
@@ -21,6 +22,7 @@ extern "C" bool nipworker_retain_subscription(void* handle, const char* sub_id);
 extern "C" void nipworker_release_subscription(void* handle, const char* sub_id);
 extern "C" uint8_t* nipworker_subscription_buffer_ptr(void* handle, const char* sub_id);
 extern "C" size_t nipworker_subscription_buffer_len(void* handle, const char* sub_id);
+extern "C" bool nipworker_subscription_try_reset(void* handle, const char* sub_id, uint32_t expected_write_pos);
 extern "C" void nipworker_cleanup_subscriptions(void* handle);
 
 namespace {
@@ -525,6 +527,33 @@ Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nativeInsta
 				if (!nativeBuffer) return Value::undefined();
 				ArrayBuffer buffer(runtime, std::move(nativeBuffer));
 				return Value(runtime, std::move(buffer));
+			}
+		)
+	);
+
+	byteRuntime.setProperty(
+		runtime,
+		"tryResetSubscription",
+		Function::createFromHostFunction(
+			runtime,
+			PropNameID::forAscii(runtime, "tryResetSubscription"),
+			2,
+			[engineHandle](Runtime& runtime, const Value&, const Value* args, size_t count) -> Value {
+				if (count < 2 || !args[0].isString() || !args[1].isNumber()) {
+					return Value(false);
+				}
+				std::string subId = args[0].asString(runtime).utf8(runtime);
+				double expected = args[1].asNumber();
+				if (!std::isfinite(expected) || expected < 4 || expected > UINT32_MAX) {
+					return Value(false);
+				}
+				auto expectedWritePosition = static_cast<uint32_t>(expected);
+				if (static_cast<double>(expectedWritePosition) != expected) return Value(false);
+				return Value(nipworker_subscription_try_reset(
+					engineHandle,
+					subId.c_str(),
+					expectedWritePosition
+				));
 			}
 		)
 	);

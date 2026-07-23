@@ -25,6 +25,7 @@ export interface NostrManagerLike {
 		options: SubscriptionConfig
 	): ArrayBuffer;
 	getBuffer(subId: string): ArrayBuffer | undefined;
+	tryResetSubscriptionBuffer(subId: string, expectedWritePosition: number): boolean;
 	getRelayStatuses(): Map<string, { status: 'connected' | 'failed' | 'close'; timestamp: number }>;
 	unsubscribe(subscriptionId: string): void;
 	publish(

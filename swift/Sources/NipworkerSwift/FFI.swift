@@ -100,6 +100,13 @@ func nipworker_subscription_buffer_len(
     _ subId: UnsafePointer<Int8>?
 ) -> Int
 
+@_silgen_name("nipworker_subscription_try_reset")
+func nipworker_subscription_try_reset(
+    _ handle: UnsafeMutableRawPointer?,
+    _ subId: UnsafePointer<Int8>?,
+    _ expectedWritePos: UInt32
+) -> Bool
+
 @_silgen_name("nipworker_cleanup_subscriptions")
 func nipworker_cleanup_subscriptions(_ handle: UnsafeMutableRawPointer?)
 
