@@ -30,6 +30,7 @@ fn main() {
         println!("cargo:rustc-link-arg={}", obj_file.display());
         println!("cargo:rustc-link-arg=-Wl,-u,JNI_OnLoad");
         println!("cargo:rustc-link-arg=-Wl,-u,JNI_OnUnload");
+        println!("cargo:rustc-link-arg-cdylib=-Wl,-soname,libnipworker_native_ffi.so");
 
         // Link against the Android log library.
         println!("cargo:rustc-link-lib=log");

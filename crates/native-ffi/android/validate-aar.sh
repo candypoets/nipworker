@@ -52,13 +52,14 @@ if ! grep -q '"name": "nipworker-native-ffi-android"' "$TMP_DIR/prefab/prefab.js
 	exit 1
 fi
 
+host_tag=""
+case "$(uname -s)" in
+Darwin) host_tag="darwin-x86_64" ;;
+Linux) host_tag="linux-x86_64" ;;
+esac
+
 nm_bin="${ANDROID_NM:-}"
 if [[ -z "$nm_bin" ]]; then
-	host_tag=""
-	case "$(uname -s)" in
-		Darwin) host_tag="darwin-x86_64" ;;
-		Linux) host_tag="linux-x86_64" ;;
-	esac
 	for ndk_root in "${ANDROID_NDK_HOME:-}" "${ANDROID_NDK_ROOT:-}"; do
 		if [[ -n "$host_tag" && -n "$ndk_root" && -x "$ndk_root/toolchains/llvm/prebuilt/$host_tag/bin/llvm-nm" ]]; then
 			nm_bin="$ndk_root/toolchains/llvm/prebuilt/$host_tag/bin/llvm-nm"
@@ -71,6 +72,26 @@ if [[ -z "$nm_bin" ]]; then
 		nm_bin="$(command -v llvm-nm)"
 	else
 		nm_bin="$(command -v nm)"
+	fi
+fi
+
+readelf_bin="${ANDROID_READELF:-}"
+if [[ -z "$readelf_bin" ]]; then
+	for ndk_root in "${ANDROID_NDK_HOME:-}" "${ANDROID_NDK_ROOT:-}"; do
+		if [[ -n "$host_tag" && -n "$ndk_root" && -x "$ndk_root/toolchains/llvm/prebuilt/$host_tag/bin/llvm-readelf" ]]; then
+			readelf_bin="$ndk_root/toolchains/llvm/prebuilt/$host_tag/bin/llvm-readelf"
+			break
+		fi
+	done
+fi
+if [[ -z "$readelf_bin" ]]; then
+	if command -v llvm-readelf >/dev/null 2>&1; then
+		readelf_bin="$(command -v llvm-readelf)"
+	elif command -v readelf >/dev/null 2>&1; then
+		readelf_bin="$(command -v readelf)"
+	else
+		echo "llvm-readelf or readelf is required to validate the AAR" >&2
+		exit 1
 	fi
 fi
 
@@ -89,6 +110,13 @@ for abi in "${ABIS[@]}"; do
 		echo "JNI and Prefab libraries differ for $abi" >&2
 		exit 1
 	fi
+
+	dynamic_output="$("$readelf_bin" -d "$lib" 2>/dev/null)"
+	if ! grep -q 'SONAME.*\[libnipworker_native_ffi\.so\]' <<< "$dynamic_output"; then
+		echo "missing or incorrect SONAME in $abi/libnipworker_native_ffi.so" >&2
+		exit 1
+	fi
+
 	symbol_output="$("$nm_bin" -D "$lib" 2>/dev/null)"
 
 	for symbol in "${SYMBOLS[@]}"; do
