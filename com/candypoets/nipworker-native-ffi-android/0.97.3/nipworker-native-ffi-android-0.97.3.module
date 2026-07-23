@@ -26,11 +26,11 @@
         {
           "name": "nipworker-native-ffi-android-0.97.3.aar",
           "url": "nipworker-native-ffi-android-0.97.3.aar",
-          "size": 33785682,
-          "sha512": "3fd59833c2572946dbb022f693fb30089fb3a9c9db52117ddad32018b77383b3dc3a3a2619143913c1e2c08d378a20aa71dc9f216f16f055c02646641fecd05c",
-          "sha256": "7e10f38a70a7ca0a63bb6029501f69f5bc2adff2623d086cf5c931d56d65bc94",
-          "sha1": "cdc1b513fb16c5cc4f5f060ffdc0696918bf76c7",
-          "md5": "02ce4c18a099248c1ffda0e0188808ba"
+          "size": 33786034,
+          "sha512": "657d0538708c28c03f1fabba1aa0fed50011e3bd599fa786a6f894fdf9bd1bdfcc43b8c39d0fdd692354a630659e2e8a292b4b21de5d779f6b0d8dfa46ff79c2",
+          "sha256": "5b005c0350a9dd978bbd9100d6d55bb9edc3a2e5cdb0a4a95b4d46cc6ece5472",
+          "sha1": "5a552feaf42d9451142fcdbf31f8d81e966e5a80",
+          "md5": "4b7198a7e6dd59d0032df725bd3e5cfd"
         }
       ]
     },
@@ -46,11 +46,11 @@
         {
           "name": "nipworker-native-ffi-android-0.97.3.aar",
           "url": "nipworker-native-ffi-android-0.97.3.aar",
-          "size": 33785682,
-          "sha512": "3fd59833c2572946dbb022f693fb30089fb3a9c9db52117ddad32018b77383b3dc3a3a2619143913c1e2c08d378a20aa71dc9f216f16f055c02646641fecd05c",
-          "sha256": "7e10f38a70a7ca0a63bb6029501f69f5bc2adff2623d086cf5c931d56d65bc94",
-          "sha1": "cdc1b513fb16c5cc4f5f060ffdc0696918bf76c7",
-          "md5": "02ce4c18a099248c1ffda0e0188808ba"
+          "size": 33786034,
+          "sha512": "657d0538708c28c03f1fabba1aa0fed50011e3bd599fa786a6f894fdf9bd1bdfcc43b8c39d0fdd692354a630659e2e8a292b4b21de5d779f6b0d8dfa46ff79c2",
+          "sha256": "5b005c0350a9dd978bbd9100d6d55bb9edc3a2e5cdb0a4a95b4d46cc6ece5472",
+          "sha1": "5a552feaf42d9451142fcdbf31f8d81e966e5a80",
+          "md5": "4b7198a7e6dd59d0032df725bd3e5cfd"
         }
       ]
     },
