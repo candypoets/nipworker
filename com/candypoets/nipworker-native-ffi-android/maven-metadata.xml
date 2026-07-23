@@ -3,11 +3,11 @@
   <groupId>com.candypoets</groupId>
   <artifactId>nipworker-native-ffi-android</artifactId>
   <versioning>
-    <latest>0.97.3</latest>
-    <release>0.97.3</release>
+    <latest>0.97.4</latest>
+    <release>0.97.4</release>
     <versions>
-      <version>0.97.3</version>
+      <version>0.97.4</version>
     </versions>
-    <lastUpdated>20260723091231</lastUpdated>
+    <lastUpdated>20260723204244</lastUpdated>
   </versioning>
 </metadata>
