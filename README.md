@@ -144,6 +144,23 @@ simulator, and macOS XCFramework. A pure Swift project cannot discover this pack
 `node_modules`, and a remote `Package.swift` URL is not currently published. For lower-level C
 integration, use `nipworker-native-ios.zip` and `nipworker.h` from the same release.
 
+### Swift API inside a React Native app
+
+Do not add the `NipworkerSwift` Swift package to a React Native application. The
+`NipworkerReactNative` pod compiles the same Swift API sources and supplies the
+single shared `NipworkerNativeFFI` XCFramework. Import the pod module and borrow
+the React Native engine:
+
+```swift
+import NipworkerReactNative
+
+let manager = NostrManager.reactNativeShared()
+```
+
+Calling `NostrManager()` creates an independent engine. Use
+`reactNativeShared()` when Swift and React Native must share subscriptions,
+connections, keys, cache state, and the Rust runtime.
+
 ### Native release artifacts
 
 Every tagged release publishes checksummed native artifacts:

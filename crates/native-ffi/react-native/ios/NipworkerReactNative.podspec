@@ -10,11 +10,17 @@ Pod::Spec.new do |s|
   s.homepage       = 'https://github.com/candypoets/nipworker'
   s.license        = { :type => 'MIT' }
   s.author         = { 'Candypoets' => 'sotachi@proton.me' }
-  s.platforms      = { :ios => '13.0' }
+  s.platforms      = { :ios => '14.0' }
   s.source         = { :git => 'https://github.com/candypoets/nipworker.git', :tag => "v#{s.version}" }
-  s.source_files   = 'NipworkerReactNativeModule.{h,mm}'
+  s.source_files   = [
+    'NipworkerReactNativeModule.{h,mm}',
+    '../../../../swift/Sources/NipworkerSwift/**/*.swift'
+  ]
   s.public_header_files = 'NipworkerReactNativeModule.h'
+  # This pod is the sole native-binary owner in a React Native application.
+  # Its Objective-C++ and Swift facades therefore call into the same Rust image.
   s.vendored_frameworks = '../../ios/NipworkerNativeFFI.xcframework'
+  s.dependency 'FlatBuffers', '~> 25.2.10'
   s.dependency 'React-Core'
   s.dependency 'React-jsi'
   s.dependency 'React-cxxreact'
@@ -23,4 +29,5 @@ Pod::Spec.new do |s|
     'CLANG_CXX_LIBRARY' => 'libc++',
     'OTHER_LDFLAGS' => '$(inherited) -lc++'
   }
+  s.swift_version = '5.9'
 end
