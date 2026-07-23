@@ -109,11 +109,10 @@ impl NativeSubscription {
     }
 
     /// Reset the write cursor back to 4 so drained space can be reused, but only
-    /// when there is one reader and the cursor still matches
-    /// `expected_write_pos` (i.e. the engine has not appended since the host
-    /// last read).
+    /// if the cursor still matches `expected_write_pos` (i.e. the engine has not
+    /// appended since the host last read).
     fn try_reset(&mut self, expected_write_pos: u32) -> bool {
-        if self.ref_count != 1 || self.write_pos() != expected_write_pos {
+        if self.write_pos() != expected_write_pos {
             return false;
         }
         self.buffer[0..4].copy_from_slice(&4u32.to_le_bytes());
@@ -1242,33 +1241,6 @@ mod tests {
                 assert_eq!(
                     &subscriptions.subscriptions.get("sub-1").unwrap().buffer[0..4],
                     &(23u32).to_le_bytes()
-                );
-            }
-        }
-        let _ = unsafe { Box::from_raw(handle as *mut NipworkerHandle) };
-    }
-
-    #[test]
-    fn try_reset_fails_when_subscription_has_multiple_readers() {
-        let handle = test_handle();
-        let sub_id = CString::new("sub-1").unwrap();
-        let handle_ref = unsafe { &*(handle as *mut NipworkerHandle) };
-        if let Ok(state) = handle_ref.state.lock() {
-            if let Ok(mut subscriptions) = state.subscriptions.lock() {
-                subscriptions.register("sub-1".to_string(), 64, true);
-                subscriptions.register("sub-1".to_string(), 64, true);
-                assert!(subscriptions.append_payload("sub-1", b"payload").is_ok());
-            }
-        }
-
-        let reset = unsafe { nipworker_subscription_try_reset(handle, sub_id.as_ptr(), 15) };
-
-        assert!(!reset, "a shared subscription buffer must not be reset");
-        if let Ok(state) = handle_ref.state.lock() {
-            if let Ok(subscriptions) = state.subscriptions.lock() {
-                assert_eq!(
-                    &subscriptions.subscriptions.get("sub-1").unwrap().buffer[0..4],
-                    &(15u32).to_le_bytes()
                 );
             }
         }

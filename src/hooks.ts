@@ -87,12 +87,6 @@ export function useSubscription(
 				lastReadPos = result.newReadPosition;
 				result = ArrayBufferReader.readMessages(buffer, lastReadPos, subId);
 			}
-			// Fully drained: recycle the buffer only if its cursor still matches
-			// what we consumed. Native backends perform this check under the
-			// Rust subscription lock because their writer runs on another thread.
-			if (buffer && getManager().tryResetSubscriptionBuffer(subId, lastReadPos)) {
-				lastReadPos = 4;
-			}
 		} catch (e) {
 			console.error('[useSubscription processEvents] error:', e);
 		} finally {

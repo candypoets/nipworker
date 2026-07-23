@@ -68,7 +68,6 @@ type ByteRuntime = {
 	retainSubscription?(subId: string): boolean;
 	releaseSubscription?(subId: string): void;
 	getSubscriptionBuffer?(subId: string): ArrayBuffer | undefined;
-	tryResetSubscription?(subId: string, expectedWritePosition: number): boolean;
 	cleanupSubscriptions?(): void;
 };
 
@@ -88,7 +87,6 @@ type ReactNativeModuleFacade = {
 	retainSubscription(subId: string): boolean;
 	releaseSubscription(subId: string): void;
 	getSubscriptionBuffer(subId: string): ArrayBuffer | undefined;
-	tryResetSubscription(subId: string, expectedWritePosition: number): boolean;
 	cleanupSubscriptions(): void;
 };
 
@@ -272,10 +270,6 @@ const reactNativeBridge = {
 			getSubscriptionBuffer(subId: string): ArrayBuffer | undefined {
 				const byteRuntime = getByteRuntime();
 				return byteRuntime?.getSubscriptionBuffer?.(subId);
-			},
-			tryResetSubscription(subId: string, expectedWritePosition: number): boolean {
-				const byteRuntime = getByteRuntime();
-				return byteRuntime?.tryResetSubscription?.(subId, expectedWritePosition) === true;
 			},
 			cleanupSubscriptions(): void {
 				const byteRuntime = getByteRuntime();
@@ -723,13 +717,6 @@ export class ReactNativeManager extends BaseBackend {
 			`[ReactNativeManager] getBuffer(${subId}) is deprecated. Use subscribe() through useSubscription so Rust can own subscription lifetime.`
 		);
 		return undefined;
-	}
-
-	override tryResetSubscriptionBuffer(
-		subId: string,
-		expectedWritePosition: number
-	): boolean {
-		return this.nativeModule.tryResetSubscription(subId, expectedWritePosition);
 	}
 
 	override unsubscribe(subscriptionId: string): void {

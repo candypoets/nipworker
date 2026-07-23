@@ -285,14 +285,14 @@ public actor NostrManager {
         guard let buffer = bufferView(for: subId) else { return ([], position) }
         let result = ArrayBufferReader.readMessages(buffer: buffer, lastReadPosition: position)
         let events = result.messages.compactMap { parseWorkerMessage($0) }
-        return (events, recycleIfFullyDrained(subId, buffer: buffer, position: result.newReadPosition))
+        return (events, result.newReadPosition)
     }
 
     public func readWorkerMessages(for subId: String, from position: Int) -> (messages: [WorkerMessageView], newPosition: Int) {
         guard let buffer = bufferView(for: subId) else { return ([], position) }
         let result = ArrayBufferReader.readMessages(buffer: buffer, lastReadPosition: position)
         let messages = result.messages.compactMap { WorkerMessageView($0) }
-        return (messages, recycleIfFullyDrained(subId, buffer: buffer, position: result.newReadPosition))
+        return (messages, result.newReadPosition)
     }
 
     public func readPublishStatuses(for publishId: String, from position: Int) -> (statuses: [String: PublishStatus], newPosition: Int) {
@@ -304,10 +304,7 @@ public actor NostrManager {
                 statuses[url] = status
             }
         }
-        return (
-            statuses,
-            recycleIfFullyDrained(publishId, buffer: buffer, position: result.newReadPosition)
-        )
+        return (statuses, result.newReadPosition)
     }
 
     public func getRelayStatuses() -> [String: RelayStatus] {
@@ -377,21 +374,6 @@ public actor NostrManager {
     }
 
     // MARK: - Helpers
-
-    private func recycleIfFullyDrained(
-        _ id: String,
-        buffer: SubscriptionBuffer,
-        position: Int
-    ) -> Int {
-        let writePosition = ArrayBufferReader.getCurrentWritePosition(buffer: buffer)
-        guard position == writePosition, let expected = UInt32(exactly: writePosition) else {
-            return position
-        }
-        let reset = id.withCString {
-            nipworker_subscription_try_reset(handle, $0, expected)
-        }
-        return reset ? 4 : position
-    }
 
     private func bufferView(for id: String) -> SubscriptionBuffer? {
         let nativePointer = id.withCString { nipworker_subscription_buffer_ptr(handle, $0) }

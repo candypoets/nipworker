@@ -6,7 +6,6 @@
 #endif
 #import <jsi/jsi.h>
 
-#include <cmath>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -40,7 +39,6 @@ bool nipworker_retain_subscription(void* handle, const char* sub_id);
 void nipworker_release_subscription(void* handle, const char* sub_id);
 uint8_t* nipworker_subscription_buffer_ptr(void* handle, const char* sub_id);
 size_t nipworker_subscription_buffer_len(void* handle, const char* sub_id);
-bool nipworker_subscription_try_reset(void* handle, const char* sub_id, uint32_t expected_write_pos);
 void nipworker_cleanup_subscriptions(void* handle);
 bool nipworker_mesh_set_profile_json(void* handle, const char* profile_json);
 bool nipworker_mesh_clear_profile(void* handle);
@@ -447,34 +445,6 @@ static void NipworkerInstallByteRuntime(facebook::jsi::Runtime& runtime, void* e
 				}
 				facebook::jsi::ArrayBuffer buffer(runtime, std::move(nativeBuffer));
 				return facebook::jsi::Value(runtime, std::move(buffer));
-			}
-		)
-	);
-	byteRuntime.setProperty(
-		runtime,
-		"tryResetSubscription",
-		facebook::jsi::Function::createFromHostFunction(
-			runtime,
-			facebook::jsi::PropNameID::forAscii(runtime, "tryResetSubscription"),
-			2,
-			[engineHandle](facebook::jsi::Runtime& runtime, const facebook::jsi::Value&, const facebook::jsi::Value* args, size_t count) {
-				if (count < 2 || !args[0].isString() || !args[1].isNumber()) {
-					return facebook::jsi::Value(false);
-				}
-				std::string subId = args[0].asString(runtime).utf8(runtime);
-				double expected = args[1].asNumber();
-				if (!std::isfinite(expected) || expected < 4 || expected > UINT32_MAX) {
-					return facebook::jsi::Value(false);
-				}
-				auto expectedWritePosition = static_cast<uint32_t>(expected);
-				if (static_cast<double>(expectedWritePosition) != expected) {
-					return facebook::jsi::Value(false);
-				}
-				return facebook::jsi::Value(nipworker_subscription_try_reset(
-					engineHandle,
-					subId.c_str(),
-					expectedWritePosition
-				));
 			}
 		)
 	);
