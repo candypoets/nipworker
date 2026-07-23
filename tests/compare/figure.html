@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+	:root {
+		--bg: #0d1117;
+		--panel: #161b22;
+		--border: #30363d;
+		--text: #e6edf3;
+		--muted: #8b949e;
+		--hero: #f0883e;
+		--bar: #58a6ff;
+		--bad: #f85149;
+	}
+	* { margin: 0; padding: 0; box-sizing: border-box; }
+	body {
+		background: var(--bg);
+		color: var(--text);
+		font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+		padding: 36px 40px 28px;
+		width: 1400px;
+	}
+	h1 { font-size: 30px; font-weight: 700; letter-spacing: -0.5px; }
+	h1 .hero { color: var(--hero); }
+	.sub { color: var(--muted); font-size: 15px; margin-top: 6px; }
+	.grid {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 20px;
+		margin-top: 24px;
+	}
+	.panel {
+		background: var(--panel);
+		border: 1px solid var(--border);
+		border-radius: 12px;
+		padding: 20px 22px 14px;
+	}
+	.panel h2 { font-size: 17px; font-weight: 600; }
+	.panel .note { color: var(--muted); font-size: 12.5px; margin-top: 3px; }
+	.chart { margin-top: 14px; }
+	.row { display: flex; align-items: center; margin-bottom: 9px; }
+	.label {
+		width: 112px;
+		font-size: 14px;
+		color: var(--text);
+		flex-shrink: 0;
+	}
+	.label.hero { color: var(--hero); font-weight: 700; }
+	.track { flex: 1; height: 26px; background: #0d1117; border-radius: 5px; position: relative; }
+	.fill {
+		height: 100%;
+		border-radius: 5px;
+		background: var(--bar);
+		min-width: 2px;
+	}
+	.fill.hero { background: var(--hero); }
+	.fill.bad { background: var(--bad); }
+	.value {
+		width: 108px;
+		text-align: right;
+		font-size: 14px;
+		font-variant-numeric: tabular-nums;
+		flex-shrink: 0;
+		padding-left: 10px;
+	}
+	.value.hero { color: var(--hero); font-weight: 700; }
+	.foot {
+		margin-top: 22px;
+		color: var(--muted);
+		font-size: 12.5px;
+		line-height: 1.55;
+		border-top: 1px solid var(--border);
+		padding-top: 14px;
+	}
+</style>
+</head>
+<body>
+<h1>Nostr client libraries, benchmarked — <span class="hero">nipworker</span> vs the field</h1>
+<div class="sub">Chromium, deterministic mock relays, medians of 3 runs. Same unsigned event stream for every library.</div>
+<div class="grid" id="grid"></div>
+<div class="foot">
+	Scenario: kinds:[1] events · multi-relay = 2,000 events/relay, 80% overlap across relays, 20% unique per relay · signature verification off in every row (mock events are unsigned; applesauce has no verification code) · localhost relays measure client pipeline cost, not network · nipworker parses, dedups &amp; persists every event off-main-thread; JS libs JSON.parse on the main thread; innis relay-pool does not dedup by design (app-side duplicates not shown) · repro: npm run bench:compare in github.com/candypoets/nipworker
+</div>
+<script>
+const libs = ['nipworker', 'innis', 'applesauce', 'nostr-tools', 'NDK', 'Nostrify', 'welshman'];
+
+const panels = [
+	{
+		title: 'Single relay — events/sec (n=10,000)',
+		note: 'raw ingestion throughput, one relay',
+		values: { nipworker: 27931, innis: 34965, applesauce: 32830, 'nostr-tools': 25075, NDK: 2993, Nostrify: 9609, welshman: 199 },
+		fmt: v => v.toLocaleString('en-US'),
+		scale: 'linear'
+	},
+	{
+		title: '80 relays — unique events/sec',
+		note: '160k frames (126k duplicates) → 33.6k unique events · * ~200 ev/s per-socket queue cap, parallelizes across sockets',
+		values: { nipworker: 5556, innis: 6256, applesauce: 5076, 'nostr-tools': 4670, NDK: 527, Nostrify: 2288, welshman: 2176 },
+		fmt: v => v.toLocaleString('en-US'),
+		scale: 'linear',
+		star: 'welshman'
+	},
+	{
+		title: '80 relays — time to connect all (ms, log)',
+		note: 'JS libs open sockets on the main thread; nipworker in a worker',
+		values: { nipworker: 26, innis: 5005, applesauce: 103, 'nostr-tools': 4970, NDK: 8991, Nostrify: 6619, welshman: 4830 },
+		fmt: v => v >= 1000 ? (v / 1000).toFixed(1) + ' s' : v + ' ms',
+		scale: 'log'
+	},
+	{
+		title: '80 relays — main thread unresponsive (s, jank)',
+		note: 'rAF-gap time during ingestion: how frozen your app feels',
+		values: { nipworker: 0, innis: 0.82, welshman: 0.47, 'nostr-tools': 1.13, applesauce: 5.15, Nostrify: 11.86, NDK: 52.86 },
+		fmt: v => v === 0 ? '0 s' : v.toFixed(1) + ' s',
+		scale: 'linear',
+		badWhen: v => v > 1
+	}
+];
+
+function bar(p, lib) {
+	const v = p.values[lib];
+	const hero = lib === 'nipworker';
+	const bad = p.badWhen && p.badWhen(v);
+	let pct;
+	if (p.scale === 'log') {
+		const vals = libs.map(l => p.values[l]);
+		const lo = Math.log10(Math.min(...vals) / 3), hi = Math.log10(Math.max(...vals) * 1.15);
+		pct = ((Math.log10(v) - lo) / (hi - lo)) * 100;
+	} else {
+		const hi = Math.max(...libs.map(l => p.values[l])) * 1.05;
+		pct = v === 0 ? 0 : Math.max((v / hi) * 100, 1.2);
+	}
+	const cls = hero ? 'hero' : bad ? 'bad' : '';
+	const fillCls = hero ? 'hero' : bad ? 'bad' : '';
+	return `<div class="row">
+		<div class="label ${cls}">${lib}${p.star === lib ? '*' : ''}</div>
+		<div class="track"><div class="fill ${fillCls}" style="width:${pct}%"></div></div>
+		<div class="value ${cls}">${p.fmt(v)}</div>
+	</div>`;
+}
+
+document.getElementById('grid').innerHTML = panels.map(p => `
+	<div class="panel">
+		<h2>${p.title}</h2>
+		<div class="note">${p.note}</div>
+		<div class="chart">${libs.map(l => bar(p, l)).join('')}</div>
+	</div>`).join('');
+</script>
+</body>
+</html>

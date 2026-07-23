@@ -128,41 +128,75 @@ Cross-relay dedup moved into the connections worker (`transport/sub_dedup.rs`: p
 
 **Parser allocation audit** (`content.rs`, `kind1.rs`) — removed per-event deep clones of ContentBlocks (identity rebuild + double `clone()` for shorten/assign), a redundant second regex pass per match (`find_iter().collect()` + `captures()` → single `captures_iter`), unguarded 3× `str::replace` on every text block, `to_lowercase()` allocations in `process_nostr`/`process_link`/`is_hex64`, clone-heavy `group_media`, and a dead `get_link_preview()` allocation. `shorten_content` now borrows (`&[ContentBlock]`) with a no-alloc fast path when nothing needs shortening. Result: **kind1_parse 87.8µs → ~61–63µs (−29%)** on rich content, −19% on plain. Deliberately not touched (documented in code review): `ContentBlock.block_type: String` → `&'static str` and owned-text blocks (pub API break), ring-buffer owned-byte returns (storage API boundary), per-event pubkey hex keys in mute/chat_limiter pipes (key-type redesign — flagged as follow-up).
 
-## Head-to-head: nipworker vs NDK vs Welshman vs Nostrify vs nostr-tools
+## Head-to-head: nipworker vs Innis vs Applesauce vs nostr-tools vs NDK vs Nostrify vs Welshman
 
-`npm run bench:compare` — identical scenario for every contender: same deterministic mock-relay stream (kinds:[1], single localhost relay, seeded), fresh page per contender, two full runs (stable within noise). Code: `tests/compare/` (own `package.json`, contenders are NOT root deps), `playwright.compare.config.ts`.
+`npm run bench:compare` — identical scenario for every contender: deterministic seeded mock relays on localhost, fresh page per contender, **3 full runs, medians [min–max]**, 35/35 tests green each run. Code: `tests/compare/` (own `package.json`, contenders are NOT root deps), `playwright.compare.config.ts`. Sig verification OFF everywhere (mock events are unsigned; libs that verify by default ran with it disabled — see fairness table). All numbers are client-side pipeline cost; localhost relays mean no network variance.
 
-| Contender | n=1,000 ev/s | n=10,000 ev/s | First event | Long tasks | Jank frames (10k) | Heap Δ (10k) |
+![NIPWorker client benchmark comparison](./benchmark-figure.png)
+
+### Single-relay (kinds:[1], limit N)
+
+| Contender | n=1,000 ev/s | n=10,000 ev/s | first event | long tasks | jank (10k) | heap Δ (10k) |
 |---|---|---|---|---|---|---|
-| **nipworker** | 6,227–6,566 | **21,745–22,110** | 8 ms | 0 | 0 | +97.7 MB* |
-| nostr-tools (raw) | 22,624–23,310 | 24,050–24,319 | 0.7 ms | 0 | 0 | +0.9 MB |
-| NDK | 13,333–15,060 | 3,063–3,308 ⚠️ | 11 ms | 0 | 27–31 | +2.5 MB |
-| Welshman | 196 ⚠️ | 199 ⚠️ | 201 ms | 0 | 0 | ~0 |
-| Nostrify | 8,278–8,503 | 9,764–10,433 | 1 ms | 0 | 0 | ~0 (43–49 MB peak transient) |
+| **nipworker** | 7,184 [6,993–7,241] | **27,931 [26,866–28,088]** | 7.6 ms | 0 | 0 | +1.0 MB* |
+| innis relay-pool | 28,902 [27,933–29,070] | **34,965 [31,908–35,162]** | 0.8 ms | 0 | 0 | ~0 |
+| applesauce | 27,701 [26,042–27,855] | 32,830 [32,072–35,002] | 0.9 ms | 0 | 0 | +0.1 MB |
+| nostr-tools | 20,619 [20,492–20,704] | 25,075 [23,657–26,123] | 0.9 ms | 0 | 0 | +1.0 MB |
+| Nostrify | 8,410 [7,843–8,576] | 9,609 [9,240–9,853] | 1.0 ms | 0 | 0 | ~0 |
+| NDK | 12,837 [12,500–12,887] | 2,993 [2,970–3,164] ⚠️ | 11.2 ms | 0 | 27 | +2.5 MB |
+| Welshman | 196 | 199 | 207 ms | 0 | 0 | ~0 |
 
-⚠️ NDK degrades superlinearly with n (subscription bookkeeping; reproducible). Welshman is throttled by design — its Socket `TaskQueue` delivers at batchSize=20/batchDelay=100ms (~200 msg/s), a queue-policy artifact, not parse cost.
+### Multi-relay (n=2,000/relay, 80% shared + 20% per-relay unique; uniques 3,600/5,600/11,600/33,600 — exact in every run)
 
-**Fairness — per-event work by default (read before quoting):** signature verification is OFF in every row (mock relay serves unsigned events; every lib that verifies by default — nostr-tools, NDK, Nostrify, welshman's high-level API — was run with verify disabled). nipworker never verifies on ingest regardless. What each does per event: **nipworker** — full JSON→typed ParsedEvent parse, kind-specific content parsing, dedup (10k ring), FlatBuffer serialization, **and persists to IndexedDB**. nostr-tools — `JSON.parse` + filter match. NDK — JSON.parse + NDKEvent wrapping. Nostrify — JSON.parse + always-on zod message validation. Welshman — JSON.parse only at Socket level.
+| Contender | ×5 unique ev/s | ×10 | ×25 | ×80 | dups leaked (×80) | connect-all ×80 | jank ×80 (median) | heap Δ ×80 |
+|---|---|---|---|---|---|---|---|---|
+| **nipworker** | 4,781 | 5,010 | 2,369 | 5,556 | **0** | **26 ms** | **0 frames / 0 ms** | +3.7 MB* |
+| innis relay-pool | **6,113** | **6,355** | 2,287 | **6,256** | **126,400** (exact) | 5,005 ms | 12 frames / 0.8 s | +3.3 MB |
+| applesauce | 5,339 | 5,362 | 5,507 | 5,076 | 0 | 103 ms | 63 frames / 5.1 s | +5.2 MB |
+| nostr-tools | 5,474 | 5,446 | 2,183 | 4,670 | 0 | 4,970 ms | 17 frames / 1.1 s | +3.2 MB |
+| Nostrify | 2,881 | 2,675 | 2,095 | 2,288 | **~57,934** ⚠️ | 6,619 ms | ~145 frames / 11.9 s | +3.5 MB |
+| welshman | 340 | 520 | 765 | 2,176 | **126,400** (exact) | 4,830 ms | 9 frames / 0.5 s | +3.3 MB |
+| NDK | 3,019 | 2,251 | 923 | 527 | 0 (all suppressed) | 8,991 ms | **~635 frames / 52.9 s** | +6.6 MB |
 
-**Reading:** nipworker delivers raw-nostr-tools-class throughput (~22–24k ev/s) while doing strictly more work per event (full parse + persistence, off-main-thread), and beats every full client stack by 2–100× at n=10,000 with zero main-thread long tasks and zero jank.
+Jank = rAF-gap time during ingestion (main-thread unresponsiveness). Note that NDK and Nostrify show **zero long tasks** (>50 ms) despite their freeze — their jank is thousands of sub-50 ms tasks, invisible to the longtask API; the rAF proxy is the honest signal. NDK's 52.9 s of jank is ~80% of its ×80 wall time.
 
-\* **Memory is nipworker's weak spot in this table**: the +97.7 MB main-thread heap delta at n=10,000 is real but by-design — subscription ring buffers are sized `limit × bytesPerEvent` (bounded memory per sub), and CDP shows the heap returns to ~4 MB after teardown (no leak). `performance.memory` also sees only the main thread: nipworker's 4 worker heaps + WASM linear memory (~4 MB bytecode) are invisible to it, so its true total is higher than shown while the raw libs' totals are fully shown — the comparison is conservative for nipworker on speed and flattering on memory.
+Measured default dedup behavior: **nipworker** — full dedup in the parser worker before anything reaches main. **innis relay-pool** — **no dedup by design** ("dedup and persistence are your event store's job" — mod.js header); delivers every duplicate, exactly 1,600×(R−1). **applesauce** — `RelayPool.request()` dedups via in-RAM EventMemory, 0 leaks (its `pool.req()` is the explicitly non-deduping variant). **nostr-tools** — pool-level seen-id set, 0 leaks. **NDK** — full dedup but superlinear bookkeeping (5.7× throughput collapse ×5→×80). **Nostrify** — `CircularSet(1000)` evicts ids mid-stream, leaks duplicates past the window (counts interleaving-dependent, hence ranges). **Welshman** — no dedup at Socket level; app receives every duplicate, exactly 1,600×(R−1).
 
-### Multi-relay (the realistic scenario)
+**Fairness — per-event work by default (read before quoting):** **nipworker** — full JSON→typed ParsedEvent parse, kind-specific content parsing, dedup, FlatBuffer serialization, **and persists to IndexedDB**; never verifies signatures on ingest. **innis** — JSON.parse → direct dispatch, no dedup, no persistence, no verification code. **applesauce** — JSON.parse + rxjs operators, plain objects, no persistence, **no signature verification code anywhere**. **nostr-tools** — JSON.parse + filter match (verifies by default; disabled for bench). **NDK** — JSON.parse + NDKEvent class wrapping (verifies by default; disabled). **Nostrify** — JSON.parse + always-on zod message validation (verifies by default; disabled). **Welshman** — JSON.parse only, raw Socket level.
 
-`tests/compare/multirelay*` — same contenders × {5, 10, 25} relays, each relay serving the same 2,000-event set with **80% cross-relay overlap + 20% per-relay unique** (expected unique: 3,600 / 5,600 / 11,600). 15/15 green across 3 consecutive runs; unique/dup counts deterministic.
+**Reading:** on raw speed the thin JS pipelines lead — innis relay-pool is the fastest pipe in the field (35k single-relay, 6.3k unique at ×80) and does the least per event: no dedup, no persistence, no verification (its 126,400 duplicates at ×80 are the app's problem by design). nipworker is the only contender doing full parse + dedup + persistence, does it entirely off-main-thread (0 long tasks and 0 jank everywhere — innis is close at 0.8 s jank but pays a 5.0 s connect storm), and is the only one whose connect time stays flat at 80 relays (26 ms vs 4.8–9.0 *seconds* for the JS libs, whose connect storms run on the main thread). Applesauce remains the strongest deduping JS implementation — fast, correct EventMemory dedup, small footprint — and ships no signature verification at all. Nostrify and Welshman leak duplicates to the app by default at scale. One library gotcha worth knowing: innis's default non-persistent mode arms a synthetic 4 s EOSE timer per leg that silently truncates streams at scale — the bench rows use `persistent: true`; apps on the default would lose events the same way.
 
-| Contender × relays | unique ev/s | **dups leaked to app** | connect-all | long tasks | heap Δ |
-|---|---|---|---|---|---|
-| nipworker ×5 / ×10 / ×25 | 3,880 / 4,075 / 2,320 | **0 / 0 / 0** | **11 / 11 / 15 ms** | 0 / 0 / 0 | ~20 MB* (flat in relays) |
-| nostr-tools ×5 / ×10 / ×25 | 5,210 / 5,000 / 2,740 | 0 / 0 / 0 | 26 / 88 / **3,920 ms** | 0 / 0 / ~1 | 0.4–1.1 MB |
-| NDK ×5 / ×10 / ×25 | 2,870 / 2,320 / **825** | 0 / 0 / 0 | 17 / 186 / **6,290 ms** | 0 | 1.3–3.7 MB |
-| Welshman ×5 / ×10 / ×25 | 340 / 520 / 795 | **6,400 / 14,400 / 38,400** ⚠️ | 5 / 24 / 4,070 ms | 0 | ≤1 MB |
-| Nostrify ×5 / ×10 / ×25 | 2,895 / 2,665 / 1,980 | **~1,600 / ~2,600 / ~16,200** ⚠️ | 85 / 168 / 4,890 ms | 0 | ≤1.5 MB |
+**Publication caveats:** ⚠️ NDK's single-relay collapse at n=10,000 is reproducible, not noise. The ×25-vs-×80 throughput inversions (several libs) come from a ~5 s connect-all floor dominating the smaller ×25 event count on this box. nostr-tools needed its default ~4.4 s connect timeout raised to survive the 80-socket browser connect storm (browser-side, not relay-side). EOSE is aggregate-only for nostr-tools/NDK/Nostrify/applesauce, per-relay for nipworker and Welshman. Connect-all cells <100 ms are noise-dominated; throughput/heap cells are all within 20% spread across runs. Welshman row = raw Socket API (its high-level APIs sit on the same throttled queue). \* `performance.memory` sees only the main thread — nipworker's worker/WASM heaps (~4 MB bytecode) are invisible to it, so its true total is higher than shown while JS libs' totals are fully shown.
 
-Measured default dedup behavior: nipworker — full dedup in the parser worker *before* anything reaches main. nostr-tools — pool-level seen-id set, 0 dups. NDK — full dedup (38,400 suppressed at ×25) but superlinear bookkeeping cost. Welshman — **no dedup at Socket level**, app receives every duplicate. Nostrify — **partial**: its `CircularSet(1000)` evicts ids while a single relay streams 2,000, so duplicates leak past the window (leak count is interleaving-dependent; the leak itself is deterministic).
+**Multi-relay round 2 (connections→parser batching, raw envelope, ×80 fix).** Three steps, measured per step (medians, dups=0, uniques exact in every run):
 
-**Reading:** multi-relay is where the architecture argument lands. JS libs' connect storms happen on the main thread — 4–6 *seconds* to open 25 sockets vs nipworker's **15 ms** (worker-side connects). nostr-tools still edges raw unique-throughput (~5.2k vs ~3.9k at ×5) while doing far less per event, but the app-visible difference is what matters: nipworker delivers fully-deduped, fully-parsed, persisted events with a flat main thread at every scale, while Welshman floods the app with 38k duplicate callbacks and Nostrify silently leaks dups past its ring window. Caveats: nostr-tools needed its default ~4.4s connect timeout raised to survive the 25-socket browser connect storm (relays accept fine — it's browser-side); EOSE is aggregate-only for nostr-tools/NDK/Nostrify, per-relay for nipworker and Welshman; all relays are localhost processes, so this measures client pipeline cost, not network variance. \* heap is main-thread-only; worker/WASM heaps invisible (see single-relay note).
+| relays | before | batching | raw envelope | final (+buffer fix) |
+|---|---|---|---|---|
+| ×5 (3,600 uniques) | 4,421 | 4,605 | 5,084 | ~4,900 |
+| ×10 (5,600) | 4,598 | 4,818 | 5,357 | ~5,300 |
+| ×25 (11,600) | 2,488 | 2,282 | 2,596 | ~2,400 (noisy) |
+| ×80 (33,600) | **158 (timeout, dead sub)** | 158 | 158 | **~5,850 (exact, all EOSE)** |
+
+Single-relay n=10k also improved: 22k → **27,291 ev/s (+24%)**.
+
+- **Step 1 — batched connections→parser** (BatchBufferManager 16KB/8ms, magic-prefixed batch framing, control frames bypass): flat. Not the bottleneck.
+- **Step 2 — compact raw envelope**: EVENT frames skip FlatBuffer entirely — zero-copy event JSON slice straight into the parser's pipeline (`0xFEFFFFFF` magic); also killed a per-frame full-content `String` copy in `connection.rs` and a per-frame clone in the dedup path. +10-17% at ×5/×10.
+- **Step 2b — the ×80 root cause was the main-thread subscription buffer**, not Rust: `ArrayBufferReader` was append-only — drained space was never reclaimed, so at ~20MB buffered the manager *closed the subscription* (froze at 28,415/33,600, 17 relays never EOSEd). Fix: after `processEvents` fully drains, `BaseBackend.tryResetSubscriptionBuffer` compare-and-resets the cursor only when the buffer still has one consumer and no new write has landed; native uses the equivalent check under the Rust subscription lock. **This also fixes live subscriptions silently dying after ~20MB in real apps** — a real product bug, distinct from the by-design `limit × bytesPerEvent` sizing.
+- **Step 3 — dedup ring at ×80**: dups stayed 0; 4,096-id ring + parser's 10k `seen_ids` backstop suffice for observed interleaving skew. Memory ≈128KB/sub. Watch item if real-world skew exceeds the ring.
+
+**Where the ceiling is now:** ×80 moves 160,080 frames in ~5.6s ≈ 28.6k frames/s end-to-end — **within ~10% of a bare Chromium page receiving the same 80-socket storm (31.6k msg/s)**. The Rust core does 58.7k msg/s single-threaded natively; the remaining cost is browser plumbing per frame (WS message event + wasm-bindgen closure + JS→WASM string copy + task wake), paid for all ~126k duplicates too. Further gains need fewer frames on the wire (relay-side windowing/negentropy, or proxy-side dedup), not more client-side per-frame work.
+
+**Elastic subscription buffers + read-path wins.** Subscription buffers were allocated upfront at `limit × bytesPerEvent × 1.25` (38MB for limit=10k). Now: resizable ArrayBuffer starting at 256KB with `maxByteLength` = the same cap, doubling on full (`ArrayBufferReader.createBuffer`, grow-and-retry in `writePayload`); bufferFull still fires only at the cap — semantics unchanged, replay never loses bytes. In-place `resize()` keeps object identity, so cached references and read cursors stay valid with no notification (feature-detected; older engines fall back to fixed full-cap allocation). Parser-to-main frames also reuse the last decoded subscription ID after a byte comparison. Measured (n=10,000, main-thread heap Δ, forced GC):
+
+| metric | before | after |
+|---|---|---|
+| heap Δ | **+97.7 MB** (peak 121.6) | **+1.0 MB** (peak ~15) |
+| throughput | 22,539 ev/s | **28,151–29,706 ev/s** (+~28%) |
+| multirelay heap Δ | 20–23 MB | 0.7–3.7 MB |
+
+Throughput rose too — less GC pressure from not allocating/retaining multi-MB buffers. Unique/dup counts identical everywhere; vitest 41/41 (4 new elastic-buffer tests).
+
+**Native/RN path.** React Native shares the subscription hook with web, but its JSI ArrayBuffer is a zero-copy view over a Rust-owned fixed-capacity buffer. Route-wake frames are now **coalesced per subId per drain batch** in the native-ffi callback bridge (`apply_event_batch`) — previously one heap allocation + FFI crossing per event for an 8-byte "sub has data" wake; a burst now costs one wake per sub. `nipworker_subscription_try_reset(handle, sub_id, expected_write_pos)` reclaims drained space only when the Rust cursor still matches and the subscription has one reader. Android and iOS expose it through JSI, and the Swift manager invokes it after fully drained reads. Elastic growth remains web-only because growing the Rust `Vec` would invalidate the native pointer.
 
 ## Reproducing & comparing
 

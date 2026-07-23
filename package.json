@@ -101,6 +101,7 @@
     "bench": "cargo bench --manifest-path crates/core/Cargo.toml --features parser,cache,connections",
     "bench:browser": "playwright test --config playwright.bench.config.ts",
     "bench:compare": "playwright test --config playwright.compare.config.ts",
+    "bench:figure": "node tests/compare/make-figure.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
