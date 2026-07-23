@@ -62,12 +62,6 @@ export class NostrManager extends BaseBackend {
 	// MessageChannel for parser-main communication
 	private parserMainPort: MessagePort;
 
-	// Cache of the last decoded parser→main frame subId. Parser batches are
-	// per-subscription, so consecutive frames usually carry the same subId;
-	// a byte-level memcmp is cheaper than a UTF-8 decode per frame.
-	private lastFrameSubId: string | null = null;
-	private lastFrameSubIdBytes: Uint8Array | null = null;
-
 	// MessageChannel for crypto-main communication
 	private cryptoMainPort: MessagePort;
 
@@ -151,21 +145,9 @@ export class NostrManager extends BaseBackend {
 				const subIdLen = view.getUint32(frameStart, true);
 				if (4 + subIdLen > frameLen) return;
 
-				const subIdBytes = new Uint8Array(buffer, frameStart + 4, subIdLen);
-				const cached = this.lastFrameSubIdBytes;
-				let subId: string;
-				if (cached && cached.length === subIdLen) {
-					let same = true;
-					for (let i = 0; i < subIdLen; i++) {
-						if (subIdBytes[i] !== cached[i]) {
-							same = false;
-							break;
-						}
-					}
-					subId = same ? this.lastFrameSubId! : this.cacheFrameSubId(subIdBytes);
-				} else {
-					subId = this.cacheFrameSubId(subIdBytes);
-				}
+				const subId = textDecoder.decode(
+					new Uint8Array(buffer, frameStart + 4, subIdLen)
+				);
 				const data = new Uint8Array(buffer, frameStart + 4 + subIdLen, frameLen - 4 - subIdLen);
 				if (data.length > 0) {
 					this.handleParserMainFrame(subId, data);
@@ -293,18 +275,6 @@ export class NostrManager extends BaseBackend {
 		if (uint8Array) {
 			this.parserMainPort.postMessage(uint8Array, [uint8Array.buffer]);
 		}
-	}
-
-	/**
-	 * Decode a frame subId and cache it (with a private copy of its bytes, so
-	 * the incoming batch buffer is not retained) for the memcmp fast path in
-	 * the parser→main message handler.
-	 */
-	private cacheFrameSubId(subIdBytes: Uint8Array): string {
-		const subId = textDecoder.decode(subIdBytes);
-		this.lastFrameSubId = subId;
-		this.lastFrameSubIdBytes = subIdBytes.slice();
-		return subId;
 	}
 
 	/**
@@ -595,10 +565,7 @@ export class NostrManager extends BaseBackend {
 
 		const totalLimit = requests.reduce((sum, req) => sum + (req.limit || 100), 0);
 		const bufferSize = ArrayBufferReader.calculateBufferSize(totalLimit, options.bytesPerEvent);
-		// Elastic buffer: starts small and grows on demand up to bufferSize
-		// (the hard cap) on engines with resizable ArrayBuffers; a fixed
-		// full-cap buffer otherwise.
-		const buffer = ArrayBufferReader.createBuffer(bufferSize);
+		const buffer = new ArrayBuffer(bufferSize);
 		ArrayBufferReader.initializeBuffer(buffer);
 
 		this.subscriptions.set(subId, { buffer, options, refCount: 1 });

@@ -2,31 +2,6 @@ import { ByteBuffer } from 'flatbuffers';
 import { WorkerMessage } from 'src/generated/nostr/fb';
 
 /**
- * Initial size for elastic subscription buffers. Buffers grow on demand
- * (doubling) up to the hard cap computed by `calculateBufferSize`.
- */
-export const INITIAL_SUBSCRIPTION_BUFFER_SIZE = 256 * 1024;
-
-// Runtime feature-detect (once): resizable ArrayBuffers (ES2024) let
-// subscription buffers start small and grow on demand. Engines without
-// `ArrayBuffer.prototype.resize` fall back to fixed full-cap allocation.
-const supportsResizableArrayBuffer =
-	typeof (ArrayBuffer.prototype as { resize?: unknown }).resize === 'function';
-
-// Narrow structural type for the ES2024 resizable-ArrayBuffer API; the
-// tsconfig lib target (ES2020) predates it, so casts go through this.
-interface ResizableArrayBuffer extends ArrayBuffer {
-	resizable: boolean;
-	maxByteLength: number;
-	resize(newByteLength: number): void;
-}
-
-const ResizableArrayBufferCtor = ArrayBuffer as unknown as new (
-	byteLength: number,
-	options?: { maxByteLength?: number }
-) => ArrayBuffer;
-
-/**
  * Utility library for reading from ArrayBuffer with 4-byte header approach
  * Header format: [0-3]: Write position (4 bytes, little endian)
  * Data format: [4+]: [4-byte length][FlatBuffer message][4-byte length][FlatBuffer message]...
@@ -44,40 +19,6 @@ export class ArrayBufferReader {
 		const view = new DataView(buffer);
 		// Set initial write position to 4 (right after the header)
 		view.setUint32(0, 4, true);
-	}
-
-	/**
-	 * Allocate a subscription buffer. When resizable ArrayBuffers are supported
-	 * and the cap exceeds the initial size, the buffer starts small and grows
-	 * on demand (see writePayload) up to `cap`; otherwise it is a fixed
-	 * full-cap buffer, exactly as before.
-	 * @param cap Hard upper bound in bytes (from calculateBufferSize)
-	 * @param initialSize Starting size when elastic (defaults to INITIAL_SUBSCRIPTION_BUFFER_SIZE)
-	 */
-	static createBuffer(
-		cap: number,
-		initialSize: number = INITIAL_SUBSCRIPTION_BUFFER_SIZE
-	): ArrayBuffer {
-		if (supportsResizableArrayBuffer && initialSize < cap) {
-			return new ResizableArrayBufferCtor(initialSize, { maxByteLength: cap });
-		}
-		return new ArrayBuffer(cap);
-	}
-
-	/**
-	 * Grow a resizable buffer to fit `requiredSize` (doubling, clamped to
-	 * maxByteLength). Returns false when the buffer cannot grow (fixed buffer,
-	 * no engine support, or already at cap).
-	 */
-	private static growBuffer(buffer: ArrayBuffer, requiredSize: number): boolean {
-		if (!supportsResizableArrayBuffer) return false;
-		const rb = buffer as Partial<ResizableArrayBuffer>;
-		if (typeof rb.resize !== 'function' || typeof rb.maxByteLength !== 'number') return false;
-		if (buffer.byteLength >= rb.maxByteLength) return false;
-		const next = Math.min(rb.maxByteLength, Math.max(buffer.byteLength * 2, requiredSize));
-		if (next <= buffer.byteLength) return false;
-		rb.resize(next);
-		return true;
 	}
 
 	/**
@@ -149,36 +90,18 @@ export class ArrayBufferReader {
 	}
 
 	static writePayload(buffer: ArrayBuffer, payload: Uint8Array, _debugId?: string): boolean {
-		const requiredSpace = 4 + payload.length;
-		if (this.tryWritePayload(buffer, payload)) return true;
-
-		// Buffer full: grow it if possible and retry once. The cap
-		// (maxByteLength) is still the hard bound — a write that does not fit
-		// even at cap reports full exactly as a fixed buffer would.
-		const currentWritePosition = this.getCurrentWritePosition(buffer);
-		if (
-			this.growBuffer(buffer, currentWritePosition + requiredSpace) &&
-			this.tryWritePayload(buffer, payload)
-		) {
-			return true;
-		}
-
-		console.warn(
-			`[ArrayBufferReader] Dropping ${_debugId ? `event for subscription '${_debugId}'` : 'event'}: ` +
-				`buffer full (${currentWritePosition}/${buffer.byteLength} bytes used, ` +
-				`need ${requiredSpace} more bytes). ` +
-				`Consider increasing 'bytesPerEvent' or reducing subscription limits.`
-		);
-		return false;
-	}
-
-	private static tryWritePayload(buffer: ArrayBuffer, payload: Uint8Array): boolean {
 		const view = new DataView(buffer);
 		const uint8View = new Uint8Array(buffer);
 		const currentWritePosition = view.getUint32(0, true);
 		const requiredSpace = 4 + payload.length;
 
 		if (currentWritePosition + requiredSpace > buffer.byteLength) {
+			console.warn(
+				`[ArrayBufferReader] Dropping ${_debugId ? `event for subscription '${_debugId}'` : 'event'}: ` +
+					`buffer full (${currentWritePosition}/${buffer.byteLength} bytes used, ` +
+					`need ${requiredSpace} more bytes). ` +
+					`Consider increasing 'bytesPerEvent' or reducing subscription limits.`
+			);
 			return false;
 		}
 
@@ -225,6 +148,7 @@ export class ArrayBufferReader {
 				const eventLength = view.getUint32(headerPos, true);
 				const payloadStart = headerPos + 4;
 				const nextPos = payloadStart + eventLength;
+				const remaining = currentWritePosition - payloadStart;
 
 				// Need the full payload to be available
 				if (nextPos > currentWritePosition) {
@@ -265,8 +189,7 @@ export class ArrayBufferReader {
 			messages.length = msgCount;
 			return {
 				messages,
-				newReadPosition:
-					lastReadPosition < dataStartOffset ? dataStartOffset : lastReadPosition,
+				newReadPosition: lastReadPosition < dataStartOffset ? dataStartOffset : lastReadPosition,
 				hasNewData: false
 			};
 		}
