@@ -1,18 +1,19 @@
+use crate::platform::{now_millis, sleep};
 use crate::traits::{RelayTransport, TransportError, TransportStatus};
 use async_trait::async_trait;
-use futures::channel::mpsc;
 use futures::future::{AbortHandle, Abortable};
-use futures::lock::Mutex;
-use futures::stream::SplitSink;
-use futures::{SinkExt, StreamExt};
+use futures::StreamExt;
 use gloo_net::websocket::{futures::WebSocket, Message};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use wasm_bindgen_futures::spawn_local;
 
+const CONNECT_TIMEOUT_MS: u64 = 15_000;
+const CONNECT_POLL_INTERVAL_MS: u64 = 25;
+
 struct WsHandle {
-    write: Mutex<SplitSink<WebSocket, Message>>,
+    socket: web_sys::WebSocket,
     abort: AbortHandle,
 }
 
@@ -38,15 +39,44 @@ impl RelayTransport for GlooTransport {
         // Tear down any existing socket for this URL before replacing it.
         self.disconnect(url);
 
-        let ws = WebSocket::open(url)
-            .map_err(|e| TransportError::Other(format!("WebSocket connect failed: {}", e)))?;
+        let socket = web_sys::WebSocket::new(url)
+            .map_err(|e| TransportError::Other(format!("WebSocket connect failed: {:?}", e)))?;
+        let ws = WebSocket::try_from(socket.clone())
+            .map_err(|e| TransportError::Other(format!("WebSocket setup failed: {}", e)))?;
 
-        let (write, mut read) = ws.split();
+        // WebSocket construction only starts the browser handshake. Do not expose the
+        // socket to senders until it is genuinely OPEN: gloo-net 0.5's Sink reports
+        // CLOSED sockets as ready and would otherwise invoke native send(), producing
+        // an unbounded "already in CLOSING or CLOSED state" console storm.
+        let connect_deadline = now_millis() + CONNECT_TIMEOUT_MS;
+        loop {
+            match socket.ready_state() {
+                web_sys::WebSocket::OPEN => break,
+                web_sys::WebSocket::CONNECTING if now_millis() < connect_deadline => {
+                    sleep(CONNECT_POLL_INTERVAL_MS).await;
+                }
+                web_sys::WebSocket::CONNECTING => {
+                    let _ = socket.close();
+                    return Err(TransportError::Other(format!(
+                        "WebSocket connect timed out after {}ms",
+                        CONNECT_TIMEOUT_MS
+                    )));
+                }
+                _ => {
+                    return Err(TransportError::Other(
+                        "WebSocket closed before the connection opened".to_string(),
+                    ));
+                }
+            }
+        }
+
+        let (_write, mut read) = ws.split();
 
         let url_reader = url.to_string();
         let status_cbs = self.status_callbacks.clone();
         let msg_cbs = self.message_callbacks.clone();
         let connections = self.connections.clone();
+        let reader_socket = socket.clone();
 
         let (abort_handle, reg) = AbortHandle::new_pair();
 
@@ -64,11 +94,20 @@ impl RelayTransport for GlooTransport {
                 }
             }
             // Stream ended (peer close, abort, or error).
-            connections.borrow_mut().remove(&url_reader);
-            if let Some(cb) = status_cbs.borrow().get(&url_reader) {
-                cb(TransportStatus::Closed {
-                    url: url_reader.clone(),
-                });
+            // Only remove/report this socket if it is still current. A delayed close
+            // from an older socket must not tear down its replacement.
+            let is_current = connections
+                .borrow()
+                .get(&url_reader)
+                .map(|handle| handle.socket == reader_socket)
+                .unwrap_or(false);
+            if is_current {
+                connections.borrow_mut().remove(&url_reader);
+                if let Some(cb) = status_cbs.borrow().get(&url_reader) {
+                    cb(TransportStatus::Closed {
+                        url: url_reader.clone(),
+                    });
+                }
             }
         };
 
@@ -81,7 +120,7 @@ impl RelayTransport for GlooTransport {
         self.connections.borrow_mut().insert(
             url.to_string(),
             Rc::new(WsHandle {
-                write: Mutex::new(write),
+                socket,
                 abort: abort_handle,
             }),
         );
@@ -97,6 +136,7 @@ impl RelayTransport for GlooTransport {
 
     fn disconnect(&self, url: &str) {
         if let Some(handle) = self.connections.borrow_mut().remove(url) {
+            let _ = handle.socket.close();
             handle.abort.abort();
         }
         if let Some(cb) = self.status_callbacks.borrow().get(url) {
@@ -112,10 +152,18 @@ impl RelayTransport for GlooTransport {
             conns.get(url).cloned()
         };
         if let Some(handle) = handle {
-            let mut sink = handle.write.lock().await;
-            sink.send(Message::Text(frame))
-                .await
-                .map_err(|e| TransportError::Other(format!("Send failed: {}", e)))
+            // readyState cannot change between this check and send() because both are
+            // synchronous on the worker event loop.
+            if handle.socket.ready_state() != web_sys::WebSocket::OPEN {
+                return Err(TransportError::Other(format!(
+                    "WebSocket is not open for {}",
+                    url
+                )));
+            }
+            handle
+                .socket
+                .send_with_str(&frame)
+                .map_err(|e| TransportError::Other(format!("Send failed: {:?}", e)))
         } else {
             Err(TransportError::Other(format!("Not connected to {}", url)))
         }

@@ -1,6 +1,10 @@
 /* WASM-based connections worker runtime (dedicated Web Worker, module) */
 
-import init, { start_worker, init_tracing, wake_all } from '../../crates/connections/pkg/nipworker_connections.js';
+import init, {
+	start_worker,
+	init_tracing,
+	wake_all
+} from '../../crates/connections/pkg/nipworker_connections.js';
 import wasmUrl from '../../crates/connections/pkg/nipworker_connections_bg.wasm?url';
 
 export type InitConnectionsMsg = {
@@ -28,8 +32,17 @@ async function ensureWasm() {
 
 self.addEventListener(
 	'message',
-	async (evt: MessageEvent<InitConnectionsMsg | { type: 'wake'; source?: string } | string>) => {
+	async (
+		evt: MessageEvent<
+			InitConnectionsMsg | { type: 'wake'; source?: string } | { type: 'ping'; id: number } | string
+		>
+	) => {
 		const msg = evt.data;
+
+		if (typeof msg === 'object' && msg !== null && msg.type === 'ping') {
+			self.postMessage({ type: 'pong', id: msg.id });
+			return;
+		}
 
 		if (typeof msg === 'object' && msg !== null && msg.type === 'init') {
 			const { parserPort, cachePort, cryptoPort, logLevel } = (msg as InitConnectionsMsg).payload;

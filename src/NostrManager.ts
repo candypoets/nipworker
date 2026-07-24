@@ -46,27 +46,47 @@ import { setManager } from './manager';
 
 // Shared decoder for parser→main frames (avoids per-frame allocation).
 const textDecoder = new TextDecoder();
+const WAKE_THROTTLE_MS = 10_000;
 
 /**
  * NostrManager handles worker orchestration and session persistence.
  */
 export class NostrManager extends BaseBackend {
-	private connections: Worker;
-	private cache: Worker;
-	private parser: Worker;
-	private crypto: Worker;
+	private connections!: Worker;
+	private cache!: Worker;
+	private parser!: Worker;
+	private crypto!: Worker;
 	private signRequests = new Map<number, (event: NostrEvent) => void>();
 	private nextSignRequestId = 1;
-	private lastWakeAt = 0;
+	private lastWakeAt = Number.NEGATIVE_INFINITY;
+	private workerGraphGeneration = 0;
+	private lifecycleGeneration = 0;
+	private nextHealthCheckId = 1;
+	private wakeCheck: Promise<void> | null = null;
+	private wakeCheckLifecycleGeneration: number | null = null;
+	private queuedWakeSource: string | null = null;
+	private readonly config: NostrManagerConfig;
 
 	// MessageChannel for parser-main communication
-	private parserMainPort: MessagePort;
+	private parserMainPort!: MessagePort;
 
 	// MessageChannel for crypto-main communication
-	private cryptoMainPort: MessagePort;
+	private cryptoMainPort!: MessagePort;
 
 	constructor(config: NostrManagerConfig = {}) {
 		super(localStorageAdapter);
+		this.config = config;
+		this.startWorkerGraph();
+		this.setupVisibilityTracking();
+		// Defer session restore so callers have time to add auth listeners
+		scheduleMicrotask(() => this.restoreSession());
+		setManager(this);
+	}
+
+	private startWorkerGraph(): void {
+		const config = this.config;
+		this.workerGraphGeneration++;
+
 		// Create 7 MessageChannels for worker-to-worker communication
 		// Each channel connects two workers - each worker gets one port (which is bidirectional)
 		// Channel naming: workerA_workerB (no direction, just identifies the pair)
@@ -145,9 +165,7 @@ export class NostrManager extends BaseBackend {
 				const subIdLen = view.getUint32(frameStart, true);
 				if (4 + subIdLen > frameLen) return;
 
-				const subId = textDecoder.decode(
-					new Uint8Array(buffer, frameStart + 4, subIdLen)
-				);
+				const subId = textDecoder.decode(new Uint8Array(buffer, frameStart + 4, subIdLen));
 				const data = new Uint8Array(buffer, frameStart + 4 + subIdLen, frameLen - 4 - subIdLen);
 				if (data.length > 0) {
 					this.handleParserMainFrame(subId, data);
@@ -201,10 +219,6 @@ export class NostrManager extends BaseBackend {
 		};
 
 		this.setupWorkerListener();
-		this.setupVisibilityTracking();
-		// Defer session restore so callers have time to add auth listeners
-		scheduleMicrotask(() => this.restoreSession());
-		setManager(this);
 	}
 
 	/**
@@ -229,6 +243,7 @@ export class NostrManager extends BaseBackend {
 			if (document.hidden) {
 				wasHidden = true;
 				hiddenTime = Date.now();
+				this.lifecycleGeneration++;
 				this.cleanup();
 			} else if (wasHidden) {
 				wakeFromLifecycle('visibility');
@@ -238,6 +253,7 @@ export class NostrManager extends BaseBackend {
 		window.addEventListener('pagehide', () => {
 			wasHidden = true;
 			hiddenTime = hiddenTime || Date.now();
+			this.lifecycleGeneration++;
 			this.cleanup();
 		});
 
@@ -259,15 +275,136 @@ export class NostrManager extends BaseBackend {
 	}
 
 	/**
-	 * Send wake signal to all workers to trigger immediate reconnection.
-	 * Called when returning from background to foreground.
+	 * Verify that the worker graph survived backgrounding, then trigger immediate
+	 * reconnection. A missing worker requires rebuilding the whole graph because
+	 * its transferred MessagePorts cannot be reused.
 	 */
 	private wakeWorkers(source = 'visibility'): void {
+		if (typeof document !== 'undefined' && document.hidden) return;
+		const lifecycleGeneration = this.lifecycleGeneration;
+		if (this.wakeCheck) {
+			if (this.wakeCheckLifecycleGeneration !== lifecycleGeneration) {
+				this.queuedWakeSource = source;
+			}
+			return;
+		}
 		const now = Date.now();
-		if (now - this.lastWakeAt < 250) return;
+		if (now - this.lastWakeAt < WAKE_THROTTLE_MS) return;
 		this.lastWakeAt = now;
-		console.log(`[main] Waking connections worker for foreground reconnection (${source})`);
-		this.connections.postMessage({ type: 'wake', source });
+		this.wakeCheckLifecycleGeneration = lifecycleGeneration;
+		const workerGraphGeneration = this.workerGraphGeneration;
+
+		this.wakeCheck = this.checkWorkersAlive(workerGraphGeneration)
+			.then((alive) => {
+				if (
+					lifecycleGeneration !== this.lifecycleGeneration ||
+					(typeof document !== 'undefined' && document.hidden)
+				) {
+					return;
+				}
+
+				if (!alive) {
+					this.restartWorkerGraph(`health check failed on ${source}`);
+					return;
+				}
+
+				console.log(`[main] Waking connections worker for foreground reconnection (${source})`);
+				try {
+					this.connections.postMessage({ type: 'wake', source });
+				} catch {
+					this.restartWorkerGraph(`connections wake dispatch failed on ${source}`);
+				}
+			})
+			.finally(() => {
+				this.wakeCheck = null;
+				this.wakeCheckLifecycleGeneration = null;
+				const queuedWakeSource = this.queuedWakeSource;
+				this.queuedWakeSource = null;
+				if (queuedWakeSource && (typeof document === 'undefined' || !document.hidden)) {
+					// The prior probe belongs to an obsolete lifecycle generation and
+					// never dispatched a wake, so the queued foreground check may run now.
+					this.lastWakeAt = Number.NEGATIVE_INFINITY;
+					this.wakeWorkers(queuedWakeSource);
+				}
+			});
+	}
+
+	private checkWorkersAlive(workerGraphGeneration: number, timeoutMs = 1500): Promise<boolean> {
+		const id = this.nextHealthCheckId++;
+		const workers = [this.connections, this.cache, this.parser, this.crypto];
+
+		return new Promise((resolve) => {
+			let settled = false;
+			let remaining = workers.length;
+			const listeners = new Map<Worker, EventListener>();
+			let timeout: ReturnType<typeof setTimeout>;
+
+			const finish = (alive: boolean) => {
+				if (settled) return;
+				settled = true;
+				clearTimeout(timeout);
+				for (const [worker, listener] of listeners) {
+					worker.removeEventListener('message', listener);
+				}
+				resolve(alive && workerGraphGeneration === this.workerGraphGeneration);
+			};
+			timeout = setTimeout(() => finish(false), timeoutMs);
+
+			for (const worker of workers) {
+				const listener: EventListener = (event) => {
+					const message = (event as MessageEvent).data;
+					if (message?.type !== 'pong' || message.id !== id) return;
+					worker.removeEventListener('message', listener);
+					listeners.delete(worker);
+					remaining--;
+					if (remaining === 0) finish(true);
+				};
+				listeners.set(worker, listener);
+				worker.addEventListener('message', listener);
+				try {
+					worker.postMessage({ type: 'ping', id });
+				} catch {
+					finish(false);
+					return;
+				}
+			}
+		});
+	}
+
+	private restartWorkerGraph(reason: string): void {
+		const previousGeneration = this.workerGraphGeneration;
+		const subscriptionCount = this.subscriptions.size;
+		const publishCount = this.publishes.size;
+		console.warn(
+			`[main] Restarting all workers (${reason}); generation=${previousGeneration}, ` +
+				`subscriptions=${subscriptionCount}, publishes=${publishCount}`
+		);
+
+		for (const worker of [this.connections, this.cache, this.parser, this.crypto]) {
+			worker.terminate();
+		}
+		this.parserMainPort.close();
+		this.cryptoMainPort.close();
+
+		// The replacement graph has no parser pipeline state. Drop stale main-thread
+		// registrations so application code can create those subscriptions again.
+		this.subscriptions.clear();
+		this.publishes.clear();
+		this.relayStatuses.clear();
+		this.signRequests.clear();
+
+		this.startWorkerGraph();
+		scheduleMicrotask(() => this.restoreSession());
+		console.log(
+			`[main] Worker graph restart complete; generation=${this.workerGraphGeneration}, ` +
+				'signer session restore scheduled'
+		);
+		this.dispatch('workers:restart', {
+			reason,
+			generation: this.workerGraphGeneration,
+			droppedSubscriptions: subscriptionCount,
+			droppedPublishes: publishCount
+		});
 	}
 
 	private postToWorker(message: { serializedMessage?: Uint8Array }) {

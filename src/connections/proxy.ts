@@ -347,6 +347,11 @@ self.addEventListener(
 	'message',
 	(evt: MessageEvent<any | { type: 'wake'; source?: string } | string>) => {
 		const msg = evt.data;
+		if (msg?.type === 'ping') {
+			self.postMessage({ type: 'pong', id: msg.id });
+			return;
+		}
+
 		if (msg?.type === 'init') {
 			const { cachePort, parserPort, cryptoPort, proxy } = msg.payload;
 			if (!proxy?.url) {

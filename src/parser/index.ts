@@ -28,19 +28,27 @@ async function ensureWasm() {
 	return wasmReady;
 }
 
-self.addEventListener('message', async (evt: MessageEvent<InitParserMsg | { type: 'wake' }>) => {
-	const msg = evt.data;
+self.addEventListener(
+	'message',
+	async (evt: MessageEvent<InitParserMsg | { type: 'wake' } | { type: 'ping'; id: number }>) => {
+		const msg = evt.data;
 
-	if (msg?.type === 'init') {
-		await ensureWasm();
-		const { connectionsPort, cachePort, cryptoPort, mainPort, logLevel } = msg.payload;
-		init_tracing(logLevel || 'error');
-		start_worker(mainPort, connectionsPort, cachePort, cryptoPort);
-		return;
-	}
+		if (msg?.type === 'ping') {
+			self.postMessage({ type: 'pong', id: msg.id });
+			return;
+		}
 
-	// Wake is a no-op; Rust loops are self-driven.
-	if (msg?.type === 'wake') {
-		return;
+		if (msg?.type === 'init') {
+			await ensureWasm();
+			const { connectionsPort, cachePort, cryptoPort, mainPort, logLevel } = msg.payload;
+			init_tracing(logLevel || 'error');
+			start_worker(mainPort, connectionsPort, cachePort, cryptoPort);
+			return;
+		}
+
+		// Wake is a no-op; Rust loops are self-driven.
+		if (msg?.type === 'wake') {
+			return;
+		}
 	}
-});
+);

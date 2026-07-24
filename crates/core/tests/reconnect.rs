@@ -1,23 +1,20 @@
 mod common;
 use std::sync::Arc;
+use std::time::Duration;
 
 use nipworker_core::service::engine::NostrEngine;
 use nipworker_core::traits::TransportStatus;
 use nipworker_core::types::network::Request;
-use std::time::Duration;
 use tokio::task::LocalSet;
 
-const PUBKEY: &str = "0000000000000000000000000000000000000000000000000000000000000001";
-const SIGNATURE: &str = "0000000000000000000000000000000000000000000000000000000000000002";
-
 #[tokio::test]
-async fn test_reconnect_after_transport_close() {
+async fn test_unexpected_transport_close_enters_cooldown() {
     let local = LocalSet::new();
     local
 		.run_until(async {
 			let transport = Arc::new(common::MockRelayTransport::new());
 			let storage = Arc::new(common::MockStorage::new());
-			
+
 			let (event_sink_tx, _event_sink_rx) =
 				futures::channel::mpsc::channel::<(String, Vec<u8>)>(100);
 
@@ -59,7 +56,7 @@ async fn test_reconnect_after_transport_close() {
 
 			tokio::time::sleep(Duration::from_millis(100)).await;
 
-			// Trigger a new subscription on the same relay.
+			// A new subscription during cooldown must not immediately hammer the relay.
 			let request2 = Request {
 				relays: vec!["wss://r".to_string()],
 				..Default::default()
@@ -69,31 +66,15 @@ async fn test_reconnect_after_transport_close() {
 				.await
 				.unwrap();
 
-			// Poll until reconnect and new REQ are observed.
-			let mut found_reconnect = false;
-			let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-			while tokio::time::Instant::now() < deadline {
-				tokio::time::sleep(Duration::from_millis(50)).await;
-				let calls = transport.get_calls();
-				let connect_count = calls
-					.iter()
-					.filter(|c| matches!(c, common::TransportCall::Connect(url) if url == "wss://r"))
-					.count();
-				if connect_count >= 2 {
-					let req_sent = calls.iter().any(|c| matches!(
-						c,
-						common::TransportCall::Send(url, frame)
-							if url == "wss://r" && frame.contains("REQ") && frame.contains("sub2")
-					));
-					if req_sent {
-						found_reconnect = true;
-						break;
-					}
-				}
-			}
-			assert!(
-				found_reconnect,
-				"Expected reconnect and new REQ after transport close"
+			tokio::time::sleep(Duration::from_millis(200)).await;
+			let calls_during_cooldown = transport.get_calls();
+			let connect_count = calls_during_cooldown
+				.iter()
+				.filter(|c| matches!(c, common::TransportCall::Connect(url) if url == "wss://r"))
+				.count();
+			assert_eq!(
+				connect_count, 1,
+				"unexpected close cooldown should suppress an immediate reconnect"
 			);
 		})
 		.await;

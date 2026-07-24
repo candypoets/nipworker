@@ -32,7 +32,8 @@ type OutWriter = Rc<dyn Fn(&str, &str, &str)>; // (url, sub_id, raw_text)
 type StatusWriter = Rc<dyn Fn(&str, &str)>; // (status, url)
 type CryptoSender = Rc<RefCell<dyn Fn(&[u8])>>;
 
-const RECONNECT_RETRY_DELAY_MS: u64 = 30_000;
+const RECONNECT_RETRY_BASE_DELAY_MS: u64 = 30_000;
+const RECONNECT_RETRY_MAX_DELAY_MS: u64 = 30 * 60_000;
 const HEALTHY_RETRY_DELAYS_MS: [u32; 3] = [200, 800, 2_000];
 const COLD_START_RETRY_DELAYS_MS: [u32; 1] = [200];
 const AUTH_REQUEST_ID_MASK: u64 = 0x8000_0000_0000_0000;
@@ -93,12 +94,16 @@ pub struct RelayConnection {
     active_reqs: Arc<RwLock<HashMap<String, Vec<String>>>>,
     backoff_attempts: Arc<RwLock<u32>>,
     next_retry_at_ms: Arc<RwLock<u64>>,
+    connection_confirmed: Arc<RwLock<bool>>,
     wake_in_flight: Arc<RwLock<bool>>,
 
     // Channel created at construction time so callers can enqueue immediately.
     queue_tx: Arc<RwLock<Option<Sender<String>>>>,
     // Receiver is held until first successful connect, then consumed by the drainer.
     queue_rx: Arc<RwLock<Option<Receiver<String>>>>,
+    // Frames not yet picked up by the drainer. Used to avoid waking historical
+    // relay objects that have neither active subscriptions nor queued work.
+    pending_frames: Arc<RwLock<usize>>,
 
     out_writer: OutWriter,
     status_writer: StatusWriter,
@@ -133,9 +138,11 @@ impl RelayConnection {
             active_reqs: Arc::new(RwLock::new(HashMap::new())),
             backoff_attempts: Arc::new(RwLock::new(0)),
             next_retry_at_ms: Arc::new(RwLock::new(0)),
+            connection_confirmed: Arc::new(RwLock::new(false)),
             wake_in_flight: Arc::new(RwLock::new(false)),
             queue_tx: Arc::new(RwLock::new(Some(tx))),
             queue_rx: Arc::new(RwLock::new(Some(rx))),
+            pending_frames: Arc::new(RwLock::new(0)),
             out_writer,
             status_writer,
             auth_state: Arc::new(RwLock::new(AuthState::Unknown)),
@@ -168,6 +175,11 @@ impl RelayConnection {
     }
 
     #[inline]
+    fn clear_retry_deadline(&self) {
+        *self.next_retry_at_ms.write().unwrap() = 0;
+    }
+
+    #[inline]
     fn should_delay_reconnect(&self) -> bool {
         let now = now_millis();
         let retry_at = *self.next_retry_at_ms.read().unwrap();
@@ -175,9 +187,25 @@ impl RelayConnection {
     }
 
     #[inline]
-    fn set_next_retry_delay_ms(&self, delay_ms: u64) {
+    fn schedule_reconnect_backoff(&self) -> u64 {
+        let attempt = {
+            let mut attempts = self.backoff_attempts.write().unwrap();
+            *attempts = attempts.saturating_add(1);
+            *attempts
+        };
+        let shift = attempt.saturating_sub(1).min(6);
+        let delay_ms = RECONNECT_RETRY_BASE_DELAY_MS
+            .saturating_mul(1_u64 << shift)
+            .min(RECONNECT_RETRY_MAX_DELAY_MS);
         let retry_at = now_millis() + delay_ms;
         *self.next_retry_at_ms.write().unwrap() = retry_at;
+        delay_ms
+    }
+
+    #[inline]
+    fn confirm_connection(&self) {
+        *self.connection_confirmed.write().unwrap() = true;
+        self.clear_backoff();
     }
 
     // Initialize queue drainer once, after a successful connect: take the receiver and spawn drainer.
@@ -202,6 +230,10 @@ impl RelayConnection {
     // - While unreliable window is active, skip reconnect attempts and drop incoming queued frames quickly.
     async fn queue_drainer(self: Arc<Self>, mut rx: Receiver<String>) {
         while let Some(frame) = rx.next().await {
+            {
+                let mut pending = self.pending_frames.write().unwrap();
+                *pending = pending.saturating_sub(1);
+            }
             let now = now_millis();
             let retry_at = *self.next_retry_at_ms.read().unwrap();
 
@@ -216,8 +248,7 @@ impl RelayConnection {
                 continue;
             }
 
-            let was_previously_connected =
-                matches!(*self.status.read().unwrap(), ConnectionStatus::Connected);
+            let was_previously_connected = *self.connection_confirmed.read().unwrap();
 
             tracing::info!(
                 relay = %self.url,
@@ -277,8 +308,9 @@ impl RelayConnection {
 
             let mut delivered = false;
             for (idx, delay_ms) in delays.iter().copied().enumerate() {
-                // If connect() set cooldown on previous failure path, clear it for immediate staged attempts.
-                self.clear_backoff();
+                // Bypass the current deadline for this bounded retry burst while preserving
+                // the consecutive-failure count used by the long-term backoff.
+                self.clear_retry_deadline();
                 sleep(delay_ms as u64).await;
 
                 let attempt_num = idx + 2; // #1 already happened above
@@ -330,7 +362,9 @@ impl RelayConnection {
                 was_previously_connected,
                 "[connections][drainer] all reconnect/send retries exhausted; dropping frame and marking unreliable"
             );
-            self.set_next_retry_delay_ms(RECONNECT_RETRY_DELAY_MS);
+            if !self.should_delay_reconnect() {
+                self.schedule_reconnect_backoff();
+            }
             let retry_at = *self.next_retry_at_ms.read().unwrap();
             tracing::warn!(relay = %self.url, retry_at, "[connections][drainer] relay marked unreliable after retry exhaustion");
         }
@@ -342,6 +376,7 @@ impl RelayConnection {
             .send(&self.url, text.to_string())
             .await
             .map_err(|e| RelayError::ConnectionError(e.to_string()))?;
+        self.confirm_connection();
 
         // On successful send, adjust inflight and emit synthetic notifications when appropriate.
         if let Some(parts) = extract_first_three(text) {
@@ -434,7 +469,9 @@ impl RelayConnection {
 					tracing::error!(relay = %self.url, "[connections][enqueue] queue closed while enqueueing");
 					RelayError::ConnectionClosed
 				}
-			})
+			})?;
+            *self.pending_frames.write().unwrap() += 1;
+            Ok(())
         } else {
             tracing::error!(relay = %self.url, "No queue sender available");
             Err(RelayError::ConnectionClosed)
@@ -477,6 +514,7 @@ impl RelayConnection {
             let mut st = self.status.write().unwrap();
             *st = ConnectionStatus::Connecting;
         }
+        *self.connection_confirmed.write().unwrap() = false;
         (self.status_writer)("connecting", &self.url);
 
         validate_relay_url(&self.url).map_err(|e| RelayError::InvalidUrl(e.to_string()))?;
@@ -486,8 +524,13 @@ impl RelayConnection {
             let mut st = self.status.write().unwrap();
             *st = ConnectionStatus::Failed;
             (self.status_writer)("failed", &self.url);
-            // Retry delay to avoid hammering failed relays.
-            self.set_next_retry_delay_ms(RECONNECT_RETRY_DELAY_MS);
+            let delay_ms = self.schedule_reconnect_backoff();
+            tracing::warn!(
+                relay = %self.url,
+                delay_ms,
+                attempts = *self.backoff_attempts.read().unwrap(),
+                "[connections][connect] websocket open failed; backing off"
+            );
             RelayError::ConnectionError(e.to_string())
         })?;
 
@@ -527,7 +570,6 @@ impl RelayConnection {
         }
 
         (self.status_writer)("connected", &self.url);
-        self.clear_backoff();
         tracing::info!(relay = %self.url, "[connections][connect] websocket connected");
 
         // Start the queue drainer on first successful connection
@@ -537,6 +579,7 @@ impl RelayConnection {
     }
 
     fn handle_incoming_message(&self, text: &str) {
+        self.confirm_connection();
         tracing::info!(relay = %self.url, "Raw incoming: {}", text);
 
         if let Some((kind, sub_id, content)) = parse_incoming_relay_text(text) {
@@ -564,13 +607,18 @@ impl RelayConnection {
         match status {
             TransportStatus::Failed { url } => {
                 // During intentional close/reconnect replacement, old transport errors are expected.
-                let intentional_transition = {
+                let ignore_transition = {
                     let st = self.status.read().unwrap();
-                    matches!(*st, ConnectionStatus::Closed | ConnectionStatus::Connecting)
+                    matches!(
+                        *st,
+                        ConnectionStatus::Closed
+                            | ConnectionStatus::Connecting
+                            | ConnectionStatus::Failed
+                    )
                 };
 
-                if intentional_transition {
-                    tracing::info!(relay = %url, "Transport error during intentional close/reconnect transition; ignoring failure transition");
+                if ignore_transition {
+                    tracing::info!(relay = %url, "Ignoring duplicate or intentional transport failure transition");
                     return;
                 }
 
@@ -579,9 +627,16 @@ impl RelayConnection {
                     let mut st = self.status.write().unwrap();
                     *st = ConnectionStatus::Failed;
                 }
-                self.set_next_retry_delay_ms(RECONNECT_RETRY_DELAY_MS);
+                *self.connection_confirmed.write().unwrap() = false;
+                let delay_ms = self.schedule_reconnect_backoff();
                 let retry_at = *self.next_retry_at_ms.read().unwrap();
-                tracing::info!(relay = %self.url, retry_at, "[connections] Connection failed, relay marked unreliable during cooldown");
+                tracing::info!(
+                    relay = %self.url,
+                    retry_at,
+                    delay_ms,
+                    attempts = *self.backoff_attempts.read().unwrap(),
+                    "[connections] Connection failed, relay marked unreliable during cooldown"
+                );
 
                 // Clear pre-auth queue on connection failure to prevent memory leak
                 {
@@ -593,23 +648,35 @@ impl RelayConnection {
                 (self.status_writer)("failed", &url);
             }
             TransportStatus::Closed { url } => {
-                let was_intentional = {
+                let ignore_transition = {
                     let st = self.status.read().unwrap();
-                    matches!(*st, ConnectionStatus::Closed)
+                    matches!(
+                        *st,
+                        ConnectionStatus::Closed
+                            | ConnectionStatus::Connecting
+                            | ConnectionStatus::Failed
+                    )
                 };
 
-                if was_intentional {
-                    tracing::info!(relay = %url, "Transport closed after intentional close");
+                if ignore_transition {
+                    tracing::info!(relay = %url, "Ignoring duplicate or intentional transport close transition");
                     return;
                 }
 
                 {
                     let mut st = self.status.write().unwrap();
-                    *st = ConnectionStatus::Closed;
+                    *st = ConnectionStatus::Failed;
                 }
-
-                // Intentional close should NOT mark relay unreliable or start cooldown.
-                *self.next_retry_at_ms.write().unwrap() = 0;
+                *self.connection_confirmed.write().unwrap() = false;
+                let delay_ms = self.schedule_reconnect_backoff();
+                let retry_at = *self.next_retry_at_ms.read().unwrap();
+                tracing::info!(
+                    relay = %self.url,
+                    retry_at,
+                    delay_ms,
+                    attempts = *self.backoff_attempts.read().unwrap(),
+                    "[connections] Unexpected close, relay marked unreliable during cooldown"
+                );
 
                 // Clear pre-auth queue on close to prevent memory leak
                 {
@@ -621,7 +688,7 @@ impl RelayConnection {
                 // Reset auth state for next transport connect.
                 *self.auth_state.write().unwrap() = AuthState::Unknown;
 
-                (self.status_writer)("close", &url);
+                (self.status_writer)("failed", &url);
             }
             TransportStatus::Connected { url } => {
                 {
@@ -652,14 +719,17 @@ impl RelayConnection {
         // Enqueue CLOSE frame; drainer will send when connected
         let frame = format!(r#"["CLOSE","{}"]"#, sub_id);
         if let Some(tx) = self.queue_tx.read().unwrap().as_ref() {
-            if let Err(e) = tx.clone().try_send(frame) {
-                warn!(
-                    relay = %self.url,
-                    sub_id,
-                    "CLOSE frame dropped: send queue {} ({})",
-                    if e.is_full() { "full (64)" } else { "closed" },
-                    e
-                );
+            match tx.clone().try_send(frame) {
+                Ok(()) => *self.pending_frames.write().unwrap() += 1,
+                Err(e) => {
+                    warn!(
+                        relay = %self.url,
+                        sub_id,
+                        "CLOSE frame dropped: send queue {} ({})",
+                        if e.is_full() { "full (64)" } else { "closed" },
+                        e
+                    );
+                }
             }
         }
 
@@ -678,7 +748,8 @@ impl RelayConnection {
         self.transport.disconnect(&self.url);
 
         // Intentional close should NOT mark relay unreliable or start cooldown.
-        *self.next_retry_at_ms.write().unwrap() = 0;
+        *self.connection_confirmed.write().unwrap() = false;
+        self.clear_backoff();
 
         // Clear pre-auth queue on close to prevent memory leak
         {
@@ -700,6 +771,11 @@ impl RelayConnection {
     /// Mobile platforms can leave local websocket state stale after backgrounding, so wake
     /// conservatively replaces the socket and replays the active REQ frames for this relay.
     pub fn wake(self: &Arc<Self>) {
+        if !self.has_recovery_work() {
+            tracing::debug!(relay = %self.url, "[connections][wake] skipping idle relay");
+            return;
+        }
+
         tracing::info!(relay = %self.url, status = ?*self.status.read().unwrap(), "[connections][wake] waking connection");
 
         {
@@ -744,6 +820,11 @@ impl RelayConnection {
             }
             *conn.wake_in_flight.write().unwrap() = false;
         });
+    }
+
+    pub fn has_recovery_work(&self) -> bool {
+        !self.active_reqs.read().unwrap().is_empty()
+            || *self.pending_frames.read().unwrap() > 0
     }
 
     // ------------------------------------------------------------------
@@ -868,7 +949,8 @@ impl RelayConnection {
         if let Some(tx) = self.queue_tx.read().unwrap().as_ref() {
             match tx.clone().try_send(auth_frame) {
                 Ok(_) => {
-                    tracing::info!(relay = %self.url, "[connections][AUTH] Frame queued for relay")
+                    *self.pending_frames.write().unwrap() += 1;
+                    tracing::info!(relay = %self.url, "[connections][AUTH] Frame queued for relay");
                 }
                 Err(e) => tracing::error!(relay = %self.url, "Failed to queue AUTH frame: {:?}", e),
             }
@@ -901,12 +983,15 @@ impl RelayConnection {
             );
             if let Some(tx) = self.queue_tx.read().unwrap().as_ref() {
                 for frame in shadow_frames {
-                    if let Err(e) = tx.clone().try_send(frame) {
-                        tracing::warn!(
-                            relay = %self.url,
-                            error = ?e,
-                            "[connections][AUTH] Failed to replay pre-auth REQ frame"
-                        );
+                    match tx.clone().try_send(frame) {
+                        Ok(()) => *self.pending_frames.write().unwrap() += 1,
+                        Err(e) => {
+                            tracing::warn!(
+                                relay = %self.url,
+                                error = ?e,
+                                "[connections][AUTH] Failed to replay pre-auth REQ frame"
+                            );
+                        }
                     }
                 }
             } else if shadow_count > 0 {
@@ -1613,6 +1698,133 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_unexpected_close_starts_cooldown() {
+        let local = LocalSet::new();
+        local
+            .run_until(async {
+                let transport = Arc::new(MockRelayTransport::new());
+                let (out_writer, status_writer, to_crypto, _out, status, _crypto) = make_writers();
+
+                let conn = RelayConnection::new(
+                    "wss://r".to_string(),
+                    transport.clone(),
+                    out_writer,
+                    status_writer,
+                    to_crypto,
+                );
+
+                tokio::task::yield_now().await;
+                tokio::task::yield_now().await;
+                tokio::task::yield_now().await;
+
+                transport.invoke_status_callback(
+                    "wss://r",
+                    TransportStatus::Closed {
+                        url: "wss://r".to_string(),
+                    },
+                );
+
+                assert!(
+                    matches!(*conn.status.read().unwrap(), ConnectionStatus::Failed),
+                    "an unexpected close should be treated as a failed connection"
+                );
+                assert_eq!(*conn.backoff_attempts.read().unwrap(), 1);
+                assert!(
+                    *conn.next_retry_at_ms.read().unwrap() > now_millis(),
+                    "an unexpected close should start a retry cooldown"
+                );
+                assert!(
+                    status
+                        .lock()
+                        .unwrap()
+                        .iter()
+                        .any(|(state, url)| state == "failed" && url == "wss://r"),
+                    "an unexpected close should emit a failed relay status"
+                );
+
+                let connect_count_before = transport
+                    .calls()
+                    .iter()
+                    .filter(|call| matches!(call, Call::Connect(_)))
+                    .count();
+                assert!(matches!(
+                    conn.connect().await,
+                    Err(RelayError::ConnectionClosed)
+                ));
+                let connect_count_after = transport
+                    .calls()
+                    .iter()
+                    .filter(|call| matches!(call, Call::Connect(_)))
+                    .count();
+                assert_eq!(
+                    connect_count_after, connect_count_before,
+                    "cooldown should suppress another websocket attempt"
+                );
+            })
+            .await;
+    }
+
+    #[tokio::test]
+    async fn test_repeated_unexpected_closes_use_exponential_backoff() {
+        let local = LocalSet::new();
+        local
+            .run_until(async {
+                let transport = Arc::new(MockRelayTransport::new());
+                let (out_writer, status_writer, to_crypto, _out, _status, _crypto) = make_writers();
+
+                let conn = RelayConnection::new(
+                    "wss://r".to_string(),
+                    transport.clone(),
+                    out_writer,
+                    status_writer,
+                    to_crypto,
+                );
+
+                tokio::task::yield_now().await;
+                tokio::task::yield_now().await;
+                tokio::task::yield_now().await;
+
+                transport.invoke_status_callback(
+                    "wss://r",
+                    TransportStatus::Closed {
+                        url: "wss://r".to_string(),
+                    },
+                );
+                assert_eq!(*conn.backoff_attempts.read().unwrap(), 1);
+
+                conn.clear_retry_deadline();
+                conn.connect().await.unwrap();
+                assert_eq!(
+                    *conn.backoff_attempts.read().unwrap(),
+                    1,
+                    "creating a websocket is not enough to reset failure history"
+                );
+                transport.invoke_status_callback(
+                    "wss://r",
+                    TransportStatus::Closed {
+                        url: "wss://r".to_string(),
+                    },
+                );
+
+                assert_eq!(*conn.backoff_attempts.read().unwrap(), 2);
+                let remaining_ms = conn
+                    .next_retry_at_ms
+                    .read()
+                    .unwrap()
+                    .saturating_sub(now_millis());
+                assert!(
+                    remaining_ms > RECONNECT_RETRY_BASE_DELAY_MS,
+                    "the second consecutive failure should wait longer than the first"
+                );
+                assert!(
+                    remaining_ms <= RECONNECT_RETRY_BASE_DELAY_MS * 2,
+                    "the second consecutive failure should use the one-minute backoff"
+                );
+            })
+            .await;
+    }
+
+    #[tokio::test]
     async fn test_staged_reconnect_with_delays() {
         let local = LocalSet::new();
         local
@@ -1743,6 +1955,40 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_wake_skips_idle_relay() {
+        let local = LocalSet::new();
+        local
+            .run_until(async {
+                let transport = Arc::new(MockRelayTransport::new());
+                let (out_writer, status_writer, to_crypto, _out, _status, _crypto) = make_writers();
+
+                let conn = RelayConnection::new(
+                    "wss://r".to_string(),
+                    transport.clone(),
+                    out_writer,
+                    status_writer,
+                    to_crypto,
+                );
+
+                tokio::task::yield_now().await;
+                tokio::task::yield_now().await;
+                tokio::task::yield_now().await;
+                let calls_before = transport.calls().len();
+
+                conn.wake();
+                tokio::task::yield_now().await;
+                tokio::task::yield_now().await;
+
+                assert_eq!(
+                    transport.calls().len(),
+                    calls_before,
+                    "wake should not reconnect a relay with no active REQs or pending frames"
+                );
+            })
+            .await;
+    }
+
+    #[tokio::test]
     async fn test_wake_reconnects_and_replays_active_reqs() {
         let local = LocalSet::new();
         local
@@ -1812,6 +2058,10 @@ mod tests {
                     to_crypto,
                 );
 
+                tokio::task::yield_now().await;
+                tokio::task::yield_now().await;
+                tokio::task::yield_now().await;
+                conn.send_raw(r#"["REQ","s1",{}]"#).unwrap();
                 tokio::task::yield_now().await;
                 tokio::task::yield_now().await;
                 tokio::task::yield_now().await;

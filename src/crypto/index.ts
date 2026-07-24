@@ -1,6 +1,10 @@
 /* WASM-based crypto worker runtime (dedicated Web Worker, module) */
 
-import init, { start_worker, init_tracing, clear_signer } from '../../crates/crypto/pkg/nipworker_crypto.js';
+import init, {
+	start_worker,
+	init_tracing,
+	clear_signer
+} from '../../crates/crypto/pkg/nipworker_crypto.js';
 import wasmUrl from '../../crates/crypto/pkg/nipworker_crypto_bg.wasm?url';
 
 export type InitCryptoMsg = {
@@ -40,6 +44,11 @@ async function ensureWasm() {
 
 self.addEventListener('message', async (evt: MessageEvent<any>) => {
 	const msg = evt.data;
+
+	if (msg?.type === 'ping') {
+		self.postMessage({ type: 'pong', id: msg.id });
+		return;
+	}
 
 	// Handle response from main thread for NIP-07 extension calls
 	if (msg?.type === 'extension_response') {

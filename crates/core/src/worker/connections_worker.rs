@@ -185,11 +185,17 @@ pub struct ConnectionsHandle {
 impl ConnectionsHandle {
     pub fn wake_all(&self) {
         let connections: Vec<Arc<RelayConnection>> =
-            self.connections.read().unwrap().values().cloned().collect();
+            self.connections
+                .read()
+                .unwrap()
+                .values()
+                .filter(|connection| connection.has_recovery_work())
+                .cloned()
+                .collect();
 
         info!(
             count = connections.len(),
-            "[ConnectionsWorker] waking all relay connections"
+            "[ConnectionsWorker] waking relay connections with active or pending work"
         );
 
         for conn in connections {
