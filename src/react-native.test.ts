@@ -157,10 +157,10 @@ function buildSignedEventMessage(): ArrayBuffer {
 	return framed.buffer;
 }
 
-function buildTypedSignedEventMessage(): Uint8Array {
+function buildTypedSignedEventMessage(subId = 'crypto'): Uint8Array {
 	const builder = new flatbuffers.Builder(1024);
 	const message = new WorkerMessageT(
-		'crypto',
+		subId,
 		'',
 		MessageType.SignedEvent,
 		Message.SignedEvent,
@@ -419,6 +419,31 @@ describe('react-native byte runtime subscription path', () => {
 		expect(callback).toHaveBeenCalledWith(
 			expect.objectContaining({ kind: 9734, id: 'a'.repeat(64), sig: 'd'.repeat(128) })
 		);
+		manager.deinit();
+	});
+
+	it('delivers the unframed empty-sub-id SignedEvent emitted by native Rust', () => {
+		const manager = createNostrManager();
+		setManager(manager);
+		const callback = vi.fn();
+		const response = buildTypedSignedEventMessage('');
+
+		useSignEvent(
+			{ kind: 9734, created_at: 123, content: 'hello', tags: [['p', 'c'.repeat(64)]] },
+			callback
+		);
+		queuedBuffers.push(response.slice().buffer);
+		nativeEventListener?.({ v: 1, encoding: 'queued' });
+
+		expect(callback).toHaveBeenCalledWith({
+			id: 'a'.repeat(64),
+			pubkey: 'b'.repeat(64),
+			created_at: 123,
+			kind: 9734,
+			tags: [['p', 'c'.repeat(64)]],
+			content: 'hello',
+			sig: 'd'.repeat(128)
+		});
 		manager.deinit();
 	});
 });

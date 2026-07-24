@@ -508,7 +508,7 @@ export class ReactNativeManager extends BaseBackend {
 		if (payload.length < 4) return;
 		const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
 		const msgLen = view.getUint32(0, true);
-		const maybeLenPrefixed = payload.length >= 4 + msgLen && msgLen > 0;
+		const maybeLenPrefixed = payload.length === 4 + msgLen && msgLen > 0;
 		const bb = new flatbuffers.ByteBuffer(
 			maybeLenPrefixed ? payload.subarray(4, 4 + msgLen) : payload
 		);
@@ -517,9 +517,8 @@ export class ReactNativeManager extends BaseBackend {
 			const signedEventObj = workerMsg.content(new SignedEvent());
 			const eventObj = signedEventObj ? signedEventObj.event() : null;
 			if (!eventObj) return;
-			// The byte-runtime SignedEvent message carries no request id, so
-			// requestId() is 0 and delivery falls back to the oldest pending
-			// request (FIFO).
+			// Legacy producers may omit the request id. In that case delivery
+			// falls back to the oldest pending request (FIFO).
 			const cb = this.takeSignCallback(signedEventObj!.requestId() || undefined);
 			if (cb) {
 				cb(this.fbEventToNostrEvent(eventObj));
