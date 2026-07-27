@@ -5,10 +5,23 @@ use crate::{
     generated::nostr::*,
     types::{
         network::Request,
-        nostr::{EventId, NostrTags, PublicKey, Template},
+        nostr::{NostrTags, Template},
         Event,
     },
 };
+
+#[cfg(feature = "crypto")]
+fn derive_p2pk_public_key(private_key: &str) -> Result<String> {
+    let secret_key = crate::types::SecretKey::from_hex(private_key)?;
+    Ok(secret_key.public_key_from_secret().to_hex())
+}
+
+#[cfg(not(feature = "crypto"))]
+fn derive_p2pk_public_key(_private_key: &str) -> Result<String> {
+    Err(ParserError::Crypto(
+        "P2PK public-key derivation requires the crypto feature".to_string(),
+    ))
+}
 
 pub struct Kind17375Parsed {
     pub mints: Vec<String>,
@@ -63,8 +76,17 @@ impl Parser {
                                 }
                                 "privkey" => {
                                     parsed.p2pk_priv_key = Some(tag[1].clone());
-                                    // TODO: Derive public key from private key via crypto worker if needed
-                                    parsed.p2pk_pub_key = Some(String::new());
+                                    match derive_p2pk_public_key(&tag[1]) {
+                                        Ok(public_key) => {
+                                            parsed.p2pk_pub_key = Some(public_key);
+                                        }
+                                        Err(error) => {
+                                            warn!(
+                                                "Failed to derive kind 17375 P2PK public key: {}",
+                                                error
+                                            );
+                                        }
+                                    }
                                 }
                                 _ => {}
                             }
@@ -184,4 +206,53 @@ pub fn build_flatbuffer<'a, A: flatbuffers::Allocator + 'a>(
     let offset = fb::Kind17375Parsed::create(builder, &args);
 
     Ok(offset)
+}
+
+#[cfg(all(test, feature = "crypto"))]
+mod tests {
+    use super::derive_p2pk_public_key;
+    use crate::{
+        parser::Parser,
+        types::{Event, EventId, PublicKey},
+    };
+    use futures::executor::block_on;
+
+    const EXPECTED_PUBLIC_KEY: &str =
+        "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
+
+    #[test]
+    fn derives_x_only_p2pk_public_key() {
+        let private_key = format!("{:064x}", 1);
+        let public_key = derive_p2pk_public_key(&private_key).unwrap();
+
+        assert_eq!(public_key, EXPECTED_PUBLIC_KEY);
+    }
+
+    #[test]
+    fn parsed_wallet_includes_derived_p2pk_public_key() {
+        let private_key = format!("{:064x}", 1);
+        let event = Event {
+            id: EventId([0; 32]),
+            pubkey: PublicKey([0; 32]),
+            created_at: 1,
+            kind: 17375,
+            tags: vec![],
+            content: format!(
+                r#"[["privkey","{}"],["mint","https://mint.example.com"]]"#,
+                private_key
+            ),
+            sig: String::new(),
+        };
+
+        let parser = Parser::new(None);
+        let (wallet, _) = block_on(parser.parse_kind_17375(&event)).unwrap();
+
+        assert_eq!(wallet.p2pk_priv_key.as_deref(), Some(private_key.as_str()));
+        assert_eq!(wallet.p2pk_pub_key.as_deref(), Some(EXPECTED_PUBLIC_KEY));
+    }
+
+    #[test]
+    fn rejects_invalid_private_key() {
+        assert!(derive_p2pk_public_key("not-a-private-key").is_err());
+    }
 }
