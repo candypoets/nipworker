@@ -16,6 +16,7 @@ import type { NostrManagerLike } from './manager';
 import type { NostrManagerConfig, RequestObject, SubscriptionConfig } from './types';
 import type { EventTemplate, NostrEvent } from 'nostr-tools';
 import {
+	AuthUrl,
 	GetPublicKeyT,
 	ConnectionStatus,
 	MainContent,
@@ -476,7 +477,7 @@ export class ReactNativeManager extends BaseBackend {
 		}
 		if (subId === '') {
 			const contentType = workerMsg.contentType();
-			if (contentType === Message.SetSignerResponse || contentType === Message.Raw) {
+			if (contentType === Message.SetSignerResponse || contentType === Message.Raw || contentType === Message.AuthUrl) {
 				this.handleCryptoMessage(data);
 				return;
 			}
@@ -599,7 +600,9 @@ export class ReactNativeManager extends BaseBackend {
 				if (this.isPubkeyResult(pubkey)) {
 					this.handleSignerPubkey(pubkey, secretKey, resp.bunkerUrl());
 				} else if (resp.error()) {
-					this.dispatch('auth', { pubkey: null, hasSigner: false });
+					// Surface the failure instead of failing silently — listeners
+					// (e.g. login UI) need the reason (timeout, rejection, …).
+					this.dispatch('auth', { pubkey: null, hasSigner: false, error: resp.error() });
 				}
 				// Otherwise pubkey carries a NIP-46 QR status string
 				// ('awaiting discovery') - a second SetSignerResponse with the real
@@ -638,6 +641,15 @@ export class ReactNativeManager extends BaseBackend {
 				// Only emitted for malformed MainMessage payloads.
 				const raw = workerMsg.content(new Raw());
 				console.warn('[ReactNativeManager] crypto worker error:', raw?.raw());
+				return;
+			}
+			case Message.AuthUrl: {
+				// NIP-46 auth challenge: the app should open the URL so the user
+				// can authorize the request; the real response arrives later
+				// reusing the same request id.
+				const resp = workerMsg.content(new AuthUrl());
+				if (!resp) return;
+				this.dispatch('authUrl', { url: resp.url() ?? '', requestId: resp.requestId() ?? '' });
 				return;
 			}
 		}

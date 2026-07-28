@@ -13,5 +13,6 @@ export enum MessageType {
   Pubkey = 7,
   Raw = 8,
   NostrEvent = 9,
-  SetSignerResponse = 10
+  SetSignerResponse = 10,
+  AuthUrl = 11
 }

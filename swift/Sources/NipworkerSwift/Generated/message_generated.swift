@@ -155,6 +155,19 @@ public enum nostr_fb_NpubLimiterKey: UInt8, FlatbuffersVectorInitializable, Enum
 }
 
 
+public enum nostr_fb_MuteTarget: Int8, FlatbuffersVectorInitializable, Enum, Verifiable {
+  public typealias T = Int8
+  public static var byteSize: Int { return MemoryLayout<Int8>.size }
+  public var value: Int8 { return self.rawValue }
+  case content = 0
+  case tags = 1
+  case both = 2
+
+  public static var max: nostr_fb_MuteTarget { return .both }
+  public static var min: nostr_fb_MuteTarget { return .content }
+}
+
+
 public enum nostr_fb_PipeConfig: UInt8, FlatbuffersVectorInitializable, UnionEnum {
   public typealias T = UInt8
 
@@ -228,8 +241,10 @@ public enum nostr_fb_MessageType: UInt32, FlatbuffersVectorInitializable, Enum, 
   case pubkey = 7
   case raw = 8
   case nostrevent = 9
+  case setsignerresponse = 10
+  case authurl = 11
 
-  public static var max: nostr_fb_MessageType { return .nostrevent }
+  public static var max: nostr_fb_MessageType { return .authurl }
   public static var min: nostr_fb_MessageType { return .parsednostrevent }
 }
 
@@ -331,8 +346,10 @@ public enum nostr_fb_Message: UInt8, FlatbuffersVectorInitializable, UnionEnum {
   case signedevent = 8
   case pubkey = 9
   case raw = 10
+  case setsignerresponse = 11
+  case authurl = 12
 
-  public static var max: nostr_fb_Message { return .raw }
+  public static var max: nostr_fb_Message { return .authurl }
   public static var min: nostr_fb_Message { return .none_ }
 }
 
@@ -354,24 +371,6 @@ public enum nostr_fb_SignerOp: UInt32, FlatbuffersVectorInitializable, Enum, Ver
 
   public static var max: nostr_fb_SignerOp { return .authevent }
   public static var min: nostr_fb_SignerOp { return .getpubkey }
-}
-
-
-public enum nostr_fb_CacheInput: UInt8, FlatbuffersVectorInitializable, UnionEnum {
-  public typealias T = UInt8
-
-  public init?(value: T) {
-    self.init(rawValue: value)
-  }
-
-  public static var byteSize: Int { return MemoryLayout<UInt8>.size }
-  public var value: UInt8 { return self.rawValue }
-  case none_ = 0
-  case workermessage = 1
-  case cacherequest = 2
-
-  public static var max: nostr_fb_CacheInput { return .cacherequest }
-  public static var min: nostr_fb_CacheInput { return .none_ }
 }
 
 
@@ -2521,6 +2520,7 @@ public struct nostr_fb_MuteFilterPipeConfig: FlatBufferTable, FlatbuffersVectorI
     case hashtags = 6
     case words = 8
     case eventIds = 10
+    case target = 12
     var v: Int32 { Int32(self.rawValue) }
     var p: VOffset { self.rawValue }
   }
@@ -2529,24 +2529,28 @@ public struct nostr_fb_MuteFilterPipeConfig: FlatBufferTable, FlatbuffersVectorI
   public var hashtags: FlatbufferVector<String?> { return _accessor.vector(at: VTOFFSET.hashtags.v, byteSize: 4) }
   public var words: FlatbufferVector<String?> { return _accessor.vector(at: VTOFFSET.words.v, byteSize: 4) }
   public var eventIds: FlatbufferVector<String?> { return _accessor.vector(at: VTOFFSET.eventIds.v, byteSize: 4) }
-  public static func startMuteFilterPipeConfig(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 4) }
+  public var target: nostr_fb_MuteTarget { let o = _accessor.offset(VTOFFSET.target.v); return o == 0 ? .both : nostr_fb_MuteTarget(rawValue: _accessor.readBuffer(of: Int8.self, at: o)) ?? .both }
+  public static func startMuteFilterPipeConfig(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 5) }
   public static func addVectorOf(pubkeys: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: pubkeys, at: VTOFFSET.pubkeys.p) }
   public static func addVectorOf(hashtags: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: hashtags, at: VTOFFSET.hashtags.p) }
   public static func addVectorOf(words: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: words, at: VTOFFSET.words.p) }
   public static func addVectorOf(eventIds: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: eventIds, at: VTOFFSET.eventIds.p) }
+  public static func add(target: nostr_fb_MuteTarget, _ fbb: inout FlatBufferBuilder) { fbb.add(element: target.rawValue, def: 2, at: VTOFFSET.target.p) }
   public static func endMuteFilterPipeConfig(_ fbb: inout FlatBufferBuilder, start: UOffset) -> Offset { let end = Offset(offset: fbb.endTable(at: start)); return end }
   public static func createMuteFilterPipeConfig(
     _ fbb: inout FlatBufferBuilder,
     pubkeysVectorOffset pubkeys: Offset = Offset(),
     hashtagsVectorOffset hashtags: Offset = Offset(),
     wordsVectorOffset words: Offset = Offset(),
-    eventIdsVectorOffset eventIds: Offset = Offset()
+    eventIdsVectorOffset eventIds: Offset = Offset(),
+    target: nostr_fb_MuteTarget = .both
   ) -> Offset {
     let __start = nostr_fb_MuteFilterPipeConfig.startMuteFilterPipeConfig(&fbb)
     nostr_fb_MuteFilterPipeConfig.addVectorOf(pubkeys: pubkeys, &fbb)
     nostr_fb_MuteFilterPipeConfig.addVectorOf(hashtags: hashtags, &fbb)
     nostr_fb_MuteFilterPipeConfig.addVectorOf(words: words, &fbb)
     nostr_fb_MuteFilterPipeConfig.addVectorOf(eventIds: eventIds, &fbb)
+    nostr_fb_MuteFilterPipeConfig.add(target: target, &fbb)
     return nostr_fb_MuteFilterPipeConfig.endMuteFilterPipeConfig(&fbb, start: __start)
   }
 
@@ -2556,6 +2560,7 @@ public struct nostr_fb_MuteFilterPipeConfig: FlatBufferTable, FlatbuffersVectorI
     try _v.visit(field: VTOFFSET.hashtags.p, fieldName: "hashtags", required: false, type: ForwardOffset<Vector<ForwardOffset<String>, String>>.self)
     try _v.visit(field: VTOFFSET.words.p, fieldName: "words", required: false, type: ForwardOffset<Vector<ForwardOffset<String>, String>>.self)
     try _v.visit(field: VTOFFSET.eventIds.p, fieldName: "eventIds", required: false, type: ForwardOffset<Vector<ForwardOffset<String>, String>>.self)
+    try _v.visit(field: VTOFFSET.target.p, fieldName: "target", required: false, type: nostr_fb_MuteTarget.self)
     _v.finish()
   }
 }
@@ -2963,26 +2968,32 @@ public struct nostr_fb_SignEvent: FlatBufferTable, FlatbuffersVectorInitializabl
 
   private enum VTOFFSET: VOffset {
     case template = 4
+    case requestId = 6
     var v: Int32 { Int32(self.rawValue) }
     var p: VOffset { self.rawValue }
   }
 
   public var template: nostr_fb_Template! { let o = _accessor.offset(VTOFFSET.template.v); return nostr_fb_Template(_accessor.bb, o: _accessor.indirect(o + _accessor.position)) }
-  public static func startSignEvent(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 1) }
+  public var requestId: UInt32 { let o = _accessor.offset(VTOFFSET.requestId.v); return o == 0 ? 0 : _accessor.readBuffer(of: UInt32.self, at: o) }
+  public static func startSignEvent(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 2) }
   public static func add(template: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: template, at: VTOFFSET.template.p) }
+  public static func add(requestId: UInt32, _ fbb: inout FlatBufferBuilder) { fbb.add(element: requestId, def: 0, at: VTOFFSET.requestId.p) }
   public static func endSignEvent(_ fbb: inout FlatBufferBuilder, start: UOffset) -> Offset { let end = Offset(offset: fbb.endTable(at: start)); fbb.require(table: end, fields: [4]); return end }
   public static func createSignEvent(
     _ fbb: inout FlatBufferBuilder,
-    templateOffset template: Offset
+    templateOffset template: Offset,
+    requestId: UInt32 = 0
   ) -> Offset {
     let __start = nostr_fb_SignEvent.startSignEvent(&fbb)
     nostr_fb_SignEvent.add(template: template, &fbb)
+    nostr_fb_SignEvent.add(requestId: requestId, &fbb)
     return nostr_fb_SignEvent.endSignEvent(&fbb, start: __start)
   }
 
   public static func verify<T>(_ verifier: inout Verifier, at position: Int, of type: T.Type) throws where T: Verifiable {
     var _v = try verifier.visitTable(at: position)
     try _v.visit(field: VTOFFSET.template.p, fieldName: "template", required: true, type: ForwardOffset<nostr_fb_Template>.self)
+    try _v.visit(field: VTOFFSET.requestId.p, fieldName: "requestId", required: false, type: UInt32.self)
     _v.finish()
   }
 }
@@ -6084,27 +6095,34 @@ public struct nostr_fb_Pubkey: FlatBufferTable, FlatbuffersVectorInitializable, 
 
   private enum VTOFFSET: VOffset {
     case pubkey = 4
+    case error = 6
     var v: Int32 { Int32(self.rawValue) }
     var p: VOffset { self.rawValue }
   }
 
   public var pubkey: String! { let o = _accessor.offset(VTOFFSET.pubkey.v); return _accessor.string(at: o) }
   public var pubkeySegmentArray: [UInt8]! { return _accessor.getVector(at: VTOFFSET.pubkey.v) }
-  public static func startPubkey(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 1) }
+  public var error: String? { let o = _accessor.offset(VTOFFSET.error.v); return o == 0 ? nil : _accessor.string(at: o) }
+  public var errorSegmentArray: [UInt8]? { return _accessor.getVector(at: VTOFFSET.error.v) }
+  public static func startPubkey(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 2) }
   public static func add(pubkey: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: pubkey, at: VTOFFSET.pubkey.p) }
+  public static func add(error: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: error, at: VTOFFSET.error.p) }
   public static func endPubkey(_ fbb: inout FlatBufferBuilder, start: UOffset) -> Offset { let end = Offset(offset: fbb.endTable(at: start)); fbb.require(table: end, fields: [4]); return end }
   public static func createPubkey(
     _ fbb: inout FlatBufferBuilder,
-    pubkeyOffset pubkey: Offset
+    pubkeyOffset pubkey: Offset,
+    errorOffset error: Offset = Offset()
   ) -> Offset {
     let __start = nostr_fb_Pubkey.startPubkey(&fbb)
     nostr_fb_Pubkey.add(pubkey: pubkey, &fbb)
+    nostr_fb_Pubkey.add(error: error, &fbb)
     return nostr_fb_Pubkey.endPubkey(&fbb, start: __start)
   }
 
   public static func verify<T>(_ verifier: inout Verifier, at position: Int, of type: T.Type) throws where T: Verifiable {
     var _v = try verifier.visitTable(at: position)
     try _v.visit(field: VTOFFSET.pubkey.p, fieldName: "pubkey", required: true, type: ForwardOffset<String>.self)
+    try _v.visit(field: VTOFFSET.error.p, fieldName: "error", required: false, type: ForwardOffset<String>.self)
     _v.finish()
   }
 }
@@ -6120,26 +6138,89 @@ public struct nostr_fb_SignedEvent: FlatBufferTable, FlatbuffersVectorInitializa
 
   private enum VTOFFSET: VOffset {
     case event = 4
+    case requestId = 6
+    case error = 8
     var v: Int32 { Int32(self.rawValue) }
     var p: VOffset { self.rawValue }
   }
 
-  public var event: nostr_fb_NostrEvent! { let o = _accessor.offset(VTOFFSET.event.v); return nostr_fb_NostrEvent(_accessor.bb, o: _accessor.indirect(o + _accessor.position)) }
-  public static func startSignedEvent(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 1) }
+  public var event: nostr_fb_NostrEvent? { let o = _accessor.offset(VTOFFSET.event.v); return o == 0 ? nil : nostr_fb_NostrEvent(_accessor.bb, o: _accessor.indirect(o + _accessor.position)) }
+  public var requestId: UInt32 { let o = _accessor.offset(VTOFFSET.requestId.v); return o == 0 ? 0 : _accessor.readBuffer(of: UInt32.self, at: o) }
+  public var error: String? { let o = _accessor.offset(VTOFFSET.error.v); return o == 0 ? nil : _accessor.string(at: o) }
+  public var errorSegmentArray: [UInt8]? { return _accessor.getVector(at: VTOFFSET.error.v) }
+  public static func startSignedEvent(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 3) }
   public static func add(event: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: event, at: VTOFFSET.event.p) }
-  public static func endSignedEvent(_ fbb: inout FlatBufferBuilder, start: UOffset) -> Offset { let end = Offset(offset: fbb.endTable(at: start)); fbb.require(table: end, fields: [4]); return end }
+  public static func add(requestId: UInt32, _ fbb: inout FlatBufferBuilder) { fbb.add(element: requestId, def: 0, at: VTOFFSET.requestId.p) }
+  public static func add(error: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: error, at: VTOFFSET.error.p) }
+  public static func endSignedEvent(_ fbb: inout FlatBufferBuilder, start: UOffset) -> Offset { let end = Offset(offset: fbb.endTable(at: start)); return end }
   public static func createSignedEvent(
     _ fbb: inout FlatBufferBuilder,
-    eventOffset event: Offset
+    eventOffset event: Offset = Offset(),
+    requestId: UInt32 = 0,
+    errorOffset error: Offset = Offset()
   ) -> Offset {
     let __start = nostr_fb_SignedEvent.startSignedEvent(&fbb)
     nostr_fb_SignedEvent.add(event: event, &fbb)
+    nostr_fb_SignedEvent.add(requestId: requestId, &fbb)
+    nostr_fb_SignedEvent.add(error: error, &fbb)
     return nostr_fb_SignedEvent.endSignedEvent(&fbb, start: __start)
   }
 
   public static func verify<T>(_ verifier: inout Verifier, at position: Int, of type: T.Type) throws where T: Verifiable {
     var _v = try verifier.visitTable(at: position)
-    try _v.visit(field: VTOFFSET.event.p, fieldName: "event", required: true, type: ForwardOffset<nostr_fb_NostrEvent>.self)
+    try _v.visit(field: VTOFFSET.event.p, fieldName: "event", required: false, type: ForwardOffset<nostr_fb_NostrEvent>.self)
+    try _v.visit(field: VTOFFSET.requestId.p, fieldName: "requestId", required: false, type: UInt32.self)
+    try _v.visit(field: VTOFFSET.error.p, fieldName: "error", required: false, type: ForwardOffset<String>.self)
+    _v.finish()
+  }
+}
+
+public struct nostr_fb_SetSignerResponse: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+
+  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  public var __buffer: ByteBuffer! { return _accessor.bb }
+  private var _accessor: Table
+
+  private init(_ t: Table) { _accessor = t }
+  public init(_ bb: ByteBuffer, o: Int32) { _accessor = Table(bb: bb, position: o) }
+
+  private enum VTOFFSET: VOffset {
+    case pubkey = 4
+    case bunkerUrl = 6
+    case error = 8
+    var v: Int32 { Int32(self.rawValue) }
+    var p: VOffset { self.rawValue }
+  }
+
+  public var pubkey: String? { let o = _accessor.offset(VTOFFSET.pubkey.v); return o == 0 ? nil : _accessor.string(at: o) }
+  public var pubkeySegmentArray: [UInt8]? { return _accessor.getVector(at: VTOFFSET.pubkey.v) }
+  public var bunkerUrl: String? { let o = _accessor.offset(VTOFFSET.bunkerUrl.v); return o == 0 ? nil : _accessor.string(at: o) }
+  public var bunkerUrlSegmentArray: [UInt8]? { return _accessor.getVector(at: VTOFFSET.bunkerUrl.v) }
+  public var error: String? { let o = _accessor.offset(VTOFFSET.error.v); return o == 0 ? nil : _accessor.string(at: o) }
+  public var errorSegmentArray: [UInt8]? { return _accessor.getVector(at: VTOFFSET.error.v) }
+  public static func startSetSignerResponse(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 3) }
+  public static func add(pubkey: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: pubkey, at: VTOFFSET.pubkey.p) }
+  public static func add(bunkerUrl: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: bunkerUrl, at: VTOFFSET.bunkerUrl.p) }
+  public static func add(error: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: error, at: VTOFFSET.error.p) }
+  public static func endSetSignerResponse(_ fbb: inout FlatBufferBuilder, start: UOffset) -> Offset { let end = Offset(offset: fbb.endTable(at: start)); return end }
+  public static func createSetSignerResponse(
+    _ fbb: inout FlatBufferBuilder,
+    pubkeyOffset pubkey: Offset = Offset(),
+    bunkerUrlOffset bunkerUrl: Offset = Offset(),
+    errorOffset error: Offset = Offset()
+  ) -> Offset {
+    let __start = nostr_fb_SetSignerResponse.startSetSignerResponse(&fbb)
+    nostr_fb_SetSignerResponse.add(pubkey: pubkey, &fbb)
+    nostr_fb_SetSignerResponse.add(bunkerUrl: bunkerUrl, &fbb)
+    nostr_fb_SetSignerResponse.add(error: error, &fbb)
+    return nostr_fb_SetSignerResponse.endSetSignerResponse(&fbb, start: __start)
+  }
+
+  public static func verify<T>(_ verifier: inout Verifier, at position: Int, of type: T.Type) throws where T: Verifiable {
+    var _v = try verifier.visitTable(at: position)
+    try _v.visit(field: VTOFFSET.pubkey.p, fieldName: "pubkey", required: false, type: ForwardOffset<String>.self)
+    try _v.visit(field: VTOFFSET.bunkerUrl.p, fieldName: "bunkerUrl", required: false, type: ForwardOffset<String>.self)
+    try _v.visit(field: VTOFFSET.error.p, fieldName: "error", required: false, type: ForwardOffset<String>.self)
     _v.finish()
   }
 }
@@ -6176,6 +6257,49 @@ public struct nostr_fb_Raw: FlatBufferTable, FlatbuffersVectorInitializable, Ver
   public static func verify<T>(_ verifier: inout Verifier, at position: Int, of type: T.Type) throws where T: Verifiable {
     var _v = try verifier.visitTable(at: position)
     try _v.visit(field: VTOFFSET.raw.p, fieldName: "raw", required: true, type: ForwardOffset<String>.self)
+    _v.finish()
+  }
+}
+
+public struct nostr_fb_AuthUrl: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+
+  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  public var __buffer: ByteBuffer! { return _accessor.bb }
+  private var _accessor: Table
+
+  private init(_ t: Table) { _accessor = t }
+  public init(_ bb: ByteBuffer, o: Int32) { _accessor = Table(bb: bb, position: o) }
+
+  private enum VTOFFSET: VOffset {
+    case url = 4
+    case requestId = 6
+    var v: Int32 { Int32(self.rawValue) }
+    var p: VOffset { self.rawValue }
+  }
+
+  public var url: String! { let o = _accessor.offset(VTOFFSET.url.v); return _accessor.string(at: o) }
+  public var urlSegmentArray: [UInt8]! { return _accessor.getVector(at: VTOFFSET.url.v) }
+  public var requestId: String? { let o = _accessor.offset(VTOFFSET.requestId.v); return o == 0 ? nil : _accessor.string(at: o) }
+  public var requestIdSegmentArray: [UInt8]? { return _accessor.getVector(at: VTOFFSET.requestId.v) }
+  public static func startAuthUrl(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 2) }
+  public static func add(url: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: url, at: VTOFFSET.url.p) }
+  public static func add(requestId: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: requestId, at: VTOFFSET.requestId.p) }
+  public static func endAuthUrl(_ fbb: inout FlatBufferBuilder, start: UOffset) -> Offset { let end = Offset(offset: fbb.endTable(at: start)); fbb.require(table: end, fields: [4]); return end }
+  public static func createAuthUrl(
+    _ fbb: inout FlatBufferBuilder,
+    urlOffset url: Offset,
+    requestIdOffset requestId: Offset = Offset()
+  ) -> Offset {
+    let __start = nostr_fb_AuthUrl.startAuthUrl(&fbb)
+    nostr_fb_AuthUrl.add(url: url, &fbb)
+    nostr_fb_AuthUrl.add(requestId: requestId, &fbb)
+    return nostr_fb_AuthUrl.endAuthUrl(&fbb, start: __start)
+  }
+
+  public static func verify<T>(_ verifier: inout Verifier, at position: Int, of type: T.Type) throws where T: Verifiable {
+    var _v = try verifier.visitTable(at: position)
+    try _v.visit(field: VTOFFSET.url.p, fieldName: "url", required: true, type: ForwardOffset<String>.self)
+    try _v.visit(field: VTOFFSET.requestId.p, fieldName: "requestId", required: false, type: ForwardOffset<String>.self)
     _v.finish()
   }
 }
@@ -6259,6 +6383,10 @@ public struct nostr_fb_WorkerMessage: FlatBufferTable, FlatbuffersVectorInitiali
         try ForwardOffset<nostr_fb_Pubkey>.verify(&verifier, at: pos, of: nostr_fb_Pubkey.self)
       case .raw:
         try ForwardOffset<nostr_fb_Raw>.verify(&verifier, at: pos, of: nostr_fb_Raw.self)
+      case .setsignerresponse:
+        try ForwardOffset<nostr_fb_SetSignerResponse>.verify(&verifier, at: pos, of: nostr_fb_SetSignerResponse.self)
+      case .authurl:
+        try ForwardOffset<nostr_fb_AuthUrl>.verify(&verifier, at: pos, of: nostr_fb_AuthUrl.self)
       }
     })
     _v.finish()
@@ -6489,55 +6617,6 @@ public struct nostr_fb_CacheResponse: FlatBufferTable, FlatbuffersVectorInitiali
     var _v = try verifier.visitTable(at: position)
     try _v.visit(field: VTOFFSET.subId.p, fieldName: "subId", required: true, type: ForwardOffset<String>.self)
     try _v.visit(field: VTOFFSET.payload.p, fieldName: "payload", required: false, type: ForwardOffset<Vector<UInt8, UInt8>>.self)
-    _v.finish()
-  }
-}
-
-public struct nostr_fb_CacheInputMessage: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
-
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
-  public var __buffer: ByteBuffer! { return _accessor.bb }
-  private var _accessor: Table
-
-  private init(_ t: Table) { _accessor = t }
-  public init(_ bb: ByteBuffer, o: Int32) { _accessor = Table(bb: bb, position: o) }
-
-  private enum VTOFFSET: VOffset {
-    case contentType = 4
-    case content = 6
-    var v: Int32 { Int32(self.rawValue) }
-    var p: VOffset { self.rawValue }
-  }
-
-  public var contentType: nostr_fb_CacheInput { let o = _accessor.offset(VTOFFSET.contentType.v); return o == 0 ? .none_ : nostr_fb_CacheInput(rawValue: _accessor.readBuffer(of: UInt8.self, at: o)) ?? .none_ }
-  public func content<T: FlatbuffersInitializable>(type: T.Type) -> T! { let o = _accessor.offset(VTOFFSET.content.v); return _accessor.union(o) }
-  public static func startCacheInputMessage(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 2) }
-  public static func add(contentType: nostr_fb_CacheInput, _ fbb: inout FlatBufferBuilder) { fbb.add(element: contentType.rawValue, def: 0, at: VTOFFSET.contentType.p) }
-  public static func add(content: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: content, at: VTOFFSET.content.p) }
-  public static func endCacheInputMessage(_ fbb: inout FlatBufferBuilder, start: UOffset) -> Offset { let end = Offset(offset: fbb.endTable(at: start)); fbb.require(table: end, fields: [6]); return end }
-  public static func createCacheInputMessage(
-    _ fbb: inout FlatBufferBuilder,
-    contentType: nostr_fb_CacheInput = .none_,
-    contentOffset content: Offset
-  ) -> Offset {
-    let __start = nostr_fb_CacheInputMessage.startCacheInputMessage(&fbb)
-    nostr_fb_CacheInputMessage.add(contentType: contentType, &fbb)
-    nostr_fb_CacheInputMessage.add(content: content, &fbb)
-    return nostr_fb_CacheInputMessage.endCacheInputMessage(&fbb, start: __start)
-  }
-
-  public static func verify<T>(_ verifier: inout Verifier, at position: Int, of type: T.Type) throws where T: Verifiable {
-    var _v = try verifier.visitTable(at: position)
-    try _v.visit(unionKey: VTOFFSET.contentType.p, unionField: VTOFFSET.content.p, unionKeyName: "contentType", fieldName: "content", required: true, completion: { (verifier, key: nostr_fb_CacheInput, pos) in
-      switch key {
-      case .none_:
-        break // NOTE - SWIFT doesnt support none
-      case .workermessage:
-        try ForwardOffset<nostr_fb_WorkerMessage>.verify(&verifier, at: pos, of: nostr_fb_WorkerMessage.self)
-      case .cacherequest:
-        try ForwardOffset<nostr_fb_CacheRequest>.verify(&verifier, at: pos, of: nostr_fb_CacheRequest.self)
-      }
-    })
     _v.finish()
   }
 }

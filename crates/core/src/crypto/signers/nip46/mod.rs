@@ -2,7 +2,7 @@ use crate::channel::MessageSender;
 use crate::types::Keys;
 use serde_json::{json, Value};
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use tracing::{debug, error, info};
 
@@ -15,8 +15,11 @@ pub mod transport;
 
 pub use config::Nip46Config;
 use crypto::Crypto;
-use pump::Pump;
+use pump::{OnAuthUrl, Pump};
 use transport::Transport;
+
+/// Timeout for RPC responses while an auth challenge is pending user approval.
+const AUTH_PENDING_TIMEOUT_MS: u32 = 300_000;
 
 /// A complete NIP-46 client refactored into modules.
 pub struct Nip46Signer {
@@ -29,12 +32,16 @@ pub struct Nip46Signer {
     pending: Rc<RefCell<HashMap<String, Result<String, String>>>>,
     user_pubkey: Rc<RefCell<Option<String>>>,
     discovered_remote_pubkey: Rc<RefCell<Option<String>>>,
+    /// Request ids for which an auth_url challenge was received; awaits on
+    /// these get an extended deadline while the user approves out of band.
+    auth_pending: Rc<RefCell<HashSet<String>>>,
 
     // Sub-modules
     crypto: RefCell<Crypto>,
     transport: Transport,
     from_connections_rx: Rc<RefCell<Option<mpsc::Receiver<Vec<u8>>>>>,
     on_discovery: Rc<RefCell<Option<Rc<dyn Fn(String)>>>>,
+    on_auth_url: OnAuthUrl,
 }
 
 impl Nip46Signer {
@@ -77,6 +84,8 @@ impl Nip46Signer {
             transport,
             from_connections_rx: Rc::new(RefCell::new(Some(from_connections_rx))),
             on_discovery: Rc::new(RefCell::new(None)),
+            auth_pending: Rc::new(RefCell::new(HashSet::new())),
+            on_auth_url: Rc::new(RefCell::new(None)),
         }
     }
 
@@ -99,11 +108,16 @@ impl Nip46Signer {
         Ok(hex::encode(secret.0))
     }
 
-    pub fn start<F>(&self, spawner: F, on_discovery: Option<Rc<dyn Fn(String)>>)
-    where
+    pub fn start<F>(
+        &self,
+        spawner: F,
+        on_discovery: Option<Rc<dyn Fn(String)>>,
+        on_auth_url: Option<Rc<dyn Fn(String, String)>>,
+    ) where
         F: Fn(std::pin::Pin<Box<dyn std::future::Future<Output = ()>>>) + 'static,
     {
         *self.on_discovery.borrow_mut() = on_discovery;
+        *self.on_auth_url.borrow_mut() = on_auth_url;
         self.transport
             .open_req_subscription(&self.sub_id, Self::unix_time());
         self.spawn_pump_once(spawner);
@@ -319,6 +333,7 @@ impl Nip46Signer {
 
         loop {
             if let Some(done) = self.pending.borrow_mut().remove(id) {
+                self.auth_pending.borrow_mut().remove(id);
                 match done {
                     Ok(s) => return Ok(s),
                     Err(e) => return Err(format!("nip46 error: {}", e)),
@@ -326,7 +341,19 @@ impl Nip46Signer {
             }
 
             let elapsed = Self::unix_time_ms() - start;
-            if elapsed > timeout_ms as f64 {
+            // An auth_url challenge means the user is approving out of band:
+            // extend the deadline while we wait for the real response.
+            let auth_pending = self.auth_pending.borrow().contains(id);
+            let effective_timeout = if auth_pending {
+                AUTH_PENDING_TIMEOUT_MS
+            } else {
+                timeout_ms
+            };
+            if elapsed > effective_timeout as f64 {
+                if auth_pending {
+                    self.auth_pending.borrow_mut().remove(id);
+                    return Err("nip46 auth_url approval timed out".to_string());
+                }
                 return Err("nip46 timeout waiting for response".to_string());
             }
 
@@ -360,6 +387,8 @@ impl Nip46Signer {
                 self.client_keys.clone(),
                 self.cfg.use_nip44,
                 self.on_discovery.clone(),
+                self.auth_pending.clone(),
+                self.on_auth_url.clone(),
             );
         } else {
             error!("[nip46] Pump receiver already taken");
@@ -373,7 +402,10 @@ impl Nip46Signer {
     }
 
     fn unix_time() -> u32 {
-        crate::platform::now_millis() as u32 / 1000
+        // Divide before narrowing: `now_millis() as u32 / 1000` truncates the
+        // 64-bit epoch millis to 32 bits first, producing 1970-era timestamps
+        // that strict relays (e.g. strfry) reject as "ephemeral event expired".
+        (crate::platform::now_millis() / 1000) as u32
     }
 
     fn unix_time_ms() -> f64 {

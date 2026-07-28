@@ -8,6 +8,7 @@ export { ArticleBlockType } from './fb/article-block-type.js';
 export { ArticleEntity, ArticleEntityT } from './fb/article-entity.js';
 export { ArticleInline, ArticleInlineT } from './fb/article-inline.js';
 export { ArticleInlineType } from './fb/article-inline-type.js';
+export { AuthUrl, AuthUrlT } from './fb/auth-url.js';
 export { BadgeAwardRecipient, BadgeAwardRecipientT } from './fb/badge-award-recipient.js';
 export { BufferFull, BufferFullT } from './fb/buffer-full.js';
 export { CacheRequest, CacheRequestT } from './fb/cache-request.js';

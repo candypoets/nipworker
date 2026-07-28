@@ -4,6 +4,7 @@
 
 import * as flatbuffers from 'flatbuffers';
 
+import { AuthUrl, AuthUrlT } from '../../nostr/fb/auth-url.js';
 import { BufferFull, BufferFullT } from '../../nostr/fb/buffer-full.js';
 import { ConnectionStatus, ConnectionStatusT } from '../../nostr/fb/connection-status.js';
 import { CountResponse, CountResponseT } from '../../nostr/fb/count-response.js';
@@ -147,7 +148,7 @@ constructor(
   public url: string|Uint8Array|null = null,
   public type: MessageType = MessageType.ParsedNostrEvent,
   public contentType: Message = Message.NONE,
-  public content: BufferFullT|ConnectionStatusT|CountResponseT|EoceT|NostrEventT|ParsedEventT|PubkeyT|RawT|SetSignerResponseT|SignedEventT|ValidProofsT|null = null
+  public content: AuthUrlT|BufferFullT|ConnectionStatusT|CountResponseT|EoceT|NostrEventT|ParsedEventT|PubkeyT|RawT|SetSignerResponseT|SignedEventT|ValidProofsT|null = null
 ){}
 
 

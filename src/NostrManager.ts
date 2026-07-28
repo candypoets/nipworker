@@ -9,6 +9,7 @@ import type { InitCacheMsg } from './cache/index';
 import type { InitConnectionsMsg } from './connections/types';
 import type { InitCryptoMsg } from './crypto/index';
 import {
+	AuthUrl,
 	BufferFullT,
 	ConnectionStatus,
 	GetPublicKeyT,
@@ -552,7 +553,8 @@ export class NostrManager extends BaseBackend {
 				if (this.isPubkeyResult(pubkey)) {
 					this.handleSignerPubkey(pubkey, secretKey, resp.bunkerUrl());
 				} else if (resp.error()) {
-					this.dispatch('auth', { pubkey: null, hasSigner: false });
+					// Surface the failure instead of failing silently.
+					this.dispatch('auth', { pubkey: null, hasSigner: false, error: resp.error() });
 				}
 				// Otherwise pubkey carries a NIP-46 QR status string
 				// ('awaiting discovery') - a second SetSignerResponse with the real
@@ -591,6 +593,15 @@ export class NostrManager extends BaseBackend {
 				// Only emitted for malformed MainMessage payloads.
 				const raw = wm.content(new Raw());
 				console.warn('[main] crypto worker error:', raw?.raw());
+				return;
+			}
+			case Message.AuthUrl: {
+				// NIP-46 auth challenge: the app should open the URL so the user
+				// can authorize the request; the real response arrives later
+				// reusing the same request id.
+				const resp = wm.content(new AuthUrl());
+				if (!resp) return;
+				this.dispatch('authUrl', { url: resp.url() ?? '', requestId: resp.requestId() ?? '' });
 				return;
 			}
 		}

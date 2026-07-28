@@ -548,7 +548,31 @@ impl CryptoWorker {
                                                         client_keys,
                                                     ));
 
-                                                    nip46.start(spawn_worker, None);
+                                                    let to_main_auth = to_main_engine.clone();
+                                                    let on_auth_url = std::rc::Rc::new(
+                                                        move |url: String, request_id: String| {
+                                                            info!(
+                                                                "[CryptoWorker] NIP-46 auth challenge: {}",
+                                                                url
+                                                            );
+                                                            let resp = serialize_auth_url(
+                                                                &url,
+                                                                &request_id,
+                                                            );
+                                                            if let Err(e) = to_main_auth.send(&resp)
+                                                            {
+                                                                warn!(
+                                                                    "[CryptoWorker] failed to send NIP-46 auth_url to main: {}",
+                                                                    e
+                                                                );
+                                                            }
+                                                        },
+                                                    );
+                                                    nip46.start(
+                                                        spawn_worker,
+                                                        None,
+                                                        Some(on_auth_url),
+                                                    );
                                                     *active_engine.borrow_mut() =
                                                         ActiveSigner::Nip46(nip46.clone());
 
@@ -641,7 +665,31 @@ impl CryptoWorker {
                                                         },
                                                     );
 
-                                                    nip46.start(spawn_worker, Some(on_discovery));
+                                                    let to_main_auth = to_main_engine.clone();
+                                                    let on_auth_url = std::rc::Rc::new(
+                                                        move |url: String, request_id: String| {
+                                                            info!(
+                                                                "[CryptoWorker] NIP-46 auth challenge: {}",
+                                                                url
+                                                            );
+                                                            let resp = serialize_auth_url(
+                                                                &url,
+                                                                &request_id,
+                                                            );
+                                                            if let Err(e) = to_main_auth.send(&resp)
+                                                            {
+                                                                warn!(
+                                                                    "[CryptoWorker] failed to send NIP-46 auth_url to main: {}",
+                                                                    e
+                                                                );
+                                                            }
+                                                        },
+                                                    );
+                                                    nip46.start(
+                                                        spawn_worker,
+                                                        Some(on_discovery),
+                                                        Some(on_auth_url),
+                                                    );
                                                     *active_engine.borrow_mut() =
                                                         ActiveSigner::Nip46(nip46.clone());
 
@@ -940,6 +988,37 @@ fn serialize_set_signer_response(result: Result<String, String>, bunker_url: Opt
             type_: fb::MessageType::SetSignerResponse,
             content_type: fb::Message::SetSignerResponse,
             content: Some(resp.as_union_value()),
+        },
+    );
+    builder.finish(msg, None);
+    builder.finished_data().to_vec()
+}
+
+/// NIP-46 auth challenge forwarded to main: the app should open `url` so the
+/// user can authorize the request; the real response reuses `request_id`.
+fn serialize_auth_url(url: &str, request_id: &str) -> Vec<u8> {
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let url_off = builder.create_string(url);
+    let rid_off = if request_id.is_empty() {
+        None
+    } else {
+        Some(builder.create_string(request_id))
+    };
+    let auth = fb::AuthUrl::create(
+        &mut builder,
+        &fb::AuthUrlArgs {
+            url: Some(url_off),
+            request_id: rid_off,
+        },
+    );
+    let msg = fb::WorkerMessage::create(
+        &mut builder,
+        &fb::WorkerMessageArgs {
+            sub_id: None,
+            url: None,
+            type_: fb::MessageType::AuthUrl,
+            content_type: fb::Message::AuthUrl,
+            content: Some(auth.as_union_value()),
         },
     );
     builder.finish(msg, None);

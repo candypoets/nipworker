@@ -43,6 +43,7 @@ enum MessageType : uint32 {
   Raw = 8,
   NostrEvent = 9,
   SetSignerResponse = 10,
+  AuthUrl = 11,
 }
 
 enum ParsedDataUnion : uint32 {
@@ -171,6 +172,14 @@ table Raw {
     raw: string (required);
 }
 
+// NIP-46 auth challenge (NIP-46 §Auth Challenges): the remote signer asks the
+// user to authorize a request by opening `url`. The real response to the
+// challenged request arrives later reusing the same `request_id`.
+table AuthUrl {
+  url: string (required);
+  request_id: string;
+}
+
 // Root union type
 union Message {
   ParsedEvent,
@@ -183,7 +192,8 @@ union Message {
   SignedEvent,
   Pubkey,
   Raw,
-  SetSignerResponse
+  SetSignerResponse,
+  AuthUrl
 }
 
 table WorkerMessage {
