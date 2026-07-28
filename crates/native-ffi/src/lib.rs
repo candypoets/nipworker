@@ -417,8 +417,62 @@ pub extern "C" fn nipworker_init_with_options(
     }
     #[cfg(target_os = "android")]
     {
+        // Debug/logging improvement: make ALL Rust-side logging visible in
+        // logcat on Android. native-ffi logs via the `log` facade (handled by
+        // android_logger, raised from Error to Debug so transport/TLS
+        // info/warn messages show up); nipworker-core logs via `tracing`, so a
+        // fmt subscriber forwards those events to logcat as well.
+        //
+        // IMPORTANT: the fmt writer must NOT go through the `log` facade.
+        // fmt's try_init() internally installs a tracing_log::LogTracer as the
+        // global `log` logger (default tracing-log feature), so a writer that
+        // calls log::info! would recurse fmt -> log -> LogTracer -> fmt and
+        // overflow the stack. Write straight to liblog instead. If
+        // android_logger loses the logger-slot race to that LogTracer, `log`
+        // records are routed into the same fmt subscriber and still end up in
+        // logcat through this writer — either way there is no cycle.
+        const NIPWORKER_TAG: &[u8] = b"nipworker\0";
+        struct LogcatWriter;
+        impl std::io::Write for LogcatWriter {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                let msg = String::from_utf8_lossy(buf);
+                let msg = msg.trim_end().replace('\0', "?");
+                match std::ffi::CString::new(msg) {
+                    Ok(c) => unsafe {
+                        android_log_sys::__android_log_write(
+                            android_log_sys::LogPriority::INFO as std::ffi::c_int,
+                            NIPWORKER_TAG.as_ptr().cast(),
+                            c.as_ptr(),
+                        );
+                    },
+                    Err(_) => unsafe {
+                        android_log_sys::__android_log_write(
+                            android_log_sys::LogPriority::INFO as std::ffi::c_int,
+                            NIPWORKER_TAG.as_ptr().cast(),
+                            b"<log message not representable>\0".as_ptr().cast(),
+                        );
+                    },
+                }
+                Ok(buf.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        struct LogcatMakeWriter;
+        impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for LogcatMakeWriter {
+            type Writer = LogcatWriter;
+            fn make_writer(&'a self) -> Self::Writer {
+                LogcatWriter
+            }
+        }
+        let _ = tracing_subscriber::fmt()
+            .with_writer(LogcatMakeWriter)
+            .with_max_level(tracing::Level::DEBUG)
+            .with_ansi(false)
+            .try_init();
         android_logger::init_once(
-            android_logger::Config::default().with_max_level(log::LevelFilter::Error),
+            android_logger::Config::default().with_max_level(log::LevelFilter::Debug),
         );
     }
     #[cfg(all(not(target_vendor = "apple"), not(target_os = "android")))]
