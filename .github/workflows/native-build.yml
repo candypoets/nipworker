@@ -214,6 +214,9 @@ jobs:
           find crates/native-ffi/ios/NipworkerNativeFFI.xcframework -name nipworker.h -print -quit | grep -q .
           find crates/native-ffi/ios/NipworkerNativeFFI.xcframework -name module.modulemap -print -quit | grep -q .
 
+      - name: Validate Swift package
+        run: npm run check:swift
+
       - name: Upload iOS XCFramework
         uses: actions/upload-artifact@v7
         with:
