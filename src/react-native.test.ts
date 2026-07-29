@@ -6,11 +6,13 @@ import { setManager } from './manager';
 import { useSignEvent, useSubscription } from './hooks';
 import {
 	Eoce,
+	MainMessage,
 	Message,
 	MessageType,
 	NostrEventT,
 	SignedEventT,
 	StringVecT,
+	Subscribe,
 	WorkerMessage,
 	WorkerMessageT
 } from './generated/nostr/fb';
@@ -333,6 +335,26 @@ describe('react-native byte runtime subscription path', () => {
 
 		manager.unsubscribe('shared-sub');
 		manager.unsubscribe('shared-sub');
+		manager.deinit();
+	});
+
+	it('keeps request and subscription cacheFirst defaults distinct', () => {
+		const manager = createNostrManager();
+		const byteRuntime = (globalThis as any).__nipworkerReactNativeByteRuntime;
+
+		manager.subscribe('cache-first-defaults', [{ kinds: [1] }, { kinds: [1], cacheFirst: true }], {
+			closeOnEose: false
+		});
+
+		const serialized = byteRuntime.subscribe.mock.calls[0][0] as ArrayBuffer;
+		const main = MainMessage.getRootAsMainMessage(
+			new flatbuffers.ByteBuffer(new Uint8Array(serialized))
+		);
+		const subscribe = main.content(new Subscribe());
+
+		expect(subscribe?.requests(0)?.cacheFirst()).toBe(false);
+		expect(subscribe?.requests(1)?.cacheFirst()).toBe(true);
+		expect(subscribe?.config()?.cacheFirst()).toBe(true);
 		manager.deinit();
 	});
 

@@ -82,4 +82,5 @@ dependencies {
 	implementation 'com.facebook.react:react-android'
 	implementation "com.candypoets:nipworker-native-ffi-android:${nipworkerVersion}"
 	api 'com.google.flatbuffers:flatbuffers-java:25.2.10'
+	testImplementation 'junit:junit:4.13.2'
 }

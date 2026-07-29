@@ -29,7 +29,10 @@ let package = Package(
         ),
         .testTarget(
             name: "NipworkerSwiftTests",
-            dependencies: ["NipworkerSwift"],
+            dependencies: [
+                "NipworkerSwift",
+                .product(name: "FlatBuffers", package: "flatbuffers")
+            ],
             path: "Tests/NipworkerSwiftTests"
         ),
     ]

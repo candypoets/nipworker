@@ -32,6 +32,7 @@ export type RequestObject = {
 	search?: string;
 	relays: string[];
 	closeOnEOSE?: boolean;
+	/** Per-request cache preference. Defaults to false when omitted. */
 	cacheFirst?: boolean;
 	noOptimize?: boolean;
 	count?: boolean;
@@ -56,6 +57,7 @@ export type EventTemplate = {
 export type SubscriptionConfig = {
 	pipeline?: PipeT[];
 	closeOnEose?: boolean;
+	/** Subscription-level cache preference. Defaults to true when omitted. */
 	cacheFirst?: boolean;
 	timeoutMs?: number;
 	maxEvents?: number;

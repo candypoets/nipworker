@@ -11,6 +11,7 @@ public struct RequestObject {
     public var search: String?
     public var relays: [String]
     public var closeOnEOSE: Bool?
+    /// Per-request cache preference. Defaults to `false` when omitted.
     public var cacheFirst: Bool?
     public var noCache: Bool?
     public var maxRelays: UInt16?
@@ -67,6 +68,7 @@ public struct PipeConfig {
 public struct SubscriptionConfig {
     public var pipeline: [PipeConfig]?
     public var closeOnEose: Bool
+    /// Subscription-level cache preference. Defaults to `true`.
     public var cacheFirst: Bool
     public var timeoutMs: UInt64?
     public var maxEvents: UInt32?

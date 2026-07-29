@@ -34,7 +34,8 @@ data class NipworkerRequest(
 	val search: String? = null,
 	val relays: List<String> = emptyList(),
 	val closeOnEose: Boolean = false,
-	val cacheFirst: Boolean = true,
+	/** Per-request cache preference. Defaults to false when omitted. */
+	val cacheFirst: Boolean = false,
 	val noCache: Boolean = false,
 	val maxRelays: Int = 0,
 	val meshOnly: Boolean = false,
@@ -42,6 +43,7 @@ data class NipworkerRequest(
 
 data class NipworkerSubscriptionOptions(
 	val closeOnEose: Boolean = false,
+	/** Subscription-level cache preference. Defaults to true. */
 	val cacheFirst: Boolean = true,
 	val timeoutMs: Long = 0,
 	val maxEvents: Long = 0,
@@ -169,7 +171,7 @@ private fun ByteBuffer.readWorkerMessages(fromPosition: Int): List<NipworkerWork
 	return messages
 }
 
-private fun buildSubscribeMessage(
+internal fun buildSubscribeMessage(
 	subId: String,
 	requests: List<NipworkerRequest>,
 	options: NipworkerSubscriptionOptions,

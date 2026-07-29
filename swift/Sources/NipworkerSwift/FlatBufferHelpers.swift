@@ -39,7 +39,7 @@ func buildSubscribeMessage(
             searchOffset: searchOffset,
             relaysVectorOffset: relaysOffset,
             closeOnEose: req.closeOnEOSE ?? false,
-            cacheFirst: req.cacheFirst ?? true,
+            cacheFirst: req.cacheFirst ?? false,
             noCache: req.noCache ?? false,
             maxRelays: req.maxRelays ?? 0,
             cacheOnly: options.cacheOnly,
