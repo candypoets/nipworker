@@ -214,13 +214,14 @@ impl Parser {
                 let (parsed, requests) = self.parse_pre_generic(&event)?;
                 (Some(ParsedData::PreGeneric(parsed)), requests)
             }
-            // NIP-09 deletion requests carry no kind-specific payload, but
-            // must flow through as ParsedEvents so the cache can resolve
-            // their tombstones (and subscribers can react to them).
-            5 => (None, None),
-            _ => {
-                return Err(ParserError::InvalidKind(kind as u32));
-            }
+            // Kinds without a dedicated parser carry no kind-specific payload,
+            // but must still flow through as ParsedEvents with the generic
+            // accessors (kind, tags, created_at) intact: NIP-09 deletion
+            // requests (kind 5) so the cache can resolve tombstones, badge
+            // status updates (kind 27237), and any future custom kind an app
+            // subscribes to. Dropping them here would silently swallow live
+            // events for every subscription that asked for them.
+            _ => (None, None),
         };
 
         Ok(ParsedEvent {
@@ -305,6 +306,29 @@ mod tests {
         let tags = fb_event.tags();
         assert_eq!(tags.len(), 2);
         assert_eq!(tags.get(1).items().unwrap().get(0), "a");
+    }
+
+    #[tokio::test]
+    async fn parses_unknown_kind_as_generic_event() {
+        let parser = Parser::new(None);
+        let event = Event {
+            id: EventId([1; 32]),
+            pubkey: PublicKey([2; 32]),
+            created_at: 1_700_000_000,
+            kind: 27237,
+            tags: vec![vec!["d".to_string(), "badge-status".to_string()]],
+            content: "active".to_string(),
+            sig: hex::encode([4; 64]),
+        };
+
+        let parsed = parser
+            .parse(event)
+            .await
+            .expect("unknown kinds must remain available to subscribers");
+        assert!(parsed.parsed.is_none());
+        assert_eq!(parsed.event.kind, 27237);
+        assert_eq!(parsed.event.tags[0][1], "badge-status");
+        assert_eq!(parsed.event.content, "active");
     }
 
     #[tokio::test]
