@@ -225,7 +225,12 @@ impl Parser {
             }
         };
 
-        let new_template = Template::new(kind, content, tags);
+        // Preserve the caller's created_at: publishers pace addressable events
+        // (e.g. badge status updates) with strictly monotonic timestamps, and
+        // re-stamping here would collapse them to same-second ties that relays
+        // resolve by event-id coin flip.
+        let mut new_template = Template::new(kind, content, tags);
+        new_template.created_at = template.created_at;
         self.sign_template(&new_template).await
     }
 }
