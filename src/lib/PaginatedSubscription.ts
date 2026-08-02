@@ -26,7 +26,10 @@ export type SubscriptionFactory = (
 
 export type PaginatedSubscriptionConfig = {
 	subId: string;
+	/** Requests used by the long-running root subscription. */
 	requests: readonly RequestObject[];
+	/** Optional historical requests when root-only bounds or cache options should not be paged. */
+	pageRequests?: readonly RequestObject[];
 	onMessage: PaginatedMessageHandler;
 	windowSeconds: number;
 	anchor?: number;
@@ -89,7 +92,7 @@ export function createPaginatedSubscriptionController(
 	const eoseDrainMs = nonNegativeInteger(config.eoseDrainMs ?? 500, 'eoseDrainMs');
 	const pager = createTimeWindowPager({
 		subId: config.subId,
-		requests: config.requests,
+		requests: config.pageRequests ?? config.requests,
 		windowSeconds: config.windowSeconds,
 		...(config.anchor === undefined ? {} : { anchor: config.anchor }),
 		...(config.maxEmptyPages === undefined ? {} : { maxEmptyPages: config.maxEmptyPages }),

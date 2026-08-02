@@ -82,6 +82,32 @@ describe('PaginatedSubscription', () => {
 		expect(states).toEqual([false, false, true]);
 	});
 
+	it('allows historical pages to omit root-only request bounds', () => {
+		const { subscriptions, subscribe, emit } = setup();
+		const controller = createPaginatedSubscriptionController(
+			{
+				subId: 'bounded-root',
+				requests: [{ ...requests[0], since: 900, noCache: true }],
+				pageRequests: requests,
+				anchor: 1_000,
+				windowSeconds: 100,
+				onMessage: (message) => (message as unknown as FakeMessage).acceptedAt
+			},
+			subscribe
+		);
+
+		controller.start();
+		emit('bounded-root', { acceptedAt: 950 });
+		controller.loadMore();
+
+		expect(subscriptions.get('bounded-root')?.requests).toEqual([
+			{ ...requests[0], since: 900, noCache: true }
+		]);
+		expect(subscriptions.get('bounded-root:page:0:850:949')?.requests).toEqual([
+			{ ...requests[0], since: 850, until: 949 }
+		]);
+	});
+
 	it('continues a dense window from the oldest accepted page event', () => {
 		const { subscriptions, subscribe, emit } = setup();
 		const controller = createPaginatedSubscriptionController(
