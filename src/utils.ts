@@ -5,6 +5,7 @@ export { ConnectionTracker } from './lib/ConnectionTracker';
 
 export * from './lib/NarrowTypes';
 export * from './lib/ParseContent';
+export * from './lib/TimeWindowPager';
 
 /**
  * Extracts keys from T where the value is a `function(i: number): any`
