@@ -42,7 +42,79 @@ describe('TimeWindowPager', () => {
 			window: { index: 0, since: 900, until: 999 },
 			options: { pagination: 'profile:alice' }
 		});
-		expect(pager.next()?.window).toEqual({ index: 1, since: 800, until: 899 });
+		expect(pager.next()?.window).toEqual({ index: 0, since: 900, until: 999 });
+		expect(pager.complete(950)).toEqual({
+			hasMore: true,
+			shouldRetry: false,
+			consecutiveEmptyPages: 0
+		});
+		expect(pager.next()?.window).toEqual({ index: 1, since: 900, until: 949 });
+	});
+
+	it('continues dense windows from the oldest received event', () => {
+		const pager = createTimeWindowPager({
+			subId: 'dense',
+			requests,
+			anchor: 1_000,
+			windowSeconds: 100
+		});
+
+		expect(pager.next()?.window).toEqual({ index: 0, since: 900, until: 999 });
+		pager.complete(975);
+		expect(pager.next()?.window).toEqual({ index: 1, since: 900, until: 974 });
+		pager.complete(925);
+		expect(pager.next()?.window).toEqual({ index: 2, since: 900, until: 924 });
+		pager.complete(900);
+		expect(pager.next()?.window).toEqual({ index: 3, since: 800, until: 899 });
+	});
+
+	it('grows older windows for up to the configured empty attempts', () => {
+		const pager = createTimeWindowPager({
+			subId: 'sparse',
+			requests,
+			anchor: 1_000,
+			windowSeconds: 100,
+			maxEmptyPages: 3,
+			emptyWindowGrowthFactor: 2
+		});
+
+		expect(pager.next()?.window).toEqual({ index: 0, since: 900, until: 999 });
+		expect(pager.complete()).toEqual({
+			hasMore: true,
+			shouldRetry: true,
+			consecutiveEmptyPages: 1
+		});
+		expect(pager.next()?.window).toEqual({ index: 1, since: 700, until: 899 });
+		expect(pager.complete()).toEqual({
+			hasMore: true,
+			shouldRetry: true,
+			consecutiveEmptyPages: 2
+		});
+		expect(pager.next()?.window).toEqual({ index: 2, since: 300, until: 699 });
+		expect(pager.complete()).toEqual({
+			hasMore: false,
+			shouldRetry: false,
+			consecutiveEmptyPages: 3
+		});
+		expect(pager.next()).toBeNull();
+	});
+
+	it('resets empty growth after receiving an event', () => {
+		const pager = createTimeWindowPager({
+			subId: 'sparse-then-dense',
+			requests,
+			anchor: 1_000,
+			windowSeconds: 100,
+			maxEmptyPages: 3
+		});
+
+		pager.next();
+		pager.complete();
+		expect(pager.next()?.window).toEqual({ index: 1, since: 700, until: 899 });
+		expect(pager.complete(850).consecutiveEmptyPages).toBe(0);
+		expect(pager.next()?.window).toEqual({ index: 2, since: 700, until: 849 });
+		expect(pager.complete().consecutiveEmptyPages).toBe(1);
+		expect(pager.next()?.window).toEqual({ index: 3, since: 500, until: 699 });
 	});
 
 	it('resets the page index and optionally moves the anchor', () => {
@@ -68,6 +140,17 @@ describe('TimeWindowPager', () => {
 		);
 		expect(() => timeWindowForPage(1_000, 100, -1)).toThrow(
 			'page index must be a non-negative integer'
+		);
+		const pager = createTimeWindowPager({
+			subId: 'profile',
+			requests,
+			anchor: 1_000,
+			windowSeconds: 100
+		});
+		expect(() => pager.complete()).toThrow('no active page to complete');
+		pager.next();
+		expect(() => pager.complete(899)).toThrow(
+			'oldestReceivedAt must be inside the completed page window'
 		);
 	});
 });

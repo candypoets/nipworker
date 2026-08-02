@@ -18,6 +18,12 @@ export type TimeWindowLiveSubscription = {
 	requests: RequestObject[];
 };
 
+export type TimeWindowPageCompletion = {
+	hasMore: boolean;
+	shouldRetry: boolean;
+	consecutiveEmptyPages: number;
+};
+
 export type TimeWindowPager = {
 	readonly rootSubId: string;
 	readonly anchor: number;
@@ -25,6 +31,7 @@ export type TimeWindowPager = {
 	live(): TimeWindowLiveSubscription;
 	page(index: number): TimeWindowPage | null;
 	next(): TimeWindowPage | null;
+	complete(oldestReceivedAt?: number): TimeWindowPageCompletion;
 	reset(anchor?: number): void;
 };
 
@@ -34,6 +41,10 @@ export type TimeWindowPagerConfig = {
 	/** First second owned by the live subscription. Defaults to the current Unix time. */
 	anchor?: number;
 	windowSeconds: number;
+	/** Consecutive empty page attempts before history is considered exhausted. Defaults to 1. */
+	maxEmptyPages?: number;
+	/** Multiplier applied to the next older window after each empty page. Defaults to 2. */
+	emptyWindowGrowthFactor?: number;
 };
 
 function unixSecond(value: number, name: string): number {
@@ -43,9 +54,9 @@ function unixSecond(value: number, name: string): number {
 	return value;
 }
 
-function positiveSeconds(value: number): number {
+function positiveInteger(value: number, name: string): number {
 	if (!Number.isSafeInteger(value) || value <= 0) {
-		throw new RangeError('windowSeconds must be a positive integer');
+		throw new RangeError(`${name} must be a positive integer`);
 	}
 	return value;
 }
@@ -64,7 +75,7 @@ export function timeWindowForPage(
 	index: number
 ): TimeWindow | null {
 	const safeAnchor = unixSecond(anchor, 'anchor');
-	const safeWindowSeconds = positiveSeconds(windowSeconds);
+	const safeWindowSeconds = positiveInteger(windowSeconds, 'windowSeconds');
 	const safeIndex = pageIndex(index);
 	const until = safeAnchor - safeWindowSeconds * safeIndex - 1;
 	if (until < 0) return null;
@@ -98,15 +109,57 @@ export function applyTimeWindow(
 }
 
 /**
- * Create a backward pager whose history boundaries never depend on returned events.
+ * Create a bounded backward pager. A completed page continues from its oldest event
+ * until the current window is exhausted. Empty pages move to progressively larger
+ * older windows, up to maxEmptyPages consecutive attempts.
+ *
  * The root subscription must remain alive while pages share its deduplication state.
  */
 export function createTimeWindowPager(config: TimeWindowPagerConfig): TimeWindowPager {
 	if (!config.subId) throw new TypeError('subId is required');
 
 	let anchor = unixSecond(config.anchor ?? Math.floor(Date.now() / 1000), 'anchor');
-	const windowSeconds = positiveSeconds(config.windowSeconds);
-	let nextIndex = 0;
+	const windowSeconds = positiveInteger(config.windowSeconds, 'windowSeconds');
+	const maxEmptyPages = positiveInteger(config.maxEmptyPages ?? 1, 'maxEmptyPages');
+	const emptyWindowGrowthFactor = positiveInteger(
+		config.emptyWindowGrowthFactor ?? 2,
+		'emptyWindowGrowthFactor'
+	);
+	let nextIndex: number;
+	let nextSince: number;
+	let nextUntil: number;
+	let activePage: TimeWindowPage | null;
+	let consecutiveEmptyPages: number;
+	let exhausted: boolean;
+
+	function resetState() {
+		nextIndex = 0;
+		nextUntil = anchor - 1;
+		nextSince = Math.max(0, nextUntil - windowSeconds + 1);
+		activePage = null;
+		consecutiveEmptyPages = 0;
+		exhausted = nextUntil < 0;
+	}
+
+	function moveBefore(since: number, duration: number) {
+		nextUntil = since - 1;
+		if (nextUntil < 0) {
+			exhausted = true;
+			return;
+		}
+		nextSince = Math.max(0, nextUntil - duration + 1);
+	}
+
+	function grownWindowDuration(): number {
+		let duration = windowSeconds;
+		const availableHistory = nextUntil + 1;
+		for (let index = 0; index < consecutiveEmptyPages; index += 1) {
+			duration = Math.min(availableHistory, duration * emptyWindowGrowthFactor);
+		}
+		return duration;
+	}
+
+	resetState();
 
 	return {
 		get rootSubId() {
@@ -143,13 +196,63 @@ export function createTimeWindowPager(config: TimeWindowPagerConfig): TimeWindow
 			};
 		},
 		next() {
-			const page = this.page(nextIndex);
-			if (page) nextIndex += 1;
-			return page;
+			if (exhausted) return null;
+			if (activePage) return activePage;
+
+			const window = { index: nextIndex, since: nextSince, until: nextUntil };
+			const requests = applyTimeWindow(config.requests, window);
+			if (requests.length === 0) {
+				exhausted = true;
+				return null;
+			}
+
+			activePage = {
+				subId: `${config.subId}:page:${window.index}:${window.since}:${window.until}`,
+				requests,
+				window,
+				options: { pagination: config.subId }
+			};
+			nextIndex += 1;
+			return activePage;
+		},
+		complete(oldestReceivedAt) {
+			if (!activePage) throw new Error('no active page to complete');
+
+			const completedWindow = activePage.window;
+			activePage = null;
+
+			if (oldestReceivedAt !== undefined) {
+				const oldest = unixSecond(oldestReceivedAt, 'oldestReceivedAt');
+				if (oldest < completedWindow.since || oldest > completedWindow.until) {
+					throw new RangeError('oldestReceivedAt must be inside the completed page window');
+				}
+
+				consecutiveEmptyPages = 0;
+				if (oldest > completedWindow.since) {
+					nextSince = completedWindow.since;
+					nextUntil = oldest - 1;
+				} else {
+					moveBefore(completedWindow.since, windowSeconds);
+				}
+			} else {
+				consecutiveEmptyPages += 1;
+				if (consecutiveEmptyPages >= maxEmptyPages) {
+					exhausted = true;
+				} else {
+					moveBefore(completedWindow.since, windowSeconds);
+					if (!exhausted) nextSince = Math.max(0, nextUntil - grownWindowDuration() + 1);
+				}
+			}
+
+			return {
+				hasMore: !exhausted,
+				shouldRetry: oldestReceivedAt === undefined && !exhausted,
+				consecutiveEmptyPages
+			};
 		},
 		reset(nextAnchor = Math.floor(Date.now() / 1000)) {
 			anchor = unixSecond(nextAnchor, 'anchor');
-			nextIndex = 0;
+			resetState();
 		}
 	};
 }
