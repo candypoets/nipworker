@@ -4,6 +4,17 @@ import { WorkerMessage } from './generated/nostr/fb';
 import { getManager } from './manager';
 import type { RequestObject, SubscriptionConfig } from './types';
 import { scheduleMicrotask } from './lib/scheduleMicrotask';
+import {
+	createPaginatedSubscriptionController,
+	type PaginatedSubscription,
+	type PaginatedSubscriptionConfig
+} from './lib/PaginatedSubscription';
+export type {
+	PaginatedMessageHandler,
+	PaginatedSubscription,
+	PaginatedSubscriptionConfig,
+	PaginatedSubscriptionState
+} from './lib/PaginatedSubscription';
 // Re-export type guard utilities for hooks users
 export {
 	isParsedEvent,
@@ -124,6 +135,13 @@ export function useSubscription(
 	scheduleProcess();
 
 	return unsubscribe;
+}
+
+/** Create a long-running subscription with bounded backward pagination. */
+export function createPaginatedSubscription(
+	config: PaginatedSubscriptionConfig
+): PaginatedSubscription {
+	return createPaginatedSubscriptionController(config, useSubscription);
 }
 
 export function usePublish(
