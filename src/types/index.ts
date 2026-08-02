@@ -66,8 +66,8 @@ export type SubscriptionConfig = {
 	force?: boolean;
 	bytesPerEvent?: number;
 	isSlow?: boolean;
-	/** If set, this subscription is a pagination of the given subscription ID.
-	 * The pipeline state (including deduplication) will be cloned from the original subscription.
+	/** If set, this subscription is a pagination of the given root subscription ID.
+	 * Deduplication state is shared with the root while pipe instances remain independent.
 	 */
 	pagination?: string;
 	/** If true, only return events from cache without hitting the network. */

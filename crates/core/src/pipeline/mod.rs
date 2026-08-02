@@ -230,7 +230,7 @@ impl PipeType {
 pub struct Pipeline {
     pipes: Vec<PipeType>,
     subscription_id: String,
-    seen_ids: Mutex<FxHashSet<[u8; 32]>>,
+    seen_ids: Arc<Mutex<FxHashSet<[u8; 32]>>>,
     dedup_max_size: usize,
 }
 
@@ -250,10 +250,10 @@ impl Pipeline {
         Ok(Self {
             pipes,
             subscription_id,
-            seen_ids: Mutex::new(FxHashSet::with_capacity_and_hasher(
+            seen_ids: Arc::new(Mutex::new(FxHashSet::with_capacity_and_hasher(
                 10_000,
                 Default::default(),
-            )),
+            ))),
             dedup_max_size: 10_000,
         })
     }
@@ -424,8 +424,14 @@ impl Pipeline {
 
     /// Process a batch of cached WorkerMessage bytes through cache-capable pipes.
     pub async fn process_cached_batch(&mut self, messages: &[Vec<u8>]) -> Result<Vec<Vec<u8>>> {
-        for message in messages {
-            self.mark_as_seen(message);
+        let unseen_messages: Vec<Vec<u8>> = messages
+            .iter()
+            .filter(|message| self.remember_if_unseen(message))
+            .cloned()
+            .collect();
+
+        if unseen_messages.is_empty() {
+            return Ok(Vec::new());
         }
 
         // Chain pipes that run for cached events: output of one is input to next
@@ -443,7 +449,7 @@ impl Pipeline {
         }
 
         let last_pipe_idx = *pipes_that_run.last().unwrap();
-        let mut current_messages = messages.to_vec();
+        let mut current_messages = unseen_messages;
         let mut final_output = Vec::new();
 
         for i in pipes_that_run {
@@ -464,7 +470,7 @@ impl Pipeline {
         Ok(final_output)
     }
 
-    fn extract_parsed_event(worker_message: &Vec<u8>) -> Option<fb::ParsedEvent<'_>> {
+    fn extract_parsed_event(worker_message: &[u8]) -> Option<fb::ParsedEvent<'_>> {
         if let Ok(message) = flatbuffers::root::<fb::WorkerMessage>(&worker_message) {
             match message.content_type() {
                 fb::Message::ParsedEvent => message.content_as_parsed_event(),
@@ -475,37 +481,41 @@ impl Pipeline {
         }
     }
 
-    pub fn mark_as_seen(&self, message_bytes: &Vec<u8>) {
+    fn remember_if_unseen(&self, message_bytes: &[u8]) -> bool {
         if let Some(event) = Self::extract_parsed_event(message_bytes) {
             let id_hex = event.id();
 
             let mut id_bytes = [0u8; 32];
             if decode_to_slice(id_hex, &mut id_bytes).is_err() {
                 tracing::warn!("Invalid hex in event id (mark_as_seen): {}", id_hex);
-                return;
+                return true;
             }
 
             let mut seen = self.seen_ids.lock().unwrap();
             if seen.contains(&id_bytes) {
-                return; // already processed
+                return false;
             }
             if seen.len() < self.dedup_max_size {
                 seen.insert(id_bytes);
             }
         }
+
+        true
+    }
+
+    pub fn mark_as_seen(&self, message_bytes: &Vec<u8>) {
+        self.remember_if_unseen(message_bytes);
     }
 
     pub fn subscription_id(&self) -> &str {
         &self.subscription_id
     }
 
-    /// Clone deduplication state from another pipeline.
-    /// This is used when creating a pagination subscription to inherit
-    /// the seen event IDs from the parent subscription.
-    pub fn clone_state_from(&self, other: &Pipeline) {
-        let other_seen = other.seen_ids.lock().unwrap();
-        let mut seen = self.seen_ids.lock().unwrap();
-        seen.extend(other_seen.iter().cloned());
+    /// Share deduplication state with another pipeline.
+    /// Pagination pipes remain independent while every page and the live root
+    /// immediately observe the same set of processed event IDs.
+    pub fn share_state_from(&mut self, other: &Pipeline) {
+        self.seen_ids = Arc::clone(&other.seen_ids);
     }
 
     /// Flush the terminal pipe to emit any accumulated output.
@@ -523,5 +533,51 @@ impl Pipeline {
         if let Some(last_pipe) = self.pipes.last_mut() {
             last_pipe.on_eose();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pagination_pipelines_share_deduplication_state() {
+        let root = Pipeline::new(Vec::new(), "root".to_string()).unwrap();
+        let mut page = Pipeline::new(Vec::new(), "page".to_string()).unwrap();
+
+        page.share_state_from(&root);
+        assert!(Arc::ptr_eq(&root.seen_ids, &page.seen_ids));
+
+        assert!(root.remember_if_unseen(&parsed_event_message("01")));
+        assert!(!page.remember_if_unseen(&parsed_event_message("01")));
+
+        assert!(page.remember_if_unseen(&parsed_event_message("02")));
+        assert!(!root.remember_if_unseen(&parsed_event_message("02")));
+    }
+
+    fn parsed_event_message(byte: &str) -> Vec<u8> {
+        let mut builder = flatbuffers::FlatBufferBuilder::new();
+        let id = builder.create_string(&byte.repeat(32));
+        let pubkey = builder.create_string(&"03".repeat(32));
+        let tags = builder.create_vector::<flatbuffers::WIPOffset<fb::StringVec>>(&[]);
+        let event = fb::ParsedEvent::create(
+            &mut builder,
+            &fb::ParsedEventArgs {
+                id: Some(id),
+                pubkey: Some(pubkey),
+                tags: Some(tags),
+                ..Default::default()
+            },
+        );
+        let message = fb::WorkerMessage::create(
+            &mut builder,
+            &fb::WorkerMessageArgs {
+                content_type: fb::Message::ParsedEvent,
+                content: Some(event.as_union_value()),
+                ..Default::default()
+            },
+        );
+        builder.finish(message, None);
+        builder.finished_data().to_vec()
     }
 }

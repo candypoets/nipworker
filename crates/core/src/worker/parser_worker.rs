@@ -736,7 +736,7 @@ impl ParserWorker {
         let config_fb =
             flatbuffers::root::<fb::SubscriptionConfig>(config_builder.finished_data()).unwrap();
 
-        let pipeline = self
+        let mut pipeline = self
             .subscription_manager
             .process_subscription(
                 &subscription_id,
@@ -752,9 +752,9 @@ impl ParserWorker {
                     let parent_pipeline_arc = Arc::clone(&parent_sub.pipeline);
                     drop(guard);
                     let parent_pipeline = parent_pipeline_arc.lock().await;
-                    pipeline.clone_state_from(&parent_pipeline);
+                    pipeline.share_state_from(&parent_pipeline);
                     info!(
-                        "Cloned pipeline state from parent subscription '{}' to '{}'",
+                        "Shared pipeline deduplication state from root subscription '{}' with '{}'",
                         parent_id, subscription_id
                     );
                 } else {
