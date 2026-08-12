@@ -44,7 +44,7 @@ function isValidBolt11Hrp(hrp: string): boolean {
 	const amount = networkAndAmount.slice(network.length);
 	if (amount.length === 0) return true;
 
-	const suffix = amount.at(-1);
+	const suffix = amount[amount.length - 1];
 	const multipliers: Record<string, bigint> = {
 		m: 1_000_000_000n,
 		u: 1_000_000n,
