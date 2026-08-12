@@ -58,6 +58,7 @@ export { Kind8Parsed, Kind8ParsedT } from './fb/kind8-parsed.js';
 export { Kind9321Parsed, Kind9321ParsedT } from './fb/kind9321-parsed.js';
 export { Kind9735Parsed, Kind9735ParsedT } from './fb/kind9735-parsed.js';
 export { KindFilterPipeConfig, KindFilterPipeConfigT } from './fb/kind-filter-pipe-config.js';
+export { LightningData, LightningDataT } from './fb/lightning-data.js';
 export { LinkPreviewData, LinkPreviewDataT } from './fb/link-preview-data.js';
 export { ListParsed, ListParsedT } from './fb/list-parsed.js';
 export { LiveActivityRef, LiveActivityRefT } from './fb/live-activity-ref.js';

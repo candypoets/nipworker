@@ -19,6 +19,10 @@ table CashuData {
   token: string (required);
 }
 
+table LightningData {
+  invoice: string (required);
+}
+
 table ImageData {
   url: string (required);
   alt: string;
@@ -64,7 +68,8 @@ union ContentData {
   MediaGroupData,
   NostrData,
   LinkPreviewData,
-  EmojiData
+  EmojiData,
+  LightningData
 }
 
 table ContentBlock {

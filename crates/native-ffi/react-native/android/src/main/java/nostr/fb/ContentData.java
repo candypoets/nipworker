@@ -15,8 +15,9 @@ public final class ContentData {
   public static final byte NostrData = 7;
   public static final byte LinkPreviewData = 8;
   public static final byte EmojiData = 9;
+  public static final byte LightningData = 10;
 
-  public static final String[] names = { "NONE", "CodeData", "HashtagData", "CashuData", "ImageData", "VideoData", "MediaGroupData", "NostrData", "LinkPreviewData", "EmojiData", };
+  public static final String[] names = { "NONE", "CodeData", "HashtagData", "CashuData", "ImageData", "VideoData", "MediaGroupData", "NostrData", "LinkPreviewData", "EmojiData", "LightningData", };
 
   public static String name(int e) { return names[e]; }
 }

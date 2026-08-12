@@ -32,6 +32,7 @@ import {
 	LinkPreviewData,
 	ContentData,
 	CashuData,
+	LightningData,
 	HashtagData,
 	CodeData,
 	MediaGroupData,
@@ -339,6 +340,15 @@ export function asHashtagData(block: ContentBlock): HashtagData | null {
 export function asCashuData(block: ContentBlock): CashuData | null {
 	if (block.dataType() !== ContentData.CashuData) return null;
 	return block.data(new CashuData()) ?? null;
+}
+
+/**
+ * Narrows a structurally well-formed BOLT11 candidate. Payment code must still
+ * authenticate its signature and validate expiry, features, and policy.
+ */
+export function asLightningData(block: ContentBlock): LightningData | null {
+	if (block.dataType() !== ContentData.LightningData) return null;
+	return block.data(new LightningData()) ?? null;
 }
 
 export function asImageData(block: ContentBlock): FbImageData | null {

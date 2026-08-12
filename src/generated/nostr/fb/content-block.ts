@@ -10,6 +10,7 @@ import { ContentData, unionToContentData, unionListToContentData } from '../../n
 import { EmojiData, EmojiDataT } from '../../nostr/fb/emoji-data.js';
 import { HashtagData, HashtagDataT } from '../../nostr/fb/hashtag-data.js';
 import { ImageData, ImageDataT } from '../../nostr/fb/image-data.js';
+import { LightningData, LightningDataT } from '../../nostr/fb/lightning-data.js';
 import { LinkPreviewData, LinkPreviewDataT } from '../../nostr/fb/link-preview-data.js';
 import { MediaGroupData, MediaGroupDataT } from '../../nostr/fb/media-group-data.js';
 import { NostrData, NostrDataT } from '../../nostr/fb/nostr-data.js';
@@ -125,7 +126,7 @@ constructor(
   public type: string|Uint8Array|null = null,
   public text: string|Uint8Array|null = null,
   public dataType: ContentData = ContentData.NONE,
-  public data: CashuDataT|CodeDataT|EmojiDataT|HashtagDataT|ImageDataT|LinkPreviewDataT|MediaGroupDataT|NostrDataT|VideoDataT|null = null
+  public data: CashuDataT|CodeDataT|EmojiDataT|HashtagDataT|ImageDataT|LightningDataT|LinkPreviewDataT|MediaGroupDataT|NostrDataT|VideoDataT|null = null
 ){}
 
 

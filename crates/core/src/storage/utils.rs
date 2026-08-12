@@ -449,6 +449,20 @@ fn build_content_block_vector<'a>(
                         (fb::ContentData::NONE, None)
                     }
                 }
+                fb::ContentData::LightningData => {
+                    if let Some(v) = b.data_as_lightning_data() {
+                        let invoice = builder.create_string(v.invoice());
+                        let off = fb::LightningData::create(
+                            builder,
+                            &fb::LightningDataArgs {
+                                invoice: Some(invoice),
+                            },
+                        );
+                        (fb::ContentData::LightningData, Some(off.as_union_value()))
+                    } else {
+                        (fb::ContentData::NONE, None)
+                    }
+                }
                 fb::ContentData::ImageData => {
                     if let Some(v) = b.data_as_image_data() {
                         let off = build_image_data(builder, v);
@@ -1268,4 +1282,68 @@ pub fn wrap_event_with_worker_message_in<'a>(
     }
 
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn content_block_rebuild_preserves_lightning_data() {
+        const INVOICE: &str = "lnbc1testinvoice";
+
+        let mut source = FlatBufferBuilder::new();
+        let invoice = source.create_string(INVOICE);
+        let lightning = fb::LightningData::create(
+            &mut source,
+            &fb::LightningDataArgs {
+                invoice: Some(invoice),
+            },
+        );
+        let block_type = source.create_string("lightning");
+        let text = source.create_string(INVOICE);
+        let block = fb::ContentBlock::create(
+            &mut source,
+            &fb::ContentBlockArgs {
+                type_: Some(block_type),
+                text: Some(text),
+                data_type: fb::ContentData::LightningData,
+                data: Some(lightning.as_union_value()),
+            },
+        );
+        let blocks = source.create_vector(&[block]);
+        let kind1 = fb::Kind1Parsed::create(
+            &mut source,
+            &fb::Kind1ParsedArgs {
+                parsed_content: Some(blocks),
+                ..Default::default()
+            },
+        );
+        source.finish(kind1, None);
+
+        let source_view = flatbuffers::root::<fb::Kind1Parsed>(source.finished_data())
+            .expect("valid source Kind1Parsed");
+        let mut rebuilt = FlatBufferBuilder::new();
+        let rebuilt_blocks = build_content_block_vector(&mut rebuilt, source_view.parsed_content());
+        let rebuilt_kind1 = fb::Kind1Parsed::create(
+            &mut rebuilt,
+            &fb::Kind1ParsedArgs {
+                parsed_content: Some(rebuilt_blocks),
+                ..Default::default()
+            },
+        );
+        rebuilt.finish(rebuilt_kind1, None);
+
+        let rebuilt_view = flatbuffers::root::<fb::Kind1Parsed>(rebuilt.finished_data())
+            .expect("valid rebuilt Kind1Parsed");
+        let rebuilt_block = rebuilt_view.parsed_content().get(0);
+        assert_eq!(rebuilt_block.data_type(), fb::ContentData::LightningData);
+        assert_eq!(
+            rebuilt_block
+                .data_as_lightning_data()
+                .expect("LightningData payload")
+                .invoice(),
+            INVOICE
+        );
+    }
 }

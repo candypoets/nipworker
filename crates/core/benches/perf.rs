@@ -3,7 +3,7 @@
 //!
 //! - `frame_scan`: zero-copy relay frame scanner vs a serde_json DOM parse.
 //! - `kind1_parse`: kind-1 parsing with hoisted LazyLock regexes vs compiling
-//!   the same 13 regexes per event (the pre-hoist behavior).
+//!   the same 14 regexes per event (the pre-hoist behavior).
 //! - `nostrdb_query`: top-k / borrow-don't-clone query path on a 10k-event DB.
 //! - `batch_buffer`: parser→main batching fill/flush hot path.
 //!
@@ -176,6 +176,7 @@ mod perf_benches {
 	const KIND1_PATTERNS: &[&str] = &[
 		r"```([\s\S]*?)```",
 		r"(cashuA[A-Za-z0-9_-]+)",
+		r"(?i-u:\b(?:lightning:)?ln(?:bcrt|tbs|tb|bc)(?:[1-9][0-9]*[munp]?)?1[023456789ac-hj-np-z]{117,}\b)",
 		r"(^|[\s\x22\x27(\]])(#[a-zA-Z0-9_]+)",
 		r"(?i)(https?://[^\s\\]+\.(jpg|jpeg|png|gif|webp|svg|ico)(\?[^\s\\]*)?)",
 		r"(?i)(https?://[^\s\\]+\.(mp4|mov|avi|mkv|webm|m4v)(\?[^\s\\]*)?)",

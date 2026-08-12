@@ -58,6 +58,11 @@ pub enum ContentData {
     Cashu {
         token: String,
     },
+    /// A structurally well-formed BOLT11 candidate. Payment code must still
+    /// authenticate its signature and validate expiry, features, and policy.
+    Lightning {
+        invoice: String,
+    },
     Emoji {
         shortcode: String,
         url: Option<String>,
@@ -170,6 +175,12 @@ fn contains_any_ascii_case_insensitive(text: &str, needles: &[&str]) -> bool {
 static CODE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"```([\s\S]*?)```").unwrap());
 static CASHU_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(cashuA[A-Za-z0-9_-]+)").unwrap());
+static LIGHTNING_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?i-u:\b(?:lightning:)?ln(?:bcrt|tbs|tb|bc)(?:[1-9][0-9]*[munp]?)?1[023456789ac-hj-np-z]{117,}\b)",
+    )
+    .unwrap()
+});
 static HASHTAG_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(^|[\s\x22\x27(\]])(#[a-zA-Z0-9_]+)").unwrap());
 static IMAGE_RE: LazyLock<Regex> = LazyLock::new(|| {
@@ -234,6 +245,13 @@ static PATTERNS: &[Pattern] = &[
         regex: &NOSTR_RE,
         processor: process_nostr,
         required: &["nostr:", "npub1", "note1", "nevent1", "naddr1", "nprofile1"],
+        ignore_case: true,
+    },
+    Pattern {
+        name: "lightning",
+        regex: &LIGHTNING_RE,
+        processor: process_lightning,
+        required: &["lnbc", "lntb", "lntbs", "lnbcrt", "lightning:"],
         ignore_case: true,
     },
     Pattern {
@@ -778,6 +796,249 @@ fn process_cashu(text: &str, _caps: &regex::Captures) -> Result<ContentBlock> {
     )
 }
 
+const BECH32_CHARSET: &[u8; 32] = b"qpzry9x8gf2tvdw0s3jn54khce6mua7l";
+
+fn bech32_value(byte: u8) -> Option<u8> {
+    BECH32_CHARSET
+        .iter()
+        .position(|&candidate| candidate == byte.to_ascii_lowercase())
+        .map(|index| index as u8)
+}
+
+fn bech32_polymod_step(mut checksum: u32, value: u8) -> u32 {
+    const GENERATORS: [u32; 5] = [
+        0x3b6a_57b2,
+        0x2650_8e6d,
+        0x1ea1_19fa,
+        0x3d42_33dd,
+        0x2a14_62b3,
+    ];
+
+    let top = checksum >> 25;
+    checksum = ((checksum & 0x01ff_ffff) << 5) ^ u32::from(value);
+    for (bit, generator) in GENERATORS.iter().enumerate() {
+        if (top >> bit) & 1 != 0 {
+            checksum ^= generator;
+        }
+    }
+    checksum
+}
+
+fn is_valid_bolt11_hrp(hrp: &[u8]) -> bool {
+    let normalized: Vec<u8> = hrp.iter().map(u8::to_ascii_lowercase).collect();
+    let Some(network_and_amount) = normalized.strip_prefix(b"ln") else {
+        return false;
+    };
+    let amount = if let Some(amount) = network_and_amount.strip_prefix(b"bcrt") {
+        amount
+    } else if let Some(amount) = network_and_amount.strip_prefix(b"tbs") {
+        amount
+    } else if let Some(amount) = network_and_amount.strip_prefix(b"tb") {
+        amount
+    } else if let Some(amount) = network_and_amount.strip_prefix(b"bc") {
+        amount
+    } else {
+        return false;
+    };
+
+    if amount.is_empty() {
+        return true;
+    }
+
+    let (digits, multiplier) = match amount.last() {
+        Some(b'm') => (&amount[..amount.len() - 1], 1_000_000_000u64),
+        Some(b'u') => (&amount[..amount.len() - 1], 1_000_000u64),
+        Some(b'n') => (&amount[..amount.len() - 1], 1_000u64),
+        Some(b'p') => (&amount[..amount.len() - 1], 1u64),
+        _ => (amount, 1_000_000_000_000u64),
+    };
+    if digits.is_empty() || digits[0] == b'0' || !digits.iter().all(u8::is_ascii_digit) {
+        return false;
+    }
+
+    let Ok(raw_amount) = std::str::from_utf8(digits).unwrap_or_default().parse::<u64>() else {
+        return false;
+    };
+    raw_amount
+        .checked_mul(multiplier)
+        .is_some_and(|pico_btc| pico_btc % 10 == 0)
+}
+
+fn is_valid_secp256k1_scalar(scalar: &[u8]) -> bool {
+    const CURVE_ORDER: [u8; 32] = [
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        0xff, 0xfe, 0xba, 0xae, 0xdc, 0xe6, 0xaf, 0x48, 0xa0, 0x3b, 0xbf, 0xd2, 0x5e, 0x8c,
+        0xd0, 0x36, 0x41, 0x41,
+    ];
+
+    scalar.iter().any(|&byte| byte != 0) && scalar < CURVE_ORDER.as_slice()
+}
+
+/// Validate the BOLT11 envelope without doing payment-time policy checks.
+///
+/// This verifies uniform Bech32 case, checksum, tagged-field framing, the
+/// mandatory payment hash and description/hash field, and the 65-byte
+/// signature shape. A wallet must still verify the signature, features,
+/// expiry, and payment policy before attempting payment.
+fn is_well_formed_bolt11(invoice: &str) -> bool {
+    let bytes = invoice.as_bytes();
+    if !bytes.is_ascii() {
+        return false;
+    }
+
+    let has_lowercase = bytes.iter().any(u8::is_ascii_lowercase);
+    let has_uppercase = bytes.iter().any(u8::is_ascii_uppercase);
+    if has_lowercase && has_uppercase {
+        return false;
+    }
+
+    let Some(separator) = bytes.iter().rposition(|&byte| byte == b'1') else {
+        return false;
+    };
+    if separator == 0 || separator + 1 >= bytes.len() {
+        return false;
+    }
+
+    let (hrp, separator_and_data) = bytes.split_at(separator);
+    let data = &separator_and_data[1..];
+    if !is_valid_bolt11_hrp(hrp) {
+        return false;
+    }
+    // 7 timestamp words + 104 signature words + 6 checksum words.
+    if data.len() < 117 {
+        return false;
+    }
+
+    let mut checksum = 1u32;
+    for &byte in hrp {
+        checksum = bech32_polymod_step(checksum, byte.to_ascii_lowercase() >> 5);
+    }
+    checksum = bech32_polymod_step(checksum, 0);
+    for &byte in hrp {
+        checksum = bech32_polymod_step(checksum, byte.to_ascii_lowercase() & 0x1f);
+    }
+    for &byte in data {
+        let Some(value) = bech32_value(byte) else {
+            return false;
+        };
+        checksum = bech32_polymod_step(checksum, value);
+    }
+    if checksum != 1 {
+        return false;
+    }
+
+    let tagged_end = data.len() - 6 - 104;
+    if tagged_end < 7 {
+        return false;
+    }
+
+    let mut index = 7;
+    let mut payment_hashes = 0u8;
+    let mut descriptions = 0u8;
+    while index < tagged_end {
+        if index + 3 > tagged_end {
+            return false;
+        }
+        let Some(tag) = bech32_value(data[index]) else {
+            return false;
+        };
+        let (Some(length_high), Some(length_low)) =
+            (bech32_value(data[index + 1]), bech32_value(data[index + 2]))
+        else {
+            return false;
+        };
+        let field_length = (usize::from(length_high) << 5) | usize::from(length_low);
+        index += 3;
+        let Some(field_end) = index.checked_add(field_length) else {
+            return false;
+        };
+        if field_end > tagged_end {
+            return false;
+        }
+
+        match tag {
+            1 => {
+                if field_length != 52
+                    || bech32_value(data[field_end - 1]).map_or(true, |value| value & 0x0f != 0)
+                {
+                    return false;
+                }
+                payment_hashes = payment_hashes.saturating_add(1);
+            }
+            13 => descriptions = descriptions.saturating_add(1),
+            23 => {
+                if field_length != 52
+                    || bech32_value(data[field_end - 1]).map_or(true, |value| value & 0x0f != 0)
+                {
+                    return false;
+                }
+                descriptions = descriptions.saturating_add(1);
+            }
+            _ => {}
+        }
+        index = field_end;
+    }
+    if payment_hashes != 1 || descriptions != 1 {
+        return false;
+    }
+
+    // The final 104 data words before the checksum encode a 65-byte compact
+    // signature. Its last byte is the recovery id and must be 0..=3.
+    let signature = &data[tagged_end..data.len() - 6];
+    let mut accumulator = 0u32;
+    let mut bits = 0u8;
+    let mut signature_bytes = [0u8; 65];
+    let mut byte_count = 0usize;
+    for &encoded in signature {
+        let Some(value) = bech32_value(encoded) else {
+            return false;
+        };
+        accumulator = (accumulator << 5) | u32::from(value);
+        bits += 5;
+        if bits >= 8 {
+            bits -= 8;
+            let decoded = ((accumulator >> bits) & 0xff) as u8;
+            if byte_count >= signature_bytes.len() {
+                return false;
+            }
+            signature_bytes[byte_count] = decoded;
+            byte_count += 1;
+            accumulator &= (1u32 << bits) - 1;
+        }
+    }
+
+    byte_count == 65
+        && bits == 0
+        && signature_bytes[64] <= 3
+        && is_valid_secp256k1_scalar(&signature_bytes[..32])
+        && is_valid_secp256k1_scalar(&signature_bytes[32..64])
+}
+
+fn process_lightning(text: &str, _caps: &regex::Captures) -> Result<ContentBlock> {
+    let invoice = if text
+        .get(..10)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("lightning:"))
+    {
+        &text[10..]
+    } else {
+        text
+    };
+
+    if !is_well_formed_bolt11(invoice) {
+        return Err(ParserError::InvalidContent(
+            "invalid BOLT11 invoice".to_string(),
+        ));
+    }
+
+    Ok(
+        ContentBlock::new("lightning".to_string(), text.to_string()).with_data(
+            ContentData::Lightning {
+                invoice: invoice.to_string(),
+            },
+        ),
+    )
+}
+
 fn process_hashtag(text: &str, caps: &regex::Captures) -> Result<ContentBlock> {
     // Capture groups: full match, prefix, hashtag. The full match is exactly
     // prefix + hashtag, so `text` can be used as the block text directly.
@@ -1147,6 +1408,19 @@ pub fn serialize_content_data<'a, A: flatbuffers::Allocator + 'a>(
             );
             (fb::ContentData::CashuData, Some(cashu_fb.as_union_value()))
         }
+        ContentData::Lightning { invoice } => {
+            let invoice_off = builder.create_string(invoice);
+            let lightning_fb = fb::LightningData::create(
+                builder,
+                &fb::LightningDataArgs {
+                    invoice: Some(invoice_off),
+                },
+            );
+            (
+                fb::ContentData::LightningData,
+                Some(lightning_fb.as_union_value()),
+            )
+        }
         ContentData::Emoji { shortcode, url } => {
             let shortcode_off = builder.create_string(shortcode);
             let url_off = url.as_ref().map(|u| builder.create_string(u));
@@ -1267,6 +1541,39 @@ pub fn serialize_content_block<'a, A: flatbuffers::Allocator + 'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use flatbuffers::FlatBufferBuilder;
+
+    const VALID_BOLT11: &str = concat!(
+        "lnbc1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5",
+        "qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdpl2pkx2ctnv5sxx",
+        "mmwwd5kgetjypeh2ursdae8g6twvus8g6rfwvs8qun0dfjkxaq9qrsgq357wnc5r2ueh7c",
+        "k6q93dj32dlqnls087fxdwk8qakdyafkq3yap9us6v52vjjsrvywa6rt52cm9r9zqt8r2",
+        "t7mlcwspyetp5h2tztugp9lfyql",
+    );
+    const VALID_BOLT11_DESCRIPTION_HASH: &str = concat!(
+        "lnbc20m1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqq",
+        "syqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqhp58yjmdan79s6qqdhdzgynm4zw",
+        "qd5d7xmw5fk98klysy043l2ahrqs9qrsgq7ea976txfraylvgzuxs8kgcw23ezlrszfnh8r6qtfp",
+        "r6cxga50aj6txm9rxrydzd06dfeawfk6swupvz4erwnyutnjq7x39ymw6j38gp7ynn44",
+    );
+    const INVALID_BOLT11_DESCRIPTION_HASH_LENGTH: &str = concat!(
+        "lnbc20m1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqq",
+        "syqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqhpn8yjmdan79s6qqdhdzgynm4zw",
+        "qd5d7xmw5fk98klysy043l2ahrqs9qrsgq7ea976txfraylvgzuxs8kgcw23ezlrszfnh8r6qtfp",
+        "r6cxga50aj6txm9rxrydzd06dfeawfk6swupvz4erwnyutnjq7x39ymw6j38gphrv8jd",
+    );
+    const INVALID_BOLT11_IMPRECISE_AMOUNT: &str = concat!(
+        "lnbc2500000001p1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqy",
+        "pqdq5xysxxatsyp3k7enxv4jsxqzpusp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg",
+        "3zyg3zygs9qrsgq0lzc236j96a95uv0m3umg28gclm5lqxtqqwk32uuk4k6673k6n5kfvx3d2h8s",
+        "295fad45fdhmusm8sjudfhlf6dcsxmfvkeywmjdkxcp99202x",
+    );
+    const INVALID_BOLT11_ZERO_R_SCALAR: &str = concat!(
+        "lnbc1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyq",
+        "cyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdpl2pkx2ctnv5sxxmmwwd5kgetjype",
+        "h2ursdae8g6twvus8g6rfwvs8qun0dfjkxaq9qrsgqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq",
+        "qqqqqqqqqqqqqqqqq9us6v52vjjsrvywa6rt52cm9r9zqt8r2t7mlcwspyetp5h2tztugpc4vhg3",
+    );
 
     #[test]
     fn test_parse_plain_text() {
@@ -1302,6 +1609,149 @@ mod tests {
         let result = parse_content(content, &[]).unwrap();
         assert_eq!(result.len(), 2);
         assert_eq!(result[1].block_type, "image");
+    }
+
+    #[test]
+    fn test_parse_lightning_invoice() {
+        let content = format!("Pay this invoice: {VALID_BOLT11}");
+        let result = parse_content(&content, &[]).unwrap();
+
+        let block = result
+            .iter()
+            .find(|block| block.block_type == "lightning")
+            .expect("should parse a BOLT11 invoice");
+        assert_eq!(block.text, VALID_BOLT11);
+        assert_eq!(
+            block.data,
+            Some(ContentData::Lightning {
+                invoice: VALID_BOLT11.to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn test_parse_lightning_uri_strips_scheme_from_invoice_data() {
+        let invoice = VALID_BOLT11.to_ascii_uppercase();
+        let uri = format!("LIGHTNING:{invoice}");
+        let result = parse_content(&uri, &[]).unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].block_type, "lightning");
+        assert_eq!(result[0].text, uri);
+        assert_eq!(result[0].data, Some(ContentData::Lightning { invoice }));
+    }
+
+    #[test]
+    fn test_parse_lightning_description_hash_invoice() {
+        let result = parse_content(VALID_BOLT11_DESCRIPTION_HASH, &[]).unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].block_type, "lightning");
+        assert_eq!(
+            result[0].data,
+            Some(ContentData::Lightning {
+                invoice: VALID_BOLT11_DESCRIPTION_HASH.to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn test_lightning_parse_serialize_flatbuffer_round_trip() {
+        let result = parse_content(VALID_BOLT11, &[]).unwrap();
+        let lightning = result
+            .iter()
+            .find(|block| block.block_type == "lightning")
+            .expect("parsed Lightning block");
+        let mut builder = FlatBufferBuilder::new();
+        let block = serialize_content_block(&mut builder, lightning);
+        builder.finish(block, None);
+
+        let view = flatbuffers::root::<fb::ContentBlock>(builder.finished_data())
+            .expect("valid serialized ContentBlock");
+        assert_eq!(view.data_type(), fb::ContentData::LightningData);
+        assert_eq!(
+            view.data_as_lightning_data()
+                .expect("LightningData payload")
+                .invoice(),
+            VALID_BOLT11
+        );
+    }
+
+    #[test]
+    fn test_does_not_parse_lnurl_as_lightning_invoice() {
+        let content = format!("lnurl1{}", "q".repeat(117));
+        let result = parse_content(&content, &[]).unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].block_type, "text");
+    }
+
+    #[test]
+    fn test_rejects_checksum_corruption_and_mixed_case() {
+        let corrupted = format!("{}q", &VALID_BOLT11[..VALID_BOLT11.len() - 1]);
+        let mut mixed_case = VALID_BOLT11.to_string();
+        mixed_case.replace_range(..1, "L");
+
+        for content in [
+            corrupted,
+            mixed_case,
+            INVALID_BOLT11_DESCRIPTION_HASH_LENGTH.to_string(),
+            INVALID_BOLT11_IMPRECISE_AMOUNT.to_string(),
+            INVALID_BOLT11_ZERO_R_SCALAR.to_string(),
+        ] {
+            let result = parse_content(&content, &[]).unwrap();
+            assert_eq!(result.len(), 1);
+            assert_eq!(result[0].block_type, "text");
+            assert_eq!(result[0].text, content);
+        }
+    }
+
+    #[test]
+    fn test_does_not_parse_lightning_substrings_or_malformed_suffixes() {
+        for content in [
+            format!("x{VALID_BOLT11}"),
+            format!("{VALID_BOLT11}i"),
+            format!("lnbc1{}\u{212a}", "q".repeat(116)),
+        ] {
+            let result = parse_content(&content, &[]).unwrap();
+            assert_eq!(result.len(), 1, "unexpected split for {content}");
+            assert_eq!(
+                result[0].block_type, "text",
+                "unexpected match for {content}"
+            );
+            assert_eq!(result[0].text, content);
+        }
+    }
+
+    #[test]
+    fn test_overlapping_patterns_have_stable_precedence() {
+        for (content, expected_types) in [
+            (
+                format!("https://example.test/{VALID_BOLT11}"),
+                vec!["link"],
+            ),
+            (format!("#{VALID_BOLT11}"), vec!["hashtag"]),
+            (
+                format!("nostr:{VALID_BOLT11}"),
+                vec!["text", "lightning"],
+            ),
+        ] {
+            let result = parse_content(&content, &[]).unwrap();
+            assert_eq!(
+                result
+                    .iter()
+                    .map(|block| block.block_type.as_str())
+                    .collect::<Vec<_>>(),
+                expected_types
+            );
+            assert_eq!(
+                result
+                    .iter()
+                    .map(|block| block.text.as_str())
+                    .collect::<String>(),
+                content
+            );
+        }
     }
 
     #[test]

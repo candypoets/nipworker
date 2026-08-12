@@ -11,10 +11,151 @@ import { MediaGroupDataT } from 'src/generated/nostr/fb/media-group-data';
 import { MediaItemT } from 'src/generated/nostr/fb/media-item';
 import { LinkPreviewDataT } from 'src/generated/nostr/fb/link-preview-data';
 import { NostrDataT } from 'src/generated/nostr/fb/nostr-data';
+import { LightningDataT } from 'src/generated/nostr/fb/lightning-data';
 
-type MatchProcessor = (match: RegExpExecArray) => ContentBlockT | Promise<ContentBlockT>;
+type MatchProcessor = (
+	match: RegExpExecArray
+) => ContentBlockT | null | Promise<ContentBlockT | null>;
 
 const textEncoder = new TextEncoder();
+const bech32Charset = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
+const secp256k1Order = BigInt('0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141');
+
+function bech32PolymodStep(checksum: number, value: number): number {
+	const generators = [0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3];
+	const top = checksum >>> 25;
+	let next = (((checksum & 0x01ffffff) << 5) ^ value) >>> 0;
+
+	for (let bit = 0; bit < generators.length; bit++) {
+		if (((top >>> bit) & 1) !== 0) next = (next ^ generators[bit]!) >>> 0;
+	}
+	return next;
+}
+
+function isValidBolt11Hrp(hrp: string): boolean {
+	const networkAndAmount = hrp.slice(2);
+	if (!hrp.startsWith('ln')) return false;
+
+	const network = ['bcrt', 'tbs', 'tb', 'bc'].find((candidate) =>
+		networkAndAmount.startsWith(candidate)
+	);
+	if (!network) return false;
+
+	const amount = networkAndAmount.slice(network.length);
+	if (amount.length === 0) return true;
+
+	const suffix = amount.at(-1);
+	const multipliers: Record<string, bigint> = {
+		m: 1_000_000_000n,
+		u: 1_000_000n,
+		n: 1_000n,
+		p: 1n
+	};
+	const multiplier = suffix && multipliers[suffix] ? multipliers[suffix] : 1_000_000_000_000n;
+	const digits = suffix && multipliers[suffix] ? amount.slice(0, -1) : amount;
+	if (!/^[1-9][0-9]*$/.test(digits)) return false;
+
+	let rawAmount = 0n;
+	const maxRawAmount = ((1n << 64n) - 1n) / multiplier;
+	for (const digit of digits) {
+		rawAmount = rawAmount * 10n + BigInt(digit);
+		if (rawAmount > maxRawAmount) return false;
+	}
+
+	return (rawAmount * multiplier) % 10n === 0n;
+}
+
+function isValidSecp256k1Scalar(bytes: number[]): boolean {
+	let scalar = 0n;
+	for (const byte of bytes) scalar = (scalar << 8n) | BigInt(byte);
+	return scalar > 0n && scalar < secp256k1Order;
+}
+
+// Recognize a checksum-valid, structurally well-formed BOLT11 envelope. Payment
+// code must still verify its signature, features, expiry, and payment policy.
+function isWellFormedBolt11(invoice: string): boolean {
+	if (!/^[\x00-\x7f]+$/.test(invoice)) return false;
+	if (invoice !== invoice.toLowerCase() && invoice !== invoice.toUpperCase()) return false;
+
+	const normalized = invoice.toLowerCase();
+	const separator = normalized.lastIndexOf('1');
+	if (separator <= 0 || separator === normalized.length - 1) return false;
+
+	const hrp = normalized.slice(0, separator);
+	const data = normalized.slice(separator + 1);
+	if (!isValidBolt11Hrp(hrp)) return false;
+	if (data.length < 117) return false;
+
+	let checksum = 1;
+	for (const char of hrp) checksum = bech32PolymodStep(checksum, char.charCodeAt(0) >>> 5);
+	checksum = bech32PolymodStep(checksum, 0);
+	for (const char of hrp) checksum = bech32PolymodStep(checksum, char.charCodeAt(0) & 31);
+	for (const char of data) {
+		const value = bech32Charset.indexOf(char);
+		if (value === -1) return false;
+		checksum = bech32PolymodStep(checksum, value);
+	}
+	if (checksum !== 1) return false;
+
+	const taggedEnd = data.length - 6 - 104;
+	if (taggedEnd < 7) return false;
+
+	let index = 7;
+	let paymentHashes = 0;
+	let descriptions = 0;
+	while (index < taggedEnd) {
+		if (index + 3 > taggedEnd) return false;
+		const tag = bech32Charset.indexOf(data[index]!);
+		const lengthHigh = bech32Charset.indexOf(data[index + 1]!);
+		const lengthLow = bech32Charset.indexOf(data[index + 2]!);
+		if (tag === -1 || lengthHigh === -1 || lengthLow === -1) return false;
+
+		const fieldLength = (lengthHigh << 5) | lengthLow;
+		index += 3;
+		const fieldEnd = index + fieldLength;
+		if (fieldEnd > taggedEnd) return false;
+
+		if (tag === 1) {
+			if (fieldLength !== 52 || (bech32Charset.indexOf(data[fieldEnd - 1]!) & 15) !== 0) {
+				return false;
+			}
+			paymentHashes++;
+		} else if (tag === 13) {
+			descriptions++;
+		} else if (tag === 23) {
+			if (fieldLength !== 52 || (bech32Charset.indexOf(data[fieldEnd - 1]!) & 15) !== 0) {
+				return false;
+			}
+			descriptions++;
+		}
+		index = fieldEnd;
+	}
+	if (paymentHashes !== 1 || descriptions !== 1) return false;
+
+	let accumulator = 0;
+	let bits = 0;
+	const signatureBytes: number[] = [];
+	for (const char of data.slice(taggedEnd, -6)) {
+		const value = bech32Charset.indexOf(char);
+		if (value === -1) return false;
+		accumulator = (accumulator << 5) | value;
+		bits += 5;
+		if (bits >= 8) {
+			bits -= 8;
+			const decoded = (accumulator >>> bits) & 0xff;
+			signatureBytes.push(decoded);
+			accumulator &= (1 << bits) - 1;
+		}
+	}
+
+	return (
+		signatureBytes.length === 65 &&
+		bits === 0 &&
+		signatureBytes[64]! <= 3 &&
+		isValidSecp256k1Scalar(signatureBytes.slice(0, 32)) &&
+		isValidSecp256k1Scalar(signatureBytes.slice(32, 64))
+	);
+}
 
 export async function parseContent(content: string): Promise<ContentBlockT[]> {
 	const blocks: ContentBlockT[] = [];
@@ -70,6 +211,19 @@ export async function parseContent(content: string): Promise<ContentBlockT[]> {
 			new CashuDataT(textEncoder.encode(token))
 		);
 
+	const lightningBlock = (text: string): ContentBlockT | null => {
+		const invoice = text.slice(0, 10).toLowerCase() === 'lightning:' ? text.slice(10) : text;
+
+		if (!isWellFormedBolt11(invoice)) return null;
+
+		return new ContentBlockT(
+			textEncoder.encode('lightning'),
+			textEncoder.encode(text),
+			ContentData.LightningData,
+			new LightningDataT(textEncoder.encode(invoice))
+		);
+	};
+
 	const hashtagBlock = (tag: string): ContentBlockT =>
 		new ContentBlockT(
 			textEncoder.encode('hashtag'),
@@ -86,7 +240,7 @@ export async function parseContent(content: string): Promise<ContentBlockT[]> {
 			new LinkPreviewDataT(textEncoder.encode(url), null, null, null)
 		);
 
-	const nostrBlock = (bech32: string, fullText: string): ContentBlockT => {
+	const nostrBlock = (bech32: string, fullText: string): ContentBlockT | null => {
 		try {
 			const decoded = nip19.decode(bech32);
 			const type = decoded.type as 'npub' | 'nprofile' | 'note' | 'nevent' | 'naddr';
@@ -147,8 +301,9 @@ export async function parseContent(content: string): Promise<ContentBlockT[]> {
 				)
 			);
 		} catch {
-			// Fallback to plain text block when decode fails
-			return textBlock(fullText);
+			// Skip invalid NIP-19 candidates so another recognized token inside
+			// the same span can still be classified.
+			return null;
 		}
 	};
 
@@ -196,6 +351,14 @@ export async function parseContent(content: string): Promise<ContentBlockT[]> {
 			type: 'link',
 			regex: /(https?:\/\/\S+)(?![\)])/gi,
 			processMatch: async (match) => linkBlock(match[0])
+		},
+		{
+			type: 'lightning',
+			// BOLT11: optional lightning: URI scheme, Bitcoin network HRP, and Bech32 data.
+			// ASCII word boundaries avoid extracting an invoice-shaped substring from a larger token.
+			regex:
+				/\b(?:lightning:)?ln(?:bcrt|tbs|tb|bc)(?:[1-9][0-9]*[munp]?)?1[023456789ac-hj-np-z]{117,}\b/gi,
+			processMatch: (match) => lightningBlock(match[0])
 		}
 	];
 
@@ -215,6 +378,7 @@ export async function parseContent(content: string): Promise<ContentBlockT[]> {
 			const start = match.index;
 			const end = start + match[0].length;
 			const block = await pattern.processMatch(match);
+			if (!block) continue;
 
 			allMatches.push({ start, end, block });
 		}

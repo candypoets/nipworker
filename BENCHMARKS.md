@@ -25,14 +25,16 @@ Environment: AMD/Linux, rustc release profile (`opt-level=3, lto=fat, codegen-un
 
 Nuanced finding: the scanner wins at typical small frames but serde_json's memchr-based string scanning is faster per byte on large frames. The scanner's real value is avoiding DOM allocation and reserialization downstream (the old path parsed **twice** and rebuilt the frame), not raw scan speed. The 16 KB point showed high variance (±15%).
 
-**kind1_parse** — real `Parser::parse_kind_1` (regexes hoisted to `LazyLock` statics) vs recompiling the same 13 patterns per event:
+**kind1_parse** — real `Parser::parse_kind_1` (regexes hoisted to `LazyLock` statics) vs recompiling the same 14 patterns per event:
 
 | Path | Mean | Ratio |
 |---|---|---|
 | LazyLock statics (current) | 92.6 µs | — |
 | `Regex::new` per event (pre-`7ce168e` behavior) | 927 µs | **~10× slower** |
 
-Strongly validates the regex-hoisting work. Note: the current kind-1 path uses 13 hoisted patterns, so the honest comparison is 13 compilations/event — the "~23" figure in commit `7ce168e` was an overestimate.
+Strongly validates the regex-hoisting work. The original measurement used 13 patterns; the benchmark now tracks all 14 after BOLT11 invoice recognition was added. The "~23" figure in commit `7ce168e` was an overestimate.
+
+Release-candidate verification with all 14 patterns measured 56.9 µs for the rich fixture with `LazyLock`, 991 µs when recompiling the patterns per event (**~17× slower**), and 5.67 µs for the markup-free fixture on this host.
 
 **nostrdb_query** — 10k-event `NostrDB` (60% kind 1, 25% kind 7, 500 pubkeys, 30-day `created_at` spread):
 
@@ -94,7 +96,7 @@ Latency scales with `limit`, not candidate count — consistent with the top-k /
 | 16 KB | 10.5 µs | 1.25 µs (12.2 GiB/s) | 3.8× faster |
 | 64 KB | 36.3 µs | 4.29 µs (14.2 GiB/s) | 4.1× faster |
 
-**Content-parser regex pre-checks** — all 13 regex scans in `content.rs`/`kind1.rs` are now guarded by mandatory-literal substring checks (`might_match` / `prescan_content`). Result: **~10% on markup-free notes only** (8.9µs → 8.1µs on the plain fixture), nothing on rich content. The `regex` crate already does SIMD literal prefiltering internally, so most of the anticipated win didn't exist — and a naive byte-loop pre-check actually *regressed* plain text 85% before the memchr2 rewrite. Kept because it's never slower and the guards document each pattern's required literals. A `lazylock_statics_plain` bench was added to `perf.rs` to track this.
+**Content-parser regex pre-checks** — all 14 regex scans in `content.rs`/`kind1.rs` are now guarded by mandatory-literal substring checks (`might_match` / `prescan_content`). Result: **~10% on markup-free notes only** (8.9µs → 8.1µs on the original 13-pattern fixture), nothing on rich content. The `regex` crate already does SIMD literal prefiltering internally, so most of the anticipated win didn't exist — and a naive byte-loop pre-check actually *regressed* plain text 85% before the memchr2 rewrite. Kept because it's never slower and the guards document each pattern's required literals. A `lazylock_statics_plain` bench tracks this.
 
 Lesson recorded: measure before assuming — the 92.6µs `parse_kind_1` cost is mostly *matching*, not scanning-no-match, so further kind-1 wins would come from reducing per-match allocation, not more prefiltering.
 

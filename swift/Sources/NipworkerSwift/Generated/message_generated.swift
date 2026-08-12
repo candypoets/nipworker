@@ -27,8 +27,9 @@ public enum nostr_fb_ContentData: UInt8, FlatbuffersVectorInitializable, UnionEn
   case nostrdata = 7
   case linkpreviewdata = 8
   case emojidata = 9
+  case lightningdata = 10
 
-  public static var max: nostr_fb_ContentData { return .emojidata }
+  public static var max: nostr_fb_ContentData { return .lightningdata }
   public static var min: nostr_fb_ContentData { return .none_ }
 }
 
@@ -539,6 +540,42 @@ public struct nostr_fb_CashuData: FlatBufferTable, FlatbuffersVectorInitializabl
   }
 }
 
+public struct nostr_fb_LightningData: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+
+  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  public var __buffer: ByteBuffer! { return _accessor.bb }
+  private var _accessor: Table
+
+  private init(_ t: Table) { _accessor = t }
+  public init(_ bb: ByteBuffer, o: Int32) { _accessor = Table(bb: bb, position: o) }
+
+  private enum VTOFFSET: VOffset {
+    case invoice = 4
+    var v: Int32 { Int32(self.rawValue) }
+    var p: VOffset { self.rawValue }
+  }
+
+  public var invoice: String! { let o = _accessor.offset(VTOFFSET.invoice.v); return _accessor.string(at: o) }
+  public var invoiceSegmentArray: [UInt8]! { return _accessor.getVector(at: VTOFFSET.invoice.v) }
+  public static func startLightningData(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 1) }
+  public static func add(invoice: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: invoice, at: VTOFFSET.invoice.p) }
+  public static func endLightningData(_ fbb: inout FlatBufferBuilder, start: UOffset) -> Offset { let end = Offset(offset: fbb.endTable(at: start)); fbb.require(table: end, fields: [4]); return end }
+  public static func createLightningData(
+    _ fbb: inout FlatBufferBuilder,
+    invoiceOffset invoice: Offset
+  ) -> Offset {
+    let __start = nostr_fb_LightningData.startLightningData(&fbb)
+    nostr_fb_LightningData.add(invoice: invoice, &fbb)
+    return nostr_fb_LightningData.endLightningData(&fbb, start: __start)
+  }
+
+  public static func verify<T>(_ verifier: inout Verifier, at position: Int, of type: T.Type) throws where T: Verifiable {
+    var _v = try verifier.visitTable(at: position)
+    try _v.visit(field: VTOFFSET.invoice.p, fieldName: "invoice", required: true, type: ForwardOffset<String>.self)
+    _v.finish()
+  }
+}
+
 public struct nostr_fb_ImageData: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
 
   static func validateVersion() { FlatBuffersVersion_25_12_19() }
@@ -905,6 +942,8 @@ public struct nostr_fb_ContentBlock: FlatBufferTable, FlatbuffersVectorInitializ
         try ForwardOffset<nostr_fb_LinkPreviewData>.verify(&verifier, at: pos, of: nostr_fb_LinkPreviewData.self)
       case .emojidata:
         try ForwardOffset<nostr_fb_EmojiData>.verify(&verifier, at: pos, of: nostr_fb_EmojiData.self)
+      case .lightningdata:
+        try ForwardOffset<nostr_fb_LightningData>.verify(&verifier, at: pos, of: nostr_fb_LightningData.self)
       }
     })
     _v.finish()

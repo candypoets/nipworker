@@ -29,10 +29,10 @@ pub mod fb {
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_CONTENT_DATA: u8 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MAX_CONTENT_DATA: u8 = 9;
+pub const ENUM_MAX_CONTENT_DATA: u8 = 10;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_CONTENT_DATA: [ContentData; 10] = [
+pub const ENUM_VALUES_CONTENT_DATA: [ContentData; 11] = [
   ContentData::NONE,
   ContentData::CodeData,
   ContentData::HashtagData,
@@ -43,6 +43,7 @@ pub const ENUM_VALUES_CONTENT_DATA: [ContentData; 10] = [
   ContentData::NostrData,
   ContentData::LinkPreviewData,
   ContentData::EmojiData,
+  ContentData::LightningData,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -60,9 +61,10 @@ impl ContentData {
   pub const NostrData: Self = Self(7);
   pub const LinkPreviewData: Self = Self(8);
   pub const EmojiData: Self = Self(9);
+  pub const LightningData: Self = Self(10);
 
   pub const ENUM_MIN: u8 = 0;
-  pub const ENUM_MAX: u8 = 9;
+  pub const ENUM_MAX: u8 = 10;
   pub const ENUM_VALUES: &'static [Self] = &[
     Self::NONE,
     Self::CodeData,
@@ -74,6 +76,7 @@ impl ContentData {
     Self::NostrData,
     Self::LinkPreviewData,
     Self::EmojiData,
+    Self::LightningData,
   ];
   /// Returns the variant's name or "" if unknown.
   pub fn variant_name(self) -> Option<&'static str> {
@@ -88,6 +91,7 @@ impl ContentData {
       Self::NostrData => Some("NostrData"),
       Self::LinkPreviewData => Some("LinkPreviewData"),
       Self::EmojiData => Some("EmojiData"),
+      Self::LightningData => Some("LightningData"),
       _ => None,
     }
   }
@@ -159,6 +163,7 @@ pub enum ContentDataT {
   NostrData(Box<NostrDataT>),
   LinkPreviewData(Box<LinkPreviewDataT>),
   EmojiData(Box<EmojiDataT>),
+  LightningData(Box<LightningDataT>),
 }
 impl Default for ContentDataT {
   fn default() -> Self {
@@ -178,6 +183,7 @@ impl ContentDataT {
       Self::NostrData(_) => ContentData::NostrData,
       Self::LinkPreviewData(_) => ContentData::LinkPreviewData,
       Self::EmojiData(_) => ContentData::EmojiData,
+      Self::LightningData(_) => ContentData::LightningData,
     }
   }
   pub fn pack<'b, A: flatbuffers::Allocator + 'b>(&self, fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>) -> Option<flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>> {
@@ -192,6 +198,7 @@ impl ContentDataT {
       Self::NostrData(v) => Some(v.pack(fbb).as_union_value()),
       Self::LinkPreviewData(v) => Some(v.pack(fbb).as_union_value()),
       Self::EmojiData(v) => Some(v.pack(fbb).as_union_value()),
+      Self::LightningData(v) => Some(v.pack(fbb).as_union_value()),
     }
   }
   /// If the union variant matches, return the owned CodeDataT, setting the union to NONE.
@@ -382,6 +389,27 @@ impl ContentDataT {
   /// If the union variant matches, return a mutable reference to the EmojiDataT.
   pub fn as_emoji_data_mut(&mut self) -> Option<&mut EmojiDataT> {
     if let Self::EmojiData(v) = self { Some(v.as_mut()) } else { None }
+  }
+  /// If the union variant matches, return the owned LightningDataT, setting the union to NONE.
+  pub fn take_lightning_data(&mut self) -> Option<Box<LightningDataT>> {
+    if let Self::LightningData(_) = self {
+      let v = core::mem::replace(self, Self::NONE);
+      if let Self::LightningData(w) = v {
+        Some(w)
+      } else {
+        unreachable!()
+      }
+    } else {
+      None
+    }
+  }
+  /// If the union variant matches, return a reference to the LightningDataT.
+  pub fn as_lightning_data(&self) -> Option<&LightningDataT> {
+    if let Self::LightningData(v) = self { Some(v.as_ref()) } else { None }
+  }
+  /// If the union variant matches, return a mutable reference to the LightningDataT.
+  pub fn as_lightning_data_mut(&mut self) -> Option<&mut LightningDataT> {
+    if let Self::LightningData(v) = self { Some(v.as_mut()) } else { None }
   }
 }
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
@@ -4402,6 +4430,139 @@ impl CashuDataT {
     })
   }
 }
+pub enum LightningDataOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct LightningData<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for LightningData<'a> {
+  type Inner = LightningData<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> LightningData<'a> {
+  pub const VT_INVOICE: flatbuffers::VOffsetT = 4;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    LightningData { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args LightningDataArgs<'args>
+  ) -> flatbuffers::WIPOffset<LightningData<'bldr>> {
+    let mut builder = LightningDataBuilder::new(_fbb);
+    if let Some(x) = args.invoice { builder.add_invoice(x); }
+    builder.finish()
+  }
+
+  pub fn unpack(&self) -> LightningDataT {
+    let invoice = {
+      let x = self.invoice();
+      x.to_string()
+    };
+    LightningDataT {
+      invoice,
+    }
+  }
+
+  #[inline]
+  pub fn invoice(&self) -> &'a str {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(LightningData::VT_INVOICE, None).unwrap()}
+  }
+}
+
+impl flatbuffers::Verifiable for LightningData<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("invoice", Self::VT_INVOICE, true)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct LightningDataArgs<'a> {
+    pub invoice: Option<flatbuffers::WIPOffset<&'a str>>,
+}
+impl<'a> Default for LightningDataArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    LightningDataArgs {
+      invoice: None, // required field
+    }
+  }
+}
+
+pub struct LightningDataBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> LightningDataBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_invoice(&mut self, invoice: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(LightningData::VT_INVOICE, invoice);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> LightningDataBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    LightningDataBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<LightningData<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    self.fbb_.required(o, LightningData::VT_INVOICE,"invoice");
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for LightningData<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("LightningData");
+      ds.field("invoice", &self.invoice());
+      ds.finish()
+  }
+}
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct LightningDataT {
+  pub invoice: String,
+}
+impl Default for LightningDataT {
+  fn default() -> Self {
+    Self {
+      invoice: "".to_string(),
+    }
+  }
+}
+impl LightningDataT {
+  pub fn pack<'b, A: flatbuffers::Allocator + 'b>(
+    &self,
+    _fbb: &mut flatbuffers::FlatBufferBuilder<'b, A>
+  ) -> flatbuffers::WIPOffset<LightningData<'b>> {
+    let invoice = Some({
+      let x = &self.invoice;
+      _fbb.create_string(x)
+    });
+    LightningData::create(_fbb, &LightningDataArgs{
+      invoice,
+    })
+  }
+}
 pub enum ImageDataOffset {}
 #[derive(Copy, Clone, PartialEq)]
 
@@ -5611,6 +5772,11 @@ impl<'a> ContentBlock<'a> {
             .expect("Invalid union table, expected `ContentData::EmojiData`.")
             .unpack()
       )),
+      ContentData::LightningData => ContentDataT::LightningData(Box::new(
+        self.data_as_lightning_data()
+            .expect("Invalid union table, expected `ContentData::LightningData`.")
+            .unpack()
+      )),
       _ => ContentDataT::NONE,
     };
     ContentBlockT {
@@ -5783,6 +5949,21 @@ impl<'a> ContentBlock<'a> {
     }
   }
 
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn data_as_lightning_data(&self) -> Option<LightningData<'a>> {
+    if self.data_type() == ContentData::LightningData {
+      self.data().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { LightningData::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
 }
 
 impl flatbuffers::Verifiable for ContentBlock<'_> {
@@ -5805,6 +5986,7 @@ impl flatbuffers::Verifiable for ContentBlock<'_> {
           ContentData::NostrData => v.verify_union_variant::<flatbuffers::ForwardsUOffset<NostrData>>("ContentData::NostrData", pos),
           ContentData::LinkPreviewData => v.verify_union_variant::<flatbuffers::ForwardsUOffset<LinkPreviewData>>("ContentData::LinkPreviewData", pos),
           ContentData::EmojiData => v.verify_union_variant::<flatbuffers::ForwardsUOffset<EmojiData>>("ContentData::EmojiData", pos),
+          ContentData::LightningData => v.verify_union_variant::<flatbuffers::ForwardsUOffset<LightningData>>("ContentData::LightningData", pos),
           _ => Ok(()),
         }
      })?
@@ -5933,6 +6115,13 @@ impl core::fmt::Debug for ContentBlock<'_> {
         },
         ContentData::EmojiData => {
           if let Some(x) = self.data_as_emoji_data() {
+            ds.field("data", &x)
+          } else {
+            ds.field("data", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        ContentData::LightningData => {
+          if let Some(x) = self.data_as_lightning_data() {
             ds.field("data", &x)
           } else {
             ds.field("data", &"InvalidFlatbuffer: Union discriminant does not match value.")
