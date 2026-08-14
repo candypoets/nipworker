@@ -401,10 +401,8 @@ impl ConnectionsWorker {
             }
         };
 
-        // Loop for messages from parser (e.g. CLOSE, EVENT publish)
-        // NOTE: Currently dead code - ParserWorker does not send Raw/NostrEvent directly.
-        // The intended flow is Engine → ParserWorker → CacheWorker → ConnectionsWorker.
-        // This loop exists for future architecture changes and is tested but not exercised in production.
+        // Loop for parser control messages (including relay-scoped and full
+        // subscription CLOSE), plus the direct EVENT path kept for publishing.
         let get_conn_parser = get_or_create_connection.clone();
         let connections_parser = self.connections.clone();
         let full_to_relay_parser = full_to_relay_sub_ids.clone();
@@ -437,7 +435,32 @@ impl ConnectionsWorker {
                                             &full_to_relay_parser,
                                             &relay_to_full_parser,
                                         );
-                                        let _ = conn.send_raw(&relay_text);
+                                        if conn.send_raw(&relay_text).is_ok() {
+                                            if let Some((kind, sub_id)) = relay_frame_state(text) {
+                                                if kind == "CLOSE" {
+                                                    let should_remove = {
+                                                        let mut sub_relays =
+                                                            sub_relays_parser.borrow_mut();
+                                                        if let Some(relays) =
+                                                            sub_relays.get_mut(&sub_id)
+                                                        {
+                                                            relays.remove(url);
+                                                            relays.is_empty()
+                                                        } else {
+                                                            false
+                                                        }
+                                                    };
+                                                    if should_remove {
+                                                        sub_relays_parser
+                                                            .borrow_mut()
+                                                            .remove(&sub_id);
+                                                        sub_dedup_parser
+                                                            .borrow_mut()
+                                                            .remove(&sub_id);
+                                                    }
+                                                }
+                                            }
+                                        }
                                     } else if !text.is_empty() {
                                         if let Some((kind, sub_id)) = relay_frame_state(text) {
                                             if kind == "CLOSE" {
@@ -1002,6 +1025,93 @@ mod tests {
 				);
 			})
 			.await;
+    }
+
+    #[tokio::test]
+    async fn test_parser_targeted_close_removes_only_selected_relay() {
+        let local = LocalSet::new();
+        local
+            .run_until(async {
+                let (
+                    transport,
+                    _worker,
+                    parser_test,
+                    _parser_out_test,
+                    cache_test,
+                    _crypto_test,
+                ) = setup().await;
+
+                let envelope = serde_json::json!({
+                    "relays": ["wss://r1", "wss://r2"],
+                    "frames": [r#"["REQ","s1",{}]"#]
+                });
+                cache_test
+                    .send(&serde_json::to_vec(&envelope).unwrap())
+                    .await
+                    .unwrap();
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+
+                parser_test
+                    .send(&build_raw_worker_message(
+                        "wss://r1",
+                        r#"["CLOSE","s1"]"#,
+                    ))
+                    .await
+                    .unwrap();
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+
+                let calls = transport.calls();
+                assert_eq!(
+                    calls
+                        .iter()
+                        .filter(|call| matches!(
+                            call,
+                            Call::Send(url, frame)
+                                if url == "wss://r1" && frame == r#"["CLOSE","s1"]"#
+                        ))
+                        .count(),
+                    1
+                );
+                assert!(!calls.iter().any(|call| matches!(
+                    call,
+                    Call::Send(url, frame)
+                        if url == "wss://r2" && frame == r#"["CLOSE","s1"]"#
+                )));
+
+                // Full cleanup should now fan out only to the remaining relay.
+                parser_test
+                    .send(&build_raw_worker_message("", r#"["CLOSE","s1"]"#))
+                    .await
+                    .unwrap();
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+
+                let calls = transport.calls();
+                assert_eq!(
+                    calls
+                        .iter()
+                        .filter(|call| matches!(
+                            call,
+                            Call::Send(url, frame)
+                                if url == "wss://r1" && frame == r#"["CLOSE","s1"]"#
+                        ))
+                        .count(),
+                    1,
+                    "full cleanup must not re-close the completed relay"
+                );
+                assert_eq!(
+                    calls
+                        .iter()
+                        .filter(|call| matches!(
+                            call,
+                            Call::Send(url, frame)
+                                if url == "wss://r2" && frame == r#"["CLOSE","s1"]"#
+                        ))
+                        .count(),
+                    1,
+                    "full cleanup must close the remaining relay"
+                );
+            })
+            .await;
     }
 
     #[test]
