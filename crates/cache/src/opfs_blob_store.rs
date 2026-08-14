@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use js_sys::Uint8Array;
 use nipworker_core::{storage::BlobStore, traits::StorageError};
+use std::{cell::RefCell, collections::HashMap};
 use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{
@@ -11,14 +12,24 @@ use web_sys::{
 
 pub struct OpfsBlobStore {
     directory_name: String,
+    directory: RefCell<Option<FileSystemDirectoryHandle>>,
+    file_handles: RefCell<HashMap<String, FileSystemFileHandle>>,
 }
 
 impl OpfsBlobStore {
     pub fn new(directory_name: String) -> Self {
-        Self { directory_name }
+        Self {
+            directory_name,
+            directory: RefCell::new(None),
+            file_handles: RefCell::new(HashMap::new()),
+        }
     }
 
     async fn directory(&self) -> Result<FileSystemDirectoryHandle, StorageError> {
+        if let Some(directory) = self.directory.borrow().clone() {
+            return Ok(directory);
+        }
+
         let worker = js_sys::global()
             .dyn_into::<DedicatedWorkerGlobalScope>()
             .map_err(|_| StorageError::Other("OPFS requires a dedicated worker".into()))?;
@@ -54,16 +65,22 @@ impl OpfsBlobStore {
 
         let options = FileSystemGetDirectoryOptions::new();
         options.set_create(true);
-        JsFuture::from(root.get_directory_handle_with_options(&self.directory_name, &options))
-            .await
-            .map_err(|e| {
-                StorageError::Other(format!(
-                    "OPFS getDirectoryHandle '{}' failed: {:?}",
-                    self.directory_name, e
-                ))
-            })?
-            .dyn_into::<FileSystemDirectoryHandle>()
-            .map_err(|_| StorageError::Other("OPFS directory handle has unexpected type".into()))
+        let directory =
+            JsFuture::from(root.get_directory_handle_with_options(&self.directory_name, &options))
+                .await
+                .map_err(|e| {
+                    StorageError::Other(format!(
+                        "OPFS getDirectoryHandle '{}' failed: {:?}",
+                        self.directory_name, e
+                    ))
+                })?
+                .dyn_into::<FileSystemDirectoryHandle>()
+                .map_err(|_| {
+                    StorageError::Other("OPFS directory handle has unexpected type".into())
+                })?;
+
+        *self.directory.borrow_mut() = Some(directory.clone());
+        Ok(directory)
     }
 
     fn file_name(key: &str) -> String {
@@ -80,12 +97,16 @@ impl OpfsBlobStore {
         key: &str,
         create: bool,
     ) -> Result<FileSystemFileHandle, StorageError> {
+        let file_name = Self::file_name(key);
+        if let Some(handle) = self.file_handles.borrow().get(&file_name).cloned() {
+            return Ok(handle);
+        }
+
         let dir = self.directory().await?;
         let options = FileSystemGetFileOptions::new();
         options.set_create(create);
-        let file_name = Self::file_name(key);
 
-        JsFuture::from(dir.get_file_handle_with_options(&file_name, &options))
+        let handle = JsFuture::from(dir.get_file_handle_with_options(&file_name, &options))
             .await
             .map_err(|e| {
                 StorageError::Other(format!(
@@ -94,7 +115,12 @@ impl OpfsBlobStore {
                 ))
             })?
             .dyn_into::<FileSystemFileHandle>()
-            .map_err(|_| StorageError::Other("OPFS file handle has unexpected type".into()))
+            .map_err(|_| StorageError::Other("OPFS file handle has unexpected type".into()))?;
+
+        self.file_handles
+            .borrow_mut()
+            .insert(file_name, handle.clone());
+        Ok(handle)
     }
 }
 

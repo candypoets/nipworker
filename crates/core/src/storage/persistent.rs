@@ -257,7 +257,13 @@ impl<B: BlobStore> Storage for PersistentNostrDbStorage<B> {
         self.hydrate_from_blob_store().await?;
         // Tombstone replay comes last: referenced events must be indexed
         // before deletions can resolve them to keys.
-        self.load_tombstones().await
+        self.load_tombstones().await?;
+
+        // Hydration already gave the in-memory database a current snapshot.
+        // Without this, the first live event after every worker start sees the
+        // zero timestamp and serializes every shard back to OPFS immediately.
+        self.mark_synced();
+        Ok(())
     }
 
     fn get_relays(&self, request: &Request<'_>) -> Option<Vec<String>> {
@@ -414,6 +420,24 @@ mod tests {
         );
         storage.initialize().await.unwrap();
         assert!(storage.load_tombstones().await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn first_persist_after_initialize_does_not_force_a_full_snapshot() {
+        let blob = MemBlobStore::default();
+        let storage = PersistentNostrDbStorage::new(
+            NostrDbStorage::new("startup-sync-test".to_string(), 1024 * 1024, vec![], vec![]),
+            blob.clone(),
+        );
+        storage.initialize().await.unwrap();
+
+        let event = build_parsed_worker_message(&hex_id(30), &hex_id(31), 1, 1000, &[]);
+        storage.persist(&event).await.unwrap();
+
+        assert!(
+            blob.data.lock().unwrap().is_empty(),
+            "the first live event must not serialize every shard after hydration"
+        );
     }
 
     #[tokio::test]
