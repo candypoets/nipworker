@@ -153,6 +153,34 @@ describe('NostrManager lifecycle wake', () => {
 		expect(manager.getSubscriptionCount()).toBe(0);
 	});
 
+	it('clears pending sign callbacks and the crypto signer on logout', async () => {
+		const { NostrManager } = await import('./NostrManager');
+		const manager = new NostrManager();
+		const callback = vi.fn();
+
+		manager.signEvent({ kind: 1, created_at: 1, content: 'pending', tags: [] }, callback);
+		expect((manager as any).signRequests.size).toBe(1);
+		manager.logout();
+
+		expect((manager as any).signRequests.size).toBe(0);
+		const crypto = MockWorker.instances.find((worker) => worker.url.includes('/crypto/'));
+		expect(crypto?.messages).toContainEqual({ type: 'clear_signer' });
+	});
+
+	it('does not let an unknown sign response id consume another callback', async () => {
+		const { NostrManager } = await import('./NostrManager');
+		const manager = new NostrManager();
+		const first = vi.fn();
+		const second = vi.fn();
+
+		manager.signEvent({ kind: 1, created_at: 1, content: 'first', tags: [] }, first);
+		manager.signEvent({ kind: 1, created_at: 2, content: 'second', tags: [] }, second);
+
+		expect((manager as any).takeSignCallback(999)).toBeUndefined();
+		expect((manager as any).takeSignCallback(2)).toBe(second);
+		expect((manager as any).takeSignCallback(1)).toBe(first);
+	});
+
 	it('uses focus as a fallback after an observed hidden transition', async () => {
 		const { NostrManager } = await import('./NostrManager');
 		new NostrManager();

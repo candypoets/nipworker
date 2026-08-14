@@ -15,6 +15,7 @@ export interface Spec extends TurboModule {
 	clearMeshProfile(): boolean;
 	wake(): void;
 	setPrivateKey(secret: string): void;
+	clearSigner(): void;
 	getStorageItem(key: string): string | null;
 	setStorageItem(key: string, value: string): boolean;
 	removeStorageItem(key: string): boolean;

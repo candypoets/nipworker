@@ -22,6 +22,26 @@ The native layer validates and persists the configured profile, then restores it
 when the process restarts. `clearMeshProfile()` removes that persisted identity;
 other recently relayed profiles continue to follow the mesh cache TTL.
 
+## Session lock and account removal
+
+`manager.logout()` is the supported reversible lock operation. It clears the
+active JavaScript session, pending sign callbacks, and the signer loaded by the
+native Rust engine. For NIP-46 it also closes the signer relay subscription.
+The `nostr_active_pubkey` pointer is removed, while entries in
+`nostr_signer_accounts` are intentionally retained. Unlock by explicitly
+calling `manager.switchAccount(pubkey)`.
+
+`manager.removeAccount()` is the destructive operation for the active account:
+it removes that account from `nostr_signer_accounts` and clears its native
+signer. If another saved account exists, it becomes the selected account.
+
+Private-key and NIP-46 session payloads are currently stored by the binding in
+NSUserDefaults/SharedPreferences. Unloading a signer therefore protects against
+accidental use through the engine, but it is not secure-at-rest erasure or a
+boundary against arbitrary code already running inside the app. Apps with that
+threat model should use Keychain/Keystore-backed credential storage and require
+user authentication before calling `switchAccount()`.
+
 `meshBLEEnabled` must be supplied before the shared native manager is first
 created. It enables the Rust mesh runtime, dedicated mesh storage, and cache
 endpoint on the same handle used by React Native. It defaults to `false`.

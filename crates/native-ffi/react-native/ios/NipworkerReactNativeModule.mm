@@ -30,6 +30,7 @@ void nipworker_handle_message(void* handle, const uint8_t* ptr, size_t len);
 bool nipworker_subscribe_message(void* handle, const uint8_t* ptr, size_t len);
 bool nipworker_publish_message(void* handle, const uint8_t* ptr, size_t len);
 void nipworker_set_private_key(void* handle, const char* ptr);
+void nipworker_clear_signer(void* handle);
 void nipworker_wake(void* handle);
 void nipworker_deinit(void* handle);
 void nipworker_free_bytes(uint8_t* ptr, size_t len);
@@ -245,6 +246,19 @@ static void NipworkerInstallByteRuntime(facebook::jsi::Runtime& runtime, void* e
 				}
 				std::string secret = args[0].asString(runtime).utf8(runtime);
 				nipworker_set_private_key(engineHandle, secret.c_str());
+				return facebook::jsi::Value::undefined();
+			}
+		)
+	);
+	byteRuntime.setProperty(
+		runtime,
+		"clearSigner",
+		facebook::jsi::Function::createFromHostFunction(
+			runtime,
+			facebook::jsi::PropNameID::forAscii(runtime, "clearSigner"),
+			0,
+			[engineHandle](facebook::jsi::Runtime&, const facebook::jsi::Value&, const facebook::jsi::Value*, size_t) {
+				nipworker_clear_signer(engineHandle);
 				return facebook::jsi::Value::undefined();
 			}
 		)
@@ -560,6 +574,13 @@ static void NipworkerReactNativeCallbackForwarder(void* userdata, const uint8_t*
 	}
 }
 
++ (void)clearSigner {
+	void* handle = NipworkerGetEngineHandleDefault(NULL);
+	if (handle) {
+		nipworker_clear_signer(handle);
+	}
+}
+
 + (void)wake {
 	void* handle = NipworkerGetEngineHandleDefault(NULL);
 	if (handle) {
@@ -686,6 +707,10 @@ RCT_EXPORT_METHOD(handleMessage:(NSArray<NSNumber *> *)bytes) {
 
 RCT_EXPORT_METHOD(setPrivateKey:(NSString *)secret) {
 	[NipworkerRuntime setPrivateKey:secret];
+}
+
+RCT_EXPORT_METHOD(clearSigner) {
+	[NipworkerRuntime clearSigner];
 }
 
 RCT_EXPORT_METHOD(wake) {

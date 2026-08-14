@@ -13,6 +13,7 @@ extern "C" void nipworker_handle_message(void* handle, const uint8_t* ptr, size_
 extern "C" bool nipworker_subscribe_message(void* handle, const uint8_t* ptr, size_t len);
 extern "C" bool nipworker_publish_message(void* handle, const uint8_t* ptr, size_t len);
 extern "C" void nipworker_set_private_key(void* handle, const char* ptr);
+extern "C" void nipworker_clear_signer(void* handle);
 extern "C" void nipworker_wake(void* handle);
 extern "C" void nipworker_deinit(void* handle);
 extern "C" bool nipworker_register_subscription(void* handle, const char* sub_id, size_t buffer_size);
@@ -336,6 +337,20 @@ Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nativeInsta
 				if (count < 1 || !args[0].isString()) return Value::undefined();
 				std::string secret = args[0].asString(runtime).utf8(runtime);
 				nipworker_set_private_key(engineHandle, secret.c_str());
+				return Value::undefined();
+			}
+		)
+	);
+
+	byteRuntime.setProperty(
+		runtime,
+		"clearSigner",
+		Function::createFromHostFunction(
+			runtime,
+			PropNameID::forAscii(runtime, "clearSigner"),
+			0,
+			[engineHandle](Runtime&, const Value&, const Value*, size_t) -> Value {
+				nipworker_clear_signer(engineHandle);
 				return Value::undefined();
 			}
 		)

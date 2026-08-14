@@ -20,6 +20,7 @@ FOUNDATION_EXPORT void *nipworker_react_native_shared_handle(void);
                                userdata:(void *)userdata;
 + (void)handleMessage:(NSData *)data;
 + (void)setPrivateKey:(NSString *)secret;
++ (void)clearSigner;
 + (void)wake;
 @end
 

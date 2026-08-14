@@ -1,4 +1,4 @@
-use futures::channel::mpsc;
+use futures::{channel::mpsc, StreamExt};
 use std::sync::Arc;
 use tracing::info;
 
@@ -16,7 +16,7 @@ use crate::worker::cache_worker::CacheWorker;
 #[cfg(target_arch = "wasm32")]
 use crate::worker::connections_worker::ConnectionsHandle;
 use crate::worker::connections_worker::ConnectionsWorker;
-use crate::worker::crypto_worker::CryptoWorker;
+use crate::worker::crypto_worker::{CryptoWorker, CLEAR_SIGNER_COMMAND};
 use crate::worker::parser_worker::ParserWorker;
 
 /// NostrEngine is the Rust equivalent of the TypeScript NostrManager / Orchestrator.
@@ -28,6 +28,7 @@ use crate::worker::parser_worker::ParserWorker;
 pub struct NostrEngine {
     parser_tx: Box<dyn MessageSender>,
     crypto_tx: Box<dyn MessageSender>,
+    crypto_clear_tx: mpsc::UnboundedSender<()>,
     event_sink: mpsc::Sender<(String, Vec<u8>)>,
     #[cfg(target_arch = "wasm32")]
     connections_handle: ConnectionsHandle,
@@ -126,8 +127,9 @@ impl NostrEngine {
             cache_conn_ch.clone_sender(),
         );
 
+        let (crypto_clear_tx, mut crypto_clear_rx) = mpsc::unbounded::<()>();
         let crypto_worker = CryptoWorker::new();
-        crypto_worker.run(
+        let crypto_handle = crypto_worker.run(
             Box::new(crypto_engine_ch),
             Box::new(crypto_parser_ch),
             Box::new(crypto_conn_ch),
@@ -135,6 +137,11 @@ impl NostrEngine {
             crypto_parser_tx,
             crypto_conn_tx,
         );
+        spawn_worker(async move {
+            while crypto_clear_rx.next().await.is_some() {
+                crypto_handle.clear_signer();
+            }
+        });
 
         let event_sink_crypto = event_sink.clone();
         spawn_worker(async move {
@@ -180,6 +187,7 @@ impl NostrEngine {
         Self {
             parser_tx: engine_parser_tx,
             crypto_tx: engine_crypto_tx,
+            crypto_clear_tx,
             event_sink,
             #[cfg(target_arch = "wasm32")]
             connections_handle,
@@ -258,6 +266,7 @@ impl NostrEngine {
         let crypto_parser_tx = crypto_parser_ch.clone_sender();
         let conn_crypto_tx = conn_crypto_ch.clone_sender();
         let crypto_conn_tx = crypto_conn_ch.clone_sender();
+        let (crypto_clear_tx, mut crypto_clear_rx) = mpsc::unbounded::<()>();
 
         spawn_native_local_thread("nipworker-parser", move || {
             let crypto_client = crate::crypto_client::CryptoClient::new(Box::new(parser_crypto_ch));
@@ -318,7 +327,7 @@ impl NostrEngine {
 
         spawn_native_local_thread("nipworker-crypto", move || {
             let crypto_worker = CryptoWorker::new();
-            crypto_worker.run(
+            let crypto_handle = crypto_worker.run(
                 Box::new(crypto_engine_ch),
                 Box::new(crypto_parser_ch),
                 Box::new(crypto_conn_ch),
@@ -326,6 +335,11 @@ impl NostrEngine {
                 crypto_parser_tx,
                 crypto_conn_tx,
             );
+            tokio::task::spawn_local(async move {
+                while crypto_clear_rx.next().await.is_some() {
+                    crypto_handle.clear_signer();
+                }
+            });
         });
 
         let event_sink_crypto = event_sink.clone();
@@ -362,6 +376,7 @@ impl NostrEngine {
         let engine = Self {
             parser_tx: engine_parser_tx,
             crypto_tx: engine_crypto_tx,
+            crypto_clear_tx,
             event_sink,
             connections_wake_tx: Some(connections_wake_tx),
         };
@@ -379,6 +394,18 @@ impl NostrEngine {
             if let Some(tx) = &self.connections_wake_tx {
                 let _ = tx.send(());
             }
+        }
+    }
+
+    /// Clear the active signer immediately and enqueue an ordered marker behind
+    /// any signer commands already accepted by the engine. The marker prevents
+    /// a queued SetSigner from resurrecting a signer after logout.
+    pub fn clear_signer(&self) {
+        if let Err(e) = self.crypto_tx.send(CLEAR_SIGNER_COMMAND) {
+            tracing::warn!("Failed to enqueue ordered signer clear: {}", e);
+        }
+        if self.crypto_clear_tx.unbounded_send(()).is_err() {
+            tracing::warn!("Failed to signal immediate signer clear");
         }
     }
 

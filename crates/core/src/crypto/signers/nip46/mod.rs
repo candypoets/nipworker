@@ -29,6 +29,7 @@ pub struct Nip46Signer {
     sub_id: String,
     id_counter: Cell<u64>,
     pump_started: Cell<bool>,
+    closed: Rc<Cell<bool>>,
     pending: Rc<RefCell<HashMap<String, Result<String, String>>>>,
     user_pubkey: Rc<RefCell<Option<String>>>,
     discovered_remote_pubkey: Rc<RefCell<Option<String>>>,
@@ -77,6 +78,7 @@ impl Nip46Signer {
             sub_id,
             id_counter: Cell::new(Self::unix_time() as u64),
             pump_started: Cell::new(false),
+            closed: Rc::new(Cell::new(false)),
             pending: Rc::new(RefCell::new(HashMap::new())),
             user_pubkey: Rc::new(RefCell::new(None)),
             discovered_remote_pubkey: Rc::new(RefCell::new(None)),
@@ -124,7 +126,18 @@ impl Nip46Signer {
     }
 
     pub fn close(&self) {
+        if self.closed.replace(true) {
+            return;
+        }
         self.transport.send_close(&self.sub_id);
+        self.pending.borrow_mut().clear();
+        self.auth_pending.borrow_mut().clear();
+        self.on_discovery.borrow_mut().take();
+        self.on_auth_url.borrow_mut().take();
+    }
+
+    pub fn is_closed(&self) -> bool {
+        self.closed.get()
     }
 
     pub fn get_discovered_remote_pubkey(&self) -> Option<String> {
@@ -287,6 +300,9 @@ impl Nip46Signer {
         params: Vec<String>,
         id: &str,
     ) -> Result<String, String> {
+        if self.closed.get() {
+            return Err("nip46 signer closed".to_string());
+        }
         info!("[nip46] rpc_call: method={}, id={}", method, id);
 
         let payload = json!({
@@ -332,6 +348,10 @@ impl Nip46Signer {
         let max_sleep: u32 = 256;
 
         loop {
+            if self.closed.get() {
+                self.auth_pending.borrow_mut().remove(id);
+                return Err("nip46 signer closed".to_string());
+            }
             if let Some(done) = self.pending.borrow_mut().remove(id) {
                 self.auth_pending.borrow_mut().remove(id);
                 match done {
@@ -417,11 +437,21 @@ impl Nip46Signer {
 mod tests {
     use super::*;
     use crate::channel::ChannelError;
+    use std::sync::Arc;
 
     struct NoopSender;
 
     impl MessageSender for NoopSender {
         fn send(&self, _bytes: &[u8]) -> Result<(), ChannelError> {
+            Ok(())
+        }
+    }
+
+    struct RecordingSender(Arc<std::sync::Mutex<Vec<Vec<u8>>>>);
+
+    impl MessageSender for RecordingSender {
+        fn send(&self, bytes: &[u8]) -> Result<(), ChannelError> {
+            self.0.lock().unwrap().push(bytes.to_vec());
             Ok(())
         }
     }
@@ -450,5 +480,35 @@ mod tests {
             url,
             "bunker://abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890?relay=wss%3A%2F%2Frelay.example&secret=a%2Bb%26c%3Dd"
         );
+    }
+
+    #[test]
+    fn close_is_idempotent_and_sends_relay_close() {
+        let sent = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let (_tx, rx) = mpsc::channel::<Vec<u8>>(1);
+        let signer = Nip46Signer::new(
+            Nip46Config {
+                remote_signer_pubkey: "a".repeat(64),
+                relays: vec!["wss://relay.example".to_string()],
+                use_nip44: true,
+                app_name: None,
+                expected_secret: None,
+            },
+            Rc::new(RefCell::new(RecordingSender(sent.clone()))),
+            rx,
+            None,
+        );
+
+        signer.close();
+        signer.close();
+
+        assert!(signer.is_closed());
+        let messages = sent.lock().unwrap();
+        assert_eq!(messages.len(), 1);
+        let envelope: serde_json::Value = serde_json::from_slice(&messages[0]).unwrap();
+        assert!(envelope["frames"][0]
+            .as_str()
+            .unwrap()
+            .starts_with("[\"CLOSE\",\"n46:"));
     }
 }

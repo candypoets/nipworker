@@ -169,6 +169,33 @@ async fn test_set_signer_hot_swap() {
                 pubkey_a, pubkey_b,
                 "Hot-swapped signer must produce a different public key"
             );
+
+            // 6) Logout clears the signer. The ordered clear marker must run
+            // before this following GetPublicKey request.
+            engine.clear_signer();
+            engine
+                .handle_message(&build_get_public_key_message())
+                .await
+                .unwrap();
+            let resp = poll_crypto_response(&mut event_sink_rx).await;
+            let wm = flatbuffers::root::<fb::WorkerMessage>(&resp)
+                .expect("valid WorkerMessage from crypto worker");
+            assert_eq!(wm.type_(), fb::MessageType::Pubkey);
+            let cleared = wm.content_as_pubkey().expect("Pubkey content");
+            assert_eq!(cleared.error(), Some("no signer configured"));
+
+            // 7) The lock is reversible: explicitly installing a saved signer
+            // restores normal crypto operations.
+            engine
+                .handle_message(&build_set_private_key_message(SECRET_A))
+                .await
+                .unwrap();
+            let _ = poll_crypto_response(&mut event_sink_rx).await;
+            engine
+                .handle_message(&build_get_public_key_message())
+                .await
+                .unwrap();
+            assert_eq!(drain_until_get_pubkey(&mut event_sink_rx).await, pubkey_a);
         })
         .await;
 }

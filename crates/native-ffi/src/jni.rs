@@ -61,6 +61,12 @@ extern "C" {
         secret: *mut c_void,
     );
 
+    fn impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerClearSigner(
+        env: *mut c_void,
+        cls: *mut c_void,
+        handle: i64,
+    );
+
     fn impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerDeinit(
         env: *mut c_void,
         cls: *mut c_void,
@@ -227,6 +233,19 @@ pub extern "C" fn Java_com_candypoets_nipworker_reactnative_NipworkerReactNative
     unsafe {
         impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerSetPrivateKey(
             env, cls, handle, secret,
+        )
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerClearSigner(
+    env: *mut c_void,
+    cls: *mut c_void,
+    handle: i64,
+) {
+    unsafe {
+        impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerClearSigner(
+            env, cls, handle,
         )
     }
 }

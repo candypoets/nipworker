@@ -78,6 +78,7 @@ fn new_named_core_storage(
 /// Commands sent to the engine thread
 enum EngineCommand {
     HandleMessage(Vec<u8>),
+    ClearSigner,
     Wake,
 }
 
@@ -650,12 +651,15 @@ pub extern "C" fn nipworker_init_with_options(
             while let Some(cmd) = cmd_rx.recv().await {
                 match cmd {
                     EngineCommand::HandleMessage(bytes) => {
-                        let engine = engine.clone();
-                        tokio::task::spawn_local(async move {
-                            if let Err(e) = engine.handle_message(&bytes).await {
-                                log::warn!("[nipworker-native] handle_message error: {}", e);
-                            }
-                        });
+                        // handle_message only validates and enqueues. Await it
+                        // inline so a following ClearSigner cannot overtake an
+                        // already accepted SetSigner command.
+                        if let Err(e) = engine.handle_message(&bytes).await {
+                            log::warn!("[nipworker-native] handle_message error: {}", e);
+                        }
+                    }
+                    EngineCommand::ClearSigner => {
+                        engine.clear_signer();
                     }
                     EngineCommand::Wake => {
                         engine.wake();
@@ -785,6 +789,22 @@ pub unsafe extern "C" fn nipworker_set_private_key(handle: *mut c_void, ptr: *co
         if let Some(ref tx) = state.cmd_tx {
             let bytes = build_set_private_key_message(&secret);
             let _ = tx.send(EngineCommand::HandleMessage(bytes));
+        }
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn nipworker_clear_signer(handle: *mut c_void) {
+    if handle.is_null() {
+        return;
+    }
+    let handle = unsafe { &*(handle as *mut NipworkerHandle) };
+    if let Ok(state) = handle.state.lock() {
+        if state.destroyed {
+            return;
+        }
+        if let Some(ref tx) = state.cmd_tx {
+            let _ = tx.send(EngineCommand::ClearSigner);
         }
     }
 }
@@ -1037,8 +1057,9 @@ pub extern "C" fn nipworker_deinit(handle: *mut c_void) {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_event_batch, nipworker_subscription_try_reset, BatchOutcome, CallbackAction,
-        NativeSubscription, NativeSubscriptionStore, NipworkerHandle, NipworkerState,
+        apply_event_batch, nipworker_clear_signer, nipworker_subscription_try_reset, BatchOutcome,
+        CallbackAction, EngineCommand, NativeSubscription, NativeSubscriptionStore,
+        NipworkerHandle, NipworkerState,
     };
     use std::ffi::{c_void, CString};
     use std::sync::{Arc, Mutex};
@@ -1082,6 +1103,25 @@ mod tests {
         let subscription = NativeSubscription::new(64, false);
         assert_eq!(subscription.buffer.len(), 64);
         assert_eq!(&subscription.buffer[0..4], &4u32.to_le_bytes());
+    }
+
+    #[test]
+    fn clear_signer_enqueues_native_engine_command() {
+        let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let handle = Box::new(NipworkerHandle {
+            state: Mutex::new(NipworkerState {
+                destroyed: false,
+                cmd_tx: Some(cmd_tx),
+                subscriptions: Arc::new(Mutex::new(NativeSubscriptionStore::new())),
+                mesh_tx: None,
+            }),
+        });
+        let handle = Box::into_raw(handle) as *mut c_void;
+
+        unsafe { nipworker_clear_signer(handle) };
+
+        assert!(matches!(cmd_rx.try_recv(), Ok(EngineCommand::ClearSigner)));
+        let _ = unsafe { Box::from_raw(handle as *mut NipworkerHandle) };
     }
 
     #[test]

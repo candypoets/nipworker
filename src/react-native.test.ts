@@ -10,6 +10,8 @@ import {
 	Message,
 	MessageType,
 	NostrEventT,
+	PubkeyT,
+	SetSignerResponseT,
 	SignedEventT,
 	StringVecT,
 	Subscribe,
@@ -21,12 +23,15 @@ let nativeEventListener: ((event: any) => void) | undefined;
 let appStateListener: ((state: 'active' | 'background' | 'inactive') => void) | undefined;
 const queuedBuffers: ArrayBuffer[] = [];
 const nativeBuffers = new Map<string, ArrayBuffer>();
-const { initEngine, startMesh, setMeshProfile, clearMeshProfile } = vi.hoisted(() => ({
-	initEngine: vi.fn(),
-	startMesh: vi.fn(() => true),
-	setMeshProfile: vi.fn(() => true),
-	clearMeshProfile: vi.fn(() => true)
-}));
+const { initEngine, startMesh, setMeshProfile, clearMeshProfile, nativeStorage } = vi.hoisted(
+	() => ({
+		initEngine: vi.fn(),
+		startMesh: vi.fn(() => true),
+		setMeshProfile: vi.fn(() => true),
+		clearMeshProfile: vi.fn(() => true),
+		nativeStorage: new Map<string, string>()
+	})
+);
 
 vi.mock('react-native', () => {
 	const turboModule = {
@@ -39,6 +44,7 @@ vi.mock('react-native', () => {
 				handleMessage: vi.fn(),
 				wake: vi.fn(),
 				setPrivateKey: vi.fn(),
+				clearSigner: vi.fn(),
 				deinit: vi.fn(),
 				drain: vi.fn(() => queuedBuffers.splice(0)),
 				subscribe: vi.fn((_bytes: ArrayBuffer, subId: string) => {
@@ -77,9 +83,16 @@ vi.mock('react-native', () => {
 		setMeshProfile,
 		clearMeshProfile,
 		setPrivateKey: vi.fn(),
-		getStorageItem: vi.fn(() => null),
-		setStorageItem: vi.fn(() => true),
-		removeStorageItem: vi.fn(() => true),
+		clearSigner: vi.fn(),
+		getStorageItem: vi.fn((key: string) => nativeStorage.get(key) ?? null),
+		setStorageItem: vi.fn((key: string, value: string) => {
+			nativeStorage.set(key, value);
+			return true;
+		}),
+		removeStorageItem: vi.fn((key: string) => {
+			nativeStorage.delete(key);
+			return true;
+		}),
 		deinit: vi.fn()
 	};
 
@@ -159,7 +172,7 @@ function buildSignedEventMessage(): ArrayBuffer {
 	return framed.buffer;
 }
 
-function buildTypedSignedEventMessage(subId = 'crypto'): Uint8Array {
+function buildTypedSignedEventMessage(subId = 'crypto', requestId = 1): Uint8Array {
 	const builder = new flatbuffers.Builder(1024);
 	const message = new WorkerMessageT(
 		subId,
@@ -176,8 +189,34 @@ function buildTypedSignedEventMessage(subId = 'crypto'): Uint8Array {
 				123,
 				'd'.repeat(128)
 			),
-			1
+			requestId
 		)
+	);
+	builder.finish(message.pack(builder));
+	return builder.asUint8Array();
+}
+
+function buildPubkeyMessage(pubkey: string): Uint8Array {
+	const builder = new flatbuffers.Builder(512);
+	const message = new WorkerMessageT(
+		'crypto',
+		'',
+		MessageType.Pubkey,
+		Message.Pubkey,
+		new PubkeyT(pubkey)
+	);
+	builder.finish(message.pack(builder));
+	return builder.asUint8Array();
+}
+
+function buildSetSignerResponse(pubkey: string): Uint8Array {
+	const builder = new flatbuffers.Builder(512);
+	const message = new WorkerMessageT(
+		'crypto',
+		'',
+		MessageType.SetSignerResponse,
+		Message.SetSignerResponse,
+		new SetSignerResponseT(pubkey)
 	);
 	builder.finish(message.pack(builder));
 	return builder.asUint8Array();
@@ -208,6 +247,7 @@ describe('react-native byte runtime subscription path', () => {
 		appStateListener = undefined;
 		queuedBuffers.length = 0;
 		nativeBuffers.clear();
+		nativeStorage.clear();
 		initEngine.mockClear();
 		startMesh.mockClear();
 		setMeshProfile.mockClear();
@@ -474,6 +514,84 @@ describe('react-native byte runtime subscription path', () => {
 			content: 'hello',
 			sig: 'd'.repeat(128)
 		});
+		manager.deinit();
+	});
+
+	it('logout clears the native signer and ignores late auth and sign responses', async () => {
+		const manager = createNostrManager();
+		await Promise.resolve();
+		const byteRuntime = (globalThis as any).__nipworkerReactNativeByteRuntime;
+		const callback = vi.fn();
+		const pubkey = 'b'.repeat(64);
+
+		manager.setSigner('privkey', '1'.repeat(64));
+		manager.signEvent({ kind: 1, created_at: 123, content: 'pending', tags: [] }, callback);
+		manager.logout();
+
+		expect(byteRuntime.clearSigner).toHaveBeenCalledTimes(1);
+		expect(manager.getActivePubkey()).toBeNull();
+		expect(nativeStorage.has('nostr_active_pubkey')).toBe(false);
+
+		(manager as any).handleNativePayload(buildPubkeyMessage(pubkey));
+		(manager as any).handleNativePayload(buildSetSignerResponse(pubkey));
+		(manager as any).handleNativePayload(buildTypedSignedEventMessage('crypto', 1));
+
+		expect(manager.getActivePubkey()).toBeNull();
+		expect(callback).not.toHaveBeenCalled();
+		manager.deinit();
+	});
+
+	it('retains saved accounts on logout and explicitly restores one on unlock', async () => {
+		const manager = createNostrManager();
+		await Promise.resolve();
+		const byteRuntime = (globalThis as any).__nipworkerReactNativeByteRuntime;
+		const secret = '2'.repeat(64);
+		const pubkey = 'c'.repeat(64);
+
+		manager.setSigner('privkey', secret);
+		(manager as any).handleNativePayload(buildPubkeyMessage(pubkey));
+		expect(manager.getAccounts()[pubkey]).toEqual({ type: 'privkey', payload: secret });
+
+		manager.logout();
+		expect(manager.getAccounts()[pubkey]).toEqual({ type: 'privkey', payload: secret });
+		expect(nativeStorage.has('nostr_active_pubkey')).toBe(false);
+
+		manager.switchAccount(pubkey);
+		expect(byteRuntime.setPrivateKey).toHaveBeenCalledTimes(2);
+		manager.deinit();
+	});
+
+	it('removeAccount forgets the active persisted credential and clears native state', async () => {
+		const manager = createNostrManager();
+		await Promise.resolve();
+		const byteRuntime = (globalThis as any).__nipworkerReactNativeByteRuntime;
+		const pubkey = 'd'.repeat(64);
+
+		manager.setSigner('privkey', '3'.repeat(64));
+		(manager as any).handleNativePayload(buildPubkeyMessage(pubkey));
+		manager.removeAccount();
+
+		expect(manager.getAccounts()).toEqual({});
+		expect(manager.getActivePubkey()).toBeNull();
+		expect(byteRuntime.clearSigner).toHaveBeenCalledTimes(1);
+		manager.deinit();
+	});
+
+	it('never routes an unknown response id to another pending sign request', () => {
+		const manager = createNostrManager();
+		const first = vi.fn();
+		const second = vi.fn();
+
+		manager.signEvent({ kind: 1, created_at: 1, content: 'first', tags: [] }, first);
+		manager.signEvent({ kind: 1, created_at: 2, content: 'second', tags: [] }, second);
+		(manager as any).handleNativePayload(buildTypedSignedEventMessage('crypto', 999));
+
+		expect(first).not.toHaveBeenCalled();
+		expect(second).not.toHaveBeenCalled();
+
+		(manager as any).handleNativePayload(buildTypedSignedEventMessage('crypto', 2));
+		expect(first).not.toHaveBeenCalled();
+		expect(second).toHaveBeenCalledTimes(1);
 		manager.deinit();
 	});
 });

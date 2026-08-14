@@ -59,6 +59,7 @@ type ByteRuntime = {
 	handleMessage(bytes: ArrayBuffer): void;
 	wake(): void;
 	setPrivateKey(secret: string): void;
+	clearSigner?(): void;
 	deinit(): void;
 	drain(): ArrayBuffer[];
 	subscribe?(bytes: ArrayBuffer, subId: string): ArrayBuffer | undefined;
@@ -77,6 +78,7 @@ type ReactNativeModuleFacade = {
 	handleMessage(bytes: Uint8Array | ArrayBuffer): void;
 	wake(): void;
 	setPrivateKey(secret: string): void;
+	clearSigner(): void;
 	setMeshProfile(profileJson: string): boolean;
 	clearMeshProfile(): boolean;
 	deinit(): void;
@@ -226,6 +228,20 @@ const reactNativeBridge = {
 					return;
 				}
 				mod.setPrivateKey(secret);
+			},
+			clearSigner(): void {
+				const byteRuntime = getByteRuntime();
+				if (typeof byteRuntime?.clearSigner === 'function') {
+					byteRuntime.clearSigner();
+					return;
+				}
+				if (typeof mod.clearSigner === 'function') {
+					mod.clearSigner();
+					return;
+				}
+				throw new Error(
+					'[ReactNativeBackend] Native clearSigner is unavailable; rebuild the app with the matching nipworker native module.'
+				);
 			},
 			setMeshProfile(profileJson: string): boolean {
 				return typeof mod.setMeshProfile === 'function' && Boolean(mod.setMeshProfile(profileJson));
@@ -477,7 +493,11 @@ export class ReactNativeManager extends BaseBackend {
 		}
 		if (subId === '') {
 			const contentType = workerMsg.contentType();
-			if (contentType === Message.SetSignerResponse || contentType === Message.Raw || contentType === Message.AuthUrl) {
+			if (
+				contentType === Message.SetSignerResponse ||
+				contentType === Message.Raw ||
+				contentType === Message.AuthUrl
+			) {
 				this.handleCryptoMessage(data);
 				return;
 			}
@@ -518,8 +538,8 @@ export class ReactNativeManager extends BaseBackend {
 			const signedEventObj = workerMsg.content(new SignedEvent());
 			const eventObj = signedEventObj ? signedEventObj.event() : null;
 			if (!eventObj) return;
-			// Legacy producers may omit the request id. In that case delivery
-			// falls back to the oldest pending request (FIFO).
+			// Legacy producers may omit the request id. Delivery is allowed only
+			// when exactly one request is pending.
 			const cb = this.takeSignCallback(signedEventObj!.requestId() || undefined);
 			if (cb) {
 				cb(this.fbEventToNostrEvent(eventObj));
@@ -530,15 +550,10 @@ export class ReactNativeManager extends BaseBackend {
 		const pubkeyObj = workerMsg.content(new Pubkey());
 		const pubkey = pubkeyObj ? pubkeyObj.pubkey() : null;
 		if (pubkey) {
-			this.activePubkey = pubkey;
 			const secretKey =
 				this._pendingSession?.type === 'privkey' ? this._pendingSession.payload : undefined;
-			if (this._pendingSession) {
-				this.saveSession(pubkey, this._pendingSession.type, this._pendingSession.payload);
-				this._pendingSession = null;
-			}
-			this.dispatch('auth', { pubkey: this.activePubkey, hasSigner: true, secretKey });
-		} else {
+			this.handleSignerPubkey(pubkey, secretKey);
+		} else if (this.canAcceptSignerResponse()) {
 			this.dispatch('auth', { pubkey: null, hasSigner: false });
 		}
 	}
@@ -547,7 +562,12 @@ export class ReactNativeManager extends BaseBackend {
 		return typeof value === 'string' && /^[0-9a-f]{64}$/i.test(value);
 	}
 
+	private canAcceptSignerResponse(): boolean {
+		return this._pendingSession !== null || this.activePubkey !== null;
+	}
+
 	private handleSignerPubkey(pubkey: string, secretKey?: unknown, bunkerUrl?: unknown) {
+		if (!this.canAcceptSignerResponse()) return;
 		this.activePubkey = pubkey;
 		if (this._pendingSession) {
 			const sessionPayload =
@@ -594,6 +614,7 @@ export class ReactNativeManager extends BaseBackend {
 			case Message.SetSignerResponse: {
 				const resp = workerMsg.content(new SetSignerResponse());
 				if (!resp) return;
+				if (!this.canAcceptSignerResponse()) return;
 				const pubkey = resp.pubkey() || '';
 				const secretKey =
 					this._pendingSession?.type === 'privkey' ? this._pendingSession.payload : undefined;
@@ -611,6 +632,7 @@ export class ReactNativeManager extends BaseBackend {
 			}
 			case Message.Pubkey: {
 				const resp = workerMsg.content(new Pubkey());
+				if (!this.canAcceptSignerResponse()) return;
 				const pubkey = resp?.pubkey() || '';
 				const secretKey =
 					this._pendingSession?.type === 'privkey' ? this._pendingSession.payload : undefined;
@@ -626,6 +648,7 @@ export class ReactNativeManager extends BaseBackend {
 				if (!resp) return;
 				const eventObj = resp.event();
 				if (!eventObj) {
+					this.takeSignCallback(resp.requestId() || undefined);
 					if (resp.error()) {
 						console.warn('[ReactNativeManager] sign_event failed:', resp.error());
 					}
@@ -767,9 +790,12 @@ export class ReactNativeManager extends BaseBackend {
 	}
 
 	setSigner(name: string, payload?: string | { url: string; clientSecret: string }): void {
+		// Responses from a previous account must never cross an account boundary.
+		this._signRequests.clear();
 		this._pendingSession = { type: name, payload };
 		switch (name) {
 			case 'pubkey':
+				this.nativeModule.clearSigner();
 				this.activePubkey = payload as string;
 				this.saveSession(this.activePubkey, 'pubkey', payload);
 				this._pendingSession = null;
@@ -780,6 +806,7 @@ export class ReactNativeManager extends BaseBackend {
 				this.getPublicKey();
 				break;
 			case 'nip07':
+				this._pendingSession = null;
 				console.warn('[ReactNativeManager] NIP-07 is not supported in React Native');
 				this.dispatch('auth', { pubkey: null, hasSigner: false });
 				break;
@@ -806,14 +833,14 @@ export class ReactNativeManager extends BaseBackend {
 		}
 	}
 
-	setMeshProfile(profile: NostrEvent): boolean {
+	override setMeshProfile(profile: NostrEvent): boolean {
 		if (profile.kind !== 0) {
 			throw new Error('[ReactNativeManager] Mesh profile must be a signed kind-0 event');
 		}
 		return this.nativeModule.setMeshProfile(JSON.stringify(profile));
 	}
 
-	clearMeshProfile(): boolean {
+	override clearMeshProfile(): boolean {
 		return this.nativeModule.clearMeshProfile();
 	}
 
@@ -835,8 +862,8 @@ export class ReactNativeManager extends BaseBackend {
 
 	/**
 	 * Resolve the callback for a sign_event response. Prefers an exact
-	 * request-id match; falls back to the oldest pending request for
-	 * responses that carry no id (byte runtime, legacy producers).
+	 * request-id match; accepts a legacy response with no id only when one
+	 * request is pending, so it cannot cross an account/request boundary.
 	 */
 	private takeSignCallback(id?: number): ((event: NostrEvent) => void) | undefined {
 		if (id !== undefined) {
@@ -845,7 +872,10 @@ export class ReactNativeManager extends BaseBackend {
 				this._signRequests.delete(id);
 				return cb;
 			}
+			return undefined;
 		}
+		// A response without an id is safe only when there is no ambiguity.
+		if (this._signRequests.size !== 1) return undefined;
 		const first = this._signRequests.entries().next();
 		if (first.done) return undefined;
 		this._signRequests.delete(first.value[0]);
@@ -859,7 +889,10 @@ export class ReactNativeManager extends BaseBackend {
 		this.postMessage(builder.asUint8Array());
 	}
 
-	protected onLogout(): void {}
+	protected onLogout(): void {
+		this._signRequests.clear();
+		this.nativeModule.clearSigner();
+	}
 
 	cleanup(): void {
 		this.nativeModule.cleanupSubscriptions();

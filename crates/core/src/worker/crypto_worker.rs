@@ -13,6 +13,11 @@ use futures::channel::mpsc;
 use std::sync::Arc;
 use tracing::{info, warn};
 
+/// Internal engine-to-crypto command. This deliberately lives outside the
+/// public FlatBuffers protocol: hosts expose logout through their native API,
+/// while this marker preserves ordering with already queued signer messages.
+pub const CLEAR_SIGNER_COMMAND: &[u8] = b"nipworker:clear-signer:v1";
+
 // ---------------------------------------------------------------------------
 // SharedMessageSender lets NIP-46 hold a cloneable sender behind Rc<RefCell<_>>.
 // ---------------------------------------------------------------------------
@@ -405,14 +410,36 @@ fn parse_nostrconnect_url(url: &str) -> Result<NostrconnectUrl, String> {
 /// signer state from outside the worker loop (e.g. clearing it on logout).
 pub struct CryptoHandle {
     active: std::rc::Rc<std::cell::RefCell<ActiveSigner>>,
+    nip46_tx: std::rc::Rc<std::cell::RefCell<Option<mpsc::Sender<Vec<u8>>>>>,
 }
 
 impl CryptoHandle {
     /// Drop the active signer. Subsequent signer operations fail with
     /// "no signer configured" until a new signer is set.
     pub fn clear_signer(&self) {
-        *self.active.borrow_mut() = ActiveSigner::Unset;
+        clear_active_signer(&self.active, &self.nip46_tx);
     }
+}
+
+fn clear_active_signer(
+    active: &std::rc::Rc<std::cell::RefCell<ActiveSigner>>,
+    nip46_tx: &std::rc::Rc<std::cell::RefCell<Option<mpsc::Sender<Vec<u8>>>>>,
+) {
+    let previous = active.replace(ActiveSigner::Unset);
+    nip46_tx.borrow_mut().take();
+    #[cfg(feature = "crypto")]
+    if let ActiveSigner::Nip46(signer) = previous {
+        signer.close();
+    }
+}
+
+fn replace_active_signer(
+    active: &std::rc::Rc<std::cell::RefCell<ActiveSigner>>,
+    nip46_tx: &std::rc::Rc<std::cell::RefCell<Option<mpsc::Sender<Vec<u8>>>>>,
+    signer: ActiveSigner,
+) {
+    clear_active_signer(active, nip46_tx);
+    *active.borrow_mut() = signer;
 }
 
 pub struct CryptoWorker {
@@ -462,6 +489,10 @@ impl CryptoWorker {
             loop {
                 match from_engine.recv().await {
                     Ok(bytes) => {
+                        if bytes == CLEAR_SIGNER_COMMAND {
+                            clear_active_signer(&active_engine, &nip46_tx_engine);
+                            continue;
+                        }
                         let msg = match flatbuffers::root::<fb::MainMessage>(&bytes) {
                             Ok(m) => m,
                             Err(e) => {
@@ -504,8 +535,12 @@ impl CryptoWorker {
                                                     let pubkey_hex = new_signer
                                                         .get_public_key()
                                                         .unwrap_or_default();
-                                                    *active_engine.borrow_mut() = ActiveSigner::Pk(
-                                                        std::rc::Rc::new(new_signer),
+                                                    replace_active_signer(
+                                                        &active_engine,
+                                                        &nip46_tx_engine,
+                                                        ActiveSigner::Pk(std::rc::Rc::new(
+                                                            new_signer,
+                                                        )),
                                                     );
                                                     Ok(pubkey_hex)
                                                 }
@@ -533,6 +568,10 @@ impl CryptoWorker {
                                                         expected_secret: parsed.secret,
                                                     };
 
+                                                    clear_active_signer(
+                                                        &active_engine,
+                                                        &nip46_tx_engine,
+                                                    );
                                                     let (tx, rx) = mpsc::channel::<Vec<u8>>(256);
                                                     *nip46_tx_engine.borrow_mut() = Some(tx);
 
@@ -576,25 +615,52 @@ impl CryptoWorker {
                                                     *active_engine.borrow_mut() =
                                                         ActiveSigner::Nip46(nip46.clone());
 
-                                                    match nip46.connect().await {
-                                                        Ok(_) => match nip46.get_public_key().await {
-                                                            Ok(pubkey) => {
-                                                                info!(
-                                                                    "[CryptoWorker] NIP-46 bunker connected, pubkey: {}",
-                                                                    &pubkey[..16.min(pubkey.len())]
-                                                                );
-                                                                Ok(pubkey)
-                                                            }
+                                                    // Connecting can wait for a relay or an auth
+                                                    // decision. Keep the engine listener free so an
+                                                    // ordered logout marker can retire this signer.
+                                                    let nip46_for_response = nip46.clone();
+                                                    let to_main_response = to_main_engine.clone();
+                                                    spawn_worker(async move {
+                                                        let result = match nip46_for_response
+                                                            .connect()
+                                                            .await
+                                                        {
+                                                            Ok(_) => match nip46_for_response
+                                                                .get_public_key()
+                                                                .await
+                                                            {
+                                                                Ok(pubkey) => {
+                                                                    info!(
+                                                                        "[CryptoWorker] NIP-46 bunker connected, pubkey: {}",
+                                                                        &pubkey[..16.min(pubkey.len())]
+                                                                    );
+                                                                    Ok(pubkey)
+                                                                }
+                                                                Err(e) => Err(format!(
+                                                                    "NIP-46 bunker get_public_key failed: {}",
+                                                                    e
+                                                                )),
+                                                            },
                                                             Err(e) => Err(format!(
-                                                                "NIP-46 bunker get_public_key failed: {}",
+                                                                "NIP-46 bunker connect failed: {}",
                                                                 e
                                                             )),
-                                                        },
-                                                        Err(e) => Err(format!(
-                                                            "NIP-46 bunker connect failed: {}",
-                                                            e
-                                                        )),
-                                                    }
+                                                        };
+                                                        if nip46_for_response.is_closed() {
+                                                            return;
+                                                        }
+                                                        let resp = serialize_set_signer_response(
+                                                            result, None,
+                                                        );
+                                                        if let Err(e) = to_main_response.send(&resp)
+                                                        {
+                                                            warn!(
+                                                                "[CryptoWorker] failed to send NIP-46 signer response to main: {}",
+                                                                e
+                                                            );
+                                                        }
+                                                    });
+                                                    continue;
                                                 }
                                                 Err(e) => Err(e),
                                             }
@@ -618,6 +684,10 @@ impl CryptoWorker {
                                                         expected_secret: Some(parsed.secret),
                                                     };
 
+                                                    clear_active_signer(
+                                                        &active_engine,
+                                                        &nip46_tx_engine,
+                                                    );
                                                     let (tx, rx) = mpsc::channel::<Vec<u8>>(256);
                                                     *nip46_tx_engine.borrow_mut() = Some(tx);
 
@@ -637,6 +707,9 @@ impl CryptoWorker {
                                                     let to_main_discovery = to_main_engine.clone();
                                                     let on_discovery = std::rc::Rc::new(
                                                         move |pk: String| {
+                                                            if nip46_for_discovery.is_closed() {
+                                                                return;
+                                                            }
                                                             nip46_for_discovery
                                                                 .update_crypto_remote_pubkey(&pk);
                                                             let nip46_for_pubkey =
@@ -644,13 +717,20 @@ impl CryptoWorker {
                                                             let to_main_pubkey =
                                                                 to_main_discovery.clone();
                                                             spawn_worker(async move {
+                                                                if nip46_for_pubkey.is_closed() {
+                                                                    return;
+                                                                }
                                                                 let bunker_url = nip46_for_pubkey
                                                                     .get_bunker_url();
+                                                                let result = nip46_for_pubkey
+                                                                    .get_public_key()
+                                                                    .await;
+                                                                if nip46_for_pubkey.is_closed() {
+                                                                    return;
+                                                                }
                                                                 let resp =
                                                                     serialize_set_signer_response(
-                                                                        nip46_for_pubkey
-                                                                            .get_public_key()
-                                                                            .await,
+                                                                        result,
                                                                         bunker_url.as_deref(),
                                                                     );
                                                                 if let Err(e) =
@@ -701,8 +781,11 @@ impl CryptoWorker {
                                         #[cfg(all(feature = "crypto", target_arch = "wasm32"))]
                                         fb::SignerTypeT::Nip07(_) => {
                                             let nip07 = std::rc::Rc::new(Nip07Signer::new());
-                                            *active_engine.borrow_mut() =
-                                                ActiveSigner::Nip07(nip07.clone());
+                                            replace_active_signer(
+                                                &active_engine,
+                                                &nip46_tx_engine,
+                                                ActiveSigner::Nip07(nip07.clone()),
+                                            );
                                             nip07
                                                 .get_public_key()
                                                 .await
@@ -724,10 +807,9 @@ impl CryptoWorker {
                         };
 
                         let resp = match msg.content_type() {
-                            fb::MainContent::SignEvent => serialize_signed_event_response(
-                                request_id.unwrap_or(0),
-                                result,
-                            ),
+                            fb::MainContent::SignEvent => {
+                                serialize_signed_event_response(request_id.unwrap_or(0), result)
+                            }
                             fb::MainContent::GetPublicKey => serialize_pubkey_response(result),
                             fb::MainContent::SetSigner => {
                                 serialize_set_signer_response(result, None)
@@ -907,6 +989,7 @@ impl CryptoWorker {
 
         CryptoHandle {
             active: self.active,
+            nip46_tx: self.nip46_tx,
         }
     }
 }
@@ -965,7 +1048,10 @@ fn serialize_pubkey_response(result: Result<String, String>) -> Vec<u8> {
 /// On success `pubkey` carries the signer pubkey hex (or a status string while
 /// a NIP-46 QR signer awaits discovery); `bunker_url` is set once a NIP-46 QR
 /// signer has discovered the remote signer.
-fn serialize_set_signer_response(result: Result<String, String>, bunker_url: Option<&str>) -> Vec<u8> {
+fn serialize_set_signer_response(
+    result: Result<String, String>,
+    bunker_url: Option<&str>,
+) -> Vec<u8> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let bunker_off = bunker_url.map(|b| builder.create_string(b));
     let (pubkey_off, err_off) = match result {

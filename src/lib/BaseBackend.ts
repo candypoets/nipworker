@@ -213,14 +213,23 @@ export abstract class BaseBackend {
 	/** Hook called during logout so subclasses can notify their backend. */
 	protected abstract onLogout(): void;
 
+	/**
+	 * Reversibly lock the current session. Backends must make signer operations
+	 * unavailable and discard pending requests. Saved accounts are retained so
+	 * an explicit switchAccount() can unlock one later.
+	 */
 	public logout(): void {
 		this._pendingSession = null;
 		this.activePubkey = null;
-		this.onLogout();
-		this.storage.removeItem('nostr_active_pubkey');
-		this.dispatch('logout');
+		try {
+			this.onLogout();
+		} finally {
+			this.storage.removeItem('nostr_active_pubkey');
+			this.dispatch('logout');
+		}
 	}
 
+	/** Forget the active account's persisted credential and retire its signer. */
 	public removeAccount(): void {
 		const currentPubkey = this.activePubkey;
 		if (!currentPubkey) return;

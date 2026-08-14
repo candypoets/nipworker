@@ -133,6 +133,13 @@ object NipworkerRuntime {
 		}
 	}
 
+	fun clearSigner() {
+		val handle = sharedHandle
+		if (handle != 0L) {
+			NipworkerReactNativeModule.nipworkerClearSigner(handle)
+		}
+	}
+
 	fun wake() {
 		val handle = sharedHandle
 		if (handle != 0L) {
@@ -297,6 +304,9 @@ class NipworkerReactNativeModule(
 		external fun nipworkerSetPrivateKey(handle: Long, secret: String)
 
 		@JvmStatic
+		external fun nipworkerClearSigner(handle: Long)
+
+		@JvmStatic
 		external fun nipworkerWake(handle: Long)
 
 		@JvmStatic
@@ -439,6 +449,11 @@ class NipworkerReactNativeModule(
 	@ReactMethod
 	override fun setPrivateKey(secret: String) {
 		NipworkerRuntime.setPrivateKey(secret)
+	}
+
+	@ReactMethod
+	override fun clearSigner() {
+		NipworkerRuntime.clearSigner()
 	}
 
 	@ReactMethod(isBlockingSynchronousMethod = true)

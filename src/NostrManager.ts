@@ -512,6 +512,10 @@ export class NostrManager extends BaseBackend {
 		return typeof value === 'string' && /^[0-9a-f]{64}$/i.test(value);
 	}
 
+	private canAcceptSignerResponse(): boolean {
+		return this._pendingSession !== null || this.activePubkey !== null;
+	}
+
 	private sessionPayloadForSigner(bunkerUrl?: unknown) {
 		if (
 			this._pendingSession?.type === 'nip46' &&
@@ -526,6 +530,7 @@ export class NostrManager extends BaseBackend {
 	}
 
 	private handleSignerPubkey(pubkey: string, secretKey?: unknown, bunkerUrl?: unknown) {
+		if (!this.canAcceptSignerResponse()) return;
 		this.activePubkey = pubkey;
 		if (this._pendingSession) {
 			this.saveSession(
@@ -547,6 +552,7 @@ export class NostrManager extends BaseBackend {
 			case Message.SetSignerResponse: {
 				const resp = wm.content(new SetSignerResponse());
 				if (!resp) return;
+				if (!this.canAcceptSignerResponse()) return;
 				const pubkey = resp.pubkey() || '';
 				const secretKey =
 					this._pendingSession?.type === 'privkey' ? this._pendingSession.payload : undefined;
@@ -563,6 +569,7 @@ export class NostrManager extends BaseBackend {
 			}
 			case Message.Pubkey: {
 				const resp = wm.content(new Pubkey());
+				if (!this.canAcceptSignerResponse()) return;
 				const pubkey = resp?.pubkey() || '';
 				const secretKey =
 					this._pendingSession?.type === 'privkey' ? this._pendingSession.payload : undefined;
@@ -578,6 +585,7 @@ export class NostrManager extends BaseBackend {
 				if (!resp) return;
 				const eventObj = resp.event();
 				if (!eventObj) {
+					this.takeSignCallback(resp.requestId() || undefined);
 					if (resp.error()) {
 						console.warn('[main] sign_event failed:', resp.error());
 					}
@@ -632,8 +640,8 @@ export class NostrManager extends BaseBackend {
 
 	/**
 	 * Resolve the callback for a sign_event response. Prefers an exact
-	 * request-id match; falls back to the oldest pending request for
-	 * responses that carry no id (legacy/native producers).
+	 * request-id match; accepts a legacy response with no id only when one
+	 * request is pending, so it cannot cross an account/request boundary.
 	 */
 	private takeSignCallback(id?: number): ((event: NostrEvent) => void) | undefined {
 		if (id !== undefined) {
@@ -642,7 +650,9 @@ export class NostrManager extends BaseBackend {
 				this.signRequests.delete(id);
 				return cb;
 			}
+			return undefined;
 		}
+		if (this.signRequests.size !== 1) return undefined;
 		const first = this.signRequests.entries().next();
 		if (first.done) return undefined;
 		this.signRequests.delete(first.value[0]);
@@ -801,11 +811,13 @@ export class NostrManager extends BaseBackend {
 	}
 
 	setSigner(name: string, payload?: string | { url: string; clientSecret: string }): void {
+		this.signRequests.clear();
 		this._pendingSession = { type: name, payload };
 		console.log('[main] set pending session:', name);
 
 		switch (name) {
 			case 'pubkey':
+				this.crypto.postMessage({ type: 'clear_signer' });
 				this.activePubkey = payload as string;
 				this.saveSession(this.activePubkey, 'pubkey', payload);
 				this._pendingSession = null;
@@ -860,6 +872,7 @@ export class NostrManager extends BaseBackend {
 	}
 
 	protected onLogout(): void {
+		this.signRequests.clear();
 		this.crypto.postMessage({ type: 'clear_signer' });
 	}
 
