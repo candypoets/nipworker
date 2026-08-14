@@ -5,7 +5,6 @@ import init, {
 	init_tracing,
 	clear_signer
 } from '../../crates/crypto/pkg/nipworker_crypto.js';
-import wasmUrl from '../../crates/crypto/pkg/nipworker_crypto_bg.wasm?url';
 
 export type InitCryptoMsg = {
 	type: 'init';
@@ -37,7 +36,7 @@ let wasmReady: Promise<any> | null = null;
 
 async function ensureWasm() {
 	if (!wasmReady) {
-		wasmReady = init({ module_or_path: wasmUrl });
+		wasmReady = init();
 	}
 	return wasmReady;
 }

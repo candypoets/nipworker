@@ -47,7 +47,29 @@ function selfContainedEntries(entries: Array<{ input: string; output: string }>)
 	};
 }
 
+/** Fail the package build if a Node-only entry accidentally gains browser globals. */
+function guardNodeEntries(entries: string[]): Plugin {
+	return {
+		name: 'guard-node-entries',
+		apply: 'build',
+		generateBundle(_options, bundle) {
+			for (const entry of entries) {
+				const output = bundle[entry];
+				if (!output || output.type !== 'chunk') {
+					throw new Error(`Missing Node package entry: ${entry}`);
+				}
+				if (/\b(?:document|window)\b/.test(output.code)) {
+					throw new Error(`Browser global emitted in Node package entry: ${entry}`);
+				}
+			}
+		}
+	};
+}
+
 export default defineConfig({
+	// Package assets must resolve relative to the importing worker module, not
+	// from the consuming application's origin root.
+	base: './',
 	plugins: [
 		wasm(),
 		topLevelAwait(),
@@ -64,7 +86,8 @@ export default defineConfig({
 		// Build proxy.ts as self-contained after main build
 		selfContainedEntries([
 			{ input: 'src/connections/proxy.ts', output: 'dist/connections/proxy.js' }
-		])
+		]),
+		guardNodeEntries(['proxy/server.js', 'proxy/vite.js'])
 	],
 	resolve: {
 		alias: {
@@ -72,13 +95,10 @@ export default defineConfig({
 		}
 	},
 	build: {
-		lib: {
-			entry: resolve(__dirname, 'src/index.ts'),
-			name: 'NipWorker',
-			formats: ['es'],
-			fileName: 'index.js'
-		},
 		rollupOptions: {
+			// App-mode defaults allow entry exports to be tree-shaken. These are
+			// public package entry points, so preserve their module signatures.
+			preserveEntrySignatures: 'strict',
 			external: (id) => {
 				return (
 					['flatbuffers', 'nostr-tools', 'react-native', 'ws', 'socks-proxy-agent'].includes(id) ||
@@ -101,6 +121,7 @@ export default defineConfig({
 				crypto: resolve(__dirname, 'src/crypto/index.ts')
 			},
 			output: {
+				format: 'es',
 				entryFileNames: (chunkInfo: any) => {
 					const entryNameMap: Record<string, string> = {
 						index: 'index.js',

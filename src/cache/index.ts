@@ -1,7 +1,6 @@
 /* WASM-based cache worker runtime (dedicated Web Worker, module) */
 
 import init, { start_worker, init_tracing } from '../../crates/cache/pkg/nipworker_cache.js';
-import wasmUrl from '../../crates/cache/pkg/nipworker_cache_bg.wasm?url';
 
 export type InitCacheMsg = {
 	type: 'init';
@@ -21,7 +20,7 @@ let wasmReady: Promise<any> | null = null;
 
 async function ensureWasm() {
 	if (!wasmReady) {
-		wasmReady = init({ module_or_path: wasmUrl });
+		wasmReady = init();
 	}
 	return wasmReady;
 }

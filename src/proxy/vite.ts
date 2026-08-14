@@ -1,5 +1,5 @@
 import type { Plugin, ViteDevServer, PreviewServer } from 'vite';
-import type { RelayProxyServer } from './relayProxyServer';
+import { createRelayProxyServer, type RelayProxyServer } from './relayProxyServer';
 
 export type NipworkerRelayProxyPluginOptions = {
 	/**
@@ -33,8 +33,6 @@ async function startRelayProxy(
 	hostOption: string | undefined,
 	serverName: string
 ): Promise<void> {
-	const { createRelayProxyServer } = await import('./relayProxyServer.js');
-
 	const host = hostOption ?? '127.0.0.1';
 	const relayProxy: RelayProxyServer = createRelayProxyServer({
 		port: portOption,

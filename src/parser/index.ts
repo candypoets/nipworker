@@ -1,7 +1,6 @@
 /* WASM-based parser worker runtime (dedicated Web Worker, module) */
 
 import init, { start_worker, init_tracing } from '../../crates/parser/pkg/nipworker_parser.js';
-import wasmUrl from '../../crates/parser/pkg/nipworker_parser_bg.wasm?url';
 
 export type InitParserMsg = {
 	type: 'init';
@@ -23,7 +22,7 @@ let wasmReady: Promise<any> | null = null;
 
 async function ensureWasm() {
 	if (!wasmReady) {
-		wasmReady = init({ module_or_path: wasmUrl });
+		wasmReady = init();
 	}
 	return wasmReady;
 }

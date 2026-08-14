@@ -5,7 +5,6 @@ import init, {
 	init_tracing,
 	wake_all
 } from '../../crates/connections/pkg/nipworker_connections.js';
-import wasmUrl from '../../crates/connections/pkg/nipworker_connections_bg.wasm?url';
 
 export type InitConnectionsMsg = {
 	type: 'init';
@@ -25,7 +24,7 @@ let wasmReady: Promise<any> | null = null;
 
 async function ensureWasm() {
 	if (!wasmReady) {
-		wasmReady = init({ module_or_path: wasmUrl });
+		wasmReady = init();
 	}
 	return wasmReady;
 }
