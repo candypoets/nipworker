@@ -15,7 +15,7 @@ use flatbuffers::FlatBufferBuilder;
 use futures::channel::mpsc;
 use futures::lock::Mutex;
 use futures::{FutureExt, SinkExt, StreamExt};
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex as StdMutex, RwLock};
 use tracing::{info, info_span, warn, Span};
@@ -36,6 +36,7 @@ struct Sub {
     pipeline: Arc<Mutex<Pipeline>>,
     eosed: bool,
     close_on_eose: bool,
+    closed_relays: FxHashSet<String>,
     publish_id: Option<String>,
     forced_shard: Option<usize>,
 }
@@ -587,10 +588,12 @@ impl ParserWorker {
                         let status_bytes = serialize_connection_status(url, "EOSE", "");
                         self.send_output_to_main(&sid, &status_bytes);
                         self.flush_main(&sid);
-                        let close_on_eose = if let Ok(mut w) = self.subscriptions.write() {
+                        let should_close_relay = if let Ok(mut w) = self.subscriptions.write() {
                             if let Some(sub) = w.get_mut(&sid) {
                                 sub.eosed = true;
                                 sub.close_on_eose
+                                    && !url.is_empty()
+                                    && sub.closed_relays.insert(url.to_string())
                             } else {
                                 false
                             }
@@ -598,13 +601,16 @@ impl ParserWorker {
                             false
                         };
 
-                        // Deliver EOSE before tearing down the worker-side
-                        // subscription so callers can observe the terminal
-                        // status. Main-thread buffer ownership remains managed
-                        // by ref counts and is reclaimed only by cleanup().
-                        if close_on_eose {
-                            if let Err(e) = self.close_subscription(sid.clone()).await {
-                                warn!("closeOnEose failed for {}: {:?}", sid, e);
+                        // EOSE is relay-scoped. Stop only the relay that sent it;
+                        // the parser pipeline and cache state remain available for
+                        // events and EOSEs from the other relays. Full teardown is
+                        // owned by manager cleanup via close_subscription().
+                        if should_close_relay {
+                            if let Err(e) = self.close_relay_subscription(&sid, url).await {
+                                warn!(
+                                    "closeOnEose failed for {} on {}: {:?}",
+                                    sid, url, e
+                                );
                             }
                         }
                     }
@@ -799,6 +805,7 @@ impl ParserWorker {
                     pipeline: Arc::new(Mutex::new(pipeline)),
                     eosed: false,
                     close_on_eose: config.close_on_eose,
+                    closed_relays: FxHashSet::default(),
                     publish_id: None,
                     forced_shard,
                 },
@@ -841,17 +848,18 @@ impl ParserWorker {
         Ok(())
     }
 
-    pub async fn close_subscription(&self, subscription_id: String) -> NostrResult<()> {
+    fn send_close_to_connections(&self, subscription_id: &str, relay_url: Option<&str>) {
         let frame = serde_json::json!(["CLOSE", &subscription_id]).to_string();
         let mut builder = FlatBufferBuilder::new();
         let sid = builder.create_string(&subscription_id);
+        let url = relay_url.map(|url| builder.create_string(url));
         let raw_str = builder.create_string(&frame);
         let raw = fb::Raw::create(&mut builder, &fb::RawArgs { raw: Some(raw_str) });
         let wm = fb::WorkerMessage::create(
             &mut builder,
             &fb::WorkerMessageArgs {
                 sub_id: Some(sid),
-                url: None,
+                url,
                 type_: fb::MessageType::Raw,
                 content_type: fb::Message::Raw,
                 content: Some(raw.as_union_value()),
@@ -859,6 +867,21 @@ impl ParserWorker {
         );
         builder.finish(wm, None);
         let _ = self.to_connections.send(builder.finished_data());
+    }
+
+    async fn close_relay_subscription(
+        &self,
+        subscription_id: &str,
+        relay_url: &str,
+    ) -> NostrResult<()> {
+        if !relay_url.is_empty() {
+            self.send_close_to_connections(subscription_id, Some(relay_url));
+        }
+        Ok(())
+    }
+
+    pub async fn close_subscription(&self, subscription_id: String) -> NostrResult<()> {
+        self.send_close_to_connections(&subscription_id, None);
 
         let mut builder = FlatBufferBuilder::new();
         let sid = builder.create_string(&subscription_id);
@@ -974,6 +997,7 @@ impl ParserWorker {
                     pipeline: Arc::new(Mutex::new(Pipeline::new(vec![], "".to_string()).unwrap())),
                     eosed: false,
                     close_on_eose: false,
+                    closed_relays: FxHashSet::default(),
                     publish_id: Some(publish_id.clone()),
                     forced_shard: None,
                 },
@@ -1468,7 +1492,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_close_on_eose_closes_worker_subscription_after_status_delivery() {
+    async fn test_close_on_eose_closes_only_origin_relay_until_cleanup() {
         let local = tokio::task::LocalSet::new();
         local
             .run_until(async {
@@ -1499,18 +1523,18 @@ mod tests {
                 // Initial cache query emitted by open_subscription.
                 let _ = to_cache_rx.recv().await.unwrap();
 
+                let relay_a = "wss://relay-a.example.com";
+                let relay_b = "wss://relay-b.example.com";
+
                 worker
                     .handle_message_single(
                         "close-on-eose".to_string(),
-                        Arc::new(build_eose_worker_message(
-                            "close-on-eose",
-                            "wss://relay.example.com",
-                        )),
+                        Arc::new(build_eose_worker_message("close-on-eose", relay_a)),
                         ShardSource::Network,
                     )
                     .await;
 
-                // EOSE reaches the consumer before teardown.
+                // EOSE reaches the consumer before the targeted relay close.
                 let main_bytes = to_main_ch.recv().await.unwrap();
                 let (sub_id, data) = decode_first_frame(&main_bytes);
                 assert_eq!(sub_id, "close-on-eose");
@@ -1518,14 +1542,108 @@ mod tests {
                 assert_eq!(wm.content_type(), fb::Message::ConnectionStatus);
                 assert_eq!(wm.content_as_connection_status().unwrap().status(), "EOSE");
 
-                // Then both upstream workers receive their close signal.
+                // Only the relay that sent EOSE receives CLOSE. Parser and cache
+                // state stay alive for other relays until manager cleanup.
                 let connection_bytes = to_connections_rx.recv().await.unwrap();
                 let close_message =
                     flatbuffers::root::<fb::WorkerMessage>(&connection_bytes).unwrap();
+                assert_eq!(close_message.url(), Some(relay_a));
                 assert_eq!(
                     close_message.content_as_raw().unwrap().raw(),
                     r#"["CLOSE","close-on-eose"]"#
                 );
+                assert!(worker
+                    .subscriptions
+                    .read()
+                    .unwrap()
+                    .contains_key("close-on-eose"));
+                assert!(tokio::time::timeout(
+                    tokio::time::Duration::from_millis(10),
+                    to_cache_rx.recv()
+                )
+                .await
+                .is_err());
+
+                // A duplicate EOSE is still observable but must not send a
+                // second CLOSE that could reconnect an already-finished relay.
+                worker
+                    .handle_message_single(
+                        "close-on-eose".to_string(),
+                        Arc::new(build_eose_worker_message("close-on-eose", relay_a)),
+                        ShardSource::Network,
+                    )
+                    .await;
+                let _ = to_main_ch.recv().await.unwrap();
+                assert!(tokio::time::timeout(
+                    tokio::time::Duration::from_millis(10),
+                    to_connections_rx.recv()
+                )
+                .await
+                .is_err());
+
+                // The first relay's EOSE must not prevent a slower relay from
+                // delivering an event. The later EOSE flushes that event and
+                // its own status together to the consumer.
+                let relay_b_event_id = "11".repeat(32);
+                let relay_b_event = format!(
+                    r#"["EVENT","close-on-eose",{{"id":"{}","pubkey":"{}","created_at":1234567890,"kind":1,"tags":[],"content":"from relay B","sig":"{}"}}]"#,
+                    relay_b_event_id,
+                    "22".repeat(32),
+                    "33".repeat(64)
+                );
+                worker
+                    .handle_message_single(
+                        "close-on-eose".to_string(),
+                        Arc::new(build_raw_worker_message(
+                            "close-on-eose",
+                            relay_b,
+                            &relay_b_event,
+                        )),
+                        ShardSource::Network,
+                    )
+                    .await;
+
+                // SaveToDb emits one cache request for the relay B event.
+                let _ = to_cache_rx.recv().await.unwrap();
+
+                worker
+                    .handle_message_single(
+                        "close-on-eose".to_string(),
+                        Arc::new(build_eose_worker_message("close-on-eose", relay_b)),
+                        ShardSource::Network,
+                    )
+                    .await;
+                let main_bytes = to_main_ch.recv().await.unwrap();
+                let frames = decode_tagged_batch(&main_bytes);
+                assert_eq!(frames.len(), 2);
+                assert_eq!(frames[0].0, "close-on-eose");
+                assert_eq!(frames[1].0, "close-on-eose");
+                let event_message = flatbuffers::root::<fb::WorkerMessage>(&frames[0].1).unwrap();
+                assert_eq!(event_message.content_type(), fb::Message::ParsedEvent);
+                assert_eq!(
+                    event_message.content_as_parsed_event().unwrap().id(),
+                    relay_b_event_id
+                );
+                let eose_message = flatbuffers::root::<fb::WorkerMessage>(&frames[1].1).unwrap();
+                assert_eq!(eose_message.content_type(), fb::Message::ConnectionStatus);
+                let eose_status = eose_message.content_as_connection_status().unwrap();
+                assert_eq!(eose_status.status(), "EOSE");
+                assert_eq!(eose_status.relay_url(), relay_b);
+
+                let connection_bytes = to_connections_rx.recv().await.unwrap();
+                let close_message =
+                    flatbuffers::root::<fb::WorkerMessage>(&connection_bytes).unwrap();
+                assert_eq!(close_message.url(), Some(relay_b));
+
+                // Manager cleanup remains the only full teardown path.
+                worker
+                    .close_subscription("close-on-eose".to_string())
+                    .await
+                    .unwrap();
+                let connection_bytes = to_connections_rx.recv().await.unwrap();
+                let close_message =
+                    flatbuffers::root::<fb::WorkerMessage>(&connection_bytes).unwrap();
+                assert_eq!(close_message.url(), None);
 
                 let cache_bytes = to_cache_rx.recv().await.unwrap();
                 let (tag, inner) = cache_input::split(&cache_bytes).unwrap();
