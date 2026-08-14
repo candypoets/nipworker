@@ -35,6 +35,7 @@ const MAIN_BATCH_SWEEP_MS: u64 = 4;
 struct Sub {
     pipeline: Arc<Mutex<Pipeline>>,
     eosed: bool,
+    close_on_eose: bool,
     publish_id: Option<String>,
     forced_shard: Option<usize>,
 }
@@ -586,9 +587,24 @@ impl ParserWorker {
                         let status_bytes = serialize_connection_status(url, "EOSE", "");
                         self.send_output_to_main(&sid, &status_bytes);
                         self.flush_main(&sid);
-                        if let Ok(mut w) = self.subscriptions.write() {
+                        let close_on_eose = if let Ok(mut w) = self.subscriptions.write() {
                             if let Some(sub) = w.get_mut(&sid) {
                                 sub.eosed = true;
+                                sub.close_on_eose
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        };
+
+                        // Deliver EOSE before tearing down the worker-side
+                        // subscription so callers can observe the terminal
+                        // status. Main-thread buffer ownership remains managed
+                        // by ref counts and is reclaimed only by cleanup().
+                        if close_on_eose {
+                            if let Err(e) = self.close_subscription(sid.clone()).await {
+                                warn!("closeOnEose failed for {}: {:?}", sid, e);
                             }
                         }
                     }
@@ -782,6 +798,7 @@ impl ParserWorker {
                 Sub {
                     pipeline: Arc::new(Mutex::new(pipeline)),
                     eosed: false,
+                    close_on_eose: config.close_on_eose,
                     publish_id: None,
                     forced_shard,
                 },
@@ -956,6 +973,7 @@ impl ParserWorker {
                 Sub {
                     pipeline: Arc::new(Mutex::new(Pipeline::new(vec![], "".to_string()).unwrap())),
                     eosed: false,
+                    close_on_eose: false,
                     publish_id: Some(publish_id.clone()),
                     forced_shard: None,
                 },
@@ -1445,6 +1463,81 @@ mod tests {
                         relay
                     );
                 }
+            })
+            .await;
+    }
+
+    #[tokio::test]
+    async fn test_close_on_eose_closes_worker_subscription_after_status_delivery() {
+        let local = tokio::task::LocalSet::new();
+        local
+            .run_until(async {
+                let (mut to_main_ch, from_parser_ch) = FuturesWorkerChannel::new_pair();
+                let (to_cache_tx, mut to_cache_rx) = TokioWorkerChannel::new_pair();
+                let (to_connections_tx, mut to_connections_rx) = TokioWorkerChannel::new_pair();
+
+                let parser = Arc::new(Parser::new(None));
+                let worker = ParserWorker::new(
+                    parser,
+                    Arc::from(to_cache_tx.clone_sender()),
+                    Arc::from(to_connections_tx.clone_sender()),
+                    from_parser_ch.clone_sender(),
+                );
+
+                worker
+                    .open_subscription(
+                        "close-on-eose".to_string(),
+                        vec![],
+                        fb::SubscriptionConfigT {
+                            close_on_eose: true,
+                            ..Default::default()
+                        },
+                    )
+                    .await
+                    .unwrap();
+
+                // Initial cache query emitted by open_subscription.
+                let _ = to_cache_rx.recv().await.unwrap();
+
+                worker
+                    .handle_message_single(
+                        "close-on-eose".to_string(),
+                        Arc::new(build_eose_worker_message(
+                            "close-on-eose",
+                            "wss://relay.example.com",
+                        )),
+                        ShardSource::Network,
+                    )
+                    .await;
+
+                // EOSE reaches the consumer before teardown.
+                let main_bytes = to_main_ch.recv().await.unwrap();
+                let (sub_id, data) = decode_first_frame(&main_bytes);
+                assert_eq!(sub_id, "close-on-eose");
+                let wm = flatbuffers::root::<fb::WorkerMessage>(&data).unwrap();
+                assert_eq!(wm.content_type(), fb::Message::ConnectionStatus);
+                assert_eq!(wm.content_as_connection_status().unwrap().status(), "EOSE");
+
+                // Then both upstream workers receive their close signal.
+                let connection_bytes = to_connections_rx.recv().await.unwrap();
+                let close_message =
+                    flatbuffers::root::<fb::WorkerMessage>(&connection_bytes).unwrap();
+                assert_eq!(
+                    close_message.content_as_raw().unwrap().raw(),
+                    r#"["CLOSE","close-on-eose"]"#
+                );
+
+                let cache_bytes = to_cache_rx.recv().await.unwrap();
+                let (tag, inner) = cache_input::split(&cache_bytes).unwrap();
+                assert_eq!(tag, cache_input::TAG_REQUEST);
+                let cache_close = flatbuffers::root::<fb::CacheRequest>(inner).unwrap();
+                assert!(cache_close.close());
+                assert_eq!(cache_close.sub_id(), "close-on-eose");
+                assert!(!worker
+                    .subscriptions
+                    .read()
+                    .unwrap()
+                    .contains_key("close-on-eose"));
             })
             .await;
     }
