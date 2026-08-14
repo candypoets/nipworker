@@ -12,6 +12,11 @@ import baseConfig from '../../vite.config';
 export default mergeConfig(
 	baseConfig,
 	defineConfig({
+		server: {
+			watch: {
+				ignored: ['**/.kimi/**', '**/target/**', '**/dist/**']
+			}
+		},
 		plugins: [
 			{
 				name: 'bench-ts-worker-urls',

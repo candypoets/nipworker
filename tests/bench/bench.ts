@@ -1,5 +1,5 @@
-import { createNostrManager, setManager } from '../../src/index';
-import { useSubscription, isParsedEvent, isEoce } from '../../src/hooks';
+import { createNostrManager, getManager, setManager } from '../../src/index';
+import { useSubscription, isConnectionStatus, isParsedEvent, isEoce } from '../../src/hooks';
 import type { ParsedEvent } from '../../src/generated/nostr/fb';
 
 const params = new URLSearchParams(location.search);
@@ -9,6 +9,8 @@ const LIVE_EXPECTED = Number(params.get('live') ?? '200');
 interface ThroughputResult {
 	events: number;
 	received: number;
+	duplicates: number;
+	completion: 'count' | 'eose' | 'timeout';
 	wallMs: number;
 	eventsPerSec: number;
 	firstEventMs: number;
@@ -90,23 +92,37 @@ function benchTs(ev: ParsedEvent): number | null {
 	return null;
 }
 
+function releaseBenchSubscription(unsubscribe: () => void): void {
+	// This harness owns each isolated sample and explicitly reclaims its zero-ref
+	// subscription. The library unsubscribe contract remains ref-count-only.
+	unsubscribe();
+	getManager().cleanup();
+}
+
 // ---- Phase 1: throughput -------------------------------------------------
 function runThroughput(n: number): Promise<ThroughputResult> {
 	return new Promise((resolve) => {
 		const subId = `bench_tp_${n}`;
 		let received = 0;
+		let duplicates = 0;
 		let batches = 0;
 		let prevTs = 0;
 		let firstEventMs = 0;
 		let lastEventTs = 0;
+		let done = false;
+		const seenIds = new Set<string>();
 		const start = performance.now();
 
-		const finish = () => {
-			unsub();
+		const finish = (completion: ThroughputResult['completion']) => {
+			if (done) return;
+			done = true;
+			releaseBenchSubscription(unsub);
 			const wallMs = (lastEventTs || performance.now()) - start;
 			resolve({
 				events: n,
 				received,
+				duplicates,
+				completion,
 				wallMs: Math.round(wallMs * 100) / 100,
 				eventsPerSec: wallMs > 0 ? Math.round(received / (wallMs / 1000)) : 0,
 				firstEventMs: Math.round(firstEventMs * 100) / 100,
@@ -115,12 +131,26 @@ function runThroughput(n: number): Promise<ThroughputResult> {
 			});
 		};
 
-		const timer = setTimeout(finish, 90000);
+		const timer = setTimeout(() => finish('timeout'), 15000);
 		const unsub = useSubscription(
 			subId,
-			[{ kinds: [1], limit: n, relays: [RELAY] }],
+			[{ kinds: [1], limit: n, relays: [RELAY], noCache: true }],
 			(msg) => {
-				if (!isParsedEvent(msg)) return;
+				const status = isConnectionStatus(msg);
+				if (status?.status() === 'EOSE') {
+					clearTimeout(timer);
+					setTimeout(() => finish('eose'), 0);
+					return;
+				}
+				const event = isParsedEvent(msg);
+				if (!event) return;
+				const id = event.id();
+				if (id && seenIds.has(id)) {
+					duplicates++;
+					return;
+				}
+				if (id) seenIds.add(id);
+				if (received >= n) return;
 				const now = performance.now();
 				received++;
 				if (received === 1) firstEventMs = now - start;
@@ -129,13 +159,13 @@ function runThroughput(n: number): Promise<ThroughputResult> {
 				if (now - prevTs > 1) batches++;
 				prevTs = now;
 				lastEventTs = now;
-				if (received >= n) {
+				if (received === n) {
 					clearTimeout(timer);
 					// Let the callback loop drain before unsubscribing.
-					setTimeout(finish, 0);
+					setTimeout(() => finish('count'), 0);
 				}
 			},
-			{ closeOnEose: true, bytesPerEvent: 8192, skipCache: true }
+			{ closeOnEose: true, bytesPerEvent: 8192 }
 		);
 	});
 }
@@ -150,7 +180,7 @@ function runCacheQuery(limit: number, repeat: number): Promise<{ ms: number; eve
 		const finish = (ms: number) => {
 			if (done) return;
 			done = true;
-			unsub();
+			releaseBenchSubscription(unsub);
 			resolve({ ms: Math.round(ms * 100) / 100, events });
 		};
 		const unsub = useSubscription(
@@ -182,7 +212,9 @@ async function runCachePhase(repeats: number): Promise<CacheQueryStats[]> {
 			eventsPerQuery = r.events;
 		}
 		out.push({ limit, repeats, samples, eventsPerQuery, ...stats(samples) });
-		log(`cache limit=${limit}: p50=${out[out.length - 1].p50}ms p95=${out[out.length - 1].p95}ms (${eventsPerQuery} events/query)`);
+		log(
+			`cache limit=${limit}: p50=${out[out.length - 1].p50}ms p95=${out[out.length - 1].p95}ms (${eventsPerQuery} events/query)`
+		);
 	}
 	return out;
 }
@@ -200,7 +232,7 @@ function runE2ELatency(): Promise<BenchResults['e2eLatency']> {
 		const latencies: number[] = [];
 
 		const finish = () => {
-			unsub();
+			releaseBenchSubscription(unsub);
 			const s = stats(latencies);
 			resolve({
 				reqToFirstEventMs: Math.round(firstEventMs * 100) / 100,
@@ -223,7 +255,7 @@ function runE2ELatency(): Promise<BenchResults['e2eLatency']> {
 		const timer = setTimeout(finish, 15000);
 		const unsub = useSubscription(
 			subId,
-			[{ kinds: [1], limit: 250, relays: [RELAY] }],
+			[{ kinds: [1], limit: 250, relays: [RELAY], noCache: true }],
 			(msg) => {
 				const ev = isParsedEvent(msg);
 				if (!ev) return;
@@ -247,7 +279,7 @@ function runE2ELatency(): Promise<BenchResults['e2eLatency']> {
 			},
 			// limit 250 sizes the subscription ring buffer (~250 * bytesPerEvent)
 			// so the post-EOSE live burst does not overflow it.
-			{ closeOnEose: false, bytesPerEvent: 8192, skipCache: true }
+			{ closeOnEose: false, bytesPerEvent: 8192 }
 		);
 	});
 }
@@ -279,8 +311,11 @@ async function runBench(): Promise<BenchResults> {
 			try {
 				const r = await runThroughput(n);
 				R.throughput.push(r);
-				log(`throughput n=${n}: ${r.received} events in ${r.wallMs}ms -> ${r.eventsPerSec} ev/s, first=${r.firstEventMs}ms, batches~${r.batches}`);
-				if (r.received < n) R.errors.push(`throughput n=${n}: only ${r.received}/${n} events received`);
+				log(
+					`throughput n=${n}: ${r.received} events in ${r.wallMs}ms -> ${r.eventsPerSec} ev/s, first=${r.firstEventMs}ms, batches~${r.batches}, duplicates=${r.duplicates}, completion=${r.completion}`
+				);
+				if (r.received < n)
+					R.errors.push(`throughput n=${n}: only ${r.received}/${n} events received`);
 			} catch (e: any) {
 				R.errors.push(`throughput n=${n}: ${e?.message || e}`);
 			}

@@ -11,17 +11,22 @@ test('bench: throughput, cache query latency, e2e latency', async ({ page }) => 
 		logs.push(`[ERROR] ${err.message}`);
 	});
 
+	const navigationStartedAt = performance.now();
 	await page.goto('/tests/bench/bench.html');
+	const navigationMs = performance.now() - navigationStartedAt;
 
 	await page.waitForFunction(
 		() => {
-			return (window as any).__benchResults !== null && (window as any).__benchResults !== undefined;
+			return (
+				(window as any).__benchResults !== null && (window as any).__benchResults !== undefined
+			);
 		},
 		{ timeout: 220000 }
 	);
 
 	const results = await page.evaluate(() => (window as any).__benchResults);
 
+	console.log(`Page navigation: ${navigationMs.toFixed(1)}ms`);
 	console.log('Bench results:', JSON.stringify(results, null, 2));
 	console.log('Browser logs:');
 	logs.forEach((log) => console.log(log));
