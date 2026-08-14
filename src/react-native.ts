@@ -677,10 +677,10 @@ export class ReactNativeManager extends BaseBackend {
 		const optionsT = new SubscriptionConfigT(
 			pipeline,
 			options.closeOnEose,
-			options.cacheFirst,
+			true, // Legacy wire field; cache policy is carried by each request.
 			options.timeoutMs ? BigInt(options.timeoutMs) : undefined,
 			options.maxEvents,
-			options.skipCache,
+			false, // Legacy wire field; use RequestObject.noCache instead.
 			options.force,
 			options.bytesPerEvent,
 			options.isSlow,
@@ -706,7 +706,7 @@ export class ReactNativeManager extends BaseBackend {
 						r.closeOnEOSE,
 						r.cacheFirst,
 						r.noCache,
-						undefined,
+						r.maxRelays,
 						options.cacheOnly,
 						r.meshOnly
 					)

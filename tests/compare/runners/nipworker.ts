@@ -1,7 +1,7 @@
 import type { ContenderRunner, RunResult } from './types';
 
 // nipworker: 4-worker WASM pipeline (connections -> parser -> cache, crypto idle).
-// Mirror of tests/bench/bench.ts throughput phase: skipCache + closeOnEose.
+// Mirror of tests/bench/bench.ts throughput phase: noCache + closeOnEose.
 export function createNipworkerRunner(): ContenderRunner {
 	let manager: any = null;
 	let useSubscription: any = null;
@@ -13,7 +13,7 @@ export function createNipworkerRunner(): ContenderRunner {
 			'4 WASM workers (connections/parser/cache/crypto); FlatBuffers IPC over MessageChannel',
 			'parses JSON -> typed ParsedEvent, kind-specific parsing, dedups (10k id ring)',
 			'builds FlatBuffer WorkerMessage per event, batches to main thread',
-			'save-to-IndexedDB pipe runs in cache worker (skipCache only skips cache *reads*)',
+			'save-to-IndexedDB pipe runs in cache worker (noCache only skips cache *reads*)',
 			'NO schnorr signature verification on ingest (verify_event_signature exists in crypto worker but is not wired into the pipeline)',
 			'heap numbers cover the MAIN THREAD only; 4 worker heaps + WASM linear memory are not visible to performance.memory'
 		],
@@ -43,7 +43,7 @@ export function createNipworkerRunner(): ContenderRunner {
 				};
 				const unsub = useSubscription(
 					subId,
-					[{ kinds: [1], limit: n, relays: [relay] }],
+					[{ kinds: [1], limit: n, relays: [relay], noCache: true }],
 					(msg: unknown) => {
 						if (!isParsedEvent(msg)) return;
 						received++;
@@ -53,7 +53,7 @@ export function createNipworkerRunner(): ContenderRunner {
 							setTimeout(finish, 0);
 						}
 					},
-					{ closeOnEose: true, bytesPerEvent: 8192, skipCache: true }
+					{ closeOnEose: true, bytesPerEvent: 8192 }
 				);
 			});
 		},

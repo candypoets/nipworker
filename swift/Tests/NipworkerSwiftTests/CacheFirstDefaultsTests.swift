@@ -3,7 +3,7 @@ import XCTest
 @testable import NipworkerSwift
 
 final class CacheFirstDefaultsTests: XCTestCase {
-    func testRequestAndSubscriptionCacheFirstDefaultsRemainDistinct() {
+    func testCachePolicyIsSerializedPerRequest() {
         let data = buildSubscribeMessage(
             subId: "cache-first-defaults",
             requests: [
@@ -20,6 +20,8 @@ final class CacheFirstDefaultsTests: XCTestCase {
 
         XCTAssertFalse(subscribe.requests[0].cacheFirst)
         XCTAssertTrue(subscribe.requests[1].cacheFirst)
+        // Retained only for wire compatibility; no longer part of SubscriptionConfig.
         XCTAssertTrue(subscribe.config.cacheFirst)
+        XCTAssertFalse(subscribe.config.skipCache)
     }
 }

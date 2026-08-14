@@ -57,12 +57,9 @@ export type EventTemplate = {
 export type SubscriptionConfig = {
 	pipeline?: PipeT[];
 	closeOnEose?: boolean;
-	/** Subscription-level cache preference. Defaults to true when omitted. */
-	cacheFirst?: boolean;
 	timeoutMs?: number;
 	maxEvents?: number;
 	enableOptimization?: boolean;
-	skipCache?: boolean;
 	force?: boolean;
 	bytesPerEvent?: number;
 	isSlow?: boolean;

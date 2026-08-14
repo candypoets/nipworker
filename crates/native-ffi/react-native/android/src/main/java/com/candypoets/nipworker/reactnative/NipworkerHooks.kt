@@ -43,11 +43,8 @@ data class NipworkerRequest(
 
 data class NipworkerSubscriptionOptions(
 	val closeOnEose: Boolean = false,
-	/** Subscription-level cache preference. Defaults to true. */
-	val cacheFirst: Boolean = true,
 	val timeoutMs: Long = 0,
 	val maxEvents: Long = 0,
-	val skipCache: Boolean = false,
 	val force: Boolean = false,
 	val bytesPerEvent: Long = 3072,
 	val isSlow: Boolean = false,
@@ -185,10 +182,10 @@ internal fun buildSubscribeMessage(
 		builder,
 		pipelineOffset,
 		options.closeOnEose,
-		options.cacheFirst,
+		true, // Retired wire field; cache policy is per request.
 		options.timeoutMs,
 		options.maxEvents,
-		options.skipCache,
+		false, // Retired wire field; use NipworkerRequest.noCache.
 		options.force,
 		options.bytesPerEvent,
 		options.isSlow,

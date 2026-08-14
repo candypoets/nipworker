@@ -165,10 +165,8 @@ Controls subscription behavior.
 public struct SubscriptionConfig {
     public var pipeline: [PipeConfig]?
     public var closeOnEose: Bool
-    public var cacheFirst: Bool
     public var timeoutMs: UInt64?
     public var maxEvents: UInt32?
-    public var skipCache: Bool
     public var force: Bool
     public var bytesPerEvent: UInt32
     public var isSlow: Bool

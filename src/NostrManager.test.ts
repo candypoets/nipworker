@@ -139,6 +139,20 @@ describe('NostrManager lifecycle wake', () => {
 		expect(connections!.messages.filter((message) => message?.type === 'wake')).toHaveLength(2);
 	});
 
+	it('retains zero-ref subscriptions until cleanup runs', async () => {
+		const { NostrManager } = await import('./NostrManager');
+		const manager = new NostrManager();
+
+		manager.subscribe('cleanup-owned', [{ kinds: [0], relays: [] }], {
+			closeOnEose: false
+		});
+		manager.unsubscribe('cleanup-owned');
+
+		expect(manager.getSubscriptionCount()).toBe(1);
+		manager.cleanup();
+		expect(manager.getSubscriptionCount()).toBe(0);
+	});
+
 	it('uses focus as a fallback after an observed hidden transition', async () => {
 		const { NostrManager } = await import('./NostrManager');
 		new NostrManager();

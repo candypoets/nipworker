@@ -68,11 +68,8 @@ public struct PipeConfig {
 public struct SubscriptionConfig {
     public var pipeline: [PipeConfig]?
     public var closeOnEose: Bool
-    /// Subscription-level cache preference. Defaults to `true`.
-    public var cacheFirst: Bool
     public var timeoutMs: UInt64?
     public var maxEvents: UInt32?
-    public var skipCache: Bool
     public var force: Bool
     public var bytesPerEvent: UInt32
     public var isSlow: Bool
@@ -82,10 +79,8 @@ public struct SubscriptionConfig {
     public init(
         pipeline: [PipeConfig]? = nil,
         closeOnEose: Bool = false,
-        cacheFirst: Bool = true,
         timeoutMs: UInt64? = nil,
         maxEvents: UInt32? = nil,
-        skipCache: Bool = false,
         force: Bool = false,
         bytesPerEvent: UInt32 = 3072,
         isSlow: Bool = false,
@@ -94,10 +89,8 @@ public struct SubscriptionConfig {
     ) {
         self.pipeline = pipeline
         self.closeOnEose = closeOnEose
-        self.cacheFirst = cacheFirst
         self.timeoutMs = timeoutMs
         self.maxEvents = maxEvents
-        self.skipCache = skipCache
         self.force = force
         self.bytesPerEvent = bytesPerEvent
         self.isSlow = isSlow

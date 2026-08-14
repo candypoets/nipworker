@@ -588,13 +588,17 @@ fn spawn_cache_endpoint(
                     let frame_str =
                         serde_json::to_string(&frame).unwrap_or_else(|_| "[]".to_string());
 
-                    let relays: Vec<String> = fb_req
+                    let mut relays: Vec<String> = fb_req
                         .relays()
                         .map(|r| (0..r.len()).map(|j| r.get(j).to_string()).collect())
                         .filter(|v: &Vec<String>| !v.is_empty())
                         .or_else(|| storage.get_relays(&fb_req))
                         .filter(|v: &Vec<String>| !v.is_empty())
                         .unwrap_or_else(|| DEFAULT_RELAYS.iter().map(|s| s.to_string()).collect());
+                    let max_relays = fb_req.max_relays() as usize;
+                    if max_relays > 0 {
+                        relays.truncate(max_relays);
+                    }
 
                     let envelope = json!({ "relays": relays, "frames": [frame_str] });
                     let env_str =
@@ -1243,6 +1247,43 @@ mod tests {
                     assert_eq!(arr[0], "REQ");
                     assert_eq!(arr[1], "s1");
                 }
+            })
+            .await;
+    }
+
+    #[tokio::test]
+    async fn test_query_honors_max_relays() {
+        let local = tokio::task::LocalSet::new();
+        local
+            .run_until(async {
+                let storage = Arc::new(MockStorage::new());
+                let worker = CacheWorker::new(storage);
+                let (mut from_parser_tx, from_parser_rx) = TokioWorkerChannel::new_pair();
+                let (to_parser_tx, _to_parser_rx) = TokioWorkerChannel::new_pair();
+                let (to_connections_tx, mut to_connections_rx) = TokioWorkerChannel::new_pair();
+
+                worker.run(
+                    Box::new(from_parser_rx),
+                    to_parser_tx.clone_sender(),
+                    to_connections_tx.clone_sender(),
+                );
+
+                let requests = vec![Request {
+                    relays: vec![
+                        "wss://r1".to_string(),
+                        "wss://r2".to_string(),
+                        "wss://r3".to_string(),
+                    ],
+                    no_cache: true,
+                    max_relays: 2,
+                    ..Default::default()
+                }];
+                let bytes = build_query_request_bytes("limited", requests);
+                from_parser_tx.send(&frame_request(&bytes)).await.unwrap();
+
+                let env_bytes = to_connections_rx.recv().await.unwrap();
+                let envelope: Value = serde_json::from_slice(&env_bytes).unwrap();
+                assert_eq!(envelope["relays"], json!(["wss://r1", "wss://r2"]));
             })
             .await;
     }

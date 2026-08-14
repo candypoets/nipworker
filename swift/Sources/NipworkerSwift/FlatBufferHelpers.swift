@@ -118,10 +118,10 @@ func buildSubscribeMessage(
         &builder,
         pipelineOffset: pipelineOffset,
         closeOnEose: options.closeOnEose,
-        cacheFirst: options.cacheFirst,
+        cacheFirst: true, // Retired wire field; cache policy is per request.
         timeoutMs: options.timeoutMs ?? 0,
         maxEvents: options.maxEvents ?? 0,
-        skipCache: options.skipCache,
+        skipCache: false, // Retired wire field; use RequestObject.noCache.
         force: options.force,
         bytesPerEvent: options.bytesPerEvent,
         isSlow: options.isSlow,

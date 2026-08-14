@@ -338,13 +338,18 @@ describe('react-native byte runtime subscription path', () => {
 		manager.deinit();
 	});
 
-	it('keeps request and subscription cacheFirst defaults distinct', () => {
+	it('serializes cache policy per request and keeps retired config fields neutral', () => {
 		const manager = createNostrManager();
 		const byteRuntime = (globalThis as any).__nipworkerReactNativeByteRuntime;
 
-		manager.subscribe('cache-first-defaults', [{ kinds: [1] }, { kinds: [1], cacheFirst: true }], {
-			closeOnEose: false
-		});
+		manager.subscribe(
+			'cache-first-defaults',
+			[
+				{ kinds: [1], maxRelays: 2 },
+				{ kinds: [1], cacheFirst: true }
+			],
+			{ closeOnEose: false }
+		);
 
 		const serialized = byteRuntime.subscribe.mock.calls[0][0] as ArrayBuffer;
 		const main = MainMessage.getRootAsMainMessage(
@@ -353,8 +358,11 @@ describe('react-native byte runtime subscription path', () => {
 		const subscribe = main.content(new Subscribe());
 
 		expect(subscribe?.requests(0)?.cacheFirst()).toBe(false);
+		expect(subscribe?.requests(0)?.maxRelays()).toBe(2);
 		expect(subscribe?.requests(1)?.cacheFirst()).toBe(true);
+		// Retained only for wire compatibility; no longer part of SubscriptionConfig.
 		expect(subscribe?.config()?.cacheFirst()).toBe(true);
+		expect(subscribe?.config()?.skipCache()).toBe(false);
 		manager.deinit();
 	});
 

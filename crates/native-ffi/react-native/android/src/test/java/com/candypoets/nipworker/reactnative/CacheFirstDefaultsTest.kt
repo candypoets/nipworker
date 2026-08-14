@@ -10,7 +10,7 @@ import org.junit.Test
 
 class CacheFirstDefaultsTest {
 	@Test
-	fun requestAndSubscriptionCacheFirstDefaultsRemainDistinct() {
+	fun cachePolicyIsSerializedPerRequest() {
 		val bytes = buildSubscribeMessage(
 			"cache-first-defaults",
 			listOf(
@@ -27,6 +27,8 @@ class CacheFirstDefaultsTest {
 
 		assertFalse(subscribe.requests(0).cacheFirst())
 		assertTrue(subscribe.requests(1).cacheFirst())
+		// Retained only for wire compatibility; no longer part of subscription options.
 		assertTrue(subscribe.config().cacheFirst())
+		assertFalse(subscribe.config().skipCache())
 	}
 }

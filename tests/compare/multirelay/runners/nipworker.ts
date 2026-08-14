@@ -20,7 +20,7 @@ export function createNipworkerMultiRunner(): MultiRelayRunner {
 			'one subscription across all relays; connections worker opens one socket per relay',
 			'parses JSON -> typed ParsedEvent, kind-specific parsing, dedups by id across relays in the parser worker (10k id ring)',
 			'builds FlatBuffer WorkerMessage per event, batches to main thread',
-			'save-to-IndexedDB pipe runs in cache worker (skipCache only skips cache *reads*)',
+			'save-to-IndexedDB pipe runs in cache worker (noCache only skips cache *reads*)',
 			'NO schnorr signature verification on ingest (same as single-relay runner)',
 			'heap numbers cover the MAIN THREAD only; 4 worker heaps + WASM linear memory are not visible to performance.memory'
 		],
@@ -77,7 +77,7 @@ export function createNipworkerMultiRunner(): MultiRelayRunner {
 				// relay has EOSEd.
 				unsub = useSubscription(
 					subId,
-					[{ kinds: [1], limit: n, relays }],
+					[{ kinds: [1], limit: n, relays, noCache: true }],
 					(msg: unknown) => {
 						const m = msg as any;
 						const ev = isParsedEvent(m);
@@ -92,7 +92,7 @@ export function createNipworkerMultiRunner(): MultiRelayRunner {
 							if (tr.relaysEosed >= relays.length) setTimeout(() => finish(), 300);
 						}
 					},
-					{ closeOnEose: false, bytesPerEvent: 8192, skipCache: true }
+					{ closeOnEose: false, bytesPerEvent: 8192 }
 				);
 			});
 		},

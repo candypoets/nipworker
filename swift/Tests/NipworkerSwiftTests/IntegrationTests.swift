@@ -56,7 +56,7 @@ final class IntegrationTests: XCTestCase {
                     firstExpectation.fulfill()
                 }
             },
-            options: SubscriptionConfig(closeOnEose: true, cacheFirst: true)
+            options: SubscriptionConfig(closeOnEose: true)
         )
 
         try await Task.sleep(nanoseconds: 500_000_000)
@@ -87,7 +87,7 @@ final class IntegrationTests: XCTestCase {
                     secondExpectation.fulfill()
                 }
             },
-            options: SubscriptionConfig(closeOnEose: true, cacheFirst: true, timeoutMs: 500)
+            options: SubscriptionConfig(closeOnEose: true, timeoutMs: 500)
         )
 
         await fulfillment(of: [secondExpectation], timeout: 5)
@@ -112,7 +112,7 @@ final class IntegrationTests: XCTestCase {
                     populateExpectation.fulfill()
                 }
             },
-            options: SubscriptionConfig(closeOnEose: true, cacheFirst: true)
+            options: SubscriptionConfig(closeOnEose: true)
         )
 
         try await Task.sleep(nanoseconds: 500_000_000)
@@ -152,7 +152,6 @@ final class IntegrationTests: XCTestCase {
             options: SubscriptionConfig(
                 pipeline: [PipeConfig(.counter(kinds: [1, 6, 7, 17], pubkey: ""))],
                 closeOnEose: true,
-                cacheFirst: true,
                 timeoutMs: 500,
                 cacheOnly: true
             )
@@ -185,7 +184,7 @@ final class IntegrationTests: XCTestCase {
                     seedExpectation.fulfill()
                 }
             },
-            options: SubscriptionConfig(closeOnEose: true, cacheFirst: true)
+            options: SubscriptionConfig(closeOnEose: true)
         )
 
         try await Task.sleep(nanoseconds: 500_000_000)
@@ -224,7 +223,6 @@ final class IntegrationTests: XCTestCase {
             options: SubscriptionConfig(
                 pipeline: [PipeConfig(.counter(kinds: [1, 6, 7, 17], pubkey: ""))],
                 closeOnEose: true,
-                cacheFirst: true,
                 timeoutMs: 500,
                 cacheOnly: true
             )
@@ -275,7 +273,7 @@ final class IntegrationTests: XCTestCase {
                     expectation.fulfill()
                 }
             },
-            options: SubscriptionConfig(closeOnEose: true, cacheFirst: true)
+            options: SubscriptionConfig(closeOnEose: true)
         )
 
         try await Task.sleep(nanoseconds: 500_000_000)
@@ -295,7 +293,7 @@ final class IntegrationTests: XCTestCase {
         let firstBuffer = await manager.subscribe(
             subscriptionId: fixture.subscriptionId,
             requests: fixture.requests,
-            options: SubscriptionConfig(closeOnEose: true, cacheFirst: true)
+            options: SubscriptionConfig(closeOnEose: true)
         )
 
         let firstMessages = try await waitForMessages(
@@ -312,7 +310,7 @@ final class IntegrationTests: XCTestCase {
         let secondBuffer = await manager.subscribe(
             subscriptionId: fixture.subscriptionId,
             requests: fixture.requests,
-            options: SubscriptionConfig(closeOnEose: true, cacheFirst: true)
+            options: SubscriptionConfig(closeOnEose: true)
         )
 
         XCTAssertTrue(firstBuffer === secondBuffer, "Same sub id should reuse the existing SubscriptionBuffer before cleanup")
@@ -415,7 +413,7 @@ final class IntegrationTests: XCTestCase {
                     expectation.fulfill()
                 }
             },
-            options: SubscriptionConfig(closeOnEose: true, cacheFirst: true)
+            options: SubscriptionConfig(closeOnEose: true)
         )
 
         await fulfillment(of: [expectation], timeout: 15)
@@ -479,7 +477,7 @@ final class IntegrationTests: XCTestCase {
                     expectation.fulfill()
                 }
             },
-            options: SubscriptionConfig(closeOnEose: true, cacheFirst: true)
+            options: SubscriptionConfig(closeOnEose: true)
         )
 
         try await Task.sleep(nanoseconds: 500_000_000)

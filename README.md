@@ -198,7 +198,8 @@ const stopFeed = useSubscription(
 		{
 			kinds: [1],
 			limit: 50,
-			relays: ['wss://relay.damus.io', 'wss://nos.lol']
+			relays: ['wss://relay.damus.io', 'wss://nos.lol'],
+			cacheFirst: true
 		}
 	],
 	(message) => {
@@ -211,7 +212,6 @@ const stopFeed = useSubscription(
 		}
 	},
 	{
-		cacheFirst: true,
 		closeOnEose: false,
 		bytesPerEvent: 4096
 	}
@@ -295,16 +295,18 @@ The cache is part of the runtime rather than an application-side afterthought. B
 persisted to IndexedDB and queried in the cache worker. Index-driven, top-k queries are designed to
 scale with the requested `limit`, which is especially useful for feeds and pagination.
 
-Useful subscription modes include:
+Useful request and subscription modes include:
 
-| Option              | Behavior                                                         |
-| ------------------- | ---------------------------------------------------------------- |
-| `cacheFirst: true`  | Emit cached results first, then continue with relays.            |
-| `cacheOnly: true`   | Query local data without opening relay requests.                 |
-| `closeOnEose: true` | Close a one-shot subscription after relay EOSE.                  |
-| `timeoutMs`         | Bound a subscription's active time.                              |
-| `bytesPerEvent`     | Size the bounded delivery buffer for the expected event payload. |
-| `pagination`        | Reuse pipeline/dedup state from an earlier subscription.         |
+| Option              | Scope        | Behavior                                                         |
+| ------------------- | ------------ | ---------------------------------------------------------------- |
+| `cacheFirst: true`  | Request      | Emit cached results and skip that request's relay lookup on hit. |
+| `noCache: true`     | Request      | Skip the local lookup and continue with relays.                  |
+| `maxRelays`         | Request      | Cap the selected relay set for that request.                     |
+| `cacheOnly: true`   | Subscription | Query local data without opening relay requests.                 |
+| `closeOnEose: true` | Subscription | Close a one-shot subscription after relay EOSE.                  |
+| `timeoutMs`         | Subscription | Bound a subscription's active time.                              |
+| `bytesPerEvent`     | Subscription | Size the bounded delivery buffer for the expected event payload. |
+| `pagination`        | Subscription | Reuse pipeline/dedup state from an earlier subscription.         |
 
 The delivery buffer is deliberately bounded at roughly `limit × bytesPerEvent`. For live bursty
 feeds, choose a realistic limit; a tiny one-shot limit is not a suitable live-stream buffer. Use
