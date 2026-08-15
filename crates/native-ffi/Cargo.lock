@@ -1003,7 +1003,7 @@ dependencies = [
 
 [[package]]
 name = "nipworker-native-ffi"
-version = "0.99.3"
+version = "0.99.4"
 dependencies = [
  "android_log-sys",
  "android_logger",
