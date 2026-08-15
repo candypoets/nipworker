@@ -14,12 +14,13 @@ import com.google.flatbuffers.LongVector;
 import com.google.flatbuffers.ShortVector;
 import com.google.flatbuffers.StringVector;
 import com.google.flatbuffers.Struct;
+import com.google.flatbuffers.Table;
 import com.google.flatbuffers.UnionVector;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
 @SuppressWarnings("unused")
-public final class SignerResponse extends com.google.flatbuffers.Table {
+public final class SignerResponse extends Table {
   public static void ValidateVersion() { Constants.FLATBUFFERS_25_2_10(); }
   public static SignerResponse getRootAsSignerResponse(ByteBuffer _bb) { return getRootAsSignerResponse(_bb, new SignerResponse()); }
   public static SignerResponse getRootAsSignerResponse(ByteBuffer _bb, SignerResponse obj) { _bb.order(ByteOrder.LITTLE_ENDIAN); return (obj.__assign(_bb.getInt(_bb.position()) + _bb.position(), _bb)); }

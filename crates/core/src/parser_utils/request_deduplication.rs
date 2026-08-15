@@ -51,7 +51,6 @@ impl RequestDeduplicator {
                     until: request.until,
                     limit: request.limit,
                     search: request.search.clone(),
-                    close_on_eose: request.close_on_eose,
                     cache_first: request.cache_first,
                     no_cache: request.no_cache,
                     max_relays: request.max_relays,
@@ -149,7 +148,6 @@ impl RequestDeduplicator {
         }
 
         // Add other filter-relevant fields
-        key_parts.push(format!("close_on_eose:{}", request.close_on_eose));
         key_parts.push(format!("cache_first:{}", request.cache_first));
         key_parts.push(format!("mesh_only:{}", request.mesh_only));
 

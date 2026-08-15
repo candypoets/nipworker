@@ -10,7 +10,6 @@ public struct RequestObject {
     public var limit: Int?
     public var search: String?
     public var relays: [String]
-    public var closeOnEOSE: Bool?
     /// Per-request cache preference. Defaults to `false` when omitted.
     public var cacheFirst: Bool?
     public var noCache: Bool?
@@ -27,7 +26,6 @@ public struct RequestObject {
         limit: Int? = nil,
         search: String? = nil,
         relays: [String] = [],
-        closeOnEOSE: Bool? = nil,
         cacheFirst: Bool? = nil,
         noCache: Bool? = nil,
         maxRelays: UInt16? = nil,
@@ -42,7 +40,6 @@ public struct RequestObject {
         self.limit = limit
         self.search = search
         self.relays = relays
-        self.closeOnEOSE = closeOnEOSE
         self.cacheFirst = cacheFirst
         self.noCache = noCache
         self.maxRelays = maxRelays

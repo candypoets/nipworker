@@ -48,7 +48,6 @@ impl Parser {
             authors: vec![event.pubkey.to_hex()],
             kinds: vec![0],
             relays: vec![],
-            close_on_eose: true,
             cache_first: true,
             ..Default::default()
         });

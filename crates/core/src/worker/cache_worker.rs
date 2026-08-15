@@ -401,12 +401,13 @@ fn spawn_cache_endpoint(
             // Query path (requests field present)
             let sub_id = cache_req.sub_id().to_string();
             if let Some(reqs) = cache_req.requests() {
+                let keep_mesh_watch = cache_req.keep_mesh_watch();
                 let mut all_cached_events: Vec<Vec<u8>> = Vec::new();
                 let mut skip_req_indices = std::collections::HashSet::new();
-                if allow_mesh_only_queries {
+                if allow_mesh_only_queries && keep_mesh_watch {
                     let live_mesh_requests: Vec<_> = (0..reqs.len())
                         .map(|i| Request::from_flatbuffer(&reqs.get(i)))
-                        .filter(|request| request.mesh_only && !request.close_on_eose)
+                        .filter(|request| request.mesh_only)
                         .collect();
                     if !live_mesh_requests.is_empty() {
                         if let Some(watches) = watches.as_ref() {
@@ -536,7 +537,7 @@ fn spawn_cache_endpoint(
                             if request.cache_only {
                                 skip_req_indices.insert(i);
                             }
-                            if is_mesh_only && !request.close_on_eose {
+                            if is_mesh_only && keep_mesh_watch {
                                 if let Some(watches) = watches.as_ref() {
                                     if let Ok(mut registry) = watches.lock() {
                                         if let Some(watch) = registry.watches.get_mut(&sub_id) {
@@ -1850,7 +1851,6 @@ mod tests {
                         .into_iter()
                         .collect(),
                     mesh_only: true,
-                    close_on_eose: false,
                     ..Default::default()
                 };
                 from_parser_tx

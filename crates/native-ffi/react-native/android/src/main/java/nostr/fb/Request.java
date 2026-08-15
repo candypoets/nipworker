@@ -14,12 +14,13 @@ import com.google.flatbuffers.LongVector;
 import com.google.flatbuffers.ShortVector;
 import com.google.flatbuffers.StringVector;
 import com.google.flatbuffers.Struct;
+import com.google.flatbuffers.Table;
 import com.google.flatbuffers.UnionVector;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
 @SuppressWarnings("unused")
-public final class Request extends com.google.flatbuffers.Table {
+public final class Request extends Table {
   public static void ValidateVersion() { Constants.FLATBUFFERS_25_2_10(); }
   public static Request getRootAsRequest(ByteBuffer _bb) { return getRootAsRequest(_bb, new Request()); }
   public static Request getRootAsRequest(ByteBuffer _bb, Request obj) { _bb.order(ByteOrder.LITTLE_ENDIAN); return (obj.__assign(_bb.getInt(_bb.position()) + _bb.position(), _bb)); }
@@ -55,7 +56,6 @@ public final class Request extends com.google.flatbuffers.Table {
   public int relaysLength() { int o = __offset(20); return o != 0 ? __vector_len(o) : 0; }
   public StringVector relaysVector() { return relaysVector(new StringVector()); }
   public StringVector relaysVector(StringVector obj) { int o = __offset(20); return o != 0 ? obj.__assign(__vector(o), 4, bb) : null; }
-  public boolean closeOnEose() { int o = __offset(22); return o != 0 ? 0!=bb.get(o + bb_pos) : false; }
   public boolean cacheFirst() { int o = __offset(24); return o != 0 ? 0!=bb.get(o + bb_pos) : false; }
   public boolean noCache() { int o = __offset(26); return o != 0 ? 0!=bb.get(o + bb_pos) : false; }
   public int maxRelays() { int o = __offset(28); return o != 0 ? bb.getShort(o + bb_pos) & 0xFFFF : 0; }
@@ -72,7 +72,6 @@ public final class Request extends com.google.flatbuffers.Table {
       int until,
       int searchOffset,
       int relaysOffset,
-      boolean closeOnEose,
       boolean cacheFirst,
       boolean noCache,
       int maxRelays,
@@ -93,7 +92,6 @@ public final class Request extends com.google.flatbuffers.Table {
     Request.addCacheOnly(builder, cacheOnly);
     Request.addNoCache(builder, noCache);
     Request.addCacheFirst(builder, cacheFirst);
-    Request.addCloseOnEose(builder, closeOnEose);
     return Request.endRequest(builder);
   }
 
@@ -117,7 +115,6 @@ public final class Request extends com.google.flatbuffers.Table {
   public static void addRelays(FlatBufferBuilder builder, int relaysOffset) { builder.addOffset(8, relaysOffset, 0); }
   public static int createRelaysVector(FlatBufferBuilder builder, int[] data) { builder.startVector(4, data.length, 4); for (int i = data.length - 1; i >= 0; i--) builder.addOffset(data[i]); return builder.endVector(); }
   public static void startRelaysVector(FlatBufferBuilder builder, int numElems) { builder.startVector(4, numElems, 4); }
-  public static void addCloseOnEose(FlatBufferBuilder builder, boolean closeOnEose) { builder.addBoolean(9, closeOnEose, false); }
   public static void addCacheFirst(FlatBufferBuilder builder, boolean cacheFirst) { builder.addBoolean(10, cacheFirst, false); }
   public static void addNoCache(FlatBufferBuilder builder, boolean noCache) { builder.addBoolean(11, noCache, false); }
   public static void addMaxRelays(FlatBufferBuilder builder, int maxRelays) { builder.addShort(12, (short) maxRelays, (short) 0); }

@@ -150,7 +150,6 @@ public struct RequestObject {
     public var limit: Int?
     public var search: String?
     public var relays: [String]
-    public var closeOnEOSE: Bool?
     public var cacheFirst: Bool?
     public var noCache: Bool?
     public var maxRelays: UInt16?

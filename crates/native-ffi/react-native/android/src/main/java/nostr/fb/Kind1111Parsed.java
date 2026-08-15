@@ -14,12 +14,13 @@ import com.google.flatbuffers.LongVector;
 import com.google.flatbuffers.ShortVector;
 import com.google.flatbuffers.StringVector;
 import com.google.flatbuffers.Struct;
+import com.google.flatbuffers.Table;
 import com.google.flatbuffers.UnionVector;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
 @SuppressWarnings("unused")
-public final class Kind1111Parsed extends com.google.flatbuffers.Table {
+public final class Kind1111Parsed extends Table {
   public static void ValidateVersion() { Constants.FLATBUFFERS_25_2_10(); }
   public static Kind1111Parsed getRootAsKind1111Parsed(ByteBuffer _bb) { return getRootAsKind1111Parsed(_bb, new Kind1111Parsed()); }
   public static Kind1111Parsed getRootAsKind1111Parsed(ByteBuffer _bb, Kind1111Parsed obj) { _bb.order(ByteOrder.LITTLE_ENDIAN); return (obj.__assign(_bb.getInt(_bb.position()) + _bb.position(), _bb)); }

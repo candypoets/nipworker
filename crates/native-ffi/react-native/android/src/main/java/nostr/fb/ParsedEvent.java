@@ -14,12 +14,13 @@ import com.google.flatbuffers.LongVector;
 import com.google.flatbuffers.ShortVector;
 import com.google.flatbuffers.StringVector;
 import com.google.flatbuffers.Struct;
+import com.google.flatbuffers.Table;
 import com.google.flatbuffers.UnionVector;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
 @SuppressWarnings("unused")
-public final class ParsedEvent extends com.google.flatbuffers.Table {
+public final class ParsedEvent extends Table {
   public static void ValidateVersion() { Constants.FLATBUFFERS_25_2_10(); }
   public static ParsedEvent getRootAsParsedEvent(ByteBuffer _bb) { return getRootAsParsedEvent(_bb, new ParsedEvent()); }
   public static ParsedEvent getRootAsParsedEvent(ByteBuffer _bb, ParsedEvent obj) { _bb.order(ByteOrder.LITTLE_ENDIAN); return (obj.__assign(_bb.getInt(_bb.position()) + _bb.position(), _bb)); }
@@ -35,7 +36,7 @@ public final class ParsedEvent extends com.google.flatbuffers.Table {
   public int kind() { int o = __offset(8); return o != 0 ? bb.getShort(o + bb_pos) & 0xFFFF : 0; }
   public long createdAt() { int o = __offset(10); return o != 0 ? (long)bb.getInt(o + bb_pos) & 0xFFFFFFFFL : 0L; }
   public byte parsedType() { int o = __offset(12); return o != 0 ? bb.get(o + bb_pos) : 0; }
-  public com.google.flatbuffers.Table parsed(com.google.flatbuffers.Table obj) { int o = __offset(14); return o != 0 ? __union(obj, o + bb_pos) : null; }
+  public Table parsed(Table obj) { int o = __offset(14); return o != 0 ? __union(obj, o + bb_pos) : null; }
   public nostr.fb.Request requests(int j) { return requests(new nostr.fb.Request(), j); }
   public nostr.fb.Request requests(nostr.fb.Request obj, int j) { int o = __offset(16); return o != 0 ? obj.__assign(__indirect(__vector(o) + j * 4), bb) : null; }
   public int requestsLength() { int o = __offset(16); return o != 0 ? __vector_len(o) : 0; }

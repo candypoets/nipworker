@@ -9908,7 +9908,6 @@ impl<'a> Request<'a> {
   pub const VT_UNTIL: flatbuffers::VOffsetT = 16;
   pub const VT_SEARCH: flatbuffers::VOffsetT = 18;
   pub const VT_RELAYS: flatbuffers::VOffsetT = 20;
-  pub const VT_CLOSE_ON_EOSE: flatbuffers::VOffsetT = 22;
   pub const VT_CACHE_FIRST: flatbuffers::VOffsetT = 24;
   pub const VT_NO_CACHE: flatbuffers::VOffsetT = 26;
   pub const VT_MAX_RELAYS: flatbuffers::VOffsetT = 28;
@@ -9939,7 +9938,6 @@ impl<'a> Request<'a> {
     builder.add_cache_only(args.cache_only);
     builder.add_no_cache(args.no_cache);
     builder.add_cache_first(args.cache_first);
-    builder.add_close_on_eose(args.close_on_eose);
     builder.finish()
   }
 
@@ -9965,7 +9963,6 @@ impl<'a> Request<'a> {
     let relays = self.relays().map(|x| {
       x.iter().map(|s| s.to_string()).collect()
     });
-    let close_on_eose = self.close_on_eose();
     let cache_first = self.cache_first();
     let no_cache = self.no_cache();
     let max_relays = self.max_relays();
@@ -9981,7 +9978,6 @@ impl<'a> Request<'a> {
       until,
       search,
       relays,
-      close_on_eose,
       cache_first,
       no_cache,
       max_relays,
@@ -10054,13 +10050,6 @@ impl<'a> Request<'a> {
     unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>(Request::VT_RELAYS, None)}
   }
   #[inline]
-  pub fn close_on_eose(&self) -> bool {
-    // Safety:
-    // Created from valid Table for this object
-    // which contains a valid value in this slot
-    unsafe { self._tab.get::<bool>(Request::VT_CLOSE_ON_EOSE, Some(false)).unwrap()}
-  }
-  #[inline]
   pub fn cache_first(&self) -> bool {
     // Safety:
     // Created from valid Table for this object
@@ -10113,7 +10102,6 @@ impl flatbuffers::Verifiable for Request<'_> {
      .visit_field::<i32>("until", Self::VT_UNTIL, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("search", Self::VT_SEARCH, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("relays", Self::VT_RELAYS, false)?
-     .visit_field::<bool>("close_on_eose", Self::VT_CLOSE_ON_EOSE, false)?
      .visit_field::<bool>("cache_first", Self::VT_CACHE_FIRST, false)?
      .visit_field::<bool>("no_cache", Self::VT_NO_CACHE, false)?
      .visit_field::<u16>("max_relays", Self::VT_MAX_RELAYS, false)?
@@ -10133,7 +10121,6 @@ pub struct RequestArgs<'a> {
     pub until: i32,
     pub search: Option<flatbuffers::WIPOffset<&'a str>>,
     pub relays: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>,
-    pub close_on_eose: bool,
     pub cache_first: bool,
     pub no_cache: bool,
     pub max_relays: u16,
@@ -10153,7 +10140,6 @@ impl<'a> Default for RequestArgs<'a> {
       until: 0,
       search: None,
       relays: None,
-      close_on_eose: false,
       cache_first: false,
       no_cache: false,
       max_relays: 0,
@@ -10205,10 +10191,6 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> RequestBuilder<'a, 'b, A> {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Request::VT_RELAYS, relays);
   }
   #[inline]
-  pub fn add_close_on_eose(&mut self, close_on_eose: bool) {
-    self.fbb_.push_slot::<bool>(Request::VT_CLOSE_ON_EOSE, close_on_eose, false);
-  }
-  #[inline]
   pub fn add_cache_first(&mut self, cache_first: bool) {
     self.fbb_.push_slot::<bool>(Request::VT_CACHE_FIRST, cache_first, false);
   }
@@ -10255,7 +10237,6 @@ impl core::fmt::Debug for Request<'_> {
       ds.field("until", &self.until());
       ds.field("search", &self.search());
       ds.field("relays", &self.relays());
-      ds.field("close_on_eose", &self.close_on_eose());
       ds.field("cache_first", &self.cache_first());
       ds.field("no_cache", &self.no_cache());
       ds.field("max_relays", &self.max_relays());
@@ -10276,7 +10257,6 @@ pub struct RequestT {
   pub until: i32,
   pub search: Option<String>,
   pub relays: Option<Vec<String>>,
-  pub close_on_eose: bool,
   pub cache_first: bool,
   pub no_cache: bool,
   pub max_relays: u16,
@@ -10295,7 +10275,6 @@ impl Default for RequestT {
       until: 0,
       search: None,
       relays: None,
-      close_on_eose: false,
       cache_first: false,
       no_cache: false,
       max_relays: 0,
@@ -10330,7 +10309,6 @@ impl RequestT {
     let relays = self.relays.as_ref().map(|x|{
       let w: Vec<_> = x.iter().map(|s| _fbb.create_string(s)).collect();_fbb.create_vector(&w)
     });
-    let close_on_eose = self.close_on_eose;
     let cache_first = self.cache_first;
     let no_cache = self.no_cache;
     let max_relays = self.max_relays;
@@ -10346,7 +10324,6 @@ impl RequestT {
       until,
       search,
       relays,
-      close_on_eose,
       cache_first,
       no_cache,
       max_relays,
@@ -28450,6 +28427,7 @@ impl<'a> CacheRequest<'a> {
   pub const VT_PARSED_EVENT: flatbuffers::VOffsetT = 10;
   pub const VT_RELAYS: flatbuffers::VOffsetT = 12;
   pub const VT_CLOSE: flatbuffers::VOffsetT = 14;
+  pub const VT_KEEP_MESH_WATCH: flatbuffers::VOffsetT = 16;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -28466,6 +28444,7 @@ impl<'a> CacheRequest<'a> {
     if let Some(x) = args.event { builder.add_event(x); }
     if let Some(x) = args.requests { builder.add_requests(x); }
     if let Some(x) = args.sub_id { builder.add_sub_id(x); }
+    builder.add_keep_mesh_watch(args.keep_mesh_watch);
     builder.add_close(args.close);
     builder.finish()
   }
@@ -28488,6 +28467,7 @@ impl<'a> CacheRequest<'a> {
       x.iter().map(|s| s.to_string()).collect()
     });
     let close = self.close();
+    let keep_mesh_watch = self.keep_mesh_watch();
     CacheRequestT {
       sub_id,
       requests,
@@ -28495,6 +28475,7 @@ impl<'a> CacheRequest<'a> {
       parsed_event,
       relays,
       close,
+      keep_mesh_watch,
     }
   }
 
@@ -28540,6 +28521,13 @@ impl<'a> CacheRequest<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<bool>(CacheRequest::VT_CLOSE, Some(false)).unwrap()}
   }
+  #[inline]
+  pub fn keep_mesh_watch(&self) -> bool {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<bool>(CacheRequest::VT_KEEP_MESH_WATCH, Some(true)).unwrap()}
+  }
 }
 
 impl flatbuffers::Verifiable for CacheRequest<'_> {
@@ -28555,6 +28543,7 @@ impl flatbuffers::Verifiable for CacheRequest<'_> {
      .visit_field::<flatbuffers::ForwardsUOffset<ParsedEvent>>("parsed_event", Self::VT_PARSED_EVENT, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("relays", Self::VT_RELAYS, false)?
      .visit_field::<bool>("close", Self::VT_CLOSE, false)?
+     .visit_field::<bool>("keep_mesh_watch", Self::VT_KEEP_MESH_WATCH, false)?
      .finish();
     Ok(())
   }
@@ -28566,6 +28555,7 @@ pub struct CacheRequestArgs<'a> {
     pub parsed_event: Option<flatbuffers::WIPOffset<ParsedEvent<'a>>>,
     pub relays: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>,
     pub close: bool,
+    pub keep_mesh_watch: bool,
 }
 impl<'a> Default for CacheRequestArgs<'a> {
   #[inline]
@@ -28577,6 +28567,7 @@ impl<'a> Default for CacheRequestArgs<'a> {
       parsed_event: None,
       relays: None,
       close: false,
+      keep_mesh_watch: true,
     }
   }
 }
@@ -28611,6 +28602,10 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> CacheRequestBuilder<'a, 'b, A> 
     self.fbb_.push_slot::<bool>(CacheRequest::VT_CLOSE, close, false);
   }
   #[inline]
+  pub fn add_keep_mesh_watch(&mut self, keep_mesh_watch: bool) {
+    self.fbb_.push_slot::<bool>(CacheRequest::VT_KEEP_MESH_WATCH, keep_mesh_watch, true);
+  }
+  #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> CacheRequestBuilder<'a, 'b, A> {
     let start = _fbb.start_table();
     CacheRequestBuilder {
@@ -28635,6 +28630,7 @@ impl core::fmt::Debug for CacheRequest<'_> {
       ds.field("parsed_event", &self.parsed_event());
       ds.field("relays", &self.relays());
       ds.field("close", &self.close());
+      ds.field("keep_mesh_watch", &self.keep_mesh_watch());
       ds.finish()
   }
 }
@@ -28647,6 +28643,7 @@ pub struct CacheRequestT {
   pub parsed_event: Option<Box<ParsedEventT>>,
   pub relays: Option<Vec<String>>,
   pub close: bool,
+  pub keep_mesh_watch: bool,
 }
 impl Default for CacheRequestT {
   fn default() -> Self {
@@ -28657,6 +28654,7 @@ impl Default for CacheRequestT {
       parsed_event: None,
       relays: None,
       close: false,
+      keep_mesh_watch: true,
     }
   }
 }
@@ -28682,6 +28680,7 @@ impl CacheRequestT {
       let w: Vec<_> = x.iter().map(|s| _fbb.create_string(s)).collect();_fbb.create_vector(&w)
     });
     let close = self.close;
+    let keep_mesh_watch = self.keep_mesh_watch;
     CacheRequest::create(_fbb, &CacheRequestArgs{
       sub_id,
       requests,
@@ -28689,6 +28688,7 @@ impl CacheRequestT {
       parsed_event,
       relays,
       close,
+      keep_mesh_watch,
     })
   }
 }

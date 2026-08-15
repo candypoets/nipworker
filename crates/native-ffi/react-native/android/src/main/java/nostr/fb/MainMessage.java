@@ -14,12 +14,13 @@ import com.google.flatbuffers.LongVector;
 import com.google.flatbuffers.ShortVector;
 import com.google.flatbuffers.StringVector;
 import com.google.flatbuffers.Struct;
+import com.google.flatbuffers.Table;
 import com.google.flatbuffers.UnionVector;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
 @SuppressWarnings("unused")
-public final class MainMessage extends com.google.flatbuffers.Table {
+public final class MainMessage extends Table {
   public static void ValidateVersion() { Constants.FLATBUFFERS_25_2_10(); }
   public static MainMessage getRootAsMainMessage(ByteBuffer _bb) { return getRootAsMainMessage(_bb, new MainMessage()); }
   public static MainMessage getRootAsMainMessage(ByteBuffer _bb, MainMessage obj) { _bb.order(ByteOrder.LITTLE_ENDIAN); return (obj.__assign(_bb.getInt(_bb.position()) + _bb.position(), _bb)); }
@@ -27,7 +28,7 @@ public final class MainMessage extends com.google.flatbuffers.Table {
   public MainMessage __assign(int _i, ByteBuffer _bb) { __init(_i, _bb); return this; }
 
   public byte contentType() { int o = __offset(4); return o != 0 ? bb.get(o + bb_pos) : 0; }
-  public com.google.flatbuffers.Table content(com.google.flatbuffers.Table obj) { int o = __offset(6); return o != 0 ? __union(obj, o + bb_pos) : null; }
+  public Table content(Table obj) { int o = __offset(6); return o != 0 ? __union(obj, o + bb_pos) : null; }
 
   public static int createMainMessage(FlatBufferBuilder builder,
       byte contentType,

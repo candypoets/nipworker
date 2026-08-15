@@ -31,7 +31,6 @@ export type RequestObject = {
 	limit?: number;
 	search?: string;
 	relays: string[];
-	closeOnEOSE?: boolean;
 	/** Per-request cache preference. Defaults to false when omitted. */
 	cacheFirst?: boolean;
 	noOptimize?: boolean;

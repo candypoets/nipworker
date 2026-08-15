@@ -24,8 +24,6 @@ pub struct Request {
 
     pub relays: Vec<String>,
 
-    pub close_on_eose: bool,
-
     pub cache_first: bool,
 
     pub no_cache: bool,
@@ -92,7 +90,6 @@ impl Request {
                 .relays()
                 .map(|v| v.iter().map(|s| s.to_string()).collect())
                 .unwrap_or_default(),
-            close_on_eose: fb_req.close_on_eose(),
             cache_first: fb_req.cache_first(),
             no_cache: fb_req.no_cache(),
             max_relays: fb_req.max_relays() as u32,
@@ -176,7 +173,6 @@ impl Request {
                 until: self.until.unwrap_or_default(),
                 search,
                 relays,
-                close_on_eose: self.close_on_eose,
                 cache_first: self.cache_first,
                 no_cache: self.no_cache,
                 max_relays: self.max_relays as u16,
@@ -206,7 +202,6 @@ impl Request {
     //         limit: filter.limit.map(|l| l as i32),
     //         search: filter.search,
     //         relays,
-    //         close_on_eose: false,
     //         cache_first: false,
     //     }
     // }

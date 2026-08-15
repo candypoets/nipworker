@@ -121,7 +121,6 @@ impl Parser {
         //     relays: self
         //         .database
         //         .find_relay_candidates(0, &event.pubkey.to_hex(), &false),
-        //     close_on_eose: true,
         //     cache_first: true,
         //     ..Default::default()
         // });
@@ -133,7 +132,6 @@ impl Parser {
         //     relays: self
         //         .database
         //         .find_relay_candidates(10002, &event.pubkey.to_hex(), &false),
-        //     close_on_eose: true,
         //     cache_first: true,
         //     ..Default::default()
         // });
@@ -152,7 +150,6 @@ impl Parser {
                 ids: vec![reply.id.clone()],
                 limit: Some(3), // increase the limit to provide with a bigger buffer
                 relays: reply.relays.clone(),
-                close_on_eose: true,
                 cache_first: true,
                 ..Default::default()
             });
@@ -165,7 +162,6 @@ impl Parser {
                     ids: vec![root.id.clone()],
                     limit: Some(3), // increase the limit to provide with a bigger buffer
                     relays: root.relays.clone(),
-                    close_on_eose: true,
                     cache_first: true,
                     ..Default::default()
                 });
@@ -234,7 +230,6 @@ impl Parser {
                             kinds: vec![0],
                             limit: Some(1),
                             relays: pointer.relays.clone(),
-                            close_on_eose: true,
                             cache_first: true,
                             ..Default::default()
                         });
@@ -268,7 +263,6 @@ impl Parser {
                             kinds: vec![0],
                             limit: Some(1),
                             relays: pointer.relays.clone(),
-                            close_on_eose: true,
                             cache_first: true,
                             ..Default::default()
                         });
@@ -303,7 +297,6 @@ impl Parser {
                             ids: vec![id.clone()],
                             limit: Some(3), // increase the limit to provide with a bigger buffer
                             relays: relays.clone(),
-                            close_on_eose: true,
                             cache_first: true,
                             ..Default::default()
                         });
@@ -341,7 +334,6 @@ impl Parser {
                             ids: vec![id.clone()],
                             limit: Some(3), // increase the limit to provide with a bigger buffer
                             relays: relays.clone(),
-                            close_on_eose: true,
                             cache_first: true,
                             ..Default::default()
                         });
@@ -395,7 +387,6 @@ impl Parser {
                             tags,
                             limit: Some(1),
                             relays,
-                            close_on_eose: true,
                             cache_first: true,
                             ..Default::default()
                         });

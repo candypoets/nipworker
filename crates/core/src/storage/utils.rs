@@ -603,7 +603,6 @@ fn build_requests_vector<'a>(
                 until: r.until(),
                 search: search_off,
                 relays: relays_off,
-                close_on_eose: r.close_on_eose(),
                 cache_first: r.cache_first(),
                 no_cache: r.no_cache(),
                 max_relays: r.max_relays(),

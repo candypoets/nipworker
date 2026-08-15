@@ -71,8 +71,13 @@ close():boolean {
   return offset ? !!this.bb!.readInt8(this.bb_pos + offset) : false;
 }
 
+keepMeshWatch():boolean {
+  const offset = this.bb!.__offset(this.bb_pos, 16);
+  return offset ? !!this.bb!.readInt8(this.bb_pos + offset) : true;
+}
+
 static startCacheRequest(builder:flatbuffers.Builder) {
-  builder.startObject(6);
+  builder.startObject(7);
 }
 
 static addSubId(builder:flatbuffers.Builder, subIdOffset:flatbuffers.Offset) {
@@ -123,6 +128,10 @@ static addClose(builder:flatbuffers.Builder, close:boolean) {
   builder.addFieldInt8(5, +close, +false);
 }
 
+static addKeepMeshWatch(builder:flatbuffers.Builder, keepMeshWatch:boolean) {
+  builder.addFieldInt8(6, +keepMeshWatch, +true);
+}
+
 static endCacheRequest(builder:flatbuffers.Builder):flatbuffers.Offset {
   const offset = builder.endObject();
   builder.requiredField(offset, 4) // sub_id
@@ -137,7 +146,8 @@ unpack(): CacheRequestT {
     (this.event() !== null ? this.event()!.unpack() : null),
     (this.parsedEvent() !== null ? this.parsedEvent()!.unpack() : null),
     this.bb!.createScalarList<string>(this.relays.bind(this), this.relaysLength()),
-    this.close()
+    this.close(),
+    this.keepMeshWatch()
   );
 }
 
@@ -149,6 +159,7 @@ unpackTo(_o: CacheRequestT): void {
   _o.parsedEvent = (this.parsedEvent() !== null ? this.parsedEvent()!.unpack() : null);
   _o.relays = this.bb!.createScalarList<string>(this.relays.bind(this), this.relaysLength());
   _o.close = this.close();
+  _o.keepMeshWatch = this.keepMeshWatch();
 }
 }
 
@@ -159,7 +170,8 @@ constructor(
   public event: NostrEventT|null = null,
   public parsedEvent: ParsedEventT|null = null,
   public relays: (string)[] = [],
-  public close: boolean = false
+  public close: boolean = false,
+  public keepMeshWatch: boolean = true
 ){}
 
 
@@ -177,6 +189,7 @@ pack(builder:flatbuffers.Builder): flatbuffers.Offset {
   CacheRequest.addParsedEvent(builder, parsedEvent);
   CacheRequest.addRelays(builder, relays);
   CacheRequest.addClose(builder, this.close);
+  CacheRequest.addKeepMeshWatch(builder, this.keepMeshWatch);
 
   return CacheRequest.endCacheRequest(builder);
 }

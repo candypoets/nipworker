@@ -14,12 +14,13 @@ import com.google.flatbuffers.LongVector;
 import com.google.flatbuffers.ShortVector;
 import com.google.flatbuffers.StringVector;
 import com.google.flatbuffers.Struct;
+import com.google.flatbuffers.Table;
 import com.google.flatbuffers.UnionVector;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
 @SuppressWarnings("unused")
-public final class ContentBlock extends com.google.flatbuffers.Table {
+public final class ContentBlock extends Table {
   public static void ValidateVersion() { Constants.FLATBUFFERS_25_2_10(); }
   public static ContentBlock getRootAsContentBlock(ByteBuffer _bb) { return getRootAsContentBlock(_bb, new ContentBlock()); }
   public static ContentBlock getRootAsContentBlock(ByteBuffer _bb, ContentBlock obj) { _bb.order(ByteOrder.LITTLE_ENDIAN); return (obj.__assign(_bb.getInt(_bb.position()) + _bb.position(), _bb)); }
@@ -33,7 +34,7 @@ public final class ContentBlock extends com.google.flatbuffers.Table {
   public ByteBuffer textAsByteBuffer() { return __vector_as_bytebuffer(6, 1); }
   public ByteBuffer textInByteBuffer(ByteBuffer _bb) { return __vector_in_bytebuffer(_bb, 6, 1); }
   public byte dataType() { int o = __offset(8); return o != 0 ? bb.get(o + bb_pos) : 0; }
-  public com.google.flatbuffers.Table data(com.google.flatbuffers.Table obj) { int o = __offset(10); return o != 0 ? __union(obj, o + bb_pos) : null; }
+  public Table data(Table obj) { int o = __offset(10); return o != 0 ? __union(obj, o + bb_pos) : null; }
 
   public static int createContentBlock(FlatBufferBuilder builder,
       int typeOffset,

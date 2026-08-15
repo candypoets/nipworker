@@ -14,12 +14,13 @@ import com.google.flatbuffers.LongVector;
 import com.google.flatbuffers.ShortVector;
 import com.google.flatbuffers.StringVector;
 import com.google.flatbuffers.Struct;
+import com.google.flatbuffers.Table;
 import com.google.flatbuffers.UnionVector;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
 @SuppressWarnings("unused")
-public final class Nip46Bunker extends com.google.flatbuffers.Table {
+public final class Nip46Bunker extends Table {
   public static void ValidateVersion() { Constants.FLATBUFFERS_25_2_10(); }
   public static Nip46Bunker getRootAsNip46Bunker(ByteBuffer _bb) { return getRootAsNip46Bunker(_bb, new Nip46Bunker()); }
   public static Nip46Bunker getRootAsNip46Bunker(ByteBuffer _bb, Nip46Bunker obj) { _bb.order(ByteOrder.LITTLE_ENDIAN); return (obj.__assign(_bb.getInt(_bb.position()) + _bb.position(), _bb)); }

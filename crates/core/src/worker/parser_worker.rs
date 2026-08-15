@@ -837,6 +837,7 @@ impl ParserWorker {
                     parsed_event: None,
                     relays: None,
                     close: false,
+                    keep_mesh_watch: !config.close_on_eose,
                 },
             );
 
@@ -1033,6 +1034,7 @@ impl ParserWorker {
                     parsed_event: None,
                     relays: relay_vec,
                     close: false,
+                    keep_mesh_watch: true,
                 },
             );
 
@@ -1157,7 +1159,6 @@ fn request_from_t(rt: &fb::RequestT) -> Request {
         limit: if rt.limit != 0 { Some(rt.limit) } else { None },
         search: rt.search.clone(),
         relays: rt.relays.clone().unwrap_or_default(),
-        close_on_eose: rt.close_on_eose,
         cache_first: rt.cache_first,
         no_cache: rt.no_cache,
         max_relays: rt.max_relays as u32,
@@ -1520,8 +1521,12 @@ mod tests {
                     .await
                     .unwrap();
 
-                // Initial cache query emitted by open_subscription.
-                let _ = to_cache_rx.recv().await.unwrap();
+                // The subscription-scoped policy is forwarded to cache/mesh
+                // handling without attaching it to an individual request.
+                let cache_bytes = to_cache_rx.recv().await.unwrap();
+                let (_, inner) = cache_input::split(&cache_bytes).unwrap();
+                let cache_query = flatbuffers::root::<fb::CacheRequest>(inner).unwrap();
+                assert!(!cache_query.keep_mesh_watch());
 
                 let relay_a = "wss://relay-a.example.com";
                 let relay_b = "wss://relay-b.example.com";

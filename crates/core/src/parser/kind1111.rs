@@ -93,7 +93,6 @@ impl Parser {
                 requests.push(Request {
                     ids: vec![citation.id.clone()],
                     relays: citation.relays.clone(),
-                    close_on_eose: true,
                     cache_first: true,
                     ..Default::default()
                 });

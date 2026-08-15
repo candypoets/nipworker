@@ -14,12 +14,13 @@ import com.google.flatbuffers.LongVector;
 import com.google.flatbuffers.ShortVector;
 import com.google.flatbuffers.StringVector;
 import com.google.flatbuffers.Struct;
+import com.google.flatbuffers.Table;
 import com.google.flatbuffers.UnionVector;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
 @SuppressWarnings("unused")
-public final class Proof extends com.google.flatbuffers.Table {
+public final class Proof extends Table {
   public static void ValidateVersion() { Constants.FLATBUFFERS_25_2_10(); }
   public static Proof getRootAsProof(ByteBuffer _bb) { return getRootAsProof(_bb, new Proof()); }
   public static Proof getRootAsProof(ByteBuffer _bb, Proof obj) { _bb.order(ByteOrder.LITTLE_ENDIAN); return (obj.__assign(_bb.getInt(_bb.position()) + _bb.position(), _bb)); }
@@ -39,7 +40,7 @@ public final class Proof extends com.google.flatbuffers.Table {
   public nostr.fb.DLEQProof dleq() { return dleq(new nostr.fb.DLEQProof()); }
   public nostr.fb.DLEQProof dleq(nostr.fb.DLEQProof obj) { int o = __offset(12); return o != 0 ? obj.__assign(__indirect(o + bb_pos), bb) : null; }
   public byte witnessType() { int o = __offset(14); return o != 0 ? bb.get(o + bb_pos) : 0; }
-  public com.google.flatbuffers.Table witness(com.google.flatbuffers.Table obj) { int o = __offset(16); return o != 0 ? __union(obj, o + bb_pos) : null; }
+  public Table witness(Table obj) { int o = __offset(16); return o != 0 ? __union(obj, o + bb_pos) : null; }
   public int version() { int o = __offset(18); return o != 0 ? bb.get(o + bb_pos) & 0xFF : 0; }
 
   public static int createProof(FlatBufferBuilder builder,

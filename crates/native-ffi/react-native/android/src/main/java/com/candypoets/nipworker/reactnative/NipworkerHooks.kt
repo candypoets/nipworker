@@ -33,7 +33,6 @@ data class NipworkerRequest(
 	val limit: Int = 0,
 	val search: String? = null,
 	val relays: List<String> = emptyList(),
-	val closeOnEose: Boolean = false,
 	/** Per-request cache preference. Defaults to false when omitted. */
 	val cacheFirst: Boolean = false,
 	val noCache: Boolean = false,
@@ -228,7 +227,6 @@ private fun buildRequest(
 		request.until,
 		searchOffset,
 		relaysOffset,
-		request.closeOnEose,
 		request.cacheFirst,
 		request.noCache,
 		request.maxRelays,

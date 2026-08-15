@@ -5,31 +5,31 @@ package nostr.fb;
 @SuppressWarnings("unused")
 public final class ParsedDataUnion {
   private ParsedDataUnion() { }
-  public static final long Kind0Parsed = 0L;
-  public static final long Kind1Parsed = 1L;
-  public static final long Kind3Parsed = 3L;
-  public static final long Kind4Parsed = 4L;
-  public static final long Kind6Parsed = 6L;
-  public static final long Kind7Parsed = 7L;
-  public static final long Kind8Parsed = 8L;
-  public static final long Kind17Parsed = 17L;
-  public static final long Kind20Parsed = 20L;
-  public static final long Kind22Parsed = 22L;
-  public static final long Kind1018Parsed = 1018L;
-  public static final long Kind1068Parsed = 1068L;
-  public static final long Kind1111Parsed = 1111L;
-  public static final long Kind1311Parsed = 1311L;
-  public static final long Kind7374Parsed = 7374L;
-  public static final long Kind7375Parsed = 7375L;
-  public static final long Kind7376Parsed = 7376L;
-  public static final long Kind9321Parsed = 9321L;
-  public static final long Kind9735Parsed = 9735L;
-  public static final long Kind10002Parsed = 10002L;
-  public static final long Kind10019Parsed = 10019L;
-  public static final long Kind17375Parsed = 17375L;
-  public static final long Kind30023Parsed = 30023L;
-  public static final long Kind39089Parsed = 39089L;
-  public static final long ListParsed = 51000L;
-  public static final long PreGenericParsed = 52000L;
+  public static final long Kind0Parsed = 0;
+  public static final long Kind1Parsed = 1;
+  public static final long Kind3Parsed = 3;
+  public static final long Kind4Parsed = 4;
+  public static final long Kind6Parsed = 6;
+  public static final long Kind7Parsed = 7;
+  public static final long Kind8Parsed = 8;
+  public static final long Kind17Parsed = 17;
+  public static final long Kind20Parsed = 20;
+  public static final long Kind22Parsed = 22;
+  public static final long Kind1018Parsed = 1018;
+  public static final long Kind1068Parsed = 1068;
+  public static final long Kind1111Parsed = 1111;
+  public static final long Kind1311Parsed = 1311;
+  public static final long Kind7374Parsed = 7374;
+  public static final long Kind7375Parsed = 7375;
+  public static final long Kind7376Parsed = 7376;
+  public static final long Kind9321Parsed = 9321;
+  public static final long Kind9735Parsed = 9735;
+  public static final long Kind10002Parsed = 10002;
+  public static final long Kind10019Parsed = 10019;
+  public static final long Kind17375Parsed = 17375;
+  public static final long Kind30023Parsed = 30023;
+  public static final long Kind39089Parsed = 39089;
+  public static final long ListParsed = 51000;
+  public static final long PreGenericParsed = 52000;
 }
 

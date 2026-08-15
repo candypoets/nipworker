@@ -5,15 +5,15 @@ package nostr.fb;
 @SuppressWarnings("unused")
 public final class SignerOp {
   private SignerOp() { }
-  public static final long GetPubkey = 0L;
-  public static final long SignEvent = 1L;
-  public static final long Nip04Encrypt = 2L;
-  public static final long Nip04Decrypt = 3L;
-  public static final long Nip44Encrypt = 4L;
-  public static final long Nip44Decrypt = 5L;
-  public static final long Nip04DecryptBetween = 6L;
-  public static final long Nip44DecryptBetween = 7L;
-  public static final long VerifyProof = 8L;
-  public static final long AuthEvent = 9L;
+  public static final long GetPubkey = 0;
+  public static final long SignEvent = 1;
+  public static final long Nip04Encrypt = 2;
+  public static final long Nip04Decrypt = 3;
+  public static final long Nip44Encrypt = 4;
+  public static final long Nip44Decrypt = 5;
+  public static final long Nip04DecryptBetween = 6;
+  public static final long Nip44DecryptBetween = 7;
+  public static final long VerifyProof = 8;
+  public static final long AuthEvent = 9;
 }
 

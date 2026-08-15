@@ -558,7 +558,6 @@ private struct ReplayFixture {
             limit: object["limit"] as? Int,
             search: object["search"] as? String,
             relays: object["relays"] as? [String] ?? [],
-            closeOnEOSE: object["closeOnEOSE"] as? Bool,
             cacheFirst: object["cacheFirst"] as? Bool,
             noCache: object["noCache"] as? Bool,
             maxRelays: object["maxRelays"] as? UInt16

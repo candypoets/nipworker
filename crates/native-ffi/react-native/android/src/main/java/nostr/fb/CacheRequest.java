@@ -14,12 +14,13 @@ import com.google.flatbuffers.LongVector;
 import com.google.flatbuffers.ShortVector;
 import com.google.flatbuffers.StringVector;
 import com.google.flatbuffers.Struct;
+import com.google.flatbuffers.Table;
 import com.google.flatbuffers.UnionVector;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
 @SuppressWarnings("unused")
-public final class CacheRequest extends com.google.flatbuffers.Table {
+public final class CacheRequest extends Table {
   public static void ValidateVersion() { Constants.FLATBUFFERS_25_2_10(); }
   public static CacheRequest getRootAsCacheRequest(ByteBuffer _bb) { return getRootAsCacheRequest(_bb, new CacheRequest()); }
   public static CacheRequest getRootAsCacheRequest(ByteBuffer _bb, CacheRequest obj) { _bb.order(ByteOrder.LITTLE_ENDIAN); return (obj.__assign(_bb.getInt(_bb.position()) + _bb.position(), _bb)); }
@@ -43,6 +44,7 @@ public final class CacheRequest extends com.google.flatbuffers.Table {
   public StringVector relaysVector() { return relaysVector(new StringVector()); }
   public StringVector relaysVector(StringVector obj) { int o = __offset(12); return o != 0 ? obj.__assign(__vector(o), 4, bb) : null; }
   public boolean close() { int o = __offset(14); return o != 0 ? 0!=bb.get(o + bb_pos) : false; }
+  public boolean keepMeshWatch() { int o = __offset(16); return o != 0 ? 0!=bb.get(o + bb_pos) : true; }
 
   public static int createCacheRequest(FlatBufferBuilder builder,
       int subIdOffset,
@@ -50,18 +52,20 @@ public final class CacheRequest extends com.google.flatbuffers.Table {
       int eventOffset,
       int parsedEventOffset,
       int relaysOffset,
-      boolean close) {
-    builder.startTable(6);
+      boolean close,
+      boolean keepMeshWatch) {
+    builder.startTable(7);
     CacheRequest.addRelays(builder, relaysOffset);
     CacheRequest.addParsedEvent(builder, parsedEventOffset);
     CacheRequest.addEvent(builder, eventOffset);
     CacheRequest.addRequests(builder, requestsOffset);
     CacheRequest.addSubId(builder, subIdOffset);
+    CacheRequest.addKeepMeshWatch(builder, keepMeshWatch);
     CacheRequest.addClose(builder, close);
     return CacheRequest.endCacheRequest(builder);
   }
 
-  public static void startCacheRequest(FlatBufferBuilder builder) { builder.startTable(6); }
+  public static void startCacheRequest(FlatBufferBuilder builder) { builder.startTable(7); }
   public static void addSubId(FlatBufferBuilder builder, int subIdOffset) { builder.addOffset(0, subIdOffset, 0); }
   public static void addRequests(FlatBufferBuilder builder, int requestsOffset) { builder.addOffset(1, requestsOffset, 0); }
   public static int createRequestsVector(FlatBufferBuilder builder, int[] data) { builder.startVector(4, data.length, 4); for (int i = data.length - 1; i >= 0; i--) builder.addOffset(data[i]); return builder.endVector(); }
@@ -72,6 +76,7 @@ public final class CacheRequest extends com.google.flatbuffers.Table {
   public static int createRelaysVector(FlatBufferBuilder builder, int[] data) { builder.startVector(4, data.length, 4); for (int i = data.length - 1; i >= 0; i--) builder.addOffset(data[i]); return builder.endVector(); }
   public static void startRelaysVector(FlatBufferBuilder builder, int numElems) { builder.startVector(4, numElems, 4); }
   public static void addClose(FlatBufferBuilder builder, boolean close) { builder.addBoolean(5, close, false); }
+  public static void addKeepMeshWatch(FlatBufferBuilder builder, boolean keepMeshWatch) { builder.addBoolean(6, keepMeshWatch, true); }
   public static int endCacheRequest(FlatBufferBuilder builder) {
     int o = builder.endTable();
     builder.required(o, 4);  // sub_id

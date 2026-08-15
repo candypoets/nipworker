@@ -758,7 +758,6 @@ export class NostrManager extends BaseBackend {
 						r.until,
 						r.search ? this.textEncoder.encode(r.search) : null,
 						r.relays,
-						r.closeOnEOSE,
 						r.cacheFirst,
 						r.noCache,
 						r.maxRelays,

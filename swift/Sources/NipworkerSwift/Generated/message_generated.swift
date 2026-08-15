@@ -2,13 +2,9 @@
 // swiftlint:disable all
 // swiftformat:disable all
 
-#if canImport(Common)
-import Common
-#endif
-
 import FlatBuffers
 
-public enum nostr_fb_ContentData: UInt8, FlatbuffersVectorInitializable, UnionEnum {
+public enum nostr_fb_ContentData: UInt8, UnionEnum {
   public typealias T = UInt8
 
   public init?(value: T) {
@@ -34,7 +30,7 @@ public enum nostr_fb_ContentData: UInt8, FlatbuffersVectorInitializable, UnionEn
 }
 
 
-public enum nostr_fb_ArticleBlockType: Int8, FlatbuffersVectorInitializable, Enum, Verifiable {
+public enum nostr_fb_ArticleBlockType: Int8, Enum, Verifiable {
   public typealias T = Int8
   public static var byteSize: Int { return MemoryLayout<Int8>.size }
   public var value: Int8 { return self.rawValue }
@@ -54,7 +50,7 @@ public enum nostr_fb_ArticleBlockType: Int8, FlatbuffersVectorInitializable, Enu
 }
 
 
-public enum nostr_fb_ArticleInlineType: Int8, FlatbuffersVectorInitializable, Enum, Verifiable {
+public enum nostr_fb_ArticleInlineType: Int8, Enum, Verifiable {
   public typealias T = Int8
   public static var byteSize: Int { return MemoryLayout<Int8>.size }
   public var value: Int8 { return self.rawValue }
@@ -75,7 +71,7 @@ public enum nostr_fb_ArticleInlineType: Int8, FlatbuffersVectorInitializable, En
 }
 
 
-public enum nostr_fb_ReactionType: Int8, FlatbuffersVectorInitializable, Enum, Verifiable {
+public enum nostr_fb_ReactionType: Int8, Enum, Verifiable {
   public typealias T = Int8
   public static var byteSize: Int { return MemoryLayout<Int8>.size }
   public var value: Int8 { return self.rawValue }
@@ -89,7 +85,7 @@ public enum nostr_fb_ReactionType: Int8, FlatbuffersVectorInitializable, Enum, V
 }
 
 
-public enum nostr_fb_SubscribeKind: Int8, FlatbuffersVectorInitializable, Enum, Verifiable {
+public enum nostr_fb_SubscribeKind: Int8, Enum, Verifiable {
   public typealias T = Int8
   public static var byteSize: Int { return MemoryLayout<Int8>.size }
   public var value: Int8 { return self.rawValue }
@@ -105,7 +101,7 @@ public enum nostr_fb_SubscribeKind: Int8, FlatbuffersVectorInitializable, Enum, 
 }
 
 
-public enum nostr_fb_Witness: UInt8, FlatbuffersVectorInitializable, UnionEnum {
+public enum nostr_fb_Witness: UInt8, UnionEnum {
   public typealias T = UInt8
 
   public init?(value: T) {
@@ -124,7 +120,7 @@ public enum nostr_fb_Witness: UInt8, FlatbuffersVectorInitializable, UnionEnum {
 }
 
 
-public enum nostr_fb_SignerType: UInt8, FlatbuffersVectorInitializable, UnionEnum {
+public enum nostr_fb_SignerType: UInt8, UnionEnum {
   public typealias T = UInt8
 
   public init?(value: T) {
@@ -144,7 +140,7 @@ public enum nostr_fb_SignerType: UInt8, FlatbuffersVectorInitializable, UnionEnu
 }
 
 
-public enum nostr_fb_NpubLimiterKey: UInt8, FlatbuffersVectorInitializable, Enum, Verifiable {
+public enum nostr_fb_NpubLimiterKey: UInt8, Enum, Verifiable {
   public typealias T = UInt8
   public static var byteSize: Int { return MemoryLayout<UInt8>.size }
   public var value: UInt8 { return self.rawValue }
@@ -156,7 +152,7 @@ public enum nostr_fb_NpubLimiterKey: UInt8, FlatbuffersVectorInitializable, Enum
 }
 
 
-public enum nostr_fb_MuteTarget: Int8, FlatbuffersVectorInitializable, Enum, Verifiable {
+public enum nostr_fb_MuteTarget: Int8, Enum, Verifiable {
   public typealias T = Int8
   public static var byteSize: Int { return MemoryLayout<Int8>.size }
   public var value: Int8 { return self.rawValue }
@@ -169,7 +165,7 @@ public enum nostr_fb_MuteTarget: Int8, FlatbuffersVectorInitializable, Enum, Ver
 }
 
 
-public enum nostr_fb_PipeConfig: UInt8, FlatbuffersVectorInitializable, UnionEnum {
+public enum nostr_fb_PipeConfig: UInt8, UnionEnum {
   public typealias T = UInt8
 
   public init?(value: T) {
@@ -194,7 +190,7 @@ public enum nostr_fb_PipeConfig: UInt8, FlatbuffersVectorInitializable, UnionEnu
 }
 
 
-public enum nostr_fb_MainContent: UInt8, FlatbuffersVectorInitializable, UnionEnum {
+public enum nostr_fb_MainContent: UInt8, UnionEnum {
   public typealias T = UInt8
 
   public init?(value: T) {
@@ -216,7 +212,7 @@ public enum nostr_fb_MainContent: UInt8, FlatbuffersVectorInitializable, UnionEn
 }
 
 
-public enum nostr_fb_PollType: Int8, FlatbuffersVectorInitializable, Enum, Verifiable {
+public enum nostr_fb_PollType: Int8, Enum, Verifiable {
   public typealias T = Int8
   public static var byteSize: Int { return MemoryLayout<Int8>.size }
   public var value: Int8 { return self.rawValue }
@@ -228,7 +224,7 @@ public enum nostr_fb_PollType: Int8, FlatbuffersVectorInitializable, Enum, Verif
 }
 
 
-public enum nostr_fb_MessageType: UInt32, FlatbuffersVectorInitializable, Enum, Verifiable {
+public enum nostr_fb_MessageType: UInt32, Enum, Verifiable {
   public typealias T = UInt32
   public static var byteSize: Int { return MemoryLayout<UInt32>.size }
   public var value: UInt32 { return self.rawValue }
@@ -250,7 +246,7 @@ public enum nostr_fb_MessageType: UInt32, FlatbuffersVectorInitializable, Enum, 
 }
 
 
-public enum nostr_fb_ParsedDataUnion: UInt32, FlatbuffersVectorInitializable, Enum, Verifiable {
+public enum nostr_fb_ParsedDataUnion: UInt32, Enum, Verifiable {
   public typealias T = UInt32
   public static var byteSize: Int { return MemoryLayout<UInt32>.size }
   public var value: UInt32 { return self.rawValue }
@@ -286,7 +282,7 @@ public enum nostr_fb_ParsedDataUnion: UInt32, FlatbuffersVectorInitializable, En
 }
 
 
-public enum nostr_fb_ParsedData: UInt8, FlatbuffersVectorInitializable, UnionEnum {
+public enum nostr_fb_ParsedData: UInt8, UnionEnum {
   public typealias T = UInt8
 
   public init?(value: T) {
@@ -327,7 +323,7 @@ public enum nostr_fb_ParsedData: UInt8, FlatbuffersVectorInitializable, UnionEnu
 }
 
 
-public enum nostr_fb_Message: UInt8, FlatbuffersVectorInitializable, UnionEnum {
+public enum nostr_fb_Message: UInt8, UnionEnum {
   public typealias T = UInt8
 
   public init?(value: T) {
@@ -355,7 +351,7 @@ public enum nostr_fb_Message: UInt8, FlatbuffersVectorInitializable, UnionEnum {
 }
 
 
-public enum nostr_fb_SignerOp: UInt32, FlatbuffersVectorInitializable, Enum, Verifiable {
+public enum nostr_fb_SignerOp: UInt32, Enum, Verifiable {
   public typealias T = UInt32
   public static var byteSize: Int { return MemoryLayout<UInt32>.size }
   public var value: UInt32 { return self.rawValue }
@@ -375,9 +371,9 @@ public enum nostr_fb_SignerOp: UInt32, FlatbuffersVectorInitializable, Enum, Ver
 }
 
 
-public struct nostr_fb_CodeData: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_CodeData: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -418,9 +414,9 @@ public struct nostr_fb_CodeData: FlatBufferTable, FlatbuffersVectorInitializable
   }
 }
 
-public struct nostr_fb_EmojiData: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_EmojiData: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -468,9 +464,9 @@ public struct nostr_fb_EmojiData: FlatBufferTable, FlatbuffersVectorInitializabl
   }
 }
 
-public struct nostr_fb_HashtagData: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_HashtagData: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -504,9 +500,9 @@ public struct nostr_fb_HashtagData: FlatBufferTable, FlatbuffersVectorInitializa
   }
 }
 
-public struct nostr_fb_CashuData: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_CashuData: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -540,9 +536,9 @@ public struct nostr_fb_CashuData: FlatBufferTable, FlatbuffersVectorInitializabl
   }
 }
 
-public struct nostr_fb_LightningData: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_LightningData: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -576,9 +572,9 @@ public struct nostr_fb_LightningData: FlatBufferTable, FlatbuffersVectorInitiali
   }
 }
 
-public struct nostr_fb_ImageData: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_ImageData: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -626,9 +622,9 @@ public struct nostr_fb_ImageData: FlatBufferTable, FlatbuffersVectorInitializabl
   }
 }
 
-public struct nostr_fb_VideoData: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_VideoData: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -676,9 +672,9 @@ public struct nostr_fb_VideoData: FlatBufferTable, FlatbuffersVectorInitializabl
   }
 }
 
-public struct nostr_fb_MediaItem: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_MediaItem: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -717,9 +713,9 @@ public struct nostr_fb_MediaItem: FlatBufferTable, FlatbuffersVectorInitializabl
   }
 }
 
-public struct nostr_fb_MediaGroupData: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_MediaGroupData: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -732,7 +728,9 @@ public struct nostr_fb_MediaGroupData: FlatBufferTable, FlatbuffersVectorInitial
     var p: VOffset { self.rawValue }
   }
 
-  public var items: FlatbufferVector<nostr_fb_MediaItem> { return _accessor.vector(at: VTOFFSET.items.v, byteSize: 4) }
+  public var hasItems: Bool { let o = _accessor.offset(VTOFFSET.items.v); return o == 0 ? false : true }
+  public var itemsCount: Int32 { let o = _accessor.offset(VTOFFSET.items.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func items(at index: Int32) -> nostr_fb_MediaItem? { let o = _accessor.offset(VTOFFSET.items.v); return o == 0 ? nil : nostr_fb_MediaItem(_accessor.bb, o: _accessor.indirect(_accessor.vector(at: o) + index * 4)) }
   public static func startMediaGroupData(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 1) }
   public static func addVectorOf(items: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: items, at: VTOFFSET.items.p) }
   public static func endMediaGroupData(_ fbb: inout FlatBufferBuilder, start: UOffset) -> Offset { let end = Offset(offset: fbb.endTable(at: start)); return end }
@@ -752,9 +750,9 @@ public struct nostr_fb_MediaGroupData: FlatBufferTable, FlatbuffersVectorInitial
   }
 }
 
-public struct nostr_fb_NostrData: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_NostrData: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -775,7 +773,9 @@ public struct nostr_fb_NostrData: FlatBufferTable, FlatbuffersVectorInitializabl
   public var idSegmentArray: [UInt8]! { return _accessor.getVector(at: VTOFFSET.id.v) }
   public var entity: String! { let o = _accessor.offset(VTOFFSET.entity.v); return _accessor.string(at: o) }
   public var entitySegmentArray: [UInt8]! { return _accessor.getVector(at: VTOFFSET.entity.v) }
-  public var relays: FlatbufferVector<String?> { return _accessor.vector(at: VTOFFSET.relays.v, byteSize: 4) }
+  public var hasRelays: Bool { let o = _accessor.offset(VTOFFSET.relays.v); return o == 0 ? false : true }
+  public var relaysCount: Int32 { let o = _accessor.offset(VTOFFSET.relays.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func relays(at index: Int32) -> String? { let o = _accessor.offset(VTOFFSET.relays.v); return o == 0 ? nil : _accessor.directString(at: _accessor.vector(at: o) + index * 4) }
   public var author: String? { let o = _accessor.offset(VTOFFSET.author.v); return o == 0 ? nil : _accessor.string(at: o) }
   public var authorSegmentArray: [UInt8]? { return _accessor.getVector(at: VTOFFSET.author.v) }
   public var kind: UInt64 { let o = _accessor.offset(VTOFFSET.kind.v); return o == 0 ? 0 : _accessor.readBuffer(of: UInt64.self, at: o) }
@@ -814,9 +814,9 @@ public struct nostr_fb_NostrData: FlatBufferTable, FlatbuffersVectorInitializabl
   }
 }
 
-public struct nostr_fb_LinkPreviewData: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_LinkPreviewData: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -871,9 +871,9 @@ public struct nostr_fb_LinkPreviewData: FlatBufferTable, FlatbuffersVectorInitia
   }
 }
 
-public struct nostr_fb_ContentBlock: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_ContentBlock: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -950,9 +950,9 @@ public struct nostr_fb_ContentBlock: FlatBufferTable, FlatbuffersVectorInitializ
   }
 }
 
-public struct nostr_fb_ArticleEntity: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_ArticleEntity: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -973,7 +973,9 @@ public struct nostr_fb_ArticleEntity: FlatBufferTable, FlatbuffersVectorInitiali
   public var entitySegmentArray: [UInt8]! { return _accessor.getVector(at: VTOFFSET.entity.v) }
   public var id: String? { let o = _accessor.offset(VTOFFSET.id.v); return o == 0 ? nil : _accessor.string(at: o) }
   public var idSegmentArray: [UInt8]? { return _accessor.getVector(at: VTOFFSET.id.v) }
-  public var relays: FlatbufferVector<String?> { return _accessor.vector(at: VTOFFSET.relays.v, byteSize: 4) }
+  public var hasRelays: Bool { let o = _accessor.offset(VTOFFSET.relays.v); return o == 0 ? false : true }
+  public var relaysCount: Int32 { let o = _accessor.offset(VTOFFSET.relays.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func relays(at index: Int32) -> String? { let o = _accessor.offset(VTOFFSET.relays.v); return o == 0 ? nil : _accessor.directString(at: _accessor.vector(at: o) + index * 4) }
   public var author: String? { let o = _accessor.offset(VTOFFSET.author.v); return o == 0 ? nil : _accessor.string(at: o) }
   public var authorSegmentArray: [UInt8]? { return _accessor.getVector(at: VTOFFSET.author.v) }
   public var kind: UInt64 { let o = _accessor.offset(VTOFFSET.kind.v); return o == 0 ? 0 : _accessor.readBuffer(of: UInt64.self, at: o) }
@@ -1012,9 +1014,9 @@ public struct nostr_fb_ArticleEntity: FlatBufferTable, FlatbuffersVectorInitiali
   }
 }
 
-public struct nostr_fb_ArticleInline: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_ArticleInline: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -1040,7 +1042,9 @@ public struct nostr_fb_ArticleInline: FlatBufferTable, FlatbuffersVectorInitiali
   public var tag: String? { let o = _accessor.offset(VTOFFSET.tag.v); return o == 0 ? nil : _accessor.string(at: o) }
   public var tagSegmentArray: [UInt8]? { return _accessor.getVector(at: VTOFFSET.tag.v) }
   public var entity: nostr_fb_ArticleEntity? { let o = _accessor.offset(VTOFFSET.entity.v); return o == 0 ? nil : nostr_fb_ArticleEntity(_accessor.bb, o: _accessor.indirect(o + _accessor.position)) }
-  public var children: FlatbufferVector<nostr_fb_ArticleInline> { return _accessor.vector(at: VTOFFSET.children.v, byteSize: 4) }
+  public var hasChildren: Bool { let o = _accessor.offset(VTOFFSET.children.v); return o == 0 ? false : true }
+  public var childrenCount: Int32 { let o = _accessor.offset(VTOFFSET.children.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func children(at index: Int32) -> nostr_fb_ArticleInline? { let o = _accessor.offset(VTOFFSET.children.v); return o == 0 ? nil : nostr_fb_ArticleInline(_accessor.bb, o: _accessor.indirect(_accessor.vector(at: o) + index * 4)) }
   public static func startArticleInline(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 6) }
   public static func add(type: nostr_fb_ArticleInlineType, _ fbb: inout FlatBufferBuilder) { fbb.add(element: type.rawValue, def: 0, at: VTOFFSET.type.p) }
   public static func add(text: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: text, at: VTOFFSET.text.p) }
@@ -1080,9 +1084,9 @@ public struct nostr_fb_ArticleInline: FlatBufferTable, FlatbuffersVectorInitiali
   }
 }
 
-public struct nostr_fb_ArticleBlock: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_ArticleBlock: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -1113,8 +1117,12 @@ public struct nostr_fb_ArticleBlock: FlatBufferTable, FlatbuffersVectorInitializ
   public var depth: UInt8 { let o = _accessor.offset(VTOFFSET.depth.v); return o == 0 ? 0 : _accessor.readBuffer(of: UInt8.self, at: o) }
   public var ordered: Bool { let o = _accessor.offset(VTOFFSET.ordered.v); return o == 0 ? false : _accessor.readBuffer(of: Bool.self, at: o) }
   public var start: UInt64 { let o = _accessor.offset(VTOFFSET.start.v); return o == 0 ? 0 : _accessor.readBuffer(of: UInt64.self, at: o) }
-  public var inlines: FlatbufferVector<nostr_fb_ArticleInline> { return _accessor.vector(at: VTOFFSET.inlines.v, byteSize: 4) }
-  public var children: FlatbufferVector<nostr_fb_ArticleBlock> { return _accessor.vector(at: VTOFFSET.children.v, byteSize: 4) }
+  public var hasInlines: Bool { let o = _accessor.offset(VTOFFSET.inlines.v); return o == 0 ? false : true }
+  public var inlinesCount: Int32 { let o = _accessor.offset(VTOFFSET.inlines.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func inlines(at index: Int32) -> nostr_fb_ArticleInline? { let o = _accessor.offset(VTOFFSET.inlines.v); return o == 0 ? nil : nostr_fb_ArticleInline(_accessor.bb, o: _accessor.indirect(_accessor.vector(at: o) + index * 4)) }
+  public var hasChildren: Bool { let o = _accessor.offset(VTOFFSET.children.v); return o == 0 ? false : true }
+  public var childrenCount: Int32 { let o = _accessor.offset(VTOFFSET.children.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func children(at index: Int32) -> nostr_fb_ArticleBlock? { let o = _accessor.offset(VTOFFSET.children.v); return o == 0 ? nil : nostr_fb_ArticleBlock(_accessor.bb, o: _accessor.indirect(_accessor.vector(at: o) + index * 4)) }
   public static func startArticleBlock(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 9) }
   public static func add(type: nostr_fb_ArticleBlockType, _ fbb: inout FlatBufferBuilder) { fbb.add(element: type.rawValue, def: 0, at: VTOFFSET.type.p) }
   public static func add(text: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: text, at: VTOFFSET.text.p) }
@@ -1167,9 +1175,9 @@ public struct nostr_fb_ArticleBlock: FlatBufferTable, FlatbuffersVectorInitializ
   }
 }
 
-public struct nostr_fb_StringVec: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_StringVec: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -1182,7 +1190,9 @@ public struct nostr_fb_StringVec: FlatBufferTable, FlatbuffersVectorInitializabl
     var p: VOffset { self.rawValue }
   }
 
-  public var items: FlatbufferVector<String?> { return _accessor.vector(at: VTOFFSET.items.v, byteSize: 4) }
+  public var hasItems: Bool { let o = _accessor.offset(VTOFFSET.items.v); return o == 0 ? false : true }
+  public var itemsCount: Int32 { let o = _accessor.offset(VTOFFSET.items.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func items(at index: Int32) -> String? { let o = _accessor.offset(VTOFFSET.items.v); return o == 0 ? nil : _accessor.directString(at: _accessor.vector(at: o) + index * 4) }
   public static func startStringVec(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 1) }
   public static func addVectorOf(items: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: items, at: VTOFFSET.items.p) }
   public static func endStringVec(_ fbb: inout FlatBufferBuilder, start: UOffset) -> Offset { let end = Offset(offset: fbb.endTable(at: start)); return end }
@@ -1202,9 +1212,9 @@ public struct nostr_fb_StringVec: FlatBufferTable, FlatbuffersVectorInitializabl
   }
 }
 
-public struct nostr_fb_ProfilePointer: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_ProfilePointer: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -1220,7 +1230,9 @@ public struct nostr_fb_ProfilePointer: FlatBufferTable, FlatbuffersVectorInitial
 
   public var publicKey: String! { let o = _accessor.offset(VTOFFSET.publicKey.v); return _accessor.string(at: o) }
   public var publicKeySegmentArray: [UInt8]! { return _accessor.getVector(at: VTOFFSET.publicKey.v) }
-  public var relays: FlatbufferVector<String?> { return _accessor.vector(at: VTOFFSET.relays.v, byteSize: 4) }
+  public var hasRelays: Bool { let o = _accessor.offset(VTOFFSET.relays.v); return o == 0 ? false : true }
+  public var relaysCount: Int32 { let o = _accessor.offset(VTOFFSET.relays.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func relays(at index: Int32) -> String? { let o = _accessor.offset(VTOFFSET.relays.v); return o == 0 ? nil : _accessor.directString(at: _accessor.vector(at: o) + index * 4) }
   public static func startProfilePointer(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 2) }
   public static func add(publicKey: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: publicKey, at: VTOFFSET.publicKey.p) }
   public static func addVectorOf(relays: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: relays, at: VTOFFSET.relays.p) }
@@ -1244,9 +1256,9 @@ public struct nostr_fb_ProfilePointer: FlatBufferTable, FlatbuffersVectorInitial
   }
 }
 
-public struct nostr_fb_EventPointer: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_EventPointer: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -1264,7 +1276,9 @@ public struct nostr_fb_EventPointer: FlatBufferTable, FlatbuffersVectorInitializ
 
   public var id: String! { let o = _accessor.offset(VTOFFSET.id.v); return _accessor.string(at: o) }
   public var idSegmentArray: [UInt8]! { return _accessor.getVector(at: VTOFFSET.id.v) }
-  public var relays: FlatbufferVector<String?> { return _accessor.vector(at: VTOFFSET.relays.v, byteSize: 4) }
+  public var hasRelays: Bool { let o = _accessor.offset(VTOFFSET.relays.v); return o == 0 ? false : true }
+  public var relaysCount: Int32 { let o = _accessor.offset(VTOFFSET.relays.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func relays(at index: Int32) -> String? { let o = _accessor.offset(VTOFFSET.relays.v); return o == 0 ? nil : _accessor.directString(at: _accessor.vector(at: o) + index * 4) }
   public var author: String? { let o = _accessor.offset(VTOFFSET.author.v); return o == 0 ? nil : _accessor.string(at: o) }
   public var authorSegmentArray: [UInt8]? { return _accessor.getVector(at: VTOFFSET.author.v) }
   public var kind: UInt64 { let o = _accessor.offset(VTOFFSET.kind.v); return o == 0 ? 0 : _accessor.readBuffer(of: UInt64.self, at: o) }
@@ -1299,9 +1313,9 @@ public struct nostr_fb_EventPointer: FlatBufferTable, FlatbuffersVectorInitializ
   }
 }
 
-public struct nostr_fb_AddressPointer: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_AddressPointer: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -1322,7 +1336,9 @@ public struct nostr_fb_AddressPointer: FlatBufferTable, FlatbuffersVectorInitial
   public var pubkeySegmentArray: [UInt8]! { return _accessor.getVector(at: VTOFFSET.pubkey.v) }
   public var d: String! { let o = _accessor.offset(VTOFFSET.d.v); return _accessor.string(at: o) }
   public var dSegmentArray: [UInt8]! { return _accessor.getVector(at: VTOFFSET.d.v) }
-  public var relays: FlatbufferVector<String?> { return _accessor.vector(at: VTOFFSET.relays.v, byteSize: 4) }
+  public var hasRelays: Bool { let o = _accessor.offset(VTOFFSET.relays.v); return o == 0 ? false : true }
+  public var relaysCount: Int32 { let o = _accessor.offset(VTOFFSET.relays.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func relays(at index: Int32) -> String? { let o = _accessor.offset(VTOFFSET.relays.v); return o == 0 ? nil : _accessor.directString(at: _accessor.vector(at: o) + index * 4) }
   public static func startAddressPointer(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 4) }
   public static func add(kind: UInt64, _ fbb: inout FlatBufferBuilder) { fbb.add(element: kind, def: 0, at: VTOFFSET.kind.p) }
   public static func add(pubkey: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: pubkey, at: VTOFFSET.pubkey.p) }
@@ -1354,9 +1370,9 @@ public struct nostr_fb_AddressPointer: FlatBufferTable, FlatbuffersVectorInitial
   }
 }
 
-public struct nostr_fb_RelayInfo: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_RelayInfo: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -1404,9 +1420,9 @@ public struct nostr_fb_RelayInfo: FlatBufferTable, FlatbuffersVectorInitializabl
   }
 }
 
-public struct nostr_fb_MintInfo: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_MintInfo: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -1422,7 +1438,9 @@ public struct nostr_fb_MintInfo: FlatBufferTable, FlatbuffersVectorInitializable
 
   public var url: String! { let o = _accessor.offset(VTOFFSET.url.v); return _accessor.string(at: o) }
   public var urlSegmentArray: [UInt8]! { return _accessor.getVector(at: VTOFFSET.url.v) }
-  public var baseUnits: FlatbufferVector<String?> { return _accessor.vector(at: VTOFFSET.baseUnits.v, byteSize: 4) }
+  public var hasBaseUnits: Bool { let o = _accessor.offset(VTOFFSET.baseUnits.v); return o == 0 ? false : true }
+  public var baseUnitsCount: Int32 { let o = _accessor.offset(VTOFFSET.baseUnits.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func baseUnits(at index: Int32) -> String? { let o = _accessor.offset(VTOFFSET.baseUnits.v); return o == 0 ? nil : _accessor.directString(at: _accessor.vector(at: o) + index * 4) }
   public static func startMintInfo(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 2) }
   public static func add(url: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: url, at: VTOFFSET.url.p) }
   public static func addVectorOf(baseUnits: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: baseUnits, at: VTOFFSET.baseUnits.p) }
@@ -1446,9 +1464,9 @@ public struct nostr_fb_MintInfo: FlatBufferTable, FlatbuffersVectorInitializable
   }
 }
 
-public struct nostr_fb_Emoji: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_Emoji: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -1489,9 +1507,9 @@ public struct nostr_fb_Emoji: FlatBufferTable, FlatbuffersVectorInitializable, V
   }
 }
 
-public struct nostr_fb_Contact: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_Contact: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -1508,7 +1526,9 @@ public struct nostr_fb_Contact: FlatBufferTable, FlatbuffersVectorInitializable,
 
   public var pubkey: String! { let o = _accessor.offset(VTOFFSET.pubkey.v); return _accessor.string(at: o) }
   public var pubkeySegmentArray: [UInt8]! { return _accessor.getVector(at: VTOFFSET.pubkey.v) }
-  public var relays: FlatbufferVector<String?> { return _accessor.vector(at: VTOFFSET.relays.v, byteSize: 4) }
+  public var hasRelays: Bool { let o = _accessor.offset(VTOFFSET.relays.v); return o == 0 ? false : true }
+  public var relaysCount: Int32 { let o = _accessor.offset(VTOFFSET.relays.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func relays(at index: Int32) -> String? { let o = _accessor.offset(VTOFFSET.relays.v); return o == 0 ? nil : _accessor.directString(at: _accessor.vector(at: o) + index * 4) }
   public var petname: String? { let o = _accessor.offset(VTOFFSET.petname.v); return o == 0 ? nil : _accessor.string(at: o) }
   public var petnameSegmentArray: [UInt8]? { return _accessor.getVector(at: VTOFFSET.petname.v) }
   public static func startContact(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 3) }
@@ -1538,9 +1558,9 @@ public struct nostr_fb_Contact: FlatBufferTable, FlatbuffersVectorInitializable,
   }
 }
 
-public struct nostr_fb_DLEQProof: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_DLEQProof: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -1588,9 +1608,9 @@ public struct nostr_fb_DLEQProof: FlatBufferTable, FlatbuffersVectorInitializabl
   }
 }
 
-public struct nostr_fb_P2PKWitness: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_P2PKWitness: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -1603,7 +1623,9 @@ public struct nostr_fb_P2PKWitness: FlatBufferTable, FlatbuffersVectorInitializa
     var p: VOffset { self.rawValue }
   }
 
-  public var signatures: FlatbufferVector<String?> { return _accessor.vector(at: VTOFFSET.signatures.v, byteSize: 4) }
+  public var hasSignatures: Bool { let o = _accessor.offset(VTOFFSET.signatures.v); return o == 0 ? false : true }
+  public var signaturesCount: Int32 { let o = _accessor.offset(VTOFFSET.signatures.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func signatures(at index: Int32) -> String? { let o = _accessor.offset(VTOFFSET.signatures.v); return o == 0 ? nil : _accessor.directString(at: _accessor.vector(at: o) + index * 4) }
   public static func startP2PKWitness(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 1) }
   public static func addVectorOf(signatures: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: signatures, at: VTOFFSET.signatures.p) }
   public static func endP2PKWitness(_ fbb: inout FlatBufferBuilder, start: UOffset) -> Offset { let end = Offset(offset: fbb.endTable(at: start)); return end }
@@ -1623,9 +1645,9 @@ public struct nostr_fb_P2PKWitness: FlatBufferTable, FlatbuffersVectorInitializa
   }
 }
 
-public struct nostr_fb_HTLCWitness: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_HTLCWitness: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -1641,7 +1663,9 @@ public struct nostr_fb_HTLCWitness: FlatBufferTable, FlatbuffersVectorInitializa
 
   public var preimage: String! { let o = _accessor.offset(VTOFFSET.preimage.v); return _accessor.string(at: o) }
   public var preimageSegmentArray: [UInt8]! { return _accessor.getVector(at: VTOFFSET.preimage.v) }
-  public var signatures: FlatbufferVector<String?> { return _accessor.vector(at: VTOFFSET.signatures.v, byteSize: 4) }
+  public var hasSignatures: Bool { let o = _accessor.offset(VTOFFSET.signatures.v); return o == 0 ? false : true }
+  public var signaturesCount: Int32 { let o = _accessor.offset(VTOFFSET.signatures.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func signatures(at index: Int32) -> String? { let o = _accessor.offset(VTOFFSET.signatures.v); return o == 0 ? nil : _accessor.directString(at: _accessor.vector(at: o) + index * 4) }
   public static func startHTLCWitness(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 2) }
   public static func add(preimage: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: preimage, at: VTOFFSET.preimage.p) }
   public static func addVectorOf(signatures: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: signatures, at: VTOFFSET.signatures.p) }
@@ -1665,9 +1689,9 @@ public struct nostr_fb_HTLCWitness: FlatBufferTable, FlatbuffersVectorInitializa
   }
 }
 
-public struct nostr_fb_WitnessString: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_WitnessString: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -1701,9 +1725,9 @@ public struct nostr_fb_WitnessString: FlatBufferTable, FlatbuffersVectorInitiali
   }
 }
 
-public struct nostr_fb_Proof: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_Proof: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -1791,9 +1815,9 @@ public struct nostr_fb_Proof: FlatBufferTable, FlatbuffersVectorInitializable, V
   }
 }
 
-public struct nostr_fb_HistoryTag: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_HistoryTag: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -1848,9 +1872,9 @@ public struct nostr_fb_HistoryTag: FlatBufferTable, FlatbuffersVectorInitializab
   }
 }
 
-public struct nostr_fb_ZapRequest: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_ZapRequest: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -1872,7 +1896,9 @@ public struct nostr_fb_ZapRequest: FlatBufferTable, FlatbuffersVectorInitializab
   public var pubkeySegmentArray: [UInt8]! { return _accessor.getVector(at: VTOFFSET.pubkey.v) }
   public var content: String! { let o = _accessor.offset(VTOFFSET.content.v); return _accessor.string(at: o) }
   public var contentSegmentArray: [UInt8]! { return _accessor.getVector(at: VTOFFSET.content.v) }
-  public var tags: FlatbufferVector<nostr_fb_StringVec> { return _accessor.vector(at: VTOFFSET.tags.v, byteSize: 4) }
+  public var hasTags: Bool { let o = _accessor.offset(VTOFFSET.tags.v); return o == 0 ? false : true }
+  public var tagsCount: Int32 { let o = _accessor.offset(VTOFFSET.tags.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func tags(at index: Int32) -> nostr_fb_StringVec? { let o = _accessor.offset(VTOFFSET.tags.v); return o == 0 ? nil : nostr_fb_StringVec(_accessor.bb, o: _accessor.indirect(_accessor.vector(at: o) + index * 4)) }
   public var signature: String? { let o = _accessor.offset(VTOFFSET.signature.v); return o == 0 ? nil : _accessor.string(at: o) }
   public var signatureSegmentArray: [UInt8]? { return _accessor.getVector(at: VTOFFSET.signature.v) }
   public static func startZapRequest(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 5) }
@@ -1910,9 +1936,9 @@ public struct nostr_fb_ZapRequest: FlatBufferTable, FlatbuffersVectorInitializab
   }
 }
 
-public struct nostr_fb_Request: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_Request: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -1929,7 +1955,6 @@ public struct nostr_fb_Request: FlatBufferTable, FlatbuffersVectorInitializable,
     case until = 16
     case search = 18
     case relays = 20
-    case closeOnEose = 22
     case cacheFirst = 24
     case noCache = 26
     case maxRelays = 28
@@ -1939,18 +1964,27 @@ public struct nostr_fb_Request: FlatBufferTable, FlatbuffersVectorInitializable,
     var p: VOffset { self.rawValue }
   }
 
-  public var ids: FlatbufferVector<String?> { return _accessor.vector(at: VTOFFSET.ids.v, byteSize: 4) }
-  public var authors: FlatbufferVector<String?> { return _accessor.vector(at: VTOFFSET.authors.v, byteSize: 4) }
-  public var kinds: FlatbufferVector<UInt16> { return _accessor.vector(at: VTOFFSET.kinds.v, byteSize: 2) }
-  public func withUnsafePointerToKinds<T>(_ body: (UnsafeRawBufferPointer, Int) throws -> T) rethrows -> T? { return try _accessor.withUnsafePointerToSlice(at: VTOFFSET.kinds.v, body: body) }
-  public var tags: FlatbufferVector<nostr_fb_StringVec> { return _accessor.vector(at: VTOFFSET.tags.v, byteSize: 4) }
+  public var hasIds: Bool { let o = _accessor.offset(VTOFFSET.ids.v); return o == 0 ? false : true }
+  public var idsCount: Int32 { let o = _accessor.offset(VTOFFSET.ids.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func ids(at index: Int32) -> String? { let o = _accessor.offset(VTOFFSET.ids.v); return o == 0 ? nil : _accessor.directString(at: _accessor.vector(at: o) + index * 4) }
+  public var hasAuthors: Bool { let o = _accessor.offset(VTOFFSET.authors.v); return o == 0 ? false : true }
+  public var authorsCount: Int32 { let o = _accessor.offset(VTOFFSET.authors.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func authors(at index: Int32) -> String? { let o = _accessor.offset(VTOFFSET.authors.v); return o == 0 ? nil : _accessor.directString(at: _accessor.vector(at: o) + index * 4) }
+  public var hasKinds: Bool { let o = _accessor.offset(VTOFFSET.kinds.v); return o == 0 ? false : true }
+  public var kindsCount: Int32 { let o = _accessor.offset(VTOFFSET.kinds.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func kinds(at index: Int32) -> UInt16 { let o = _accessor.offset(VTOFFSET.kinds.v); return o == 0 ? 0 : _accessor.directRead(of: UInt16.self, offset: _accessor.vector(at: o) + index * 2) }
+  public var kinds: [UInt16] { return _accessor.getVector(at: VTOFFSET.kinds.v) ?? [] }
+  public var hasTags: Bool { let o = _accessor.offset(VTOFFSET.tags.v); return o == 0 ? false : true }
+  public var tagsCount: Int32 { let o = _accessor.offset(VTOFFSET.tags.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func tags(at index: Int32) -> nostr_fb_StringVec? { let o = _accessor.offset(VTOFFSET.tags.v); return o == 0 ? nil : nostr_fb_StringVec(_accessor.bb, o: _accessor.indirect(_accessor.vector(at: o) + index * 4)) }
   public var limit: Int32 { let o = _accessor.offset(VTOFFSET.limit.v); return o == 0 ? 0 : _accessor.readBuffer(of: Int32.self, at: o) }
   public var since: Int32 { let o = _accessor.offset(VTOFFSET.since.v); return o == 0 ? 0 : _accessor.readBuffer(of: Int32.self, at: o) }
   public var until: Int32 { let o = _accessor.offset(VTOFFSET.until.v); return o == 0 ? 0 : _accessor.readBuffer(of: Int32.self, at: o) }
   public var search: String? { let o = _accessor.offset(VTOFFSET.search.v); return o == 0 ? nil : _accessor.string(at: o) }
   public var searchSegmentArray: [UInt8]? { return _accessor.getVector(at: VTOFFSET.search.v) }
-  public var relays: FlatbufferVector<String?> { return _accessor.vector(at: VTOFFSET.relays.v, byteSize: 4) }
-  public var closeOnEose: Bool { let o = _accessor.offset(VTOFFSET.closeOnEose.v); return o == 0 ? false : _accessor.readBuffer(of: Bool.self, at: o) }
+  public var hasRelays: Bool { let o = _accessor.offset(VTOFFSET.relays.v); return o == 0 ? false : true }
+  public var relaysCount: Int32 { let o = _accessor.offset(VTOFFSET.relays.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func relays(at index: Int32) -> String? { let o = _accessor.offset(VTOFFSET.relays.v); return o == 0 ? nil : _accessor.directString(at: _accessor.vector(at: o) + index * 4) }
   public var cacheFirst: Bool { let o = _accessor.offset(VTOFFSET.cacheFirst.v); return o == 0 ? false : _accessor.readBuffer(of: Bool.self, at: o) }
   public var noCache: Bool { let o = _accessor.offset(VTOFFSET.noCache.v); return o == 0 ? false : _accessor.readBuffer(of: Bool.self, at: o) }
   public var maxRelays: UInt16 { let o = _accessor.offset(VTOFFSET.maxRelays.v); return o == 0 ? 0 : _accessor.readBuffer(of: UInt16.self, at: o) }
@@ -1966,8 +2000,6 @@ public struct nostr_fb_Request: FlatBufferTable, FlatbuffersVectorInitializable,
   public static func add(until: Int32, _ fbb: inout FlatBufferBuilder) { fbb.add(element: until, def: 0, at: VTOFFSET.until.p) }
   public static func add(search: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: search, at: VTOFFSET.search.p) }
   public static func addVectorOf(relays: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: relays, at: VTOFFSET.relays.p) }
-  public static func add(closeOnEose: Bool, _ fbb: inout FlatBufferBuilder) { fbb.add(element: closeOnEose, def: false,
-   at: VTOFFSET.closeOnEose.p) }
   public static func add(cacheFirst: Bool, _ fbb: inout FlatBufferBuilder) { fbb.add(element: cacheFirst, def: false,
    at: VTOFFSET.cacheFirst.p) }
   public static func add(noCache: Bool, _ fbb: inout FlatBufferBuilder) { fbb.add(element: noCache, def: false,
@@ -1989,7 +2021,6 @@ public struct nostr_fb_Request: FlatBufferTable, FlatbuffersVectorInitializable,
     until: Int32 = 0,
     searchOffset search: Offset = Offset(),
     relaysVectorOffset relays: Offset = Offset(),
-    closeOnEose: Bool = false,
     cacheFirst: Bool = false,
     noCache: Bool = false,
     maxRelays: UInt16 = 0,
@@ -2006,7 +2037,6 @@ public struct nostr_fb_Request: FlatBufferTable, FlatbuffersVectorInitializable,
     nostr_fb_Request.add(until: until, &fbb)
     nostr_fb_Request.add(search: search, &fbb)
     nostr_fb_Request.addVectorOf(relays: relays, &fbb)
-    nostr_fb_Request.add(closeOnEose: closeOnEose, &fbb)
     nostr_fb_Request.add(cacheFirst: cacheFirst, &fbb)
     nostr_fb_Request.add(noCache: noCache, &fbb)
     nostr_fb_Request.add(maxRelays: maxRelays, &fbb)
@@ -2026,7 +2056,6 @@ public struct nostr_fb_Request: FlatBufferTable, FlatbuffersVectorInitializable,
     try _v.visit(field: VTOFFSET.until.p, fieldName: "until", required: false, type: Int32.self)
     try _v.visit(field: VTOFFSET.search.p, fieldName: "search", required: false, type: ForwardOffset<String>.self)
     try _v.visit(field: VTOFFSET.relays.p, fieldName: "relays", required: false, type: ForwardOffset<Vector<ForwardOffset<String>, String>>.self)
-    try _v.visit(field: VTOFFSET.closeOnEose.p, fieldName: "closeOnEose", required: false, type: Bool.self)
     try _v.visit(field: VTOFFSET.cacheFirst.p, fieldName: "cacheFirst", required: false, type: Bool.self)
     try _v.visit(field: VTOFFSET.noCache.p, fieldName: "noCache", required: false, type: Bool.self)
     try _v.visit(field: VTOFFSET.maxRelays.p, fieldName: "maxRelays", required: false, type: UInt16.self)
@@ -2036,9 +2065,9 @@ public struct nostr_fb_Request: FlatBufferTable, FlatbuffersVectorInitializable,
   }
 }
 
-public struct nostr_fb_NostrEvent: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_NostrEvent: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -2064,7 +2093,9 @@ public struct nostr_fb_NostrEvent: FlatBufferTable, FlatbuffersVectorInitializab
   public var kind: UInt16 { let o = _accessor.offset(VTOFFSET.kind.v); return o == 0 ? 0 : _accessor.readBuffer(of: UInt16.self, at: o) }
   public var content: String! { let o = _accessor.offset(VTOFFSET.content.v); return _accessor.string(at: o) }
   public var contentSegmentArray: [UInt8]! { return _accessor.getVector(at: VTOFFSET.content.v) }
-  public var tags: FlatbufferVector<nostr_fb_StringVec> { return _accessor.vector(at: VTOFFSET.tags.v, byteSize: 4) }
+  public var hasTags: Bool { let o = _accessor.offset(VTOFFSET.tags.v); return o == 0 ? false : true }
+  public var tagsCount: Int32 { let o = _accessor.offset(VTOFFSET.tags.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func tags(at index: Int32) -> nostr_fb_StringVec? { let o = _accessor.offset(VTOFFSET.tags.v); return o == 0 ? nil : nostr_fb_StringVec(_accessor.bb, o: _accessor.indirect(_accessor.vector(at: o) + index * 4)) }
   public var createdAt: Int32 { let o = _accessor.offset(VTOFFSET.createdAt.v); return o == 0 ? 0 : _accessor.readBuffer(of: Int32.self, at: o) }
   public var sig: String! { let o = _accessor.offset(VTOFFSET.sig.v); return _accessor.string(at: o) }
   public var sigSegmentArray: [UInt8]! { return _accessor.getVector(at: VTOFFSET.sig.v) }
@@ -2111,9 +2142,9 @@ public struct nostr_fb_NostrEvent: FlatBufferTable, FlatbuffersVectorInitializab
   }
 }
 
-public struct nostr_fb_PrivateKey: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_PrivateKey: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -2147,9 +2178,9 @@ public struct nostr_fb_PrivateKey: FlatBufferTable, FlatbuffersVectorInitializab
   }
 }
 
-public struct nostr_fb_Nip07: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_Nip07: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -2165,9 +2196,9 @@ public struct nostr_fb_Nip07: FlatBufferTable, FlatbuffersVectorInitializable, V
   }
 }
 
-public struct nostr_fb_Nip46Bunker: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_Nip46Bunker: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -2208,9 +2239,9 @@ public struct nostr_fb_Nip46Bunker: FlatBufferTable, FlatbuffersVectorInitializa
   }
 }
 
-public struct nostr_fb_Nip46QR: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_Nip46QR: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -2251,9 +2282,9 @@ public struct nostr_fb_Nip46QR: FlatBufferTable, FlatbuffersVectorInitializable,
   }
 }
 
-public struct nostr_fb_ParsePipeConfig: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_ParsePipeConfig: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -2269,9 +2300,9 @@ public struct nostr_fb_ParsePipeConfig: FlatBufferTable, FlatbuffersVectorInitia
   }
 }
 
-public struct nostr_fb_KindFilterPipeConfig: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_KindFilterPipeConfig: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -2284,8 +2315,10 @@ public struct nostr_fb_KindFilterPipeConfig: FlatBufferTable, FlatbuffersVectorI
     var p: VOffset { self.rawValue }
   }
 
-  public var kinds: FlatbufferVector<UInt16> { return _accessor.vector(at: VTOFFSET.kinds.v, byteSize: 2) }
-  public func withUnsafePointerToKinds<T>(_ body: (UnsafeRawBufferPointer, Int) throws -> T) rethrows -> T? { return try _accessor.withUnsafePointerToSlice(at: VTOFFSET.kinds.v, body: body) }
+  public var hasKinds: Bool { let o = _accessor.offset(VTOFFSET.kinds.v); return o == 0 ? false : true }
+  public var kindsCount: Int32 { let o = _accessor.offset(VTOFFSET.kinds.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func kinds(at index: Int32) -> UInt16 { let o = _accessor.offset(VTOFFSET.kinds.v); return o == 0 ? 0 : _accessor.directRead(of: UInt16.self, offset: _accessor.vector(at: o) + index * 2) }
+  public var kinds: [UInt16] { return _accessor.getVector(at: VTOFFSET.kinds.v) ?? [] }
   public static func startKindFilterPipeConfig(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 1) }
   public static func addVectorOf(kinds: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: kinds, at: VTOFFSET.kinds.p) }
   public static func endKindFilterPipeConfig(_ fbb: inout FlatBufferBuilder, start: UOffset) -> Offset { let end = Offset(offset: fbb.endTable(at: start)); fbb.require(table: end, fields: [4]); return end }
@@ -2305,9 +2338,9 @@ public struct nostr_fb_KindFilterPipeConfig: FlatBufferTable, FlatbuffersVectorI
   }
 }
 
-public struct nostr_fb_CounterPipeConfig: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_CounterPipeConfig: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -2321,8 +2354,10 @@ public struct nostr_fb_CounterPipeConfig: FlatBufferTable, FlatbuffersVectorInit
     var p: VOffset { self.rawValue }
   }
 
-  public var kinds: FlatbufferVector<UInt16> { return _accessor.vector(at: VTOFFSET.kinds.v, byteSize: 2) }
-  public func withUnsafePointerToKinds<T>(_ body: (UnsafeRawBufferPointer, Int) throws -> T) rethrows -> T? { return try _accessor.withUnsafePointerToSlice(at: VTOFFSET.kinds.v, body: body) }
+  public var hasKinds: Bool { let o = _accessor.offset(VTOFFSET.kinds.v); return o == 0 ? false : true }
+  public var kindsCount: Int32 { let o = _accessor.offset(VTOFFSET.kinds.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func kinds(at index: Int32) -> UInt16 { let o = _accessor.offset(VTOFFSET.kinds.v); return o == 0 ? 0 : _accessor.directRead(of: UInt16.self, offset: _accessor.vector(at: o) + index * 2) }
+  public var kinds: [UInt16] { return _accessor.getVector(at: VTOFFSET.kinds.v) ?? [] }
   public var pubkey: String! { let o = _accessor.offset(VTOFFSET.pubkey.v); return _accessor.string(at: o) }
   public var pubkeySegmentArray: [UInt8]! { return _accessor.getVector(at: VTOFFSET.pubkey.v) }
   public static func startCounterPipeConfig(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 2) }
@@ -2348,9 +2383,9 @@ public struct nostr_fb_CounterPipeConfig: FlatBufferTable, FlatbuffersVectorInit
   }
 }
 
-public struct nostr_fb_NpubLimiterPipeConfig: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_NpubLimiterPipeConfig: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -2401,9 +2436,9 @@ public struct nostr_fb_NpubLimiterPipeConfig: FlatBufferTable, FlatbuffersVector
   }
 }
 
-public struct nostr_fb_ChatLimiterPipeConfig: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_ChatLimiterPipeConfig: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -2423,8 +2458,10 @@ public struct nostr_fb_ChatLimiterPipeConfig: FlatBufferTable, FlatbuffersVector
   public var ownPubkeySegmentArray: [UInt8]! { return _accessor.getVector(at: VTOFFSET.ownPubkey.v) }
   public var limitPerChat: UInt32 { let o = _accessor.offset(VTOFFSET.limitPerChat.v); return o == 0 ? 5 : _accessor.readBuffer(of: UInt32.self, at: o) }
   public var maxChats: UInt32 { let o = _accessor.offset(VTOFFSET.maxChats.v); return o == 0 ? 5000 : _accessor.readBuffer(of: UInt32.self, at: o) }
-  public var kinds: FlatbufferVector<UInt16> { return _accessor.vector(at: VTOFFSET.kinds.v, byteSize: 2) }
-  public func withUnsafePointerToKinds<T>(_ body: (UnsafeRawBufferPointer, Int) throws -> T) rethrows -> T? { return try _accessor.withUnsafePointerToSlice(at: VTOFFSET.kinds.v, body: body) }
+  public var hasKinds: Bool { let o = _accessor.offset(VTOFFSET.kinds.v); return o == 0 ? false : true }
+  public var kindsCount: Int32 { let o = _accessor.offset(VTOFFSET.kinds.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func kinds(at index: Int32) -> UInt16 { let o = _accessor.offset(VTOFFSET.kinds.v); return o == 0 ? 0 : _accessor.directRead(of: UInt16.self, offset: _accessor.vector(at: o) + index * 2) }
+  public var kinds: [UInt16] { return _accessor.getVector(at: VTOFFSET.kinds.v) ?? [] }
   public static func startChatLimiterPipeConfig(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 4) }
   public static func add(ownPubkey: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: ownPubkey, at: VTOFFSET.ownPubkey.p) }
   public static func add(limitPerChat: UInt32, _ fbb: inout FlatBufferBuilder) { fbb.add(element: limitPerChat, def: 5, at: VTOFFSET.limitPerChat.p) }
@@ -2456,9 +2493,9 @@ public struct nostr_fb_ChatLimiterPipeConfig: FlatBufferTable, FlatbuffersVector
   }
 }
 
-public struct nostr_fb_SaveToDbPipeConfig: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_SaveToDbPipeConfig: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -2474,9 +2511,9 @@ public struct nostr_fb_SaveToDbPipeConfig: FlatBufferTable, FlatbuffersVectorIni
   }
 }
 
-public struct nostr_fb_SerializeEventsPipeConfig: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_SerializeEventsPipeConfig: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -2510,9 +2547,9 @@ public struct nostr_fb_SerializeEventsPipeConfig: FlatBufferTable, FlatbuffersVe
   }
 }
 
-public struct nostr_fb_ProofVerificationPipeConfig: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_ProofVerificationPipeConfig: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -2545,9 +2582,9 @@ public struct nostr_fb_ProofVerificationPipeConfig: FlatBufferTable, Flatbuffers
   }
 }
 
-public struct nostr_fb_MuteFilterPipeConfig: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_MuteFilterPipeConfig: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -2564,10 +2601,18 @@ public struct nostr_fb_MuteFilterPipeConfig: FlatBufferTable, FlatbuffersVectorI
     var p: VOffset { self.rawValue }
   }
 
-  public var pubkeys: FlatbufferVector<String?> { return _accessor.vector(at: VTOFFSET.pubkeys.v, byteSize: 4) }
-  public var hashtags: FlatbufferVector<String?> { return _accessor.vector(at: VTOFFSET.hashtags.v, byteSize: 4) }
-  public var words: FlatbufferVector<String?> { return _accessor.vector(at: VTOFFSET.words.v, byteSize: 4) }
-  public var eventIds: FlatbufferVector<String?> { return _accessor.vector(at: VTOFFSET.eventIds.v, byteSize: 4) }
+  public var hasPubkeys: Bool { let o = _accessor.offset(VTOFFSET.pubkeys.v); return o == 0 ? false : true }
+  public var pubkeysCount: Int32 { let o = _accessor.offset(VTOFFSET.pubkeys.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func pubkeys(at index: Int32) -> String? { let o = _accessor.offset(VTOFFSET.pubkeys.v); return o == 0 ? nil : _accessor.directString(at: _accessor.vector(at: o) + index * 4) }
+  public var hasHashtags: Bool { let o = _accessor.offset(VTOFFSET.hashtags.v); return o == 0 ? false : true }
+  public var hashtagsCount: Int32 { let o = _accessor.offset(VTOFFSET.hashtags.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func hashtags(at index: Int32) -> String? { let o = _accessor.offset(VTOFFSET.hashtags.v); return o == 0 ? nil : _accessor.directString(at: _accessor.vector(at: o) + index * 4) }
+  public var hasWords: Bool { let o = _accessor.offset(VTOFFSET.words.v); return o == 0 ? false : true }
+  public var wordsCount: Int32 { let o = _accessor.offset(VTOFFSET.words.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func words(at index: Int32) -> String? { let o = _accessor.offset(VTOFFSET.words.v); return o == 0 ? nil : _accessor.directString(at: _accessor.vector(at: o) + index * 4) }
+  public var hasEventIds: Bool { let o = _accessor.offset(VTOFFSET.eventIds.v); return o == 0 ? false : true }
+  public var eventIdsCount: Int32 { let o = _accessor.offset(VTOFFSET.eventIds.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func eventIds(at index: Int32) -> String? { let o = _accessor.offset(VTOFFSET.eventIds.v); return o == 0 ? nil : _accessor.directString(at: _accessor.vector(at: o) + index * 4) }
   public var target: nostr_fb_MuteTarget { let o = _accessor.offset(VTOFFSET.target.v); return o == 0 ? .both : nostr_fb_MuteTarget(rawValue: _accessor.readBuffer(of: Int8.self, at: o)) ?? .both }
   public static func startMuteFilterPipeConfig(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 5) }
   public static func addVectorOf(pubkeys: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: pubkeys, at: VTOFFSET.pubkeys.p) }
@@ -2604,9 +2649,9 @@ public struct nostr_fb_MuteFilterPipeConfig: FlatBufferTable, FlatbuffersVectorI
   }
 }
 
-public struct nostr_fb_Pipe: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_Pipe: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -2667,9 +2712,9 @@ public struct nostr_fb_Pipe: FlatBufferTable, FlatbuffersVectorInitializable, Ve
   }
 }
 
-public struct nostr_fb_PipelineConfig: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_PipelineConfig: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -2682,7 +2727,9 @@ public struct nostr_fb_PipelineConfig: FlatBufferTable, FlatbuffersVectorInitial
     var p: VOffset { self.rawValue }
   }
 
-  public var pipes: FlatbufferVector<nostr_fb_Pipe> { return _accessor.vector(at: VTOFFSET.pipes.v, byteSize: 4) }
+  public var hasPipes: Bool { let o = _accessor.offset(VTOFFSET.pipes.v); return o == 0 ? false : true }
+  public var pipesCount: Int32 { let o = _accessor.offset(VTOFFSET.pipes.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func pipes(at index: Int32) -> nostr_fb_Pipe? { let o = _accessor.offset(VTOFFSET.pipes.v); return o == 0 ? nil : nostr_fb_Pipe(_accessor.bb, o: _accessor.indirect(_accessor.vector(at: o) + index * 4)) }
   public static func startPipelineConfig(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 1) }
   public static func addVectorOf(pipes: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: pipes, at: VTOFFSET.pipes.p) }
   public static func endPipelineConfig(_ fbb: inout FlatBufferBuilder, start: UOffset) -> Offset { let end = Offset(offset: fbb.endTable(at: start)); fbb.require(table: end, fields: [4]); return end }
@@ -2702,9 +2749,9 @@ public struct nostr_fb_PipelineConfig: FlatBufferTable, FlatbuffersVectorInitial
   }
 }
 
-public struct nostr_fb_Template: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_Template: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -2724,7 +2771,9 @@ public struct nostr_fb_Template: FlatBufferTable, FlatbuffersVectorInitializable
   public var createdAt: Int32 { let o = _accessor.offset(VTOFFSET.createdAt.v); return o == 0 ? 0 : _accessor.readBuffer(of: Int32.self, at: o) }
   public var content: String! { let o = _accessor.offset(VTOFFSET.content.v); return _accessor.string(at: o) }
   public var contentSegmentArray: [UInt8]! { return _accessor.getVector(at: VTOFFSET.content.v) }
-  public var tags: FlatbufferVector<nostr_fb_StringVec> { return _accessor.vector(at: VTOFFSET.tags.v, byteSize: 4) }
+  public var hasTags: Bool { let o = _accessor.offset(VTOFFSET.tags.v); return o == 0 ? false : true }
+  public var tagsCount: Int32 { let o = _accessor.offset(VTOFFSET.tags.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func tags(at index: Int32) -> nostr_fb_StringVec? { let o = _accessor.offset(VTOFFSET.tags.v); return o == 0 ? nil : nostr_fb_StringVec(_accessor.bb, o: _accessor.indirect(_accessor.vector(at: o) + index * 4)) }
   public static func startTemplate(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 4) }
   public static func add(kind: UInt16, _ fbb: inout FlatBufferBuilder) { fbb.add(element: kind, def: 0, at: VTOFFSET.kind.p) }
   public static func add(createdAt: Int32, _ fbb: inout FlatBufferBuilder) { fbb.add(element: createdAt, def: 0, at: VTOFFSET.createdAt.p) }
@@ -2756,9 +2805,9 @@ public struct nostr_fb_Template: FlatBufferTable, FlatbuffersVectorInitializable
   }
 }
 
-public struct nostr_fb_SubscriptionConfig: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_SubscriptionConfig: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -2858,9 +2907,9 @@ public struct nostr_fb_SubscriptionConfig: FlatBufferTable, FlatbuffersVectorIni
   }
 }
 
-public struct nostr_fb_Subscribe: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_Subscribe: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -2877,7 +2926,9 @@ public struct nostr_fb_Subscribe: FlatBufferTable, FlatbuffersVectorInitializabl
 
   public var subscriptionId: String! { let o = _accessor.offset(VTOFFSET.subscriptionId.v); return _accessor.string(at: o) }
   public var subscriptionIdSegmentArray: [UInt8]! { return _accessor.getVector(at: VTOFFSET.subscriptionId.v) }
-  public var requests: FlatbufferVector<nostr_fb_Request> { return _accessor.vector(at: VTOFFSET.requests.v, byteSize: 4) }
+  public var hasRequests: Bool { let o = _accessor.offset(VTOFFSET.requests.v); return o == 0 ? false : true }
+  public var requestsCount: Int32 { let o = _accessor.offset(VTOFFSET.requests.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func requests(at index: Int32) -> nostr_fb_Request? { let o = _accessor.offset(VTOFFSET.requests.v); return o == 0 ? nil : nostr_fb_Request(_accessor.bb, o: _accessor.indirect(_accessor.vector(at: o) + index * 4)) }
   public var config: nostr_fb_SubscriptionConfig! { let o = _accessor.offset(VTOFFSET.config.v); return nostr_fb_SubscriptionConfig(_accessor.bb, o: _accessor.indirect(o + _accessor.position)) }
   public static func startSubscribe(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 3) }
   public static func add(subscriptionId: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: subscriptionId, at: VTOFFSET.subscriptionId.p) }
@@ -2906,9 +2957,9 @@ public struct nostr_fb_Subscribe: FlatBufferTable, FlatbuffersVectorInitializabl
   }
 }
 
-public struct nostr_fb_Unsubscribe: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_Unsubscribe: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -2942,9 +2993,9 @@ public struct nostr_fb_Unsubscribe: FlatBufferTable, FlatbuffersVectorInitializa
   }
 }
 
-public struct nostr_fb_Publish: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_Publish: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -2963,8 +3014,12 @@ public struct nostr_fb_Publish: FlatBufferTable, FlatbuffersVectorInitializable,
   public var publishId: String! { let o = _accessor.offset(VTOFFSET.publishId.v); return _accessor.string(at: o) }
   public var publishIdSegmentArray: [UInt8]! { return _accessor.getVector(at: VTOFFSET.publishId.v) }
   public var template: nostr_fb_Template! { let o = _accessor.offset(VTOFFSET.template.v); return nostr_fb_Template(_accessor.bb, o: _accessor.indirect(o + _accessor.position)) }
-  public var relays: FlatbufferVector<String?> { return _accessor.vector(at: VTOFFSET.relays.v, byteSize: 4) }
-  public var optimisticSubids: FlatbufferVector<String?> { return _accessor.vector(at: VTOFFSET.optimisticSubids.v, byteSize: 4) }
+  public var hasRelays: Bool { let o = _accessor.offset(VTOFFSET.relays.v); return o == 0 ? false : true }
+  public var relaysCount: Int32 { let o = _accessor.offset(VTOFFSET.relays.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func relays(at index: Int32) -> String? { let o = _accessor.offset(VTOFFSET.relays.v); return o == 0 ? nil : _accessor.directString(at: _accessor.vector(at: o) + index * 4) }
+  public var hasOptimisticSubids: Bool { let o = _accessor.offset(VTOFFSET.optimisticSubids.v); return o == 0 ? false : true }
+  public var optimisticSubidsCount: Int32 { let o = _accessor.offset(VTOFFSET.optimisticSubids.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func optimisticSubids(at index: Int32) -> String? { let o = _accessor.offset(VTOFFSET.optimisticSubids.v); return o == 0 ? nil : _accessor.directString(at: _accessor.vector(at: o) + index * 4) }
   public static func startPublish(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 4) }
   public static func add(publishId: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: publishId, at: VTOFFSET.publishId.p) }
   public static func add(template: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: template, at: VTOFFSET.template.p) }
@@ -2996,9 +3051,9 @@ public struct nostr_fb_Publish: FlatBufferTable, FlatbuffersVectorInitializable,
   }
 }
 
-public struct nostr_fb_SignEvent: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_SignEvent: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -3037,9 +3092,9 @@ public struct nostr_fb_SignEvent: FlatBufferTable, FlatbuffersVectorInitializabl
   }
 }
 
-public struct nostr_fb_SetSigner: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_SetSigner: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -3090,9 +3145,9 @@ public struct nostr_fb_SetSigner: FlatBufferTable, FlatbuffersVectorInitializabl
   }
 }
 
-public struct nostr_fb_GetPublicKey: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_GetPublicKey: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -3108,9 +3163,9 @@ public struct nostr_fb_GetPublicKey: FlatBufferTable, FlatbuffersVectorInitializ
   }
 }
 
-public struct nostr_fb_MainMessage: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_MainMessage: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -3165,9 +3220,9 @@ public struct nostr_fb_MainMessage: FlatBufferTable, FlatbuffersVectorInitializa
   }
 }
 
-public struct nostr_fb_Kind0Parsed: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_Kind0Parsed: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -3334,9 +3389,9 @@ public struct nostr_fb_Kind0Parsed: FlatBufferTable, FlatbuffersVectorInitializa
   }
 }
 
-public struct nostr_fb_Kind1Parsed: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_Kind1Parsed: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -3355,11 +3410,21 @@ public struct nostr_fb_Kind1Parsed: FlatBufferTable, FlatbuffersVectorInitializa
     var p: VOffset { self.rawValue }
   }
 
-  public var parsedContent: FlatbufferVector<nostr_fb_ContentBlock> { return _accessor.vector(at: VTOFFSET.parsedContent.v, byteSize: 4) }
-  public var shortenedContent: FlatbufferVector<nostr_fb_ContentBlock> { return _accessor.vector(at: VTOFFSET.shortenedContent.v, byteSize: 4) }
-  public var profileMentions: FlatbufferVector<nostr_fb_ProfilePointer> { return _accessor.vector(at: VTOFFSET.profileMentions.v, byteSize: 4) }
-  public var eventRefs: FlatbufferVector<nostr_fb_EventPointer> { return _accessor.vector(at: VTOFFSET.eventRefs.v, byteSize: 4) }
-  public var addressRefs: FlatbufferVector<nostr_fb_AddressPointer> { return _accessor.vector(at: VTOFFSET.addressRefs.v, byteSize: 4) }
+  public var hasParsedContent: Bool { let o = _accessor.offset(VTOFFSET.parsedContent.v); return o == 0 ? false : true }
+  public var parsedContentCount: Int32 { let o = _accessor.offset(VTOFFSET.parsedContent.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func parsedContent(at index: Int32) -> nostr_fb_ContentBlock? { let o = _accessor.offset(VTOFFSET.parsedContent.v); return o == 0 ? nil : nostr_fb_ContentBlock(_accessor.bb, o: _accessor.indirect(_accessor.vector(at: o) + index * 4)) }
+  public var hasShortenedContent: Bool { let o = _accessor.offset(VTOFFSET.shortenedContent.v); return o == 0 ? false : true }
+  public var shortenedContentCount: Int32 { let o = _accessor.offset(VTOFFSET.shortenedContent.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func shortenedContent(at index: Int32) -> nostr_fb_ContentBlock? { let o = _accessor.offset(VTOFFSET.shortenedContent.v); return o == 0 ? nil : nostr_fb_ContentBlock(_accessor.bb, o: _accessor.indirect(_accessor.vector(at: o) + index * 4)) }
+  public var hasProfileMentions: Bool { let o = _accessor.offset(VTOFFSET.profileMentions.v); return o == 0 ? false : true }
+  public var profileMentionsCount: Int32 { let o = _accessor.offset(VTOFFSET.profileMentions.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func profileMentions(at index: Int32) -> nostr_fb_ProfilePointer? { let o = _accessor.offset(VTOFFSET.profileMentions.v); return o == 0 ? nil : nostr_fb_ProfilePointer(_accessor.bb, o: _accessor.indirect(_accessor.vector(at: o) + index * 4)) }
+  public var hasEventRefs: Bool { let o = _accessor.offset(VTOFFSET.eventRefs.v); return o == 0 ? false : true }
+  public var eventRefsCount: Int32 { let o = _accessor.offset(VTOFFSET.eventRefs.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func eventRefs(at index: Int32) -> nostr_fb_EventPointer? { let o = _accessor.offset(VTOFFSET.eventRefs.v); return o == 0 ? nil : nostr_fb_EventPointer(_accessor.bb, o: _accessor.indirect(_accessor.vector(at: o) + index * 4)) }
+  public var hasAddressRefs: Bool { let o = _accessor.offset(VTOFFSET.addressRefs.v); return o == 0 ? false : true }
+  public var addressRefsCount: Int32 { let o = _accessor.offset(VTOFFSET.addressRefs.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func addressRefs(at index: Int32) -> nostr_fb_AddressPointer? { let o = _accessor.offset(VTOFFSET.addressRefs.v); return o == 0 ? nil : nostr_fb_AddressPointer(_accessor.bb, o: _accessor.indirect(_accessor.vector(at: o) + index * 4)) }
   public var reply: nostr_fb_EventPointer? { let o = _accessor.offset(VTOFFSET.reply.v); return o == 0 ? nil : nostr_fb_EventPointer(_accessor.bb, o: _accessor.indirect(o + _accessor.position)) }
   public var root: nostr_fb_EventPointer? { let o = _accessor.offset(VTOFFSET.root.v); return o == 0 ? nil : nostr_fb_EventPointer(_accessor.bb, o: _accessor.indirect(o + _accessor.position)) }
   public static func startKind1Parsed(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 7) }
@@ -3405,9 +3470,9 @@ public struct nostr_fb_Kind1Parsed: FlatBufferTable, FlatbuffersVectorInitializa
   }
 }
 
-public struct nostr_fb_Kind3Parsed: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_Kind3Parsed: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -3420,7 +3485,9 @@ public struct nostr_fb_Kind3Parsed: FlatBufferTable, FlatbuffersVectorInitializa
     var p: VOffset { self.rawValue }
   }
 
-  public var contacts: FlatbufferVector<nostr_fb_Contact> { return _accessor.vector(at: VTOFFSET.contacts.v, byteSize: 4) }
+  public var hasContacts: Bool { let o = _accessor.offset(VTOFFSET.contacts.v); return o == 0 ? false : true }
+  public var contactsCount: Int32 { let o = _accessor.offset(VTOFFSET.contacts.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func contacts(at index: Int32) -> nostr_fb_Contact? { let o = _accessor.offset(VTOFFSET.contacts.v); return o == 0 ? nil : nostr_fb_Contact(_accessor.bb, o: _accessor.indirect(_accessor.vector(at: o) + index * 4)) }
   public static func startKind3Parsed(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 1) }
   public static func addVectorOf(contacts: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: contacts, at: VTOFFSET.contacts.p) }
   public static func endKind3Parsed(_ fbb: inout FlatBufferBuilder, start: UOffset) -> Offset { let end = Offset(offset: fbb.endTable(at: start)); fbb.require(table: end, fields: [4]); return end }
@@ -3440,9 +3507,9 @@ public struct nostr_fb_Kind3Parsed: FlatBufferTable, FlatbuffersVectorInitializa
   }
 }
 
-public struct nostr_fb_Kind4Parsed: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_Kind4Parsed: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -3458,7 +3525,9 @@ public struct nostr_fb_Kind4Parsed: FlatBufferTable, FlatbuffersVectorInitializa
     var p: VOffset { self.rawValue }
   }
 
-  public var parsedContent: FlatbufferVector<nostr_fb_ContentBlock> { return _accessor.vector(at: VTOFFSET.parsedContent.v, byteSize: 4) }
+  public var hasParsedContent: Bool { let o = _accessor.offset(VTOFFSET.parsedContent.v); return o == 0 ? false : true }
+  public var parsedContentCount: Int32 { let o = _accessor.offset(VTOFFSET.parsedContent.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func parsedContent(at index: Int32) -> nostr_fb_ContentBlock? { let o = _accessor.offset(VTOFFSET.parsedContent.v); return o == 0 ? nil : nostr_fb_ContentBlock(_accessor.bb, o: _accessor.indirect(_accessor.vector(at: o) + index * 4)) }
   public var decryptedContent: String? { let o = _accessor.offset(VTOFFSET.decryptedContent.v); return o == 0 ? nil : _accessor.string(at: o) }
   public var decryptedContentSegmentArray: [UInt8]? { return _accessor.getVector(at: VTOFFSET.decryptedContent.v) }
   public var chatId: String! { let o = _accessor.offset(VTOFFSET.chatId.v); return _accessor.string(at: o) }
@@ -3496,9 +3565,9 @@ public struct nostr_fb_Kind4Parsed: FlatBufferTable, FlatbuffersVectorInitializa
   }
 }
 
-public struct nostr_fb_Kind6Parsed: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_Kind6Parsed: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -3531,9 +3600,9 @@ public struct nostr_fb_Kind6Parsed: FlatBufferTable, FlatbuffersVectorInitializa
   }
 }
 
-public struct nostr_fb_Kind7Parsed: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_Kind7Parsed: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -3599,9 +3668,9 @@ public struct nostr_fb_Kind7Parsed: FlatBufferTable, FlatbuffersVectorInitializa
   }
 }
 
-public struct nostr_fb_BadgeAwardRecipient: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_BadgeAwardRecipient: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -3642,9 +3711,9 @@ public struct nostr_fb_BadgeAwardRecipient: FlatBufferTable, FlatbuffersVectorIn
   }
 }
 
-public struct nostr_fb_Kind8Parsed: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_Kind8Parsed: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -3664,7 +3733,9 @@ public struct nostr_fb_Kind8Parsed: FlatBufferTable, FlatbuffersVectorInitializa
   public var badgeAddressSegmentArray: [UInt8]! { return _accessor.getVector(at: VTOFFSET.badgeAddress.v) }
   public var badgeRelay: String? { let o = _accessor.offset(VTOFFSET.badgeRelay.v); return o == 0 ? nil : _accessor.string(at: o) }
   public var badgeRelaySegmentArray: [UInt8]? { return _accessor.getVector(at: VTOFFSET.badgeRelay.v) }
-  public var recipients: FlatbufferVector<nostr_fb_BadgeAwardRecipient> { return _accessor.vector(at: VTOFFSET.recipients.v, byteSize: 4) }
+  public var hasRecipients: Bool { let o = _accessor.offset(VTOFFSET.recipients.v); return o == 0 ? false : true }
+  public var recipientsCount: Int32 { let o = _accessor.offset(VTOFFSET.recipients.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func recipients(at index: Int32) -> nostr_fb_BadgeAwardRecipient? { let o = _accessor.offset(VTOFFSET.recipients.v); return o == 0 ? nil : nostr_fb_BadgeAwardRecipient(_accessor.bb, o: _accessor.indirect(_accessor.vector(at: o) + index * 4)) }
   public var content: String? { let o = _accessor.offset(VTOFFSET.content.v); return o == 0 ? nil : _accessor.string(at: o) }
   public var contentSegmentArray: [UInt8]? { return _accessor.getVector(at: VTOFFSET.content.v) }
   public static func startKind8Parsed(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 4) }
@@ -3698,9 +3769,9 @@ public struct nostr_fb_Kind8Parsed: FlatBufferTable, FlatbuffersVectorInitializa
   }
 }
 
-public struct nostr_fb_Kind17Parsed: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_Kind17Parsed: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -3766,9 +3837,9 @@ public struct nostr_fb_Kind17Parsed: FlatBufferTable, FlatbuffersVectorInitializ
   }
 }
 
-public struct nostr_fb_Kind10002Parsed: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_Kind10002Parsed: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -3781,7 +3852,9 @@ public struct nostr_fb_Kind10002Parsed: FlatBufferTable, FlatbuffersVectorInitia
     var p: VOffset { self.rawValue }
   }
 
-  public var relays: FlatbufferVector<nostr_fb_RelayInfo> { return _accessor.vector(at: VTOFFSET.relays.v, byteSize: 4) }
+  public var hasRelays: Bool { let o = _accessor.offset(VTOFFSET.relays.v); return o == 0 ? false : true }
+  public var relaysCount: Int32 { let o = _accessor.offset(VTOFFSET.relays.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func relays(at index: Int32) -> nostr_fb_RelayInfo? { let o = _accessor.offset(VTOFFSET.relays.v); return o == 0 ? nil : nostr_fb_RelayInfo(_accessor.bb, o: _accessor.indirect(_accessor.vector(at: o) + index * 4)) }
   public static func startKind10002Parsed(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 1) }
   public static func addVectorOf(relays: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: relays, at: VTOFFSET.relays.p) }
   public static func endKind10002Parsed(_ fbb: inout FlatBufferBuilder, start: UOffset) -> Offset { let end = Offset(offset: fbb.endTable(at: start)); fbb.require(table: end, fields: [4]); return end }
@@ -3801,9 +3874,9 @@ public struct nostr_fb_Kind10002Parsed: FlatBufferTable, FlatbuffersVectorInitia
   }
 }
 
-public struct nostr_fb_Kind10019Parsed: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_Kind10019Parsed: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -3818,10 +3891,14 @@ public struct nostr_fb_Kind10019Parsed: FlatBufferTable, FlatbuffersVectorInitia
     var p: VOffset { self.rawValue }
   }
 
-  public var trustedMints: FlatbufferVector<nostr_fb_MintInfo> { return _accessor.vector(at: VTOFFSET.trustedMints.v, byteSize: 4) }
+  public var hasTrustedMints: Bool { let o = _accessor.offset(VTOFFSET.trustedMints.v); return o == 0 ? false : true }
+  public var trustedMintsCount: Int32 { let o = _accessor.offset(VTOFFSET.trustedMints.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func trustedMints(at index: Int32) -> nostr_fb_MintInfo? { let o = _accessor.offset(VTOFFSET.trustedMints.v); return o == 0 ? nil : nostr_fb_MintInfo(_accessor.bb, o: _accessor.indirect(_accessor.vector(at: o) + index * 4)) }
   public var p2pkPubkey: String? { let o = _accessor.offset(VTOFFSET.p2pkPubkey.v); return o == 0 ? nil : _accessor.string(at: o) }
   public var p2pkPubkeySegmentArray: [UInt8]? { return _accessor.getVector(at: VTOFFSET.p2pkPubkey.v) }
-  public var readRelays: FlatbufferVector<String?> { return _accessor.vector(at: VTOFFSET.readRelays.v, byteSize: 4) }
+  public var hasReadRelays: Bool { let o = _accessor.offset(VTOFFSET.readRelays.v); return o == 0 ? false : true }
+  public var readRelaysCount: Int32 { let o = _accessor.offset(VTOFFSET.readRelays.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func readRelays(at index: Int32) -> String? { let o = _accessor.offset(VTOFFSET.readRelays.v); return o == 0 ? nil : _accessor.directString(at: _accessor.vector(at: o) + index * 4) }
   public static func startKind10019Parsed(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 3) }
   public static func addVectorOf(trustedMints: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: trustedMints, at: VTOFFSET.trustedMints.p) }
   public static func add(p2pkPubkey: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: p2pkPubkey, at: VTOFFSET.p2pkPubkey.p) }
@@ -3849,9 +3926,9 @@ public struct nostr_fb_Kind10019Parsed: FlatBufferTable, FlatbuffersVectorInitia
   }
 }
 
-public struct nostr_fb_Kind17375Parsed: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_Kind17375Parsed: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -3867,7 +3944,9 @@ public struct nostr_fb_Kind17375Parsed: FlatBufferTable, FlatbuffersVectorInitia
     var p: VOffset { self.rawValue }
   }
 
-  public var mints: FlatbufferVector<String?> { return _accessor.vector(at: VTOFFSET.mints.v, byteSize: 4) }
+  public var hasMints: Bool { let o = _accessor.offset(VTOFFSET.mints.v); return o == 0 ? false : true }
+  public var mintsCount: Int32 { let o = _accessor.offset(VTOFFSET.mints.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func mints(at index: Int32) -> String? { let o = _accessor.offset(VTOFFSET.mints.v); return o == 0 ? nil : _accessor.directString(at: _accessor.vector(at: o) + index * 4) }
   public var p2pkPrivKey: String? { let o = _accessor.offset(VTOFFSET.p2pkPrivKey.v); return o == 0 ? nil : _accessor.string(at: o) }
   public var p2pkPrivKeySegmentArray: [UInt8]? { return _accessor.getVector(at: VTOFFSET.p2pkPrivKey.v) }
   public var p2pkPubKey: String? { let o = _accessor.offset(VTOFFSET.p2pkPubKey.v); return o == 0 ? nil : _accessor.string(at: o) }
@@ -3905,9 +3984,9 @@ public struct nostr_fb_Kind17375Parsed: FlatBufferTable, FlatbuffersVectorInitia
   }
 }
 
-public struct nostr_fb_Kind7374Parsed: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_Kind7374Parsed: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -3954,9 +4033,9 @@ public struct nostr_fb_Kind7374Parsed: FlatBufferTable, FlatbuffersVectorInitial
   }
 }
 
-public struct nostr_fb_Kind7375Parsed: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_Kind7375Parsed: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -3974,8 +4053,12 @@ public struct nostr_fb_Kind7375Parsed: FlatBufferTable, FlatbuffersVectorInitial
 
   public var mintUrl: String! { let o = _accessor.offset(VTOFFSET.mintUrl.v); return _accessor.string(at: o) }
   public var mintUrlSegmentArray: [UInt8]! { return _accessor.getVector(at: VTOFFSET.mintUrl.v) }
-  public var proofs: FlatbufferVector<nostr_fb_Proof> { return _accessor.vector(at: VTOFFSET.proofs.v, byteSize: 4) }
-  public var deletedIds: FlatbufferVector<String?> { return _accessor.vector(at: VTOFFSET.deletedIds.v, byteSize: 4) }
+  public var hasProofs: Bool { let o = _accessor.offset(VTOFFSET.proofs.v); return o == 0 ? false : true }
+  public var proofsCount: Int32 { let o = _accessor.offset(VTOFFSET.proofs.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func proofs(at index: Int32) -> nostr_fb_Proof? { let o = _accessor.offset(VTOFFSET.proofs.v); return o == 0 ? nil : nostr_fb_Proof(_accessor.bb, o: _accessor.indirect(_accessor.vector(at: o) + index * 4)) }
+  public var hasDeletedIds: Bool { let o = _accessor.offset(VTOFFSET.deletedIds.v); return o == 0 ? false : true }
+  public var deletedIdsCount: Int32 { let o = _accessor.offset(VTOFFSET.deletedIds.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func deletedIds(at index: Int32) -> String? { let o = _accessor.offset(VTOFFSET.deletedIds.v); return o == 0 ? nil : _accessor.directString(at: _accessor.vector(at: o) + index * 4) }
   public var decrypted: Bool { let o = _accessor.offset(VTOFFSET.decrypted.v); return o == 0 ? false : _accessor.readBuffer(of: Bool.self, at: o) }
   public static func startKind7375Parsed(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 4) }
   public static func add(mintUrl: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: mintUrl, at: VTOFFSET.mintUrl.p) }
@@ -4009,9 +4092,9 @@ public struct nostr_fb_Kind7375Parsed: FlatBufferTable, FlatbuffersVectorInitial
   }
 }
 
-public struct nostr_fb_Kind7376Parsed: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_Kind7376Parsed: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -4033,10 +4116,18 @@ public struct nostr_fb_Kind7376Parsed: FlatBufferTable, FlatbuffersVectorInitial
   public var direction: String! { let o = _accessor.offset(VTOFFSET.direction.v); return _accessor.string(at: o) }
   public var directionSegmentArray: [UInt8]! { return _accessor.getVector(at: VTOFFSET.direction.v) }
   public var amount: Int32 { let o = _accessor.offset(VTOFFSET.amount.v); return o == 0 ? 0 : _accessor.readBuffer(of: Int32.self, at: o) }
-  public var createdEvents: FlatbufferVector<String?> { return _accessor.vector(at: VTOFFSET.createdEvents.v, byteSize: 4) }
-  public var destroyedEvents: FlatbufferVector<String?> { return _accessor.vector(at: VTOFFSET.destroyedEvents.v, byteSize: 4) }
-  public var redeemedEvents: FlatbufferVector<String?> { return _accessor.vector(at: VTOFFSET.redeemedEvents.v, byteSize: 4) }
-  public var tags: FlatbufferVector<nostr_fb_HistoryTag> { return _accessor.vector(at: VTOFFSET.tags.v, byteSize: 4) }
+  public var hasCreatedEvents: Bool { let o = _accessor.offset(VTOFFSET.createdEvents.v); return o == 0 ? false : true }
+  public var createdEventsCount: Int32 { let o = _accessor.offset(VTOFFSET.createdEvents.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func createdEvents(at index: Int32) -> String? { let o = _accessor.offset(VTOFFSET.createdEvents.v); return o == 0 ? nil : _accessor.directString(at: _accessor.vector(at: o) + index * 4) }
+  public var hasDestroyedEvents: Bool { let o = _accessor.offset(VTOFFSET.destroyedEvents.v); return o == 0 ? false : true }
+  public var destroyedEventsCount: Int32 { let o = _accessor.offset(VTOFFSET.destroyedEvents.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func destroyedEvents(at index: Int32) -> String? { let o = _accessor.offset(VTOFFSET.destroyedEvents.v); return o == 0 ? nil : _accessor.directString(at: _accessor.vector(at: o) + index * 4) }
+  public var hasRedeemedEvents: Bool { let o = _accessor.offset(VTOFFSET.redeemedEvents.v); return o == 0 ? false : true }
+  public var redeemedEventsCount: Int32 { let o = _accessor.offset(VTOFFSET.redeemedEvents.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func redeemedEvents(at index: Int32) -> String? { let o = _accessor.offset(VTOFFSET.redeemedEvents.v); return o == 0 ? nil : _accessor.directString(at: _accessor.vector(at: o) + index * 4) }
+  public var hasTags: Bool { let o = _accessor.offset(VTOFFSET.tags.v); return o == 0 ? false : true }
+  public var tagsCount: Int32 { let o = _accessor.offset(VTOFFSET.tags.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func tags(at index: Int32) -> nostr_fb_HistoryTag? { let o = _accessor.offset(VTOFFSET.tags.v); return o == 0 ? nil : nostr_fb_HistoryTag(_accessor.bb, o: _accessor.indirect(_accessor.vector(at: o) + index * 4)) }
   public var decrypted: Bool { let o = _accessor.offset(VTOFFSET.decrypted.v); return o == 0 ? false : _accessor.readBuffer(of: Bool.self, at: o) }
   public static func startKind7376Parsed(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 7) }
   public static func add(direction: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: direction, at: VTOFFSET.direction.p) }
@@ -4082,9 +4173,9 @@ public struct nostr_fb_Kind7376Parsed: FlatBufferTable, FlatbuffersVectorInitial
   }
 }
 
-public struct nostr_fb_Kind9321Parsed: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_Kind9321Parsed: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -4119,7 +4210,9 @@ public struct nostr_fb_Kind9321Parsed: FlatBufferTable, FlatbuffersVectorInitial
   public var mintUrl: String! { let o = _accessor.offset(VTOFFSET.mintUrl.v); return _accessor.string(at: o) }
   public var mintUrlSegmentArray: [UInt8]! { return _accessor.getVector(at: VTOFFSET.mintUrl.v) }
   public var redeemed: Bool { let o = _accessor.offset(VTOFFSET.redeemed.v); return o == 0 ? false : _accessor.readBuffer(of: Bool.self, at: o) }
-  public var proofs: FlatbufferVector<nostr_fb_Proof> { return _accessor.vector(at: VTOFFSET.proofs.v, byteSize: 4) }
+  public var hasProofs: Bool { let o = _accessor.offset(VTOFFSET.proofs.v); return o == 0 ? false : true }
+  public var proofsCount: Int32 { let o = _accessor.offset(VTOFFSET.proofs.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func proofs(at index: Int32) -> nostr_fb_Proof? { let o = _accessor.offset(VTOFFSET.proofs.v); return o == 0 ? nil : nostr_fb_Proof(_accessor.bb, o: _accessor.indirect(_accessor.vector(at: o) + index * 4)) }
   public var comment: String? { let o = _accessor.offset(VTOFFSET.comment.v); return o == 0 ? nil : _accessor.string(at: o) }
   public var commentSegmentArray: [UInt8]? { return _accessor.getVector(at: VTOFFSET.comment.v) }
   public var isP2pkLocked: Bool { let o = _accessor.offset(VTOFFSET.isP2pkLocked.v); return o == 0 ? false : _accessor.readBuffer(of: Bool.self, at: o) }
@@ -4186,9 +4279,9 @@ public struct nostr_fb_Kind9321Parsed: FlatBufferTable, FlatbuffersVectorInitial
   }
 }
 
-public struct nostr_fb_Kind9735Parsed: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_Kind9735Parsed: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -4296,9 +4389,9 @@ public struct nostr_fb_Kind9735Parsed: FlatBufferTable, FlatbuffersVectorInitial
   }
 }
 
-public struct nostr_fb_Kind30023Parsed: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_Kind30023Parsed: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -4330,13 +4423,17 @@ public struct nostr_fb_Kind30023Parsed: FlatBufferTable, FlatbuffersVectorInitia
   public var imageSegmentArray: [UInt8]? { return _accessor.getVector(at: VTOFFSET.image.v) }
   public var canonical: String? { let o = _accessor.offset(VTOFFSET.canonical.v); return o == 0 ? nil : _accessor.string(at: o) }
   public var canonicalSegmentArray: [UInt8]? { return _accessor.getVector(at: VTOFFSET.canonical.v) }
-  public var topics: FlatbufferVector<String?> { return _accessor.vector(at: VTOFFSET.topics.v, byteSize: 4) }
+  public var hasTopics: Bool { let o = _accessor.offset(VTOFFSET.topics.v); return o == 0 ? false : true }
+  public var topicsCount: Int32 { let o = _accessor.offset(VTOFFSET.topics.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func topics(at index: Int32) -> String? { let o = _accessor.offset(VTOFFSET.topics.v); return o == 0 ? nil : _accessor.directString(at: _accessor.vector(at: o) + index * 4) }
   public var publishedAt: UInt64 { let o = _accessor.offset(VTOFFSET.publishedAt.v); return o == 0 ? 0 : _accessor.readBuffer(of: UInt64.self, at: o) }
   public var naddr: String? { let o = _accessor.offset(VTOFFSET.naddr.v); return o == 0 ? nil : _accessor.string(at: o) }
   public var naddrSegmentArray: [UInt8]? { return _accessor.getVector(at: VTOFFSET.naddr.v) }
   public var content: String? { let o = _accessor.offset(VTOFFSET.content.v); return o == 0 ? nil : _accessor.string(at: o) }
   public var contentSegmentArray: [UInt8]? { return _accessor.getVector(at: VTOFFSET.content.v) }
-  public var articleBlocks: FlatbufferVector<nostr_fb_ArticleBlock> { return _accessor.vector(at: VTOFFSET.articleBlocks.v, byteSize: 4) }
+  public var hasArticleBlocks: Bool { let o = _accessor.offset(VTOFFSET.articleBlocks.v); return o == 0 ? false : true }
+  public var articleBlocksCount: Int32 { let o = _accessor.offset(VTOFFSET.articleBlocks.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func articleBlocks(at index: Int32) -> nostr_fb_ArticleBlock? { let o = _accessor.offset(VTOFFSET.articleBlocks.v); return o == 0 ? nil : nostr_fb_ArticleBlock(_accessor.bb, o: _accessor.indirect(_accessor.vector(at: o) + index * 4)) }
   public static func startKind30023Parsed(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 10) }
   public static func add(slug: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: slug, at: VTOFFSET.slug.p) }
   public static func add(title: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: title, at: VTOFFSET.title.p) }
@@ -4392,9 +4489,9 @@ public struct nostr_fb_Kind30023Parsed: FlatBufferTable, FlatbuffersVectorInitia
   }
 }
 
-public struct nostr_fb_ImetaTag: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_ImetaTag: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -4426,7 +4523,9 @@ public struct nostr_fb_ImetaTag: FlatBufferTable, FlatbuffersVectorInitializable
   public var blurhashSegmentArray: [UInt8]? { return _accessor.getVector(at: VTOFFSET.blurhash.v) }
   public var hash: String? { let o = _accessor.offset(VTOFFSET.hash.v); return o == 0 ? nil : _accessor.string(at: o) }
   public var hashSegmentArray: [UInt8]? { return _accessor.getVector(at: VTOFFSET.hash.v) }
-  public var fallback: FlatbufferVector<String?> { return _accessor.vector(at: VTOFFSET.fallback.v, byteSize: 4) }
+  public var hasFallback: Bool { let o = _accessor.offset(VTOFFSET.fallback.v); return o == 0 ? false : true }
+  public var fallbackCount: Int32 { let o = _accessor.offset(VTOFFSET.fallback.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func fallback(at index: Int32) -> String? { let o = _accessor.offset(VTOFFSET.fallback.v); return o == 0 ? nil : _accessor.directString(at: _accessor.vector(at: o) + index * 4) }
   public var annotateUser: String? { let o = _accessor.offset(VTOFFSET.annotateUser.v); return o == 0 ? nil : _accessor.string(at: o) }
   public var annotateUserSegmentArray: [UInt8]? { return _accessor.getVector(at: VTOFFSET.annotateUser.v) }
   public static func startImetaTag(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 8) }
@@ -4476,9 +4575,9 @@ public struct nostr_fb_ImetaTag: FlatBufferTable, FlatbuffersVectorInitializable
   }
 }
 
-public struct nostr_fb_Kind20Parsed: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_Kind20Parsed: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -4502,15 +4601,21 @@ public struct nostr_fb_Kind20Parsed: FlatBufferTable, FlatbuffersVectorInitializ
   public var titleSegmentArray: [UInt8]? { return _accessor.getVector(at: VTOFFSET.title.v) }
   public var description: String? { let o = _accessor.offset(VTOFFSET.description.v); return o == 0 ? nil : _accessor.string(at: o) }
   public var descriptionSegmentArray: [UInt8]? { return _accessor.getVector(at: VTOFFSET.description.v) }
-  public var images: FlatbufferVector<nostr_fb_ImetaTag> { return _accessor.vector(at: VTOFFSET.images.v, byteSize: 4) }
+  public var hasImages: Bool { let o = _accessor.offset(VTOFFSET.images.v); return o == 0 ? false : true }
+  public var imagesCount: Int32 { let o = _accessor.offset(VTOFFSET.images.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func images(at index: Int32) -> nostr_fb_ImetaTag? { let o = _accessor.offset(VTOFFSET.images.v); return o == 0 ? nil : nostr_fb_ImetaTag(_accessor.bb, o: _accessor.indirect(_accessor.vector(at: o) + index * 4)) }
   public var contentWarning: String? { let o = _accessor.offset(VTOFFSET.contentWarning.v); return o == 0 ? nil : _accessor.string(at: o) }
   public var contentWarningSegmentArray: [UInt8]? { return _accessor.getVector(at: VTOFFSET.contentWarning.v) }
   public var location: String? { let o = _accessor.offset(VTOFFSET.location.v); return o == 0 ? nil : _accessor.string(at: o) }
   public var locationSegmentArray: [UInt8]? { return _accessor.getVector(at: VTOFFSET.location.v) }
   public var geohash: String? { let o = _accessor.offset(VTOFFSET.geohash.v); return o == 0 ? nil : _accessor.string(at: o) }
   public var geohashSegmentArray: [UInt8]? { return _accessor.getVector(at: VTOFFSET.geohash.v) }
-  public var hashtags: FlatbufferVector<String?> { return _accessor.vector(at: VTOFFSET.hashtags.v, byteSize: 4) }
-  public var mentions: FlatbufferVector<nostr_fb_ProfilePointer> { return _accessor.vector(at: VTOFFSET.mentions.v, byteSize: 4) }
+  public var hasHashtags: Bool { let o = _accessor.offset(VTOFFSET.hashtags.v); return o == 0 ? false : true }
+  public var hashtagsCount: Int32 { let o = _accessor.offset(VTOFFSET.hashtags.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func hashtags(at index: Int32) -> String? { let o = _accessor.offset(VTOFFSET.hashtags.v); return o == 0 ? nil : _accessor.directString(at: _accessor.vector(at: o) + index * 4) }
+  public var hasMentions: Bool { let o = _accessor.offset(VTOFFSET.mentions.v); return o == 0 ? false : true }
+  public var mentionsCount: Int32 { let o = _accessor.offset(VTOFFSET.mentions.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func mentions(at index: Int32) -> nostr_fb_ProfilePointer? { let o = _accessor.offset(VTOFFSET.mentions.v); return o == 0 ? nil : nostr_fb_ProfilePointer(_accessor.bb, o: _accessor.indirect(_accessor.vector(at: o) + index * 4)) }
   public static func startKind20Parsed(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 8) }
   public static func add(title: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: title, at: VTOFFSET.title.p) }
   public static func add(description: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: description, at: VTOFFSET.description.p) }
@@ -4558,9 +4663,9 @@ public struct nostr_fb_Kind20Parsed: FlatBufferTable, FlatbuffersVectorInitializ
   }
 }
 
-public struct nostr_fb_VideoVariant: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_VideoVariant: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -4595,7 +4700,9 @@ public struct nostr_fb_VideoVariant: FlatBufferTable, FlatbuffersVectorInitializ
   public var bitrate: UInt64 { let o = _accessor.offset(VTOFFSET.bitrate.v); return o == 0 ? 0 : _accessor.readBuffer(of: UInt64.self, at: o) }
   public var image: String? { let o = _accessor.offset(VTOFFSET.image.v); return o == 0 ? nil : _accessor.string(at: o) }
   public var imageSegmentArray: [UInt8]? { return _accessor.getVector(at: VTOFFSET.image.v) }
-  public var fallback: FlatbufferVector<String?> { return _accessor.vector(at: VTOFFSET.fallback.v, byteSize: 4) }
+  public var hasFallback: Bool { let o = _accessor.offset(VTOFFSET.fallback.v); return o == 0 ? false : true }
+  public var fallbackCount: Int32 { let o = _accessor.offset(VTOFFSET.fallback.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func fallback(at index: Int32) -> String? { let o = _accessor.offset(VTOFFSET.fallback.v); return o == 0 ? nil : _accessor.directString(at: _accessor.vector(at: o) + index * 4) }
   public static func startVideoVariant(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 9) }
   public static func add(url: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: url, at: VTOFFSET.url.p) }
   public static func add(mimeType: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: mimeType, at: VTOFFSET.mimeType.p) }
@@ -4647,9 +4754,9 @@ public struct nostr_fb_VideoVariant: FlatBufferTable, FlatbuffersVectorInitializ
   }
 }
 
-public struct nostr_fb_Kind22Parsed: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_Kind22Parsed: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -4674,15 +4781,21 @@ public struct nostr_fb_Kind22Parsed: FlatBufferTable, FlatbuffersVectorInitializ
   public var titleSegmentArray: [UInt8]! { return _accessor.getVector(at: VTOFFSET.title.v) }
   public var description: String? { let o = _accessor.offset(VTOFFSET.description.v); return o == 0 ? nil : _accessor.string(at: o) }
   public var descriptionSegmentArray: [UInt8]? { return _accessor.getVector(at: VTOFFSET.description.v) }
-  public var videos: FlatbufferVector<nostr_fb_VideoVariant> { return _accessor.vector(at: VTOFFSET.videos.v, byteSize: 4) }
+  public var hasVideos: Bool { let o = _accessor.offset(VTOFFSET.videos.v); return o == 0 ? false : true }
+  public var videosCount: Int32 { let o = _accessor.offset(VTOFFSET.videos.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func videos(at index: Int32) -> nostr_fb_VideoVariant? { let o = _accessor.offset(VTOFFSET.videos.v); return o == 0 ? nil : nostr_fb_VideoVariant(_accessor.bb, o: _accessor.indirect(_accessor.vector(at: o) + index * 4)) }
   public var alt: String? { let o = _accessor.offset(VTOFFSET.alt.v); return o == 0 ? nil : _accessor.string(at: o) }
   public var altSegmentArray: [UInt8]? { return _accessor.getVector(at: VTOFFSET.alt.v) }
   public var contentWarning: String? { let o = _accessor.offset(VTOFFSET.contentWarning.v); return o == 0 ? nil : _accessor.string(at: o) }
   public var contentWarningSegmentArray: [UInt8]? { return _accessor.getVector(at: VTOFFSET.contentWarning.v) }
   public var duration: Float32 { let o = _accessor.offset(VTOFFSET.duration.v); return o == 0 ? 0.0 : _accessor.readBuffer(of: Float32.self, at: o) }
   public var publishedAt: UInt64 { let o = _accessor.offset(VTOFFSET.publishedAt.v); return o == 0 ? 0 : _accessor.readBuffer(of: UInt64.self, at: o) }
-  public var hashtags: FlatbufferVector<String?> { return _accessor.vector(at: VTOFFSET.hashtags.v, byteSize: 4) }
-  public var participants: FlatbufferVector<nostr_fb_ProfilePointer> { return _accessor.vector(at: VTOFFSET.participants.v, byteSize: 4) }
+  public var hasHashtags: Bool { let o = _accessor.offset(VTOFFSET.hashtags.v); return o == 0 ? false : true }
+  public var hashtagsCount: Int32 { let o = _accessor.offset(VTOFFSET.hashtags.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func hashtags(at index: Int32) -> String? { let o = _accessor.offset(VTOFFSET.hashtags.v); return o == 0 ? nil : _accessor.directString(at: _accessor.vector(at: o) + index * 4) }
+  public var hasParticipants: Bool { let o = _accessor.offset(VTOFFSET.participants.v); return o == 0 ? false : true }
+  public var participantsCount: Int32 { let o = _accessor.offset(VTOFFSET.participants.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func participants(at index: Int32) -> nostr_fb_ProfilePointer? { let o = _accessor.offset(VTOFFSET.participants.v); return o == 0 ? nil : nostr_fb_ProfilePointer(_accessor.bb, o: _accessor.indirect(_accessor.vector(at: o) + index * 4)) }
   public static func startKind22Parsed(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 9) }
   public static func add(title: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: title, at: VTOFFSET.title.p) }
   public static func add(description: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: description, at: VTOFFSET.description.p) }
@@ -4734,9 +4847,9 @@ public struct nostr_fb_Kind22Parsed: FlatBufferTable, FlatbuffersVectorInitializ
   }
 }
 
-public struct nostr_fb_Kind1111Parsed: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_Kind1111Parsed: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -4766,7 +4879,9 @@ public struct nostr_fb_Kind1111Parsed: FlatBufferTable, FlatbuffersVectorInitial
 
   public var content: String! { let o = _accessor.offset(VTOFFSET.content.v); return _accessor.string(at: o) }
   public var contentSegmentArray: [UInt8]! { return _accessor.getVector(at: VTOFFSET.content.v) }
-  public var parsedContent: FlatbufferVector<nostr_fb_ContentBlock> { return _accessor.vector(at: VTOFFSET.parsedContent.v, byteSize: 4) }
+  public var hasParsedContent: Bool { let o = _accessor.offset(VTOFFSET.parsedContent.v); return o == 0 ? false : true }
+  public var parsedContentCount: Int32 { let o = _accessor.offset(VTOFFSET.parsedContent.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func parsedContent(at index: Int32) -> nostr_fb_ContentBlock? { let o = _accessor.offset(VTOFFSET.parsedContent.v); return o == 0 ? nil : nostr_fb_ContentBlock(_accessor.bb, o: _accessor.indirect(_accessor.vector(at: o) + index * 4)) }
   public var rootId: String? { let o = _accessor.offset(VTOFFSET.rootId.v); return o == 0 ? nil : _accessor.string(at: o) }
   public var rootIdSegmentArray: [UInt8]? { return _accessor.getVector(at: VTOFFSET.rootId.v) }
   public var rootCoordinate: String? { let o = _accessor.offset(VTOFFSET.rootCoordinate.v); return o == 0 ? nil : _accessor.string(at: o) }
@@ -4776,7 +4891,9 @@ public struct nostr_fb_Kind1111Parsed: FlatBufferTable, FlatbuffersVectorInitial
   public var rootKind: UInt16 { let o = _accessor.offset(VTOFFSET.rootKind.v); return o == 0 ? 0 : _accessor.readBuffer(of: UInt16.self, at: o) }
   public var rootAuthor: String? { let o = _accessor.offset(VTOFFSET.rootAuthor.v); return o == 0 ? nil : _accessor.string(at: o) }
   public var rootAuthorSegmentArray: [UInt8]? { return _accessor.getVector(at: VTOFFSET.rootAuthor.v) }
-  public var rootRelays: FlatbufferVector<String?> { return _accessor.vector(at: VTOFFSET.rootRelays.v, byteSize: 4) }
+  public var hasRootRelays: Bool { let o = _accessor.offset(VTOFFSET.rootRelays.v); return o == 0 ? false : true }
+  public var rootRelaysCount: Int32 { let o = _accessor.offset(VTOFFSET.rootRelays.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func rootRelays(at index: Int32) -> String? { let o = _accessor.offset(VTOFFSET.rootRelays.v); return o == 0 ? nil : _accessor.directString(at: _accessor.vector(at: o) + index * 4) }
   public var parentId: String? { let o = _accessor.offset(VTOFFSET.parentId.v); return o == 0 ? nil : _accessor.string(at: o) }
   public var parentIdSegmentArray: [UInt8]? { return _accessor.getVector(at: VTOFFSET.parentId.v) }
   public var parentCoordinate: String? { let o = _accessor.offset(VTOFFSET.parentCoordinate.v); return o == 0 ? nil : _accessor.string(at: o) }
@@ -4786,9 +4903,15 @@ public struct nostr_fb_Kind1111Parsed: FlatBufferTable, FlatbuffersVectorInitial
   public var parentKind: UInt16 { let o = _accessor.offset(VTOFFSET.parentKind.v); return o == 0 ? 0 : _accessor.readBuffer(of: UInt16.self, at: o) }
   public var parentAuthor: String? { let o = _accessor.offset(VTOFFSET.parentAuthor.v); return o == 0 ? nil : _accessor.string(at: o) }
   public var parentAuthorSegmentArray: [UInt8]? { return _accessor.getVector(at: VTOFFSET.parentAuthor.v) }
-  public var parentRelays: FlatbufferVector<String?> { return _accessor.vector(at: VTOFFSET.parentRelays.v, byteSize: 4) }
-  public var citations: FlatbufferVector<nostr_fb_EventPointer> { return _accessor.vector(at: VTOFFSET.citations.v, byteSize: 4) }
-  public var mentions: FlatbufferVector<nostr_fb_ProfilePointer> { return _accessor.vector(at: VTOFFSET.mentions.v, byteSize: 4) }
+  public var hasParentRelays: Bool { let o = _accessor.offset(VTOFFSET.parentRelays.v); return o == 0 ? false : true }
+  public var parentRelaysCount: Int32 { let o = _accessor.offset(VTOFFSET.parentRelays.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func parentRelays(at index: Int32) -> String? { let o = _accessor.offset(VTOFFSET.parentRelays.v); return o == 0 ? nil : _accessor.directString(at: _accessor.vector(at: o) + index * 4) }
+  public var hasCitations: Bool { let o = _accessor.offset(VTOFFSET.citations.v); return o == 0 ? false : true }
+  public var citationsCount: Int32 { let o = _accessor.offset(VTOFFSET.citations.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func citations(at index: Int32) -> nostr_fb_EventPointer? { let o = _accessor.offset(VTOFFSET.citations.v); return o == 0 ? nil : nostr_fb_EventPointer(_accessor.bb, o: _accessor.indirect(_accessor.vector(at: o) + index * 4)) }
+  public var hasMentions: Bool { let o = _accessor.offset(VTOFFSET.mentions.v); return o == 0 ? false : true }
+  public var mentionsCount: Int32 { let o = _accessor.offset(VTOFFSET.mentions.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func mentions(at index: Int32) -> nostr_fb_ProfilePointer? { let o = _accessor.offset(VTOFFSET.mentions.v); return o == 0 ? nil : nostr_fb_ProfilePointer(_accessor.bb, o: _accessor.indirect(_accessor.vector(at: o) + index * 4)) }
   public static func startKind1111Parsed(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 16) }
   public static func add(content: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: content, at: VTOFFSET.content.p) }
   public static func addVectorOf(parsedContent: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: parsedContent, at: VTOFFSET.parsedContent.p) }
@@ -4868,9 +4991,9 @@ public struct nostr_fb_Kind1111Parsed: FlatBufferTable, FlatbuffersVectorInitial
   }
 }
 
-public struct nostr_fb_LiveChatParticipant: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_LiveChatParticipant: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -4911,9 +5034,9 @@ public struct nostr_fb_LiveChatParticipant: FlatBufferTable, FlatbuffersVectorIn
   }
 }
 
-public struct nostr_fb_LiveChatThreadRef: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_LiveChatThreadRef: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -4954,9 +5077,9 @@ public struct nostr_fb_LiveChatThreadRef: FlatBufferTable, FlatbuffersVectorInit
   }
 }
 
-public struct nostr_fb_LiveActivityRef: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_LiveActivityRef: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -5010,9 +5133,9 @@ public struct nostr_fb_LiveActivityRef: FlatBufferTable, FlatbuffersVectorInitia
   }
 }
 
-public struct nostr_fb_Kind1311Parsed: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_Kind1311Parsed: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -5031,10 +5154,16 @@ public struct nostr_fb_Kind1311Parsed: FlatBufferTable, FlatbuffersVectorInitial
 
   public var content: String! { let o = _accessor.offset(VTOFFSET.content.v); return _accessor.string(at: o) }
   public var contentSegmentArray: [UInt8]! { return _accessor.getVector(at: VTOFFSET.content.v) }
-  public var parsedContent: FlatbufferVector<nostr_fb_ContentBlock> { return _accessor.vector(at: VTOFFSET.parsedContent.v, byteSize: 4) }
+  public var hasParsedContent: Bool { let o = _accessor.offset(VTOFFSET.parsedContent.v); return o == 0 ? false : true }
+  public var parsedContentCount: Int32 { let o = _accessor.offset(VTOFFSET.parsedContent.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func parsedContent(at index: Int32) -> nostr_fb_ContentBlock? { let o = _accessor.offset(VTOFFSET.parsedContent.v); return o == 0 ? nil : nostr_fb_ContentBlock(_accessor.bb, o: _accessor.indirect(_accessor.vector(at: o) + index * 4)) }
   public var activity: nostr_fb_LiveActivityRef! { let o = _accessor.offset(VTOFFSET.activity.v); return nostr_fb_LiveActivityRef(_accessor.bb, o: _accessor.indirect(o + _accessor.position)) }
-  public var threadRefs: FlatbufferVector<nostr_fb_LiveChatThreadRef> { return _accessor.vector(at: VTOFFSET.threadRefs.v, byteSize: 4) }
-  public var mentions: FlatbufferVector<nostr_fb_LiveChatParticipant> { return _accessor.vector(at: VTOFFSET.mentions.v, byteSize: 4) }
+  public var hasThreadRefs: Bool { let o = _accessor.offset(VTOFFSET.threadRefs.v); return o == 0 ? false : true }
+  public var threadRefsCount: Int32 { let o = _accessor.offset(VTOFFSET.threadRefs.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func threadRefs(at index: Int32) -> nostr_fb_LiveChatThreadRef? { let o = _accessor.offset(VTOFFSET.threadRefs.v); return o == 0 ? nil : nostr_fb_LiveChatThreadRef(_accessor.bb, o: _accessor.indirect(_accessor.vector(at: o) + index * 4)) }
+  public var hasMentions: Bool { let o = _accessor.offset(VTOFFSET.mentions.v); return o == 0 ? false : true }
+  public var mentionsCount: Int32 { let o = _accessor.offset(VTOFFSET.mentions.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func mentions(at index: Int32) -> nostr_fb_LiveChatParticipant? { let o = _accessor.offset(VTOFFSET.mentions.v); return o == 0 ? nil : nostr_fb_LiveChatParticipant(_accessor.bb, o: _accessor.indirect(_accessor.vector(at: o) + index * 4)) }
   public static func startKind1311Parsed(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 5) }
   public static func add(content: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: content, at: VTOFFSET.content.p) }
   public static func addVectorOf(parsedContent: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: parsedContent, at: VTOFFSET.parsedContent.p) }
@@ -5070,9 +5199,9 @@ public struct nostr_fb_Kind1311Parsed: FlatBufferTable, FlatbuffersVectorInitial
   }
 }
 
-public struct nostr_fb_Tag: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_Tag: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -5088,7 +5217,9 @@ public struct nostr_fb_Tag: FlatBufferTable, FlatbuffersVectorInitializable, Ver
 
   public var key: String! { let o = _accessor.offset(VTOFFSET.key.v); return _accessor.string(at: o) }
   public var keySegmentArray: [UInt8]! { return _accessor.getVector(at: VTOFFSET.key.v) }
-  public var values: FlatbufferVector<String?> { return _accessor.vector(at: VTOFFSET.values.v, byteSize: 4) }
+  public var hasValues: Bool { let o = _accessor.offset(VTOFFSET.values.v); return o == 0 ? false : true }
+  public var valuesCount: Int32 { let o = _accessor.offset(VTOFFSET.values.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func values(at index: Int32) -> String? { let o = _accessor.offset(VTOFFSET.values.v); return o == 0 ? nil : _accessor.directString(at: _accessor.vector(at: o) + index * 4) }
   public static func startTag(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 2) }
   public static func add(key: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: key, at: VTOFFSET.key.p) }
   public static func addVectorOf(values: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: values, at: VTOFFSET.values.p) }
@@ -5112,9 +5243,9 @@ public struct nostr_fb_Tag: FlatBufferTable, FlatbuffersVectorInitializable, Ver
   }
 }
 
-public struct nostr_fb_Coordinate: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_Coordinate: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -5135,7 +5266,9 @@ public struct nostr_fb_Coordinate: FlatBufferTable, FlatbuffersVectorInitializab
   public var pubkeySegmentArray: [UInt8]! { return _accessor.getVector(at: VTOFFSET.pubkey.v) }
   public var d: String! { let o = _accessor.offset(VTOFFSET.d.v); return _accessor.string(at: o) }
   public var dSegmentArray: [UInt8]! { return _accessor.getVector(at: VTOFFSET.d.v) }
-  public var relays: FlatbufferVector<String?> { return _accessor.vector(at: VTOFFSET.relays.v, byteSize: 4) }
+  public var hasRelays: Bool { let o = _accessor.offset(VTOFFSET.relays.v); return o == 0 ? false : true }
+  public var relaysCount: Int32 { let o = _accessor.offset(VTOFFSET.relays.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func relays(at index: Int32) -> String? { let o = _accessor.offset(VTOFFSET.relays.v); return o == 0 ? nil : _accessor.directString(at: _accessor.vector(at: o) + index * 4) }
   public static func startCoordinate(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 4) }
   public static func add(kind: UInt64, _ fbb: inout FlatBufferBuilder) { fbb.add(element: kind, def: 0, at: VTOFFSET.kind.p) }
   public static func add(pubkey: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: pubkey, at: VTOFFSET.pubkey.p) }
@@ -5167,9 +5300,9 @@ public struct nostr_fb_Coordinate: FlatBufferTable, FlatbuffersVectorInitializab
   }
 }
 
-public struct nostr_fb_ListParsed: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_ListParsed: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -5200,11 +5333,21 @@ public struct nostr_fb_ListParsed: FlatBufferTable, FlatbuffersVectorInitializab
   public var descriptionSegmentArray: [UInt8]? { return _accessor.getVector(at: VTOFFSET.description.v) }
   public var image: String? { let o = _accessor.offset(VTOFFSET.image.v); return o == 0 ? nil : _accessor.string(at: o) }
   public var imageSegmentArray: [UInt8]? { return _accessor.getVector(at: VTOFFSET.image.v) }
-  public var topics: FlatbufferVector<String?> { return _accessor.vector(at: VTOFFSET.topics.v, byteSize: 4) }
-  public var people: FlatbufferVector<String?> { return _accessor.vector(at: VTOFFSET.people.v, byteSize: 4) }
-  public var events: FlatbufferVector<String?> { return _accessor.vector(at: VTOFFSET.events.v, byteSize: 4) }
-  public var addresses: FlatbufferVector<nostr_fb_Coordinate> { return _accessor.vector(at: VTOFFSET.addresses.v, byteSize: 4) }
-  public var otherTags: FlatbufferVector<nostr_fb_Tag> { return _accessor.vector(at: VTOFFSET.otherTags.v, byteSize: 4) }
+  public var hasTopics: Bool { let o = _accessor.offset(VTOFFSET.topics.v); return o == 0 ? false : true }
+  public var topicsCount: Int32 { let o = _accessor.offset(VTOFFSET.topics.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func topics(at index: Int32) -> String? { let o = _accessor.offset(VTOFFSET.topics.v); return o == 0 ? nil : _accessor.directString(at: _accessor.vector(at: o) + index * 4) }
+  public var hasPeople: Bool { let o = _accessor.offset(VTOFFSET.people.v); return o == 0 ? false : true }
+  public var peopleCount: Int32 { let o = _accessor.offset(VTOFFSET.people.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func people(at index: Int32) -> String? { let o = _accessor.offset(VTOFFSET.people.v); return o == 0 ? nil : _accessor.directString(at: _accessor.vector(at: o) + index * 4) }
+  public var hasEvents: Bool { let o = _accessor.offset(VTOFFSET.events.v); return o == 0 ? false : true }
+  public var eventsCount: Int32 { let o = _accessor.offset(VTOFFSET.events.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func events(at index: Int32) -> String? { let o = _accessor.offset(VTOFFSET.events.v); return o == 0 ? nil : _accessor.directString(at: _accessor.vector(at: o) + index * 4) }
+  public var hasAddresses: Bool { let o = _accessor.offset(VTOFFSET.addresses.v); return o == 0 ? false : true }
+  public var addressesCount: Int32 { let o = _accessor.offset(VTOFFSET.addresses.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func addresses(at index: Int32) -> nostr_fb_Coordinate? { let o = _accessor.offset(VTOFFSET.addresses.v); return o == 0 ? nil : nostr_fb_Coordinate(_accessor.bb, o: _accessor.indirect(_accessor.vector(at: o) + index * 4)) }
+  public var hasOtherTags: Bool { let o = _accessor.offset(VTOFFSET.otherTags.v); return o == 0 ? false : true }
+  public var otherTagsCount: Int32 { let o = _accessor.offset(VTOFFSET.otherTags.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func otherTags(at index: Int32) -> nostr_fb_Tag? { let o = _accessor.offset(VTOFFSET.otherTags.v); return o == 0 ? nil : nostr_fb_Tag(_accessor.bb, o: _accessor.indirect(_accessor.vector(at: o) + index * 4)) }
   public static func startListParsed(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 10) }
   public static func add(listKind: UInt16, _ fbb: inout FlatBufferBuilder) { fbb.add(element: listKind, def: 0, at: VTOFFSET.listKind.p) }
   public static func add(d: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: d, at: VTOFFSET.d.p) }
@@ -5260,9 +5403,9 @@ public struct nostr_fb_ListParsed: FlatBufferTable, FlatbuffersVectorInitializab
   }
 }
 
-public struct nostr_fb_PreParticipant: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_PreParticipant: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -5317,9 +5460,9 @@ public struct nostr_fb_PreParticipant: FlatBufferTable, FlatbuffersVectorInitial
   }
 }
 
-public struct nostr_fb_PreRefEvent: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_PreRefEvent: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -5367,9 +5510,9 @@ public struct nostr_fb_PreRefEvent: FlatBufferTable, FlatbuffersVectorInitializa
   }
 }
 
-public struct nostr_fb_PreGenericParsed: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_PreGenericParsed: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -5437,13 +5580,27 @@ public struct nostr_fb_PreGenericParsed: FlatBufferTable, FlatbuffersVectorIniti
   public var totalParticipants: UInt64 { let o = _accessor.offset(VTOFFSET.totalParticipants.v); return o == 0 ? 0 : _accessor.readBuffer(of: UInt64.self, at: o) }
   public var pinned: String? { let o = _accessor.offset(VTOFFSET.pinned.v); return o == 0 ? nil : _accessor.string(at: o) }
   public var pinnedSegmentArray: [UInt8]? { return _accessor.getVector(at: VTOFFSET.pinned.v) }
-  public var topics: FlatbufferVector<String?> { return _accessor.vector(at: VTOFFSET.topics.v, byteSize: 4) }
-  public var links: FlatbufferVector<String?> { return _accessor.vector(at: VTOFFSET.links.v, byteSize: 4) }
-  public var relays: FlatbufferVector<String?> { return _accessor.vector(at: VTOFFSET.relays.v, byteSize: 4) }
-  public var participants: FlatbufferVector<nostr_fb_PreParticipant> { return _accessor.vector(at: VTOFFSET.participants.v, byteSize: 4) }
-  public var events: FlatbufferVector<nostr_fb_PreRefEvent> { return _accessor.vector(at: VTOFFSET.events.v, byteSize: 4) }
-  public var addresses: FlatbufferVector<nostr_fb_Coordinate> { return _accessor.vector(at: VTOFFSET.addresses.v, byteSize: 4) }
-  public var tags: FlatbufferVector<nostr_fb_StringVec> { return _accessor.vector(at: VTOFFSET.tags.v, byteSize: 4) }
+  public var hasTopics: Bool { let o = _accessor.offset(VTOFFSET.topics.v); return o == 0 ? false : true }
+  public var topicsCount: Int32 { let o = _accessor.offset(VTOFFSET.topics.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func topics(at index: Int32) -> String? { let o = _accessor.offset(VTOFFSET.topics.v); return o == 0 ? nil : _accessor.directString(at: _accessor.vector(at: o) + index * 4) }
+  public var hasLinks: Bool { let o = _accessor.offset(VTOFFSET.links.v); return o == 0 ? false : true }
+  public var linksCount: Int32 { let o = _accessor.offset(VTOFFSET.links.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func links(at index: Int32) -> String? { let o = _accessor.offset(VTOFFSET.links.v); return o == 0 ? nil : _accessor.directString(at: _accessor.vector(at: o) + index * 4) }
+  public var hasRelays: Bool { let o = _accessor.offset(VTOFFSET.relays.v); return o == 0 ? false : true }
+  public var relaysCount: Int32 { let o = _accessor.offset(VTOFFSET.relays.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func relays(at index: Int32) -> String? { let o = _accessor.offset(VTOFFSET.relays.v); return o == 0 ? nil : _accessor.directString(at: _accessor.vector(at: o) + index * 4) }
+  public var hasParticipants: Bool { let o = _accessor.offset(VTOFFSET.participants.v); return o == 0 ? false : true }
+  public var participantsCount: Int32 { let o = _accessor.offset(VTOFFSET.participants.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func participants(at index: Int32) -> nostr_fb_PreParticipant? { let o = _accessor.offset(VTOFFSET.participants.v); return o == 0 ? nil : nostr_fb_PreParticipant(_accessor.bb, o: _accessor.indirect(_accessor.vector(at: o) + index * 4)) }
+  public var hasEvents: Bool { let o = _accessor.offset(VTOFFSET.events.v); return o == 0 ? false : true }
+  public var eventsCount: Int32 { let o = _accessor.offset(VTOFFSET.events.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func events(at index: Int32) -> nostr_fb_PreRefEvent? { let o = _accessor.offset(VTOFFSET.events.v); return o == 0 ? nil : nostr_fb_PreRefEvent(_accessor.bb, o: _accessor.indirect(_accessor.vector(at: o) + index * 4)) }
+  public var hasAddresses: Bool { let o = _accessor.offset(VTOFFSET.addresses.v); return o == 0 ? false : true }
+  public var addressesCount: Int32 { let o = _accessor.offset(VTOFFSET.addresses.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func addresses(at index: Int32) -> nostr_fb_Coordinate? { let o = _accessor.offset(VTOFFSET.addresses.v); return o == 0 ? nil : nostr_fb_Coordinate(_accessor.bb, o: _accessor.indirect(_accessor.vector(at: o) + index * 4)) }
+  public var hasTags: Bool { let o = _accessor.offset(VTOFFSET.tags.v); return o == 0 ? false : true }
+  public var tagsCount: Int32 { let o = _accessor.offset(VTOFFSET.tags.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func tags(at index: Int32) -> nostr_fb_StringVec? { let o = _accessor.offset(VTOFFSET.tags.v); return o == 0 ? nil : nostr_fb_StringVec(_accessor.bb, o: _accessor.indirect(_accessor.vector(at: o) + index * 4)) }
   public static func startPreGenericParsed(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 25) }
   public static func add(kind: UInt16, _ fbb: inout FlatBufferBuilder) { fbb.add(element: kind, def: 0, at: VTOFFSET.kind.p) }
   public static func add(d: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: d, at: VTOFFSET.d.p) }
@@ -5559,9 +5716,9 @@ public struct nostr_fb_PreGenericParsed: FlatBufferTable, FlatbuffersVectorIniti
   }
 }
 
-public struct nostr_fb_PollOption: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_PollOption: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -5602,9 +5759,9 @@ public struct nostr_fb_PollOption: FlatBufferTable, FlatbuffersVectorInitializab
   }
 }
 
-public struct nostr_fb_Kind1068Parsed: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_Kind1068Parsed: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -5630,11 +5787,17 @@ public struct nostr_fb_Kind1068Parsed: FlatBufferTable, FlatbuffersVectorInitial
   public var pubkeySegmentArray: [UInt8]! { return _accessor.getVector(at: VTOFFSET.pubkey.v) }
   public var question: String! { let o = _accessor.offset(VTOFFSET.question.v); return _accessor.string(at: o) }
   public var questionSegmentArray: [UInt8]! { return _accessor.getVector(at: VTOFFSET.question.v) }
-  public var contentBlocks: FlatbufferVector<nostr_fb_ContentBlock> { return _accessor.vector(at: VTOFFSET.contentBlocks.v, byteSize: 4) }
-  public var options: FlatbufferVector<nostr_fb_PollOption> { return _accessor.vector(at: VTOFFSET.options.v, byteSize: 4) }
+  public var hasContentBlocks: Bool { let o = _accessor.offset(VTOFFSET.contentBlocks.v); return o == 0 ? false : true }
+  public var contentBlocksCount: Int32 { let o = _accessor.offset(VTOFFSET.contentBlocks.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func contentBlocks(at index: Int32) -> nostr_fb_ContentBlock? { let o = _accessor.offset(VTOFFSET.contentBlocks.v); return o == 0 ? nil : nostr_fb_ContentBlock(_accessor.bb, o: _accessor.indirect(_accessor.vector(at: o) + index * 4)) }
+  public var hasOptions: Bool { let o = _accessor.offset(VTOFFSET.options.v); return o == 0 ? false : true }
+  public var optionsCount: Int32 { let o = _accessor.offset(VTOFFSET.options.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func options(at index: Int32) -> nostr_fb_PollOption? { let o = _accessor.offset(VTOFFSET.options.v); return o == 0 ? nil : nostr_fb_PollOption(_accessor.bb, o: _accessor.indirect(_accessor.vector(at: o) + index * 4)) }
   public var pollType: nostr_fb_PollType { let o = _accessor.offset(VTOFFSET.pollType.v); return o == 0 ? .singlechoice : nostr_fb_PollType(rawValue: _accessor.readBuffer(of: Int8.self, at: o)) ?? .singlechoice }
   public var endsAt: UInt64 { let o = _accessor.offset(VTOFFSET.endsAt.v); return o == 0 ? 0 : _accessor.readBuffer(of: UInt64.self, at: o) }
-  public var relayUrls: FlatbufferVector<String?> { return _accessor.vector(at: VTOFFSET.relayUrls.v, byteSize: 4) }
+  public var hasRelayUrls: Bool { let o = _accessor.offset(VTOFFSET.relayUrls.v); return o == 0 ? false : true }
+  public var relayUrlsCount: Int32 { let o = _accessor.offset(VTOFFSET.relayUrls.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func relayUrls(at index: Int32) -> String? { let o = _accessor.offset(VTOFFSET.relayUrls.v); return o == 0 ? nil : _accessor.directString(at: _accessor.vector(at: o) + index * 4) }
   public static func startKind1068Parsed(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 8) }
   public static func add(id: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: id, at: VTOFFSET.id.p) }
   public static func add(pubkey: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: pubkey, at: VTOFFSET.pubkey.p) }
@@ -5682,9 +5845,9 @@ public struct nostr_fb_Kind1068Parsed: FlatBufferTable, FlatbuffersVectorInitial
   }
 }
 
-public struct nostr_fb_Kind1018Parsed: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_Kind1018Parsed: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -5706,7 +5869,9 @@ public struct nostr_fb_Kind1018Parsed: FlatBufferTable, FlatbuffersVectorInitial
   public var pubkeySegmentArray: [UInt8]! { return _accessor.getVector(at: VTOFFSET.pubkey.v) }
   public var pollEventId: String! { let o = _accessor.offset(VTOFFSET.pollEventId.v); return _accessor.string(at: o) }
   public var pollEventIdSegmentArray: [UInt8]! { return _accessor.getVector(at: VTOFFSET.pollEventId.v) }
-  public var selectedOptions: FlatbufferVector<String?> { return _accessor.vector(at: VTOFFSET.selectedOptions.v, byteSize: 4) }
+  public var hasSelectedOptions: Bool { let o = _accessor.offset(VTOFFSET.selectedOptions.v); return o == 0 ? false : true }
+  public var selectedOptionsCount: Int32 { let o = _accessor.offset(VTOFFSET.selectedOptions.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func selectedOptions(at index: Int32) -> String? { let o = _accessor.offset(VTOFFSET.selectedOptions.v); return o == 0 ? nil : _accessor.directString(at: _accessor.vector(at: o) + index * 4) }
   public static func startKind1018Parsed(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 4) }
   public static func add(id: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: id, at: VTOFFSET.id.p) }
   public static func add(pubkey: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: pubkey, at: VTOFFSET.pubkey.p) }
@@ -5738,9 +5903,9 @@ public struct nostr_fb_Kind1018Parsed: FlatBufferTable, FlatbuffersVectorInitial
   }
 }
 
-public struct nostr_fb_ParsedEvent: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_ParsedEvent: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -5769,9 +5934,15 @@ public struct nostr_fb_ParsedEvent: FlatBufferTable, FlatbuffersVectorInitializa
   public var createdAt: UInt32 { let o = _accessor.offset(VTOFFSET.createdAt.v); return o == 0 ? 0 : _accessor.readBuffer(of: UInt32.self, at: o) }
   public var parsedType: nostr_fb_ParsedData { let o = _accessor.offset(VTOFFSET.parsedType.v); return o == 0 ? .none_ : nostr_fb_ParsedData(rawValue: _accessor.readBuffer(of: UInt8.self, at: o)) ?? .none_ }
   public func parsed<T: FlatbuffersInitializable>(type: T.Type) -> T? { let o = _accessor.offset(VTOFFSET.parsed.v); return o == 0 ? nil : _accessor.union(o) }
-  public var requests: FlatbufferVector<nostr_fb_Request> { return _accessor.vector(at: VTOFFSET.requests.v, byteSize: 4) }
-  public var relays: FlatbufferVector<String?> { return _accessor.vector(at: VTOFFSET.relays.v, byteSize: 4) }
-  public var tags: FlatbufferVector<nostr_fb_StringVec> { return _accessor.vector(at: VTOFFSET.tags.v, byteSize: 4) }
+  public var hasRequests: Bool { let o = _accessor.offset(VTOFFSET.requests.v); return o == 0 ? false : true }
+  public var requestsCount: Int32 { let o = _accessor.offset(VTOFFSET.requests.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func requests(at index: Int32) -> nostr_fb_Request? { let o = _accessor.offset(VTOFFSET.requests.v); return o == 0 ? nil : nostr_fb_Request(_accessor.bb, o: _accessor.indirect(_accessor.vector(at: o) + index * 4)) }
+  public var hasRelays: Bool { let o = _accessor.offset(VTOFFSET.relays.v); return o == 0 ? false : true }
+  public var relaysCount: Int32 { let o = _accessor.offset(VTOFFSET.relays.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func relays(at index: Int32) -> String? { let o = _accessor.offset(VTOFFSET.relays.v); return o == 0 ? nil : _accessor.directString(at: _accessor.vector(at: o) + index * 4) }
+  public var hasTags: Bool { let o = _accessor.offset(VTOFFSET.tags.v); return o == 0 ? false : true }
+  public var tagsCount: Int32 { let o = _accessor.offset(VTOFFSET.tags.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func tags(at index: Int32) -> nostr_fb_StringVec? { let o = _accessor.offset(VTOFFSET.tags.v); return o == 0 ? nil : nostr_fb_StringVec(_accessor.bb, o: _accessor.indirect(_accessor.vector(at: o) + index * 4)) }
   public static func startParsedEvent(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 9) }
   public static func add(id: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: id, at: VTOFFSET.id.p) }
   public static func add(pubkey: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: pubkey, at: VTOFFSET.pubkey.p) }
@@ -5877,9 +6048,9 @@ public struct nostr_fb_ParsedEvent: FlatBufferTable, FlatbuffersVectorInitializa
   }
 }
 
-public struct nostr_fb_ConnectionStatus: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_ConnectionStatus: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -5927,9 +6098,9 @@ public struct nostr_fb_ConnectionStatus: FlatBufferTable, FlatbuffersVectorIniti
   }
 }
 
-public struct nostr_fb_CountResponse: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_CountResponse: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -5975,9 +6146,9 @@ public struct nostr_fb_CountResponse: FlatBufferTable, FlatbuffersVectorInitiali
   }
 }
 
-public struct nostr_fb_Eoce: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_Eoce: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -6011,9 +6182,9 @@ public struct nostr_fb_Eoce: FlatBufferTable, FlatbuffersVectorInitializable, Ve
   }
 }
 
-public struct nostr_fb_BufferFull: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_BufferFull: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -6046,9 +6217,9 @@ public struct nostr_fb_BufferFull: FlatBufferTable, FlatbuffersVectorInitializab
   }
 }
 
-public struct nostr_fb_ValidProofs: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_ValidProofs: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -6061,7 +6232,9 @@ public struct nostr_fb_ValidProofs: FlatBufferTable, FlatbuffersVectorInitializa
     var p: VOffset { self.rawValue }
   }
 
-  public var proofs: FlatbufferVector<nostr_fb_MintProofs> { return _accessor.vector(at: VTOFFSET.proofs.v, byteSize: 4) }
+  public var hasProofs: Bool { let o = _accessor.offset(VTOFFSET.proofs.v); return o == 0 ? false : true }
+  public var proofsCount: Int32 { let o = _accessor.offset(VTOFFSET.proofs.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func proofs(at index: Int32) -> nostr_fb_MintProofs? { let o = _accessor.offset(VTOFFSET.proofs.v); return o == 0 ? nil : nostr_fb_MintProofs(_accessor.bb, o: _accessor.indirect(_accessor.vector(at: o) + index * 4)) }
   public static func startValidProofs(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 1) }
   public static func addVectorOf(proofs: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: proofs, at: VTOFFSET.proofs.p) }
   public static func endValidProofs(_ fbb: inout FlatBufferBuilder, start: UOffset) -> Offset { let end = Offset(offset: fbb.endTable(at: start)); fbb.require(table: end, fields: [4]); return end }
@@ -6081,9 +6254,9 @@ public struct nostr_fb_ValidProofs: FlatBufferTable, FlatbuffersVectorInitializa
   }
 }
 
-public struct nostr_fb_MintProofs: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_MintProofs: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -6099,7 +6272,9 @@ public struct nostr_fb_MintProofs: FlatBufferTable, FlatbuffersVectorInitializab
 
   public var mint: String! { let o = _accessor.offset(VTOFFSET.mint.v); return _accessor.string(at: o) }
   public var mintSegmentArray: [UInt8]! { return _accessor.getVector(at: VTOFFSET.mint.v) }
-  public var proofs: FlatbufferVector<nostr_fb_Proof> { return _accessor.vector(at: VTOFFSET.proofs.v, byteSize: 4) }
+  public var hasProofs: Bool { let o = _accessor.offset(VTOFFSET.proofs.v); return o == 0 ? false : true }
+  public var proofsCount: Int32 { let o = _accessor.offset(VTOFFSET.proofs.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func proofs(at index: Int32) -> nostr_fb_Proof? { let o = _accessor.offset(VTOFFSET.proofs.v); return o == 0 ? nil : nostr_fb_Proof(_accessor.bb, o: _accessor.indirect(_accessor.vector(at: o) + index * 4)) }
   public static func startMintProofs(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 2) }
   public static func add(mint: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: mint, at: VTOFFSET.mint.p) }
   public static func addVectorOf(proofs: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: proofs, at: VTOFFSET.proofs.p) }
@@ -6123,9 +6298,9 @@ public struct nostr_fb_MintProofs: FlatBufferTable, FlatbuffersVectorInitializab
   }
 }
 
-public struct nostr_fb_Pubkey: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_Pubkey: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -6166,9 +6341,9 @@ public struct nostr_fb_Pubkey: FlatBufferTable, FlatbuffersVectorInitializable, 
   }
 }
 
-public struct nostr_fb_SignedEvent: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_SignedEvent: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -6214,9 +6389,9 @@ public struct nostr_fb_SignedEvent: FlatBufferTable, FlatbuffersVectorInitializa
   }
 }
 
-public struct nostr_fb_SetSignerResponse: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_SetSignerResponse: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -6264,9 +6439,9 @@ public struct nostr_fb_SetSignerResponse: FlatBufferTable, FlatbuffersVectorInit
   }
 }
 
-public struct nostr_fb_Raw: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_Raw: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -6300,9 +6475,9 @@ public struct nostr_fb_Raw: FlatBufferTable, FlatbuffersVectorInitializable, Ver
   }
 }
 
-public struct nostr_fb_AuthUrl: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_AuthUrl: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -6343,9 +6518,9 @@ public struct nostr_fb_AuthUrl: FlatBufferTable, FlatbuffersVectorInitializable,
   }
 }
 
-public struct nostr_fb_WorkerMessage: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_WorkerMessage: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -6432,9 +6607,9 @@ public struct nostr_fb_WorkerMessage: FlatBufferTable, FlatbuffersVectorInitiali
   }
 }
 
-public struct nostr_fb_CacheRequest: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_CacheRequest: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -6448,18 +6623,24 @@ public struct nostr_fb_CacheRequest: FlatBufferTable, FlatbuffersVectorInitializ
     case parsedEvent = 10
     case relays = 12
     case close = 14
+    case keepMeshWatch = 16
     var v: Int32 { Int32(self.rawValue) }
     var p: VOffset { self.rawValue }
   }
 
   public var subId: String! { let o = _accessor.offset(VTOFFSET.subId.v); return _accessor.string(at: o) }
   public var subIdSegmentArray: [UInt8]! { return _accessor.getVector(at: VTOFFSET.subId.v) }
-  public var requests: FlatbufferVector<nostr_fb_Request> { return _accessor.vector(at: VTOFFSET.requests.v, byteSize: 4) }
+  public var hasRequests: Bool { let o = _accessor.offset(VTOFFSET.requests.v); return o == 0 ? false : true }
+  public var requestsCount: Int32 { let o = _accessor.offset(VTOFFSET.requests.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func requests(at index: Int32) -> nostr_fb_Request? { let o = _accessor.offset(VTOFFSET.requests.v); return o == 0 ? nil : nostr_fb_Request(_accessor.bb, o: _accessor.indirect(_accessor.vector(at: o) + index * 4)) }
   public var event: nostr_fb_NostrEvent? { let o = _accessor.offset(VTOFFSET.event.v); return o == 0 ? nil : nostr_fb_NostrEvent(_accessor.bb, o: _accessor.indirect(o + _accessor.position)) }
   public var parsedEvent: nostr_fb_ParsedEvent? { let o = _accessor.offset(VTOFFSET.parsedEvent.v); return o == 0 ? nil : nostr_fb_ParsedEvent(_accessor.bb, o: _accessor.indirect(o + _accessor.position)) }
-  public var relays: FlatbufferVector<String?> { return _accessor.vector(at: VTOFFSET.relays.v, byteSize: 4) }
+  public var hasRelays: Bool { let o = _accessor.offset(VTOFFSET.relays.v); return o == 0 ? false : true }
+  public var relaysCount: Int32 { let o = _accessor.offset(VTOFFSET.relays.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func relays(at index: Int32) -> String? { let o = _accessor.offset(VTOFFSET.relays.v); return o == 0 ? nil : _accessor.directString(at: _accessor.vector(at: o) + index * 4) }
   public var close: Bool { let o = _accessor.offset(VTOFFSET.close.v); return o == 0 ? false : _accessor.readBuffer(of: Bool.self, at: o) }
-  public static func startCacheRequest(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 6) }
+  public var keepMeshWatch: Bool { let o = _accessor.offset(VTOFFSET.keepMeshWatch.v); return o == 0 ? true : _accessor.readBuffer(of: Bool.self, at: o) }
+  public static func startCacheRequest(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 7) }
   public static func add(subId: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: subId, at: VTOFFSET.subId.p) }
   public static func addVectorOf(requests: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: requests, at: VTOFFSET.requests.p) }
   public static func add(event: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: event, at: VTOFFSET.event.p) }
@@ -6467,6 +6648,8 @@ public struct nostr_fb_CacheRequest: FlatBufferTable, FlatbuffersVectorInitializ
   public static func addVectorOf(relays: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: relays, at: VTOFFSET.relays.p) }
   public static func add(close: Bool, _ fbb: inout FlatBufferBuilder) { fbb.add(element: close, def: false,
    at: VTOFFSET.close.p) }
+  public static func add(keepMeshWatch: Bool, _ fbb: inout FlatBufferBuilder) { fbb.add(element: keepMeshWatch, def: true,
+   at: VTOFFSET.keepMeshWatch.p) }
   public static func endCacheRequest(_ fbb: inout FlatBufferBuilder, start: UOffset) -> Offset { let end = Offset(offset: fbb.endTable(at: start)); fbb.require(table: end, fields: [4]); return end }
   public static func createCacheRequest(
     _ fbb: inout FlatBufferBuilder,
@@ -6475,7 +6658,8 @@ public struct nostr_fb_CacheRequest: FlatBufferTable, FlatbuffersVectorInitializ
     eventOffset event: Offset = Offset(),
     parsedEventOffset parsedEvent: Offset = Offset(),
     relaysVectorOffset relays: Offset = Offset(),
-    close: Bool = false
+    close: Bool = false,
+    keepMeshWatch: Bool = true
   ) -> Offset {
     let __start = nostr_fb_CacheRequest.startCacheRequest(&fbb)
     nostr_fb_CacheRequest.add(subId: subId, &fbb)
@@ -6484,6 +6668,7 @@ public struct nostr_fb_CacheRequest: FlatBufferTable, FlatbuffersVectorInitializ
     nostr_fb_CacheRequest.add(parsedEvent: parsedEvent, &fbb)
     nostr_fb_CacheRequest.addVectorOf(relays: relays, &fbb)
     nostr_fb_CacheRequest.add(close: close, &fbb)
+    nostr_fb_CacheRequest.add(keepMeshWatch: keepMeshWatch, &fbb)
     return nostr_fb_CacheRequest.endCacheRequest(&fbb, start: __start)
   }
 
@@ -6495,13 +6680,14 @@ public struct nostr_fb_CacheRequest: FlatBufferTable, FlatbuffersVectorInitializ
     try _v.visit(field: VTOFFSET.parsedEvent.p, fieldName: "parsedEvent", required: false, type: ForwardOffset<nostr_fb_ParsedEvent>.self)
     try _v.visit(field: VTOFFSET.relays.p, fieldName: "relays", required: false, type: ForwardOffset<Vector<ForwardOffset<String>, String>>.self)
     try _v.visit(field: VTOFFSET.close.p, fieldName: "close", required: false, type: Bool.self)
+    try _v.visit(field: VTOFFSET.keepMeshWatch.p, fieldName: "keepMeshWatch", required: false, type: Bool.self)
     _v.finish()
   }
 }
 
-public struct nostr_fb_SignerRequest: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_SignerRequest: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -6568,9 +6754,9 @@ public struct nostr_fb_SignerRequest: FlatBufferTable, FlatbuffersVectorInitiali
   }
 }
 
-public struct nostr_fb_SignerResponse: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_SignerResponse: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -6617,9 +6803,9 @@ public struct nostr_fb_SignerResponse: FlatBufferTable, FlatbuffersVectorInitial
   }
 }
 
-public struct nostr_fb_CacheResponse: FlatBufferTable, FlatbuffersVectorInitializable, Verifiable {
+public struct nostr_fb_CacheResponse: FlatBufferObject, Verifiable {
 
-  static func validateVersion() { FlatBuffersVersion_25_12_19() }
+  static func validateVersion() { FlatBuffersVersion_25_2_10() }
   public var __buffer: ByteBuffer! { return _accessor.bb }
   private var _accessor: Table
 
@@ -6635,8 +6821,10 @@ public struct nostr_fb_CacheResponse: FlatBufferTable, FlatbuffersVectorInitiali
 
   public var subId: String! { let o = _accessor.offset(VTOFFSET.subId.v); return _accessor.string(at: o) }
   public var subIdSegmentArray: [UInt8]! { return _accessor.getVector(at: VTOFFSET.subId.v) }
-  public var payload: FlatbufferVector<UInt8> { return _accessor.vector(at: VTOFFSET.payload.v, byteSize: 1) }
-  public func withUnsafePointerToPayload<T>(_ body: (UnsafeRawBufferPointer, Int) throws -> T) rethrows -> T? { return try _accessor.withUnsafePointerToSlice(at: VTOFFSET.payload.v, body: body) }
+  public var hasPayload: Bool { let o = _accessor.offset(VTOFFSET.payload.v); return o == 0 ? false : true }
+  public var payloadCount: Int32 { let o = _accessor.offset(VTOFFSET.payload.v); return o == 0 ? 0 : _accessor.vector(count: o) }
+  public func payload(at index: Int32) -> UInt8 { let o = _accessor.offset(VTOFFSET.payload.v); return o == 0 ? 0 : _accessor.directRead(of: UInt8.self, offset: _accessor.vector(at: o) + index * 1) }
+  public var payload: [UInt8] { return _accessor.getVector(at: VTOFFSET.payload.v) ?? [] }
   public static func startCacheResponse(_ fbb: inout FlatBufferBuilder) -> UOffset { fbb.startTable(with: 2) }
   public static func add(subId: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: subId, at: VTOFFSET.subId.p) }
   public static func addVectorOf(payload: Offset, _ fbb: inout FlatBufferBuilder) { fbb.add(offset: payload, at: VTOFFSET.payload.p) }

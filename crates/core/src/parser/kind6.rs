@@ -95,7 +95,6 @@ impl Parser {
             requests.push(Request {
                 ids: vec![event_id],
                 cache_first: true,
-                close_on_eose: true,
                 relays,
                 ..Default::default()
             });

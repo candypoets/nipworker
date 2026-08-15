@@ -212,6 +212,8 @@ table CacheRequest {
     parsed_event: ParsedEvent;
     relays: [string];
     close: bool;
+    // Whether mesh-only filters remain registered after the initial cache read.
+    keep_mesh_watch: bool = true;
 }
 
 // Signer service messages

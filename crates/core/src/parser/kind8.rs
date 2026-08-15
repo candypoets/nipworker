@@ -88,7 +88,6 @@ impl Parser {
             kinds: vec![definition_kind as i32],
             tags,
             relays: badge_relay.clone().into_iter().collect(),
-            close_on_eose: true,
             cache_first: true,
             ..Default::default()
         }];
@@ -210,7 +209,6 @@ mod tests {
             requests[0].tags.get("#d"),
             Some(&vec!["members".to_string()])
         );
-        assert!(requests[0].close_on_eose);
         assert!(requests[0].cache_first);
     }
 

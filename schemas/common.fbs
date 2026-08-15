@@ -253,7 +253,9 @@ table Request {
   until: int;
   search: string;
   relays: [string];
-  close_on_eose: bool;
+  // Reserved wire slot 9. The former request lifetime field was invalid because
+  // EOSE is scoped to the whole subscription rather than an individual filter.
+  reserved_9: bool (deprecated);
   cache_first: bool;
   no_cache: bool;
   max_relays: ushort;
