@@ -14,7 +14,6 @@ futures = { version = "0.3", default-features = false, features = ["std"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-oslog = "0.3"
-android_logger = "0.14"
 android_log-sys = "0.3"
 log = "0.4"
 tracing-log = "0.2"

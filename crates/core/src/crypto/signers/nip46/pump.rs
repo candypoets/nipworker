@@ -274,7 +274,7 @@ impl Pump {
                     .and_then(|v| v.as_str())
                     .filter(|u| !u.is_empty())
                 {
-                    info!("[nip46] auth challenge for id={}: {}", rid, url);
+                    info!("[nip46] auth challenge received for id={}", rid);
                     auth_pending.borrow_mut().insert(rid.clone());
                     if let Some(cb) = on_auth_url.borrow().as_ref() {
                         cb(url.to_string(), rid.clone());
@@ -345,9 +345,11 @@ mod tests {
                 expected_secret,
                 on_discovery: Rc::new(RefCell::new(None)),
                 auth_pending: Rc::new(RefCell::new(HashSet::new())),
-                on_auth_url: Rc::new(RefCell::new(Some(Rc::new(move |url: String, id: String| {
-                    auth_calls_cb.borrow_mut().push((url, id));
-                })))),
+                on_auth_url: Rc::new(RefCell::new(Some(Rc::new(
+                    move |url: String, id: String| {
+                        auth_calls_cb.borrow_mut().push((url, id));
+                    },
+                )))),
                 auth_calls,
             }
         }

@@ -591,8 +591,8 @@ impl CryptoWorker {
                                                     let on_auth_url = std::rc::Rc::new(
                                                         move |url: String, request_id: String| {
                                                             info!(
-                                                                "[CryptoWorker] NIP-46 auth challenge: {}",
-                                                                url
+                                                                "[CryptoWorker] NIP-46 auth challenge received for request {}",
+                                                                request_id
                                                             );
                                                             let resp = serialize_auth_url(
                                                                 &url,
@@ -749,8 +749,8 @@ impl CryptoWorker {
                                                     let on_auth_url = std::rc::Rc::new(
                                                         move |url: String, request_id: String| {
                                                             info!(
-                                                                "[CryptoWorker] NIP-46 auth challenge: {}",
-                                                                url
+                                                                "[CryptoWorker] NIP-46 auth challenge received for request {}",
+                                                                request_id
                                                             );
                                                             let resp = serialize_auth_url(
                                                                 &url,

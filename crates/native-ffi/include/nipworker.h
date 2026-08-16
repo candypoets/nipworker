@@ -11,6 +11,7 @@ extern "C" {
 
 typedef void (*nipworker_callback)(void *userdata, const uint8_t *bytes, size_t length);
 
+void nipworker_set_log_level(const char *level);
 void *nipworker_init(nipworker_callback callback, void *userdata);
 void *nipworker_init_with_storage_path(
 	nipworker_callback callback,

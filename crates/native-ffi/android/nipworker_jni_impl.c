@@ -41,6 +41,7 @@ extern void* nipworker_init_with_options(
     const char* indexer_relays,
     bool mesh_enabled
 );
+extern void nipworker_set_log_level(const char* level);
 extern void nipworker_handle_message(void* handle, const uint8_t* ptr, size_t len);
 extern void nipworker_set_private_key(void* handle, const char* ptr);
 extern void nipworker_clear_signer(void* handle);
@@ -104,6 +105,9 @@ impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipwor
     jstring default_relays,
     jstring indexer_relays,
     jboolean mesh_enabled);
+JNIEXPORT void JNICALL
+impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerSetLogLevel(
+    JNIEnv* env, jclass cls, jstring log_level);
 JNIEXPORT jboolean JNICALL
 impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nativeMeshPeerConnected(
     JNIEnv* env, jclass cls, jlong handle, jstring peer, jint mtu);
@@ -186,6 +190,11 @@ JNIEXPORT jint JNICALL impl_JNI_OnLoad(JavaVM* vm, void* reserved) {
             "nipworkerSetPrivateKey",
             "(JLjava/lang/String;)V",
             (void*)&impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerSetPrivateKey
+        },
+        {
+            "nipworkerSetLogLevel",
+            "(Ljava/lang/String;)V",
+            (void*)&impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerSetLogLevel
         },
         {
             "nipworkerClearSigner",
@@ -410,6 +419,23 @@ impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipwor
         (*env)->ReleaseStringUTFChars(env, indexer_relays, cindexer_relays);
     }
     return (jlong)handle;
+}
+
+JNI_USED
+JNIEXPORT void JNICALL
+impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerSetLogLevel(
+    JNIEnv* env,
+    jclass cls,
+    jstring log_level
+) {
+    const char* clevel = NULL;
+    if (log_level != NULL) {
+        clevel = (*env)->GetStringUTFChars(env, log_level, NULL);
+    }
+    nipworker_set_log_level(clevel);
+    if (log_level != NULL && clevel != NULL) {
+        (*env)->ReleaseStringUTFChars(env, log_level, clevel);
+    }
 }
 
 JNI_USED

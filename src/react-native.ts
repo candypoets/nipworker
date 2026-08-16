@@ -166,7 +166,8 @@ const reactNativeBridge = {
 				const relayConfig = {
 					defaultRelays: config?.defaultRelays ?? [],
 					indexerRelays: config?.indexerRelays ?? [],
-					meshBLEEnabled: config?.meshBLEEnabled ?? false
+					meshBLEEnabled: config?.meshBLEEnabled ?? false,
+					logLevel: config?.logLevel ?? 'warn'
 				};
 				// The shared native handle must be configured before installing the
 				// byte runtime, which borrows that same handle.
@@ -174,7 +175,8 @@ const reactNativeBridge = {
 					mod.initEngine(
 						relayConfig.defaultRelays,
 						relayConfig.indexerRelays,
-						relayConfig.meshBLEEnabled
+						relayConfig.meshBLEEnabled,
+						relayConfig.logLevel
 					);
 				}
 				if (typeof mod.installByteRuntime === 'function') {

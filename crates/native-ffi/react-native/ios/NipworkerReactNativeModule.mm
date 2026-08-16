@@ -26,6 +26,7 @@ void* nipworker_init(void (*callback)(void* userdata, const uint8_t* ptr, size_t
 void* nipworker_init_with_storage_path(void (*callback)(void* userdata, const uint8_t* ptr, size_t len), void* userdata, const char* storage_path);
 void* nipworker_init_with_config(void (*callback)(void* userdata, const uint8_t* ptr, size_t len), void* userdata, const char* storage_path, const char* default_relays, const char* indexer_relays);
 void* nipworker_init_with_options(void (*callback)(void* userdata, const uint8_t* ptr, size_t len), void* userdata, const char* storage_path, const char* default_relays, const char* indexer_relays, bool mesh_enabled);
+void nipworker_set_log_level(const char* level);
 void nipworker_handle_message(void* handle, const uint8_t* ptr, size_t len);
 bool nipworker_subscribe_message(void* handle, const uint8_t* ptr, size_t len);
 bool nipworker_publish_message(void* handle, const uint8_t* ptr, size_t len);
@@ -141,7 +142,9 @@ static void NipworkerNotifyQueuedPacket(void) {
 		for (NipworkerReactNativeModule* listener in listeners) {
 			[listener emitNipworkerData:@{
 				@"v": @1,
-				@"encoding": @"queued"
+				@"encoding": @"queued",
+				// Compatibility with clients generated from the old required-data schema.
+				@"data": @[]
 			}];
 		}
 	});
@@ -636,7 +639,8 @@ RCT_EXPORT_MODULE(NipworkerReactNativeModule)
 	}
 }
 
-RCT_EXPORT_METHOD(initEngine:(NSArray<NSString *> *)defaultRelays indexerRelays:(NSArray<NSString *> *)indexerRelays meshBLEEnabled:(BOOL)meshBLEEnabled) {
+RCT_EXPORT_METHOD(initEngine:(NSArray<NSString *> *)defaultRelays indexerRelays:(NSArray<NSString *> *)indexerRelays meshBLEEnabled:(BOOL)meshBLEEnabled logLevel:(NSString *)logLevel) {
+	nipworker_set_log_level(logLevel.UTF8String);
 	self.engineHandle = [NipworkerRuntime sharedHandleWithDefaultRelays:defaultRelays
 													   indexerRelays:indexerRelays
 													  meshBLEEnabled:meshBLEEnabled

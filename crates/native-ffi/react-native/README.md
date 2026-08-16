@@ -95,9 +95,12 @@ The installer keeps the codegen surface on officially supported types while the
 JSI runtime carries direct `ArrayBuffer` payloads. Native platform
 implementations install that JSI object as
 `globalThis.__nipworkerReactNativeByteRuntime`. Rust callback packets are queued
-natively, the legacy event emitter sends a tiny `{ encoding: 'queued' }` wake-up,
-and JS drains the native queue as `ArrayBuffer[]`. Until installation succeeds,
-the JS entry point falls back to the existing `number[]` TurboModule/legacy
+natively, the event emitter sends a tiny
+`{ v: 1, encoding: 'queued', data: [] }` wake-up, and JS drains the native queue
+as `ArrayBuffer[]`. `data` is optional in the current codegen schema; the empty
+array keeps the wake compatible with clients generated from the older required
+field. Until installation succeeds, the JS entry point falls back to the
+existing `number[]` TurboModule/legacy
 bridge shape.
 
 ## iOS

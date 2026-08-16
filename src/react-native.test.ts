@@ -259,15 +259,24 @@ describe('react-native byte runtime subscription path', () => {
 		const manager = createNostrManager({
 			defaultRelays: ['wss://default.example'],
 			indexerRelays: ['wss://indexer.example'],
-			meshBLEEnabled: true
+			meshBLEEnabled: true,
+			logLevel: 'info'
 		});
 
 		expect(initEngine).toHaveBeenCalledWith(
 			['wss://default.example'],
 			['wss://indexer.example'],
-			true
+			true,
+			'info'
 		);
 		expect(startMesh).toHaveBeenCalled();
+		manager.deinit();
+	});
+
+	it('defaults the native log level to warn', () => {
+		const manager = createNostrManager();
+
+		expect(initEngine).toHaveBeenCalledWith([], [], false, 'warn');
 		manager.deinit();
 	});
 

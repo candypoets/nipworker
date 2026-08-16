@@ -9,7 +9,10 @@ use std::collections::HashMap;
 use std::ffi::{c_char, c_void, CStr};
 use std::path::PathBuf;
 use std::slice;
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    atomic::{AtomicU8, Ordering},
+    Arc, Mutex,
+};
 use std::thread;
 use tokio::runtime::Builder;
 use tokio::sync::mpsc::UnboundedSender;
@@ -32,6 +35,49 @@ const INDEXER_RELAYS: &[&str] = &[
     "wss://purplepag.es",
     "wss://profiles.nostr1.com",
 ];
+
+const LOG_LEVEL_TRACE: u8 = 0;
+const LOG_LEVEL_DEBUG: u8 = 1;
+const LOG_LEVEL_INFO: u8 = 2;
+const LOG_LEVEL_WARN: u8 = 3;
+const LOG_LEVEL_ERROR: u8 = 4;
+static NATIVE_LOG_LEVEL: AtomicU8 = AtomicU8::new(LOG_LEVEL_WARN);
+
+fn parse_native_log_level(level: &str) -> u8 {
+    match level.trim().to_ascii_lowercase().as_str() {
+        "trace" => LOG_LEVEL_TRACE,
+        "debug" => LOG_LEVEL_DEBUG,
+        "info" => LOG_LEVEL_INFO,
+        "warn" => LOG_LEVEL_WARN,
+        "error" => LOG_LEVEL_ERROR,
+        _ => LOG_LEVEL_ERROR,
+    }
+}
+
+#[cfg(any(target_vendor = "apple", target_os = "android"))]
+fn native_log_enabled(level: &tracing::Level) -> bool {
+    let event_level = match *level {
+        tracing::Level::TRACE => LOG_LEVEL_TRACE,
+        tracing::Level::DEBUG => LOG_LEVEL_DEBUG,
+        tracing::Level::INFO => LOG_LEVEL_INFO,
+        tracing::Level::WARN => LOG_LEVEL_WARN,
+        tracing::Level::ERROR => LOG_LEVEL_ERROR,
+    };
+    event_level >= NATIVE_LOG_LEVEL.load(Ordering::Relaxed)
+}
+
+/// Sets the process-wide native log filter. The filter remains reloadable after
+/// engine initialization so a shared React Native runtime can update its level.
+#[no_mangle]
+pub extern "C" fn nipworker_set_log_level(level: *const c_char) {
+    let parsed = if level.is_null() {
+        LOG_LEVEL_ERROR
+    } else {
+        let value = unsafe { CStr::from_ptr(level) }.to_string_lossy();
+        parse_native_log_level(&value)
+    };
+    NATIVE_LOG_LEVEL.store(parsed, Ordering::Relaxed);
+}
 
 fn split_relay_csv(value: *const c_char) -> Vec<String> {
     if value.is_null() {
@@ -406,32 +452,23 @@ pub extern "C" fn nipworker_init_with_options(
     // Initialize tracing subscriber for native builds
     #[cfg(target_vendor = "apple")]
     {
-        use tracing_subscriber::filter::LevelFilter;
         use tracing_subscriber::prelude::*;
         let _ = tracing_log::LogTracer::init();
+        log::set_max_level(log::LevelFilter::Trace);
+        let filter =
+            tracing_subscriber::filter::filter_fn(|metadata| native_log_enabled(metadata.level()));
         let _ = tracing_subscriber::registry()
             .with(
                 tracing_oslog::OsLogger::new("com.nutscash.sparkling", "nipworker")
-                    .with_filter(LevelFilter::ERROR),
+                    .with_filter(filter),
             )
             .try_init();
     }
     #[cfg(target_os = "android")]
     {
-        // Debug/logging improvement: make ALL Rust-side logging visible in
-        // logcat on Android. native-ffi logs via the `log` facade (handled by
-        // android_logger, raised from Error to Debug so transport/TLS
-        // info/warn messages show up); nipworker-core logs via `tracing`, so a
-        // fmt subscriber forwards those events to logcat as well.
-        //
-        // IMPORTANT: the fmt writer must NOT go through the `log` facade.
-        // fmt's try_init() internally installs a tracing_log::LogTracer as the
-        // global `log` logger (default tracing-log feature), so a writer that
-        // calls log::info! would recurse fmt -> log -> LogTracer -> fmt and
-        // overflow the stack. Write straight to liblog instead. If
-        // android_logger loses the logger-slot race to that LogTracer, `log`
-        // records are routed into the same fmt subscriber and still end up in
-        // logcat through this writer — either way there is no cycle.
+        // Route both tracing and log-facade records through one reloadable
+        // filter, then write directly to liblog to avoid a tracing/log cycle.
+        use tracing_subscriber::prelude::*;
         const NIPWORKER_TAG: &[u8] = b"nipworker\0";
         struct LogcatWriter;
         impl std::io::Write for LogcatWriter {
@@ -467,14 +504,15 @@ pub extern "C" fn nipworker_init_with_options(
                 LogcatWriter
             }
         }
-        let _ = tracing_subscriber::fmt()
+        let _ = tracing_log::LogTracer::init();
+        log::set_max_level(log::LevelFilter::Trace);
+        let filter =
+            tracing_subscriber::filter::filter_fn(|metadata| native_log_enabled(metadata.level()));
+        let layer = tracing_subscriber::fmt::layer()
             .with_writer(LogcatMakeWriter)
-            .with_max_level(tracing::Level::DEBUG)
             .with_ansi(false)
-            .try_init();
-        android_logger::init_once(
-            android_logger::Config::default().with_max_level(log::LevelFilter::Debug),
-        );
+            .with_filter(filter);
+        let _ = tracing_subscriber::registry().with(layer).try_init();
     }
     #[cfg(all(not(target_vendor = "apple"), not(target_os = "android")))]
     {
@@ -1057,12 +1095,23 @@ pub extern "C" fn nipworker_deinit(handle: *mut c_void) {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_event_batch, nipworker_clear_signer, nipworker_subscription_try_reset, BatchOutcome,
-        CallbackAction, EngineCommand, NativeSubscription, NativeSubscriptionStore,
-        NipworkerHandle, NipworkerState,
+        apply_event_batch, nipworker_clear_signer, nipworker_subscription_try_reset,
+        parse_native_log_level, BatchOutcome, CallbackAction, EngineCommand, NativeSubscription,
+        NativeSubscriptionStore, NipworkerHandle, NipworkerState, LOG_LEVEL_DEBUG, LOG_LEVEL_ERROR,
+        LOG_LEVEL_INFO, LOG_LEVEL_TRACE, LOG_LEVEL_WARN,
     };
     use std::ffi::{c_void, CString};
     use std::sync::{Arc, Mutex};
+
+    #[test]
+    fn native_log_level_parser_is_case_insensitive_and_secure_by_default() {
+        assert_eq!(parse_native_log_level("trace"), LOG_LEVEL_TRACE);
+        assert_eq!(parse_native_log_level("DEBUG"), LOG_LEVEL_DEBUG);
+        assert_eq!(parse_native_log_level(" info "), LOG_LEVEL_INFO);
+        assert_eq!(parse_native_log_level("warn"), LOG_LEVEL_WARN);
+        assert_eq!(parse_native_log_level("error"), LOG_LEVEL_ERROR);
+        assert_eq!(parse_native_log_level("invalid"), LOG_LEVEL_ERROR);
+    }
 
     fn wake_ids(outcome: &BatchOutcome) -> Vec<String> {
         outcome

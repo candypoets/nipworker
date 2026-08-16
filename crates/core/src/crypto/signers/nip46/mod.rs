@@ -177,7 +177,11 @@ impl Nip46Signer {
                 url::form_urlencoded::byte_serialize(secret.as_bytes()).collect();
             url.push_str(&format!("&secret={}", encoded_secret));
         }
-        debug!("[nip46] Generated bunker URL: {}", url);
+        debug!(
+            "[nip46] Generated bunker URL (relays={}, has_secret={})",
+            self.cfg.relays.len(),
+            self.cfg.expected_secret.is_some()
+        );
         Some(url)
     }
 
@@ -311,7 +315,11 @@ impl Nip46Signer {
             "params": params,
         })
         .to_string();
-        debug!("[nip46] rpc_call: payload={}", payload);
+        debug!(
+            "[nip46] rpc_call: parameter_count={}, payload_length={}",
+            params.len(),
+            payload.len()
+        );
 
         info!("[nip46] rpc_call: encrypting payload");
         let encrypted = self.crypto.borrow().encrypt_for_remote(&payload)?;

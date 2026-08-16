@@ -5,7 +5,8 @@ export interface Spec extends TurboModule {
 	initEngine(
 		defaultRelays: Array<string>,
 		indexerRelays: Array<string>,
-		meshBLEEnabled: boolean
+		meshBLEEnabled: boolean,
+		logLevel: string
 	): void;
 	handleMessage(bytes: Array<number>): void;
 	installByteRuntime(): boolean;
@@ -21,7 +22,13 @@ export interface Spec extends TurboModule {
 	removeStorageItem(key: string): boolean;
 	deinitEngine(): void;
 
-	readonly onData: CodegenTypes.EventEmitter<Readonly<{ data: Array<number> }>>;
+	readonly onData: CodegenTypes.EventEmitter<
+		Readonly<{
+			v: number;
+			encoding: string;
+			data?: Array<number>;
+		}>
+	>;
 }
 
 export default TurboModuleRegistry.get<Spec>('NipworkerReactNativeModule');

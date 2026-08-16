@@ -11,7 +11,8 @@ let package = Package(
         ),
     ],
     dependencies: [
-        .package(url: "https://github.com/google/flatbuffers.git", from: "25.2.10")
+        // Generated Swift sources are tied to the flatc runtime API version.
+        .package(url: "https://github.com/google/flatbuffers.git", exact: "25.2.10")
     ],
     targets: [
         .binaryTarget(

@@ -64,9 +64,11 @@ object NipworkerRuntime {
 		context: Context,
 		defaultRelays: ReadableArray? = null,
 		indexerRelays: ReadableArray? = null,
-		meshBLEEnabled: Boolean = false
+		meshBLEEnabled: Boolean = false,
+		logLevel: String = "warn"
 	): Long {
 		synchronized(this) {
+			NipworkerReactNativeModule.nipworkerSetLogLevel(logLevel)
 			if (sharedHandle == 0L) {
 				sharedUserdata = nextUserdata.getAndIncrement()
 				val cacheDir = context.filesDir.resolve("nipworker")
@@ -298,6 +300,9 @@ class NipworkerReactNativeModule(
 		): Long
 
 		@JvmStatic
+		external fun nipworkerSetLogLevel(logLevel: String)
+
+		@JvmStatic
 		external fun nipworkerHandleMessage(handle: Long, bytes: ByteArray)
 
 		@JvmStatic
@@ -386,10 +391,11 @@ class NipworkerReactNativeModule(
 	override fun initEngine(
 		defaultRelays: ReadableArray,
 		indexerRelays: ReadableArray,
-		meshBLEEnabled: Boolean
+		meshBLEEnabled: Boolean,
+		logLevel: String
 	) {
 		ensureRuntimeListener()
-		NipworkerRuntime.init(reactContext, defaultRelays, indexerRelays, meshBLEEnabled)
+		NipworkerRuntime.init(reactContext, defaultRelays, indexerRelays, meshBLEEnabled, logLevel)
 		storage.getString(MESH_PROFILE_STORAGE_KEY, null)?.let(NipworkerRuntime::setMeshProfile)
 	}
 
@@ -483,6 +489,9 @@ class NipworkerReactNativeModule(
 			val payload = Arguments.createMap().apply {
 				putInt("v", 1)
 				putString("encoding", "queued")
+				// Keep queued wakes compatible with clients generated from the
+				// older schema where data was required. Bytes remain in JSI.
+				putArray("data", Arguments.createArray())
 			}
 			emitData(payload)
 			return

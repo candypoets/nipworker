@@ -48,6 +48,8 @@ public actor NostrManager {
         self.boxPtr = UnsafeMutablePointer<ManagerBox>.allocate(capacity: 1)
         self.boxPtr.initialize(to: ManagerBox(manager: self))
 
+        (config.logLevel ?? "warn").withCString { nipworker_set_log_level($0) }
+
         self.handle = nipworker_init_with_options({ userdata, ptr, len in
             guard let ptr = ptr else { return }
             let data = Data(bytes: ptr, count: len)

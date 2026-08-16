@@ -47,6 +47,12 @@ extern "C" {
         mesh_enabled: u8,
     ) -> i64;
 
+    fn impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerSetLogLevel(
+        env: *mut c_void,
+        cls: *mut c_void,
+        log_level: *mut c_void,
+    );
+
     fn impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerHandleMessage(
         env: *mut c_void,
         cls: *mut c_void,
@@ -205,6 +211,19 @@ pub extern "C" fn Java_com_candypoets_nipworker_reactnative_NipworkerReactNative
             default_relays,
             indexer_relays,
             mesh_enabled,
+        )
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerSetLogLevel(
+    env: *mut c_void,
+    cls: *mut c_void,
+    log_level: *mut c_void,
+) {
+    unsafe {
+        impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerSetLogLevel(
+            env, cls, log_level,
         )
     }
 }

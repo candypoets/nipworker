@@ -20,6 +20,9 @@ func nipworker_init_with_options(
     _ meshEnabled: Bool
 ) -> UnsafeMutableRawPointer?
 
+@_silgen_name("nipworker_set_log_level")
+func nipworker_set_log_level(_ level: UnsafePointer<Int8>?)
+
 @_silgen_name("nipworker_handle_message")
 func nipworker_handle_message(
     _ handle: UnsafeMutableRawPointer?,
