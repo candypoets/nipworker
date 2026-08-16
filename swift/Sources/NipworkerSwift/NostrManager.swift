@@ -419,7 +419,7 @@ public actor NostrManager {
                 pubkey: event.pubkey,
                 kind: event.kind,
                 content: event.content,
-                tags: event.tags.map { $0.items.compactMap { $0 } },
+                tags: decodeTags(count: event.tagsCount, at: event.tags(at:)),
                 createdAt: Int(event.createdAt),
                 sig: event.sig
             )
@@ -430,7 +430,7 @@ public actor NostrManager {
                 pubkey: parsed.pubkey,
                 kind: parsed.kind,
                 content: "",
-                tags: parsed.tags.map { $0.items.compactMap { $0 } },
+                tags: decodeTags(count: parsed.tagsCount, at: parsed.tags(at:)),
                 createdAt: Int(parsed.createdAt),
                 sig: ""
             )
@@ -506,7 +506,7 @@ public actor NostrManager {
                 pubkey: event.pubkey,
                 kind: event.kind,
                 content: event.content,
-                tags: event.tags.map { $0.items.compactMap { $0 } },
+                tags: decodeTags(count: event.tagsCount, at: event.tags(at:)),
                 createdAt: Int(event.createdAt),
                 sig: event.sig
             )
@@ -540,6 +540,16 @@ public actor NostrManager {
             }
         default:
             break
+        }
+    }
+
+    private func decodeTags(
+        count: Int32,
+        at tagAt: (Int32) -> nostr_fb_StringVec?
+    ) -> [[String]] {
+        (0..<count).compactMap { index in
+            guard let tag = tagAt(index) else { return nil }
+            return (0..<tag.itemsCount).compactMap { tag.items(at: $0) }
         }
     }
 
