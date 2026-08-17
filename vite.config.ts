@@ -87,7 +87,7 @@ export default defineConfig({
 		selfContainedEntries([
 			{ input: 'src/connections/proxy.ts', output: 'dist/connections/proxy.js' }
 		]),
-		guardNodeEntries(['proxy/server.js', 'proxy/vite.js'])
+		guardNodeEntries(['proxy/server.js', 'proxy/vite.js', 'vite.js'])
 	],
 	resolve: {
 		alias: {
@@ -108,6 +108,7 @@ export default defineConfig({
 			input: {
 				index: resolve(__dirname, 'src/index.ts'),
 				utils: resolve(__dirname, 'src/utils.ts'),
+				vite: resolve(__dirname, 'src/vite.ts'),
 				hooks: resolve(__dirname, 'src/hooks.ts'),
 				proxy: resolve(__dirname, 'src/proxy/index.ts'),
 				proxyServer: resolve(__dirname, 'src/proxy/server.ts'),
@@ -126,6 +127,7 @@ export default defineConfig({
 					const entryNameMap: Record<string, string> = {
 						index: 'index.js',
 						utils: 'utils.js',
+						vite: 'vite.js',
 						hooks: 'hooks.js',
 						proxy: 'proxy/index.js',
 						proxyServer: 'proxy/server.js',
