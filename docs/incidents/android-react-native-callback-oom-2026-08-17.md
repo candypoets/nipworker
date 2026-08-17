@@ -21,7 +21,10 @@ This is not attributed to ordinary heap pressure. Seven native callback threads 
 (`Thread-7`, `Thread-9` through `Thread-14`), including pairs failing in the same
 millisecond. The retained run reached the failure before the room join screen. Android
 assembly and relay teardown succeeded. The separate Test Room empty-state issue was
-traced to persisted-signer restoration and is out of scope here.
+caused by Crays missing nipworker's asynchronous restored-session auth callback: the
+manager was constructed behind `RuntimeGate`, but the callback was not retained for the
+later `RoomDataProvider` mount. `ReactNativeBackend` already restored its persisted
+session and emitted auth. That Crays lifecycle issue is out of scope here.
 
 ## Environment
 
@@ -116,4 +119,3 @@ a focused regression test before it is promoted to confirmed root cause.
 - `native-mobile-android-callback-oom`: native boundary audit, fix, and Android validation
 - `perf-lab-android-callback-oom`: burst/concurrency regression and independent version
   comparison
-
