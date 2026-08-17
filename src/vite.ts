@@ -39,6 +39,21 @@ export function nipworkerWasmPlugin(): Plugin {
 		name: 'nipworker-wasm',
 		apply: 'build',
 		generateBundle(_options, bundle) {
+			const bundledWasm = new Set(
+				Object.values(bundle)
+					.map((output) => output.fileName)
+					.filter((fileName) => fileName.endsWith('.wasm'))
+					.map((fileName) =>
+						wasmFiles.find((file) => fileName.includes(file.slice(0, -'.wasm'.length)))
+					)
+					.filter((file): file is (typeof wasmFiles)[number] => file !== undefined)
+			);
+
+			// New package builds expose the WASM URLs from the main module, allowing
+			// Vite to emit them normally. Keep this fallback for older consumers while
+			// avoiding a second, unhashed copy of every binary.
+			if (bundledWasm.size === wasmFiles.length) return;
+
 			const targets = new Map<string, (typeof wasmFiles)[number]>();
 
 			for (const output of Object.values(bundle)) {

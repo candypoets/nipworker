@@ -9,6 +9,7 @@ export type InitCacheMsg = {
 		parserPort: MessagePort;
 		/** Port to communicate with connections worker */
 		connectionsPort: MessagePort;
+		wasmUrl: string;
 		/** Log level for the Rust WASM worker */
 		logLevel?: string;
 		defaultRelays?: string[];
@@ -18,9 +19,9 @@ export type InitCacheMsg = {
 
 let wasmReady: Promise<any> | null = null;
 
-async function ensureWasm() {
+async function ensureWasm(wasmUrl?: string) {
 	if (!wasmReady) {
-		wasmReady = init();
+		wasmReady = wasmUrl ? init({ module_or_path: wasmUrl }) : init();
 	}
 	return wasmReady;
 }
@@ -36,8 +37,9 @@ self.addEventListener(
 		}
 
 		if (msg?.type === 'init') {
-			await ensureWasm();
-			const { parserPort, connectionsPort, logLevel, defaultRelays, indexerRelays } = msg.payload;
+			const { parserPort, connectionsPort, wasmUrl, logLevel, defaultRelays, indexerRelays } =
+				msg.payload;
+			await ensureWasm(wasmUrl);
 			init_tracing(logLevel || 'error');
 			start_worker(parserPort, connectionsPort, defaultRelays || [], indexerRelays || []);
 			return;

@@ -41,20 +41,9 @@ npm install @candypoets/nipworker flatbuffers
 ```
 
 The browser API is framework-agnostic. It works with React, Svelte, Vue, Solid, or vanilla
-TypeScript in an environment that supports module workers and WASM.
-
-Vite applications must add the nipworker asset plugin so production builds emit the WASM binaries
-referenced by the packaged workers:
-
-```ts
-// vite.config.ts
-import { defineConfig } from 'vite';
-import { nipworkerWasmPlugin } from '@candypoets/nipworker/vite';
-
-export default defineConfig({
-	plugins: [nipworkerWasmPlugin()]
-});
-```
+TypeScript in an environment that supports module workers and WASM. Vite discovers and emits the
+packaged WASM binaries automatically; applications do not need nipworker-specific Vite
+configuration.
 
 Optional peer dependencies are `vite` for the Vite plugins and `ws` for the Node relay proxy.
 
@@ -420,7 +409,7 @@ of application source and prefer platform-appropriate secure storage or an exter
 | `@candypoets/nipworker`              | Browser manager, public types, and generated FlatBuffers exports |
 | `@candypoets/nipworker/hooks`        | Subscription, publish, signing, and relay-status helpers         |
 | `@candypoets/nipworker/utils`        | Narrowing, FlatBuffer iteration, content, and tag helpers        |
-| `@candypoets/nipworker/vite`         | Vite plugin for packaged worker WASM assets                      |
+| `@candypoets/nipworker/vite`         | Legacy Vite WASM asset fallback                                  |
 | `@candypoets/nipworker/react-native` | React Native native manager                                      |
 | `@candypoets/nipworker/proxy`        | Browser relay proxy client                                       |
 | `@candypoets/nipworker/proxy/server` | Node relay proxy server                                          |

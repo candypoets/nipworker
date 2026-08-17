@@ -118,6 +118,22 @@ describe('NostrManager lifecycle wake', () => {
 		expect(connections!.messages.at(-1)).toEqual({ type: 'wake', source: 'online' });
 	});
 
+	it('passes bundler-resolved WASM URLs to every worker', async () => {
+		const { NostrManager } = await import('./NostrManager');
+		new NostrManager();
+
+		for (const workerName of ['connections', 'cache', 'parser', 'crypto']) {
+			const worker = MockWorker.instances.find((candidate) =>
+				candidate.url.includes(`/${workerName}/`)
+			);
+			const initMessage = worker?.messages.find((message) => message?.type === 'init');
+
+			expect(initMessage?.payload.wasmUrl).toMatch(
+				new RegExp(`nipworker_${workerName}_bg(?:-[^/]+)?\\.wasm$`)
+			);
+		}
+	});
+
 	it('throttles accepted wake signals to one every ten seconds', async () => {
 		const { NostrManager } = await import('./NostrManager');
 		new NostrManager();

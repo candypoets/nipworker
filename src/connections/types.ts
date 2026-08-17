@@ -10,6 +10,7 @@ export type InitConnectionsMsg = {
 		cachePort: MessagePort;
 		parserPort: MessagePort;
 		cryptoPort: MessagePort;
+		wasmUrl: string;
 		proxy?: ProxyConfig;
 		/** Log level for the Rust WASM worker */
 		logLevel?: string;

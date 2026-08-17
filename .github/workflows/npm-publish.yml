@@ -93,6 +93,10 @@ jobs:
         if: ${{ steps.check_publish.outputs.should_publish == 'true' }}
         run: npm run build:package
 
+      - name: Verify configuration-free Vite consumer
+        if: ${{ steps.check_publish.outputs.should_publish == 'true' }}
+        run: npm run verify:vite-consumer
+
       # ──────────────────────────────────────────
       # Bundle the native artifacts produced by the reusable native-build job.
       # ──────────────────────────────────────────

@@ -107,6 +107,18 @@ export class NostrManager extends BaseBackend {
 		const cacheURL = new URL('./cache/index.js', import.meta.url);
 		const parserURL = new URL('./parser/index.js', import.meta.url);
 		const cryptoURL = new URL('./crypto/index.js', import.meta.url);
+		// Resolve WASM from this normal package module so consumer bundlers discover
+		// the binaries. Worker entry modules are copied as opaque assets by Vite.
+		const connectionsWasmURL = new URL(
+			'../crates/connections/pkg/nipworker_connections_bg.wasm',
+			import.meta.url
+		).href;
+		const cacheWasmURL = new URL('../crates/cache/pkg/nipworker_cache_bg.wasm', import.meta.url)
+			.href;
+		const parserWasmURL = new URL('../crates/parser/pkg/nipworker_parser_bg.wasm', import.meta.url)
+			.href;
+		const cryptoWasmURL = new URL('../crates/crypto/pkg/nipworker_crypto_bg.wasm', import.meta.url)
+			.href;
 		this.connections = new Worker(connectionURL, { type: 'module' });
 		this.cache = new Worker(cacheURL, { type: 'module' });
 		this.parser = new Worker(parserURL, { type: 'module' });
@@ -121,6 +133,7 @@ export class NostrManager extends BaseBackend {
 					cachePort: cache_connections.port1,
 					parserPort: parser_connections.port1,
 					cryptoPort: crypto_connections.port1,
+					wasmUrl: connectionsWasmURL,
 					logLevel: config.logLevel,
 					...(config.proxy ? { proxy: config.proxy } : {})
 				}
@@ -136,6 +149,7 @@ export class NostrManager extends BaseBackend {
 				payload: {
 					parserPort: parser_cache.port1,
 					connectionsPort: cache_connections.port2,
+					wasmUrl: cacheWasmURL,
 					logLevel: config.logLevel,
 					defaultRelays: config.defaultRelays,
 					indexerRelays: config.indexerRelays
@@ -185,6 +199,7 @@ export class NostrManager extends BaseBackend {
 					cachePort: parser_cache.port2,
 					cryptoPort: parser_crypto.port1,
 					mainPort: parser_main.port2,
+					wasmUrl: parserWasmURL,
 					logLevel: config.logLevel
 				}
 			} as InitParserMsg,
@@ -200,6 +215,7 @@ export class NostrManager extends BaseBackend {
 					parserPort: parser_crypto.port2,
 					connectionsPort: crypto_connections.port2,
 					mainPort: crypto_main.port1,
+					wasmUrl: cryptoWasmURL,
 					logLevel: config.logLevel
 				}
 			} as InitCryptoMsg,

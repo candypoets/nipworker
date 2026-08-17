@@ -7,6 +7,40 @@ vi.mock('node:fs', () => ({
 import { nipworkerWasmPlugin } from './vite';
 
 describe('nipworkerWasmPlugin', () => {
+	it('does not duplicate WASM already emitted by Vite', () => {
+		const plugin = nipworkerWasmPlugin();
+		const emitFile = vi.fn();
+		const generateBundle = plugin.generateBundle;
+
+		if (typeof generateBundle !== 'function') {
+			throw new Error('generateBundle hook is not callable');
+		}
+
+		generateBundle.call(
+			{ emitFile, error: vi.fn() } as never,
+			{} as never,
+			Object.fromEntries(
+				[
+					'nipworker_connections_bg.wasm',
+					'nipworker_cache_bg.wasm',
+					'nipworker_parser_bg.wasm',
+					'nipworker_crypto_bg.wasm'
+				].map((name) => [
+					`assets/${name.replace('.wasm', '-hash.wasm')}`,
+					{
+						type: 'asset',
+						fileName: `assets/${name.replace('.wasm', '-hash.wasm')}`,
+						name,
+						source: new Uint8Array()
+					}
+				])
+			) as never,
+			false
+		);
+
+		expect(emitFile).not.toHaveBeenCalled();
+	});
+
 	it('emits WASM next to the copied nipworker workers', () => {
 		const plugin = nipworkerWasmPlugin();
 		const emitFile = vi.fn();
