@@ -334,7 +334,14 @@ impl Pipeline {
 
         for (i, pipe) in self.pipes.iter_mut().enumerate() {
             let is_last = i == pipes_len - 1;
-            match pipe.process(event).await? {
+            let output = match pipe.process(event).await {
+                Ok(output) => output,
+                Err(error) => {
+                    self.seen_ids.lock().unwrap().remove(&id_bytes);
+                    return Err(error);
+                }
+            };
+            match output {
                 PipeOutput::Event(e) => event = e,
                 PipeOutput::Drop => return Ok(None),
                 PipeOutput::DirectOutput(data) => {
@@ -404,7 +411,14 @@ impl Pipeline {
 
         for (i, pipe) in self.pipes.iter_mut().enumerate() {
             let is_last = i == pipes_len - 1;
-            match pipe.process(event).await? {
+            let output = match pipe.process(event).await {
+                Ok(output) => output,
+                Err(error) => {
+                    self.seen_ids.lock().unwrap().remove(&id_bytes);
+                    return Err(error);
+                }
+            };
+            match output {
                 PipeOutput::Event(e) => event = e,
                 PipeOutput::Drop => return Ok(None),
                 PipeOutput::DirectOutput(data) => {
@@ -540,6 +554,85 @@ impl Pipeline {
 mod tests {
     use super::*;
 
+    use crate::traits::{Signer, SignerError};
+    use crate::types::nostr::{EventId, PublicKey};
+    use async_trait::async_trait;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct FlakyWalletSigner {
+        decrypt_calls: AtomicUsize,
+        nip04_decrypt_calls: AtomicUsize,
+    }
+
+    #[async_trait(?Send)]
+    impl Signer for FlakyWalletSigner {
+        async fn get_public_key(&self) -> std::result::Result<String, SignerError> {
+            Ok("02".repeat(32))
+        }
+
+        async fn sign_event(&self, _event_json: &str) -> std::result::Result<String, SignerError> {
+            Err(SignerError::Other("not implemented".to_string()))
+        }
+
+        async fn nip04_encrypt(
+            &self,
+            _peer: &str,
+            _plaintext: &str,
+        ) -> std::result::Result<String, SignerError> {
+            Err(SignerError::Other("not implemented".to_string()))
+        }
+
+        async fn nip04_decrypt(
+            &self,
+            _peer: &str,
+            _ciphertext: &str,
+        ) -> std::result::Result<String, SignerError> {
+            Err(SignerError::Other("not implemented".to_string()))
+        }
+
+        async fn nip44_encrypt(
+            &self,
+            _peer: &str,
+            _plaintext: &str,
+        ) -> std::result::Result<String, SignerError> {
+            Err(SignerError::Other("not implemented".to_string()))
+        }
+
+        async fn nip44_decrypt(
+            &self,
+            _peer: &str,
+            _ciphertext: &str,
+        ) -> std::result::Result<String, SignerError> {
+            Err(SignerError::Other("not implemented".to_string()))
+        }
+
+        async fn nip04_decrypt_between(
+            &self,
+            _sender: &str,
+            _recipient: &str,
+            _ciphertext: &str,
+        ) -> std::result::Result<String, SignerError> {
+            if self.nip04_decrypt_calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                Err(SignerError::Other("remote signer busy".to_string()))
+            } else {
+                Ok("decrypted message".to_string())
+            }
+        }
+
+        async fn nip44_decrypt_between(
+            &self,
+            _sender: &str,
+            _recipient: &str,
+            _ciphertext: &str,
+        ) -> std::result::Result<String, SignerError> {
+            if self.decrypt_calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                Err(SignerError::Other("remote signer busy".to_string()))
+            } else {
+                Ok(r#"[["mint","https://mint.example.com"]]"#.to_string())
+            }
+        }
+    }
+
     #[test]
     fn pagination_pipelines_share_deduplication_state() {
         let root = Pipeline::new(Vec::new(), "root".to_string()).unwrap();
@@ -553,6 +646,62 @@ mod tests {
 
         assert!(page.remember_if_unseen(&parsed_event_message("02")));
         assert!(!root.remember_if_unseen(&parsed_event_message("02")));
+    }
+
+    #[tokio::test]
+    async fn transient_crypto_failure_does_not_consume_event_id() {
+        let signer = Arc::new(FlakyWalletSigner {
+            decrypt_calls: AtomicUsize::new(0),
+            nip04_decrypt_calls: AtomicUsize::new(0),
+        });
+        let parser = Arc::new(Parser::new(Some(signer.clone())));
+        let mut pipeline = Pipeline::new(
+            vec![PipeType::Parse(ParsePipe::new(parser))],
+            "wallet".to_string(),
+        )
+        .unwrap();
+        let event = Event {
+            id: EventId([7; 32]),
+            pubkey: PublicKey([2; 32]),
+            created_at: 1,
+            kind: 17375,
+            tags: vec![],
+            content: "encrypted-wallet-payload".to_string(),
+            sig: String::new(),
+        };
+        let raw = event.to_json();
+
+        assert!(pipeline.process(&raw).await.is_err());
+        assert!(pipeline.process(&raw).await.is_ok());
+        assert_eq!(signer.decrypt_calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn transient_nip04_failure_does_not_consume_event_id() {
+        let signer = Arc::new(FlakyWalletSigner {
+            decrypt_calls: AtomicUsize::new(0),
+            nip04_decrypt_calls: AtomicUsize::new(0),
+        });
+        let parser = Arc::new(Parser::new(Some(signer.clone())));
+        let mut pipeline = Pipeline::new(
+            vec![PipeType::Parse(ParsePipe::new(parser))],
+            "messages".to_string(),
+        )
+        .unwrap();
+        let event = Event {
+            id: EventId([8; 32]),
+            pubkey: PublicKey([3; 32]),
+            created_at: 1,
+            kind: 4,
+            tags: vec![vec!["p".to_string(), "02".repeat(32)]],
+            content: "encrypted-message-payload?iv=nonce".to_string(),
+            sig: String::new(),
+        };
+        let raw = event.to_json();
+
+        assert!(pipeline.process(&raw).await.is_err());
+        assert!(pipeline.process(&raw).await.is_ok());
+        assert_eq!(signer.nip04_decrypt_calls.load(Ordering::SeqCst), 2);
     }
 
     fn parsed_event_message(byte: &str) -> Vec<u8> {

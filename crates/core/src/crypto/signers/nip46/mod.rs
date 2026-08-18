@@ -2,7 +2,7 @@ use crate::channel::MessageSender;
 use crate::types::Keys;
 use serde_json::{json, Value};
 use std::cell::{Cell, RefCell};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::rc::Rc;
 use tracing::{debug, error, info};
 
@@ -20,6 +20,50 @@ use transport::Transport;
 
 /// Timeout for RPC responses while an auth challenge is pending user approval.
 const AUTH_PENDING_TIMEOUT_MS: u32 = 300_000;
+/// Methods Nuts needs the remote signer to approve for a usable session.
+/// `sign_event` is intentionally unrestricted because Nuts signs many event
+/// kinds, including replaceable wallet and account state events.
+const REQUIRED_PERMISSIONS: &str =
+    "sign_event,nip04_encrypt,nip04_decrypt,nip44_encrypt,nip44_decrypt";
+/// Successful remote decryptions are immutable for the lifetime of a signer
+/// session. Keeping a bounded cache avoids asking a slow signer to decrypt the
+/// same event again when it arrives through multiple relays or subscriptions.
+const DECRYPT_CACHE_CAPACITY: usize = 1024;
+
+#[derive(Clone, Hash, PartialEq, Eq)]
+struct DecryptCacheKey {
+    nip: u8,
+    peer: String,
+    ciphertext: String,
+}
+
+#[derive(Default)]
+struct DecryptCache {
+    values: HashMap<DecryptCacheKey, String>,
+    order: VecDeque<DecryptCacheKey>,
+}
+
+impl DecryptCache {
+    fn get(&self, key: &DecryptCacheKey) -> Option<String> {
+        self.values.get(key).cloned()
+    }
+
+    fn insert(&mut self, key: DecryptCacheKey, plaintext: String) {
+        if self.values.contains_key(&key) {
+            self.values.insert(key, plaintext);
+            return;
+        }
+
+        while self.values.len() >= DECRYPT_CACHE_CAPACITY {
+            let Some(oldest) = self.order.pop_front() else {
+                break;
+            };
+            self.values.remove(&oldest);
+        }
+        self.order.push_back(key.clone());
+        self.values.insert(key, plaintext);
+    }
+}
 
 /// A complete NIP-46 client refactored into modules.
 pub struct Nip46Signer {
@@ -36,6 +80,7 @@ pub struct Nip46Signer {
     /// Request ids for which an auth_url challenge was received; awaits on
     /// these get an extended deadline while the user approves out of band.
     auth_pending: Rc<RefCell<HashSet<String>>>,
+    decrypt_cache: RefCell<DecryptCache>,
 
     // Sub-modules
     crypto: RefCell<Crypto>,
@@ -87,6 +132,7 @@ impl Nip46Signer {
             from_connections_rx: Rc::new(RefCell::new(Some(from_connections_rx))),
             on_discovery: Rc::new(RefCell::new(None)),
             auth_pending: Rc::new(RefCell::new(HashSet::new())),
+            decrypt_cache: RefCell::new(DecryptCache::default()),
             on_auth_url: Rc::new(RefCell::new(None)),
         }
     }
@@ -187,11 +233,17 @@ impl Nip46Signer {
 
     pub async fn connect(&self) -> Result<String, String> {
         let id = self.next_id();
-        let mut params = vec![self.cfg.remote_signer_pubkey.clone()];
-        if let Some(secret) = &self.cfg.expected_secret {
-            params.push(secret.clone());
-        }
-        self.rpc_call("connect", params, &id).await
+        self.rpc_call("connect", self.connect_params(), &id).await
+    }
+
+    fn connect_params(&self) -> Vec<String> {
+        // NIP-46 permissions occupy the third positional parameter, so an
+        // absent optional secret must still be represented by an empty value.
+        vec![
+            self.cfg.remote_signer_pubkey.clone(),
+            self.cfg.expected_secret.clone().unwrap_or_default(),
+            REQUIRED_PERMISSIONS.to_string(),
+        ]
     }
 
     pub async fn get_public_key(&self) -> Result<String, String> {
@@ -217,6 +269,15 @@ impl Nip46Signer {
         self.rpc_call("ping", vec![], &id).await
     }
 
+    /// Best-effort NIP-46 session removal used when the client forgets an
+    /// account. The relay publish is queued before the local subscription is
+    /// closed; waiting for the acknowledgement would make a local logout
+    /// depend on the availability of the remote signer.
+    pub fn send_logout(&self) -> Result<(), String> {
+        let id = self.next_id();
+        self.send_rpc_request("logout", vec![], &id)
+    }
+
     pub async fn nip04_encrypt(
         &self,
         third_party_pubkey_hex: &str,
@@ -232,9 +293,21 @@ impl Nip46Signer {
         third_party_pubkey_hex: &str,
         ciphertext: &str,
     ) -> Result<String, String> {
+        let cache_key = DecryptCacheKey {
+            nip: 4,
+            peer: third_party_pubkey_hex.to_string(),
+            ciphertext: ciphertext.to_string(),
+        };
+        if let Some(plaintext) = self.decrypt_cache.borrow().get(&cache_key) {
+            return Ok(plaintext);
+        }
         let id = self.next_id();
         let params = vec![third_party_pubkey_hex.to_string(), ciphertext.to_string()];
-        self.rpc_call("nip04_decrypt", params, &id).await
+        let plaintext = self.rpc_call("nip04_decrypt", params, &id).await?;
+        self.decrypt_cache
+            .borrow_mut()
+            .insert(cache_key, plaintext.clone());
+        Ok(plaintext)
     }
 
     pub async fn nip44_encrypt(
@@ -252,9 +325,21 @@ impl Nip46Signer {
         third_party_pubkey_hex: &str,
         ciphertext: &str,
     ) -> Result<String, String> {
+        let cache_key = DecryptCacheKey {
+            nip: 44,
+            peer: third_party_pubkey_hex.to_string(),
+            ciphertext: ciphertext.to_string(),
+        };
+        if let Some(plaintext) = self.decrypt_cache.borrow().get(&cache_key) {
+            return Ok(plaintext);
+        }
         let id = self.next_id();
         let params = vec![third_party_pubkey_hex.to_string(), ciphertext.to_string()];
-        self.rpc_call("nip44_decrypt", params, &id).await
+        let plaintext = self.rpc_call("nip44_decrypt", params, &id).await?;
+        self.decrypt_cache
+            .borrow_mut()
+            .insert(cache_key, plaintext.clone());
+        Ok(plaintext)
     }
 
     pub async fn nip04_decrypt_between(
@@ -304,6 +389,11 @@ impl Nip46Signer {
         params: Vec<String>,
         id: &str,
     ) -> Result<String, String> {
+        self.send_rpc_request(method, params, id)?;
+        self.await_response(id, 20_000).await
+    }
+
+    fn send_rpc_request(&self, method: &str, params: Vec<String>, id: &str) -> Result<(), String> {
         if self.closed.get() {
             return Err("nip46 signer closed".to_string());
         }
@@ -346,8 +436,7 @@ impl Nip46Signer {
 
         self.transport
             .publish_nip46_event(&encrypted, &remote_pubkey, Self::unix_time())?;
-
-        self.await_response(id, 20_000).await
+        Ok(())
     }
 
     async fn await_response(&self, id: &str, timeout_ms: u32) -> Result<String, String> {
@@ -445,6 +534,7 @@ impl Nip46Signer {
 mod tests {
     use super::*;
     use crate::channel::ChannelError;
+    use crate::types::nostr::Event;
     use std::sync::Arc;
 
     struct NoopSender;
@@ -456,6 +546,39 @@ mod tests {
     }
 
     struct RecordingSender(Arc<std::sync::Mutex<Vec<Vec<u8>>>>);
+
+    #[test]
+    fn decrypt_cache_is_bounded_and_separates_nip_versions() {
+        let mut cache = DecryptCache::default();
+        let nip04_key = DecryptCacheKey {
+            nip: 4,
+            peer: "peer".to_string(),
+            ciphertext: "ciphertext".to_string(),
+        };
+        let nip44_key = DecryptCacheKey {
+            nip: 44,
+            ..nip04_key.clone()
+        };
+
+        cache.insert(nip04_key.clone(), "nip04 plaintext".to_string());
+        cache.insert(nip44_key.clone(), "nip44 plaintext".to_string());
+        assert_eq!(cache.get(&nip04_key).as_deref(), Some("nip04 plaintext"));
+        assert_eq!(cache.get(&nip44_key).as_deref(), Some("nip44 plaintext"));
+
+        for index in 0..DECRYPT_CACHE_CAPACITY {
+            cache.insert(
+                DecryptCacheKey {
+                    nip: 44,
+                    peer: "peer".to_string(),
+                    ciphertext: format!("ciphertext-{index}"),
+                },
+                format!("plaintext-{index}"),
+            );
+        }
+
+        assert_eq!(cache.values.len(), DECRYPT_CACHE_CAPACITY);
+        assert!(cache.get(&nip04_key).is_none());
+    }
 
     impl MessageSender for RecordingSender {
         fn send(&self, bytes: &[u8]) -> Result<(), ChannelError> {
@@ -491,6 +614,55 @@ mod tests {
     }
 
     #[test]
+    fn connect_requests_required_permissions_with_positional_secret() {
+        let (_tx, rx) = mpsc::channel::<Vec<u8>>(1);
+        let signer = Nip46Signer::new(
+            Nip46Config {
+                remote_signer_pubkey: "a".repeat(64),
+                relays: vec!["wss://relay.example".to_string()],
+                use_nip44: true,
+                app_name: None,
+                expected_secret: None,
+            },
+            Rc::new(RefCell::new(NoopSender)),
+            rx,
+            None,
+        );
+
+        assert_eq!(
+            signer.connect_params(),
+            vec![
+                "a".repeat(64),
+                String::new(),
+                REQUIRED_PERMISSIONS.to_string()
+            ]
+        );
+
+        let (_tx, rx) = mpsc::channel::<Vec<u8>>(1);
+        let signer_with_secret = Nip46Signer::new(
+            Nip46Config {
+                remote_signer_pubkey: "b".repeat(64),
+                relays: vec!["wss://relay.example".to_string()],
+                use_nip44: true,
+                app_name: None,
+                expected_secret: Some("invite-secret".to_string()),
+            },
+            Rc::new(RefCell::new(NoopSender)),
+            rx,
+            None,
+        );
+
+        assert_eq!(
+            signer_with_secret.connect_params(),
+            vec![
+                "b".repeat(64),
+                "invite-secret".to_string(),
+                REQUIRED_PERMISSIONS.to_string()
+            ]
+        );
+    }
+
+    #[test]
     fn close_is_idempotent_and_sends_relay_close() {
         let sent = Arc::new(std::sync::Mutex::new(Vec::new()));
         let (_tx, rx) = mpsc::channel::<Vec<u8>>(1);
@@ -515,6 +687,52 @@ mod tests {
         assert_eq!(messages.len(), 1);
         let envelope: serde_json::Value = serde_json::from_slice(&messages[0]).unwrap();
         assert!(envelope["frames"][0]
+            .as_str()
+            .unwrap()
+            .starts_with("[\"CLOSE\",\"n46:"));
+    }
+
+    #[test]
+    fn send_logout_publishes_nip46_request_before_close() {
+        let sent = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let remote_keys = Keys::parse(&format!("{:064x}", 1)).unwrap();
+        let remote_pubkey = remote_keys.public_key().to_hex();
+        let (_tx, rx) = mpsc::channel::<Vec<u8>>(1);
+        let signer = Nip46Signer::new(
+            Nip46Config {
+                remote_signer_pubkey: remote_pubkey,
+                relays: vec!["wss://relay.example".to_string()],
+                use_nip44: true,
+                app_name: None,
+                expected_secret: None,
+            },
+            Rc::new(RefCell::new(RecordingSender(sent.clone()))),
+            rx,
+            None,
+        );
+
+        signer.send_logout().unwrap();
+        signer.close();
+
+        let messages = sent.lock().unwrap();
+        assert_eq!(messages.len(), 2);
+        let event_envelope: serde_json::Value = serde_json::from_slice(&messages[0]).unwrap();
+        let event_frame: serde_json::Value =
+            serde_json::from_str(event_envelope["frames"][0].as_str().unwrap()).unwrap();
+        let event = Event::from_json(&event_frame[1].to_string()).unwrap();
+        let conversation_key = crate::crypto::signers::nip44::ConversationKey::derive(
+            &remote_keys.secret_key,
+            &event.pubkey,
+        )
+        .unwrap();
+        let plaintext =
+            crate::crypto::signers::nip44::decrypt(&event.content, &conversation_key).unwrap();
+        let request: serde_json::Value = serde_json::from_str(&plaintext).unwrap();
+        assert_eq!(request["method"], "logout");
+        assert_eq!(request["params"], serde_json::json!([]));
+
+        let close_envelope: serde_json::Value = serde_json::from_slice(&messages[1]).unwrap();
+        assert!(close_envelope["frames"][0]
             .as_str()
             .unwrap()
             .starts_with("[\"CLOSE\",\"n46:"));

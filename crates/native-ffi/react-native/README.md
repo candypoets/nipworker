@@ -33,7 +33,10 @@ calling `manager.switchAccount(pubkey)`.
 
 `manager.removeAccount()` is the destructive operation for the active account:
 it removes that account from `nostr_signer_accounts` and clears its native
-signer. If another saved account exists, it becomes the selected account.
+signer. For NIP-46 accounts it first sends the protocol `logout` request to the
+remote signer, then closes the signer relay subscription without waiting for an
+acknowledgement. If another saved account exists, it becomes the selected
+account.
 
 Private-key and NIP-46 session payloads are currently stored by the binding in
 NSUserDefaults/SharedPreferences. Unloading a signer therefore protects against

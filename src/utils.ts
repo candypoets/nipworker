@@ -7,6 +7,15 @@ export * from './lib/NarrowTypes';
 export * from './lib/ParseContent';
 export * from './lib/TimeWindowPager';
 
+/** Permissions Nuts needs from a NIP-46 remote signer. */
+export const NIP46_REQUIRED_PERMISSIONS = [
+	'sign_event',
+	'nip04_encrypt',
+	'nip04_decrypt',
+	'nip44_encrypt',
+	'nip44_decrypt'
+] as const;
+
 /**
  * Extracts keys from T where the value is a `function(i: number): any`
  */
@@ -82,6 +91,7 @@ export async function connectWithQRCode(appName: string, relays: string[]) {
 
 	params.set('secret', secret);
 	params.set('name', appName);
+	params.set('perms', NIP46_REQUIRED_PERMISSIONS.join(','));
 
 	const nostrconnectUrl = `nostrconnect://${clientPubkey}?${params.toString()}`;
 

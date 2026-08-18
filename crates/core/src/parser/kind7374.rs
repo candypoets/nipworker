@@ -9,7 +9,6 @@ use crate::{
         Event,
     },
 };
-use tracing::warn;
 
 pub struct Kind7374Parsed {
     pub quote_id: String,
@@ -59,16 +58,10 @@ impl Parser {
                 "Kind 7374 event has empty decrypted content".to_string(),
             ));
         } else if let Some(signer) = &self.signer {
-            match signer
+            signer
                 .nip44_decrypt_between(&author, &author, &event.content)
                 .await
-            {
-                Ok(plaintext) => plaintext,
-                Err(e) => {
-                    warn!("Failed to decrypt kind 7374: {}, treating as plaintext", e);
-                    event.content.clone()
-                }
-            }
+                .map_err(|e| ParserError::Crypto(format!("Failed to decrypt kind 7374: {}", e)))?
         } else {
             event.content.clone()
         };

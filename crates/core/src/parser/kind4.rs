@@ -108,8 +108,21 @@ impl Parser {
                     }
                 }
                 Err(e) => {
-                    warn!("Failed to decrypt kind 4 message: {}", e);
-                    parsed.decrypted_content = None;
+                    let error = e.to_string();
+                    if error.contains("signer pubkey is not a participant") {
+                        // Subscriptions can contain conversations for another
+                        // account. Those are valid events, just not decryptable
+                        // by the active signer.
+                        parsed.decrypted_content = None;
+                    } else {
+                        // Remote-signer timeouts and transport failures are
+                        // transient. Propagate them so the pipeline does not
+                        // cache and deduplicate an undecrypted message forever.
+                        return Err(ParserError::Crypto(format!(
+                            "Failed to decrypt kind 4 message: {}",
+                            error
+                        )));
+                    }
                 }
             }
         } else {

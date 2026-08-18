@@ -8,7 +8,6 @@ use crate::{
         Event,
     },
 };
-use tracing::warn;
 
 pub struct HistoryTag {
     pub name: String,
@@ -62,19 +61,17 @@ impl Parser {
             }
         }
 
-        // Attempt to decrypt the content using NIP-44 (self-encrypted wallet event)
+        // Accept legacy plaintext content without involving a remote signer.
+        // Encrypted content must decrypt successfully so transient signer
+        // failures remain retryable by the pipeline.
         let author = event.pubkey.to_hex();
-        let decrypted = if let Some(signer) = &self.signer {
-            match signer
+        let decrypted = if NostrTags::from_json(&event.content).is_ok() {
+            event.content.clone()
+        } else if let Some(signer) = &self.signer {
+            signer
                 .nip44_decrypt_between(&author, &author, &event.content)
                 .await
-            {
-                Ok(plaintext) => plaintext,
-                Err(e) => {
-                    warn!("Failed to decrypt kind 7376: {}, treating as plaintext", e);
-                    event.content.clone()
-                }
-            }
+                .map_err(|e| ParserError::Crypto(format!("Failed to decrypt kind 7376: {}", e)))?
         } else {
             event.content.clone()
         };

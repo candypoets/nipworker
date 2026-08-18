@@ -125,6 +125,7 @@ fn new_named_core_storage(
 enum EngineCommand {
     HandleMessage(Vec<u8>),
     ClearSigner,
+    RemoveSigner,
     Wake,
 }
 
@@ -699,6 +700,9 @@ pub extern "C" fn nipworker_init_with_options(
                     EngineCommand::ClearSigner => {
                         engine.clear_signer();
                     }
+                    EngineCommand::RemoveSigner => {
+                        engine.remove_signer();
+                    }
                     EngineCommand::Wake => {
                         engine.wake();
                     }
@@ -843,6 +847,22 @@ pub unsafe extern "C" fn nipworker_clear_signer(handle: *mut c_void) {
         }
         if let Some(ref tx) = state.cmd_tx {
             let _ = tx.send(EngineCommand::ClearSigner);
+        }
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn nipworker_remove_signer(handle: *mut c_void) {
+    if handle.is_null() {
+        return;
+    }
+    let handle = unsafe { &*(handle as *mut NipworkerHandle) };
+    if let Ok(state) = handle.state.lock() {
+        if state.destroyed {
+            return;
+        }
+        if let Some(ref tx) = state.cmd_tx {
+            let _ = tx.send(EngineCommand::RemoveSigner);
         }
     }
 }
@@ -1095,10 +1115,11 @@ pub extern "C" fn nipworker_deinit(handle: *mut c_void) {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_event_batch, nipworker_clear_signer, nipworker_subscription_try_reset,
-        parse_native_log_level, BatchOutcome, CallbackAction, EngineCommand, NativeSubscription,
-        NativeSubscriptionStore, NipworkerHandle, NipworkerState, LOG_LEVEL_DEBUG, LOG_LEVEL_ERROR,
-        LOG_LEVEL_INFO, LOG_LEVEL_TRACE, LOG_LEVEL_WARN,
+        apply_event_batch, nipworker_clear_signer, nipworker_remove_signer,
+        nipworker_subscription_try_reset, parse_native_log_level, BatchOutcome, CallbackAction,
+        EngineCommand, NativeSubscription, NativeSubscriptionStore, NipworkerHandle,
+        NipworkerState, LOG_LEVEL_DEBUG, LOG_LEVEL_ERROR, LOG_LEVEL_INFO, LOG_LEVEL_TRACE,
+        LOG_LEVEL_WARN,
     };
     use std::ffi::{c_void, CString};
     use std::sync::{Arc, Mutex};
@@ -1170,6 +1191,25 @@ mod tests {
         unsafe { nipworker_clear_signer(handle) };
 
         assert!(matches!(cmd_rx.try_recv(), Ok(EngineCommand::ClearSigner)));
+        let _ = unsafe { Box::from_raw(handle as *mut NipworkerHandle) };
+    }
+
+    #[test]
+    fn remove_signer_enqueues_native_engine_command() {
+        let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let handle = Box::new(NipworkerHandle {
+            state: Mutex::new(NipworkerState {
+                destroyed: false,
+                cmd_tx: Some(cmd_tx),
+                subscriptions: Arc::new(Mutex::new(NativeSubscriptionStore::new())),
+                mesh_tx: None,
+            }),
+        });
+        let handle = Box::into_raw(handle) as *mut c_void;
+
+        unsafe { nipworker_remove_signer(handle) };
+
+        assert!(matches!(cmd_rx.try_recv(), Ok(EngineCommand::RemoveSigner)));
         let _ = unsafe { Box::from_raw(handle as *mut NipworkerHandle) };
     }
 

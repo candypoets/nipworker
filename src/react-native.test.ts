@@ -45,6 +45,7 @@ vi.mock('react-native', () => {
 				wake: vi.fn(),
 				setPrivateKey: vi.fn(),
 				clearSigner: vi.fn(),
+				removeSigner: vi.fn(),
 				deinit: vi.fn(),
 				drain: vi.fn(() => queuedBuffers.splice(0)),
 				subscribe: vi.fn((_bytes: ArrayBuffer, subId: string) => {
@@ -84,6 +85,7 @@ vi.mock('react-native', () => {
 		clearMeshProfile,
 		setPrivateKey: vi.fn(),
 		clearSigner: vi.fn(),
+		removeSigner: vi.fn(),
 		getStorageItem: vi.fn((key: string) => nativeStorage.get(key) ?? null),
 		setStorageItem: vi.fn((key: string, value: string) => {
 			nativeStorage.set(key, value);
@@ -582,6 +584,26 @@ describe('react-native byte runtime subscription path', () => {
 
 		expect(manager.getAccounts()).toEqual({});
 		expect(manager.getActivePubkey()).toBeNull();
+		expect(byteRuntime.clearSigner).toHaveBeenCalledTimes(1);
+		manager.deinit();
+	});
+
+	it('removeAccount sends a remote logout before forgetting a NIP-46 credential', async () => {
+		const manager = createNostrManager();
+		await Promise.resolve();
+		const byteRuntime = (globalThis as any).__nipworkerReactNativeByteRuntime;
+		const pubkey = 'e'.repeat(64);
+
+		manager.setSigner('nip46', {
+			url: `bunker://${'f'.repeat(64)}?relay=wss%3A%2F%2Frelay.example`,
+			clientSecret: '4'.repeat(64)
+		});
+		(manager as any).handleNativePayload(buildSetSignerResponse(pubkey));
+		manager.removeAccount();
+
+		expect(manager.getAccounts()).toEqual({});
+		expect(manager.getActivePubkey()).toBeNull();
+		expect(byteRuntime.removeSigner).toHaveBeenCalledTimes(1);
 		expect(byteRuntime.clearSigner).toHaveBeenCalledTimes(1);
 		manager.deinit();
 	});

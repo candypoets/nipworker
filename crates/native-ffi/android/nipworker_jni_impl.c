@@ -45,6 +45,7 @@ extern void nipworker_set_log_level(const char* level);
 extern void nipworker_handle_message(void* handle, const uint8_t* ptr, size_t len);
 extern void nipworker_set_private_key(void* handle, const char* ptr);
 extern void nipworker_clear_signer(void* handle);
+extern void nipworker_remove_signer(void* handle);
 extern void nipworker_wake(void* handle);
 extern void nipworker_deinit(void* handle);
 extern void nipworker_free_bytes(uint8_t* ptr, size_t len);
@@ -136,6 +137,9 @@ JNIEXPORT void JNICALL
 impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerClearSigner(
     JNIEnv* env, jclass cls, jlong handle);
 JNIEXPORT void JNICALL
+impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerRemoveSigner(
+    JNIEnv* env, jclass cls, jlong handle);
+JNIEXPORT void JNICALL
 impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerDeinit(
     JNIEnv* env, jclass cls, jlong handle);
 JNIEXPORT void JNICALL
@@ -200,6 +204,11 @@ JNIEXPORT jint JNICALL impl_JNI_OnLoad(JavaVM* vm, void* reserved) {
             "nipworkerClearSigner",
             "(J)V",
             (void*)&impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerClearSigner
+        },
+        {
+            "nipworkerRemoveSigner",
+            "(J)V",
+            (void*)&impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerRemoveSigner
         },
         {
             "nipworkerDeinit",
@@ -486,6 +495,20 @@ impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipwor
     (void)cls;
     if (handle != 0) {
         nipworker_clear_signer((void*)handle);
+    }
+}
+
+JNI_USED
+JNIEXPORT void JNICALL
+impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerRemoveSigner(
+    JNIEnv* env,
+    jclass cls,
+    jlong handle
+) {
+    (void)env;
+    (void)cls;
+    if (handle != 0) {
+        nipworker_remove_signer((void*)handle);
     }
 }
 

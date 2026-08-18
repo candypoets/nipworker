@@ -1,4 +1,5 @@
 use super::super::*;
+use crate::types::ParserError;
 use hex;
 use tracing::warn;
 
@@ -29,6 +30,14 @@ impl Pipe for ParsePipe {
                 Ok(parsed_event) => {
                     event.parsed = Some(parsed_event);
                     Ok(PipeOutput::Event(event))
+                }
+                Err(e @ ParserError::Crypto(_)) => {
+                    warn!(
+                        "Crypto unavailable while parsing event {}: {}",
+                        hex::encode(event.id),
+                        e
+                    );
+                    Err(NostrError::Other(e.to_string()))
                 }
                 Err(e) => {
                     warn!("Failed to parse event {}: {}", hex::encode(event.id), e);

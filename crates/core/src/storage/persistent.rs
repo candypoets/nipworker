@@ -15,6 +15,11 @@ const SYNC_INTERVAL_MS: u64 = 30_000;
 /// Blob key for the NIP-09 deletion WAL: raw kind-5 WorkerMessage bytes,
 /// appended eagerly on ingest (the 30s shard sync is a loss window).
 const TOMBSTONES_KEY: &str = "tombstones";
+/// One-time migration marker for releases that previously persisted encrypted
+/// events after a transient signer failure. Those parsed records no longer
+/// contain the ciphertext, so they cannot be repaired in place.
+const ENCRYPTED_PARSE_CACHE_VERSION_KEY: &str = "encrypted-parse-cache-version";
+const ENCRYPTED_PARSE_CACHE_VERSION: &[u8] = b"1";
 /// Maximum entries kept in the deletion WAL before oldest-first compaction.
 const MAX_WAL_ENTRIES: usize = 8192;
 
@@ -70,7 +75,58 @@ impl<B> PersistentNostrDbStorage<B> {
 }
 
 impl<B: BlobStore> PersistentNostrDbStorage<B> {
+    async fn migrate_poisoned_encrypted_cache(&self) -> Result<(), StorageError> {
+        if self
+            .blob_store
+            .get(ENCRYPTED_PARSE_CACHE_VERSION_KEY)
+            .await?
+            .as_deref()
+            == Some(ENCRYPTED_PARSE_CACHE_VERSION)
+        {
+            return Ok(());
+        }
+
+        // kind 4 and 7375 have dedicated shards. Wallet configuration/history
+        // live in replaceable/regular shards, so those must also be refreshed.
+        // All are relay caches and can be reconstructed from their sources.
+        let affected = [
+            ShardId::Kind4,
+            ShardId::Kind7375,
+            ShardId::Replaceable,
+            ShardId::Regular,
+        ];
+        let mut found_old_data = false;
+        for shard_id in affected {
+            let key = shard_id
+                .persistence_key()
+                .expect("affected encrypted shard must be persistent");
+            if self
+                .blob_store
+                .get(key)
+                .await?
+                .is_some_and(|bytes| !bytes.is_empty())
+            {
+                self.blob_store.put(key, &[]).await?;
+                found_old_data = true;
+            }
+        }
+
+        // Avoid writing anything during a fresh empty initialization. The
+        // first normal snapshot writes the marker alongside its shard data.
+        if found_old_data {
+            self.blob_store
+                .put(
+                    ENCRYPTED_PARSE_CACHE_VERSION_KEY,
+                    ENCRYPTED_PARSE_CACHE_VERSION,
+                )
+                .await?;
+            info!("Cleared encrypted event cache created by an older parser");
+        }
+        Ok(())
+    }
+
     async fn hydrate_from_blob_store(&self) -> Result<(), StorageError> {
+        self.migrate_poisoned_encrypted_cache().await?;
         let sharded = self.core.sharded_storage();
         let mut shard_bytes = HashMap::new();
 
@@ -115,6 +171,13 @@ impl<B: BlobStore> PersistentNostrDbStorage<B> {
                 .expect("snapshot must only contain persistent shards");
             self.blob_store.put(key, &bytes).await?;
         }
+
+        self.blob_store
+            .put(
+                ENCRYPTED_PARSE_CACHE_VERSION_KEY,
+                ENCRYPTED_PARSE_CACHE_VERSION,
+            )
+            .await?;
 
         Ok(())
     }
@@ -420,6 +483,55 @@ mod tests {
         );
         storage.initialize().await.unwrap();
         assert!(storage.load_tombstones().await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn upgrade_clears_poisoned_encrypted_shards_but_keeps_profiles() {
+        let blob = MemBlobStore::default();
+        let source = NostrDbStorage::new("old-cache".to_string(), 1024 * 1024, vec![], vec![]);
+        source.initialize().await.unwrap();
+        source
+            .persist(&build_parsed_worker_message(
+                &hex_id(40),
+                &hex_id(41),
+                4,
+                1000,
+                &[],
+            ))
+            .await
+            .unwrap();
+        source
+            .persist(&build_parsed_worker_message(
+                &hex_id(42),
+                &hex_id(43),
+                0,
+                1000,
+                &[],
+            ))
+            .await
+            .unwrap();
+
+        for (shard_id, bytes) in source.sharded_storage().save_all_shards() {
+            blob.put(shard_id.persistence_key().unwrap(), &bytes)
+                .await
+                .unwrap();
+        }
+
+        let upgraded = PersistentNostrDbStorage::new(
+            NostrDbStorage::new("new-cache".to_string(), 1024 * 1024, vec![], vec![]),
+            blob.clone(),
+        );
+        upgraded.initialize().await.unwrap();
+
+        assert!(query_kind(&upgraded, 4).is_empty());
+        assert_eq!(query_kind(&upgraded, 0).len(), 1);
+        assert_eq!(
+            blob.get(ENCRYPTED_PARSE_CACHE_VERSION_KEY)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some(ENCRYPTED_PARSE_CACHE_VERSION)
+        );
     }
 
     #[tokio::test]

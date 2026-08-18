@@ -16,7 +16,7 @@ use crate::worker::cache_worker::CacheWorker;
 #[cfg(target_arch = "wasm32")]
 use crate::worker::connections_worker::ConnectionsHandle;
 use crate::worker::connections_worker::ConnectionsWorker;
-use crate::worker::crypto_worker::{CryptoWorker, CLEAR_SIGNER_COMMAND};
+use crate::worker::crypto_worker::{CryptoWorker, CLEAR_SIGNER_COMMAND, REMOVE_SIGNER_COMMAND};
 use crate::worker::parser_worker::ParserWorker;
 
 /// NostrEngine is the Rust equivalent of the TypeScript NostrManager / Orchestrator.
@@ -28,12 +28,17 @@ use crate::worker::parser_worker::ParserWorker;
 pub struct NostrEngine {
     parser_tx: Box<dyn MessageSender>,
     crypto_tx: Box<dyn MessageSender>,
-    crypto_clear_tx: mpsc::UnboundedSender<()>,
+    crypto_clear_tx: mpsc::UnboundedSender<CryptoControl>,
     event_sink: mpsc::Sender<(String, Vec<u8>)>,
     #[cfg(target_arch = "wasm32")]
     connections_handle: ConnectionsHandle,
     #[cfg(not(target_arch = "wasm32"))]
     connections_wake_tx: Option<tokio::sync::mpsc::UnboundedSender<()>>,
+}
+
+enum CryptoControl {
+    Clear,
+    Remove,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -127,7 +132,7 @@ impl NostrEngine {
             cache_conn_ch.clone_sender(),
         );
 
-        let (crypto_clear_tx, mut crypto_clear_rx) = mpsc::unbounded::<()>();
+        let (crypto_clear_tx, mut crypto_clear_rx) = mpsc::unbounded::<CryptoControl>();
         let crypto_worker = CryptoWorker::new();
         let crypto_handle = crypto_worker.run(
             Box::new(crypto_engine_ch),
@@ -138,8 +143,11 @@ impl NostrEngine {
             crypto_conn_tx,
         );
         spawn_worker(async move {
-            while crypto_clear_rx.next().await.is_some() {
-                crypto_handle.clear_signer();
+            while let Some(control) = crypto_clear_rx.next().await {
+                match control {
+                    CryptoControl::Clear => crypto_handle.clear_signer(),
+                    CryptoControl::Remove => crypto_handle.remove_signer(),
+                }
             }
         });
 
@@ -266,7 +274,7 @@ impl NostrEngine {
         let crypto_parser_tx = crypto_parser_ch.clone_sender();
         let conn_crypto_tx = conn_crypto_ch.clone_sender();
         let crypto_conn_tx = crypto_conn_ch.clone_sender();
-        let (crypto_clear_tx, mut crypto_clear_rx) = mpsc::unbounded::<()>();
+        let (crypto_clear_tx, mut crypto_clear_rx) = mpsc::unbounded::<CryptoControl>();
 
         spawn_native_local_thread("nipworker-parser", move || {
             let crypto_client = crate::crypto_client::CryptoClient::new(Box::new(parser_crypto_ch));
@@ -336,8 +344,11 @@ impl NostrEngine {
                 crypto_conn_tx,
             );
             tokio::task::spawn_local(async move {
-                while crypto_clear_rx.next().await.is_some() {
-                    crypto_handle.clear_signer();
+                while let Some(control) = crypto_clear_rx.next().await {
+                    match control {
+                        CryptoControl::Clear => crypto_handle.clear_signer(),
+                        CryptoControl::Remove => crypto_handle.remove_signer(),
+                    }
                 }
             });
         });
@@ -404,8 +415,27 @@ impl NostrEngine {
         if let Err(e) = self.crypto_tx.send(CLEAR_SIGNER_COMMAND) {
             tracing::warn!("Failed to enqueue ordered signer clear: {}", e);
         }
-        if self.crypto_clear_tx.unbounded_send(()).is_err() {
+        if self
+            .crypto_clear_tx
+            .unbounded_send(CryptoControl::Clear)
+            .is_err()
+        {
             tracing::warn!("Failed to signal immediate signer clear");
+        }
+    }
+
+    /// Destructively remove the active signer. For NIP-46 this queues the
+    /// protocol logout request before the signer relay subscription is closed.
+    pub fn remove_signer(&self) {
+        if let Err(e) = self.crypto_tx.send(REMOVE_SIGNER_COMMAND) {
+            tracing::warn!("Failed to enqueue ordered signer removal: {}", e);
+        }
+        if self
+            .crypto_clear_tx
+            .unbounded_send(CryptoControl::Remove)
+            .is_err()
+        {
+            tracing::warn!("Failed to signal immediate signer removal");
         }
     }
 

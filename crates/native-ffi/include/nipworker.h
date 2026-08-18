@@ -40,6 +40,7 @@ bool nipworker_subscribe_message(void *handle, const uint8_t *bytes, size_t leng
 bool nipworker_publish_message(void *handle, const uint8_t *bytes, size_t length);
 void nipworker_set_private_key(void *handle, const char *private_key);
 void nipworker_clear_signer(void *handle);
+void nipworker_remove_signer(void *handle);
 
 bool nipworker_register_subscription(void *handle, const char *subscription_id, size_t buffer_size);
 bool nipworker_register_publish_buffer(void *handle, const char *publish_id, size_t buffer_size);

@@ -10,6 +10,7 @@ use crate::spawn::spawn_worker;
 use crate::traits::Signer;
 use crate::types::nostr::{Event, Template};
 use futures::channel::mpsc;
+use futures::SinkExt;
 use std::sync::Arc;
 use tracing::{info, warn};
 
@@ -17,6 +18,9 @@ use tracing::{info, warn};
 /// public FlatBuffers protocol: hosts expose logout through their native API,
 /// while this marker preserves ordering with already queued signer messages.
 pub const CLEAR_SIGNER_COMMAND: &[u8] = b"nipworker:clear-signer:v1";
+/// Ordered destructive signer removal. Unlike `CLEAR_SIGNER_COMMAND`, this
+/// sends the NIP-46 `logout` courtesy request before dropping a remote signer.
+pub const REMOVE_SIGNER_COMMAND: &[u8] = b"nipworker:remove-signer:v1";
 
 // ---------------------------------------------------------------------------
 // SharedMessageSender lets NIP-46 hold a cloneable sender behind Rc<RefCell<_>>.
@@ -419,6 +423,29 @@ impl CryptoHandle {
     pub fn clear_signer(&self) {
         clear_active_signer(&self.active, &self.nip46_tx);
     }
+
+    /// Forget the active signer, notifying a NIP-46 remote signer first.
+    pub fn remove_signer(&self) {
+        remove_active_signer(&self.active, &self.nip46_tx);
+    }
+}
+
+fn remove_active_signer(
+    active: &std::rc::Rc<std::cell::RefCell<ActiveSigner>>,
+    nip46_tx: &std::rc::Rc<std::cell::RefCell<Option<mpsc::Sender<Vec<u8>>>>>,
+) {
+    let previous = active.replace(ActiveSigner::Unset);
+    #[cfg(feature = "crypto")]
+    if let ActiveSigner::Nip46(signer) = &previous {
+        if let Err(error) = signer.send_logout() {
+            warn!("[CryptoWorker] failed to send NIP-46 logout: {}", error);
+        }
+    }
+    nip46_tx.borrow_mut().take();
+    #[cfg(feature = "crypto")]
+    if let ActiveSigner::Nip46(signer) = previous {
+        signer.close();
+    }
 }
 
 fn clear_active_signer(
@@ -491,6 +518,10 @@ impl CryptoWorker {
                     Ok(bytes) => {
                         if bytes == CLEAR_SIGNER_COMMAND {
                             clear_active_signer(&active_engine, &nip46_tx_engine);
+                            continue;
+                        }
+                        if bytes == REMOVE_SIGNER_COMMAND {
+                            remove_active_signer(&active_engine, &nip46_tx_engine);
                             continue;
                         }
                         let msg = match flatbuffers::root::<fb::MainMessage>(&bytes) {
@@ -923,8 +954,14 @@ impl CryptoWorker {
                             Ok(r) => r,
                             Err(e) => {
                                 // Try NIP-46 pump first
-                                if let Some(tx) = nip46_tx_connections.borrow_mut().as_mut() {
-                                    let _ = tx.try_send(bytes);
+                                let response_tx = nip46_tx_connections.borrow().as_ref().cloned();
+                                if let Some(mut tx) = response_tx {
+                                    if let Err(send_error) = tx.send(bytes).await {
+                                        warn!(
+                                            "[CryptoWorker] failed to forward NIP-46 response: {}",
+                                            send_error
+                                        );
+                                    }
                                     continue;
                                 }
                                 warn!(

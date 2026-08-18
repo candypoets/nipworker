@@ -60,6 +60,7 @@ type ByteRuntime = {
 	wake(): void;
 	setPrivateKey(secret: string): void;
 	clearSigner?(): void;
+	removeSigner?(): void;
 	deinit(): void;
 	drain(): ArrayBuffer[];
 	subscribe?(bytes: ArrayBuffer, subId: string): ArrayBuffer | undefined;
@@ -79,6 +80,7 @@ type ReactNativeModuleFacade = {
 	wake(): void;
 	setPrivateKey(secret: string): void;
 	clearSigner(): void;
+	removeSigner(): void;
 	setMeshProfile(profileJson: string): boolean;
 	clearMeshProfile(): boolean;
 	deinit(): void;
@@ -243,6 +245,27 @@ const reactNativeBridge = {
 				}
 				throw new Error(
 					'[ReactNativeBackend] Native clearSigner is unavailable; rebuild the app with the matching nipworker native module.'
+				);
+			},
+			removeSigner(): void {
+				const byteRuntime = getByteRuntime();
+				if (typeof byteRuntime?.removeSigner === 'function') {
+					byteRuntime.removeSigner();
+					return;
+				}
+				if (typeof mod.removeSigner === 'function') {
+					mod.removeSigner();
+					return;
+				}
+				// Keep destructive local removal working across an OTA/native-version
+				// mismatch, even though an older binary cannot notify the remote signer.
+				if (typeof byteRuntime?.clearSigner === 'function') {
+					byteRuntime.clearSigner();
+				} else if (typeof mod.clearSigner === 'function') {
+					mod.clearSigner();
+				}
+				console.warn(
+					'[ReactNativeBackend] Native removeSigner is unavailable; cleared the local signer without sending NIP-46 logout.'
 				);
 			},
 			setMeshProfile(profileJson: string): boolean {
@@ -893,6 +916,16 @@ export class ReactNativeManager extends BaseBackend {
 	protected onLogout(): void {
 		this._signRequests.clear();
 		this.nativeModule.clearSigner();
+	}
+
+	public override removeAccount(): void {
+		const currentPubkey = this.activePubkey;
+		const session = currentPubkey ? this.getAccounts()[currentPubkey] : undefined;
+		if (session?.type === 'nip46') {
+			this._signRequests.clear();
+			this.nativeModule.removeSigner();
+		}
+		super.removeAccount();
 	}
 
 	cleanup(): void {

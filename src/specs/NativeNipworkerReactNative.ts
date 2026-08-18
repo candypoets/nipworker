@@ -17,6 +17,7 @@ export interface Spec extends TurboModule {
 	wake(): void;
 	setPrivateKey(secret: string): void;
 	clearSigner(): void;
+	removeSigner(): void;
 	getStorageItem(key: string): string | null;
 	setStorageItem(key: string, value: string): boolean;
 	removeStorageItem(key: string): boolean;

@@ -46,19 +46,18 @@ impl Parser {
             decrypted: false,
         };
 
-        // Attempt to decrypt the content using NIP-44 (self-encrypted wallet event)
+        // Plaintext wallet events are accepted for backwards compatibility.
+        // Otherwise a configured signer must successfully decrypt the payload:
+        // treating a transient remote-signer failure as plaintext emits an empty
+        // wallet and makes the pipeline permanently deduplicate the real event.
         let author = event.pubkey.to_hex();
-        let decrypted = if let Some(signer) = &self.signer {
-            match signer
+        let decrypted = if NostrTags::from_json(&event.content).is_ok() {
+            event.content.clone()
+        } else if let Some(signer) = &self.signer {
+            signer
                 .nip44_decrypt_between(&author, &author, &event.content)
                 .await
-            {
-                Ok(plaintext) => plaintext,
-                Err(e) => {
-                    warn!("Failed to decrypt kind 17375: {}, treating as plaintext", e);
-                    event.content.clone()
-                }
-            }
+                .map_err(|e| ParserError::Crypto(format!("Failed to decrypt kind 17375: {}", e)))?
         } else {
             event.content.clone()
         };
@@ -213,12 +212,78 @@ mod tests {
     use super::derive_p2pk_public_key;
     use crate::{
         parser::Parser,
-        types::{Event, EventId, PublicKey},
+        traits::{Signer, SignerError},
+        types::{Event, EventId, ParserError, PublicKey},
     };
+    use async_trait::async_trait;
     use futures::executor::block_on;
+    use std::sync::Arc;
 
     const EXPECTED_PUBLIC_KEY: &str =
         "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
+
+    struct UnavailableSigner;
+
+    #[async_trait(?Send)]
+    impl Signer for UnavailableSigner {
+        async fn get_public_key(&self) -> std::result::Result<String, SignerError> {
+            Err(SignerError::Other("unavailable".to_string()))
+        }
+
+        async fn sign_event(&self, _event_json: &str) -> std::result::Result<String, SignerError> {
+            Err(SignerError::Other("unavailable".to_string()))
+        }
+
+        async fn nip04_encrypt(
+            &self,
+            _peer: &str,
+            _plaintext: &str,
+        ) -> std::result::Result<String, SignerError> {
+            Err(SignerError::Other("unavailable".to_string()))
+        }
+
+        async fn nip04_decrypt(
+            &self,
+            _peer: &str,
+            _ciphertext: &str,
+        ) -> std::result::Result<String, SignerError> {
+            Err(SignerError::Other("unavailable".to_string()))
+        }
+
+        async fn nip44_encrypt(
+            &self,
+            _peer: &str,
+            _plaintext: &str,
+        ) -> std::result::Result<String, SignerError> {
+            Err(SignerError::Other("unavailable".to_string()))
+        }
+
+        async fn nip44_decrypt(
+            &self,
+            _peer: &str,
+            _ciphertext: &str,
+        ) -> std::result::Result<String, SignerError> {
+            Err(SignerError::Other("unavailable".to_string()))
+        }
+
+        async fn nip04_decrypt_between(
+            &self,
+            _sender: &str,
+            _recipient: &str,
+            _ciphertext: &str,
+        ) -> std::result::Result<String, SignerError> {
+            Err(SignerError::Other("unavailable".to_string()))
+        }
+
+        async fn nip44_decrypt_between(
+            &self,
+            _sender: &str,
+            _recipient: &str,
+            _ciphertext: &str,
+        ) -> std::result::Result<String, SignerError> {
+            Err(SignerError::Other("unavailable".to_string()))
+        }
+    }
 
     #[test]
     fn derives_x_only_p2pk_public_key() {
@@ -254,5 +319,23 @@ mod tests {
     #[test]
     fn rejects_invalid_private_key() {
         assert!(derive_p2pk_public_key("not-a-private-key").is_err());
+    }
+
+    #[test]
+    fn remote_decrypt_failure_is_not_emitted_as_an_empty_wallet() {
+        let event = Event {
+            id: EventId([0; 32]),
+            pubkey: PublicKey([1; 32]),
+            created_at: 1,
+            kind: 17375,
+            tags: vec![],
+            content: "encrypted-wallet-payload".to_string(),
+            sig: String::new(),
+        };
+        let parser = Parser::new(Some(Arc::new(UnavailableSigner)));
+
+        let result = block_on(parser.parse_kind_17375(&event));
+
+        assert!(matches!(result, Err(ParserError::Crypto(_))));
     }
 }
