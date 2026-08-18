@@ -9,7 +9,7 @@ NIPWorker is a high-performance Nostr client library using a multi-worker archit
 - **Node.js**: 18+
 - **Rust**: 1.70+
 - **wasm-pack**: For building WASM modules (`curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh`)
-- **flatc**: FlatBuffers compiler (for schema changes)
+- **flatc**: FlatBuffers compiler 25.2.10 exactly (for schema changes; verify with `npm run check:flatc`)
 - **Xcode / Android SDK+NDK**: Only for native mobile builds (`build:native:*`)
 
 ## Commands
@@ -200,7 +200,7 @@ True zero-copy end-to-end would require `SharedArrayBuffer` (SAB) with all worke
 ## Dependencies
 
 ### Peer Dependencies (required by consumers)
-- `flatbuffers: ^25.2.10`
+- `flatbuffers: 25.2.10` (exact; generated bindings and all platform runtimes must match)
 - `react-native: >=0.72` (optional, for the react-native export)
 - `vite: ^5.0.0 || ^6.0.0` (optional, for proxy/vite export)
 - `ws: ^8.0.0` (optional, for proxy server)

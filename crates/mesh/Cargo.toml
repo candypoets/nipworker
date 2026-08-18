@@ -7,7 +7,7 @@ edition = "2021"
 crate-type = ["rlib"]
 
 [dependencies]
-flatbuffers = "25.2.10"
+flatbuffers = "=25.2.10"
 futures = { version = "0.3", features = ["std", "async-await"] }
 hex = "0.4"
 negentropy = "0.5"

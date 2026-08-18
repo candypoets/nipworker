@@ -37,7 +37,7 @@ that fetches a few raw events, `nostr-tools` may be the simpler choice.
 ### Web
 
 ```bash
-npm install @candypoets/nipworker flatbuffers
+npm install @candypoets/nipworker flatbuffers@25.2.10
 ```
 
 The browser API is framework-agnostic. It works with React, Svelte, Vue, Solid, or vanilla
@@ -52,7 +52,7 @@ Optional peer dependencies are `vite` for the Vite plugins and `ws` for the Node
 Install the JavaScript package and peer dependency:
 
 ```bash
-npm install @candypoets/nipworker flatbuffers
+npm install @candypoets/nipworker flatbuffers@25.2.10
 ```
 
 On iOS, install pods:
@@ -442,8 +442,9 @@ polls, live activities, and community/group events.
 
 ## Development
 
-Prerequisites are Node.js 18+, Rust 1.70+, `wasm-pack`, and `flatc`. Xcode and the Android SDK/NDK
-are needed only for native builds.
+Prerequisites are Node.js 18+, Rust 1.70+, `wasm-pack`, and `flatc` 25.2.10. Xcode and the Android
+SDK/NDK are needed only for native builds. `npm run check:flatc` verifies the compiler and every
+runtime declaration against `.flatbuffers-version`.
 
 ```bash
 npm run build          # WASM crates, native artifacts, and TypeScript bundle

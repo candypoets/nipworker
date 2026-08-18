@@ -17,7 +17,7 @@ tracing-oslog = "0.3"
 android_log-sys = "0.3"
 log = "0.4"
 tracing-log = "0.2"
-flatbuffers = "25.2.10"
+flatbuffers = "=25.2.10"
 serde_json = "1"
 
 # Native WebSocket client
