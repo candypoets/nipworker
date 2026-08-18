@@ -1,0 +1,78 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "com.candypoets",
+    "module": "nipworker-native-ffi-android",
+    "version": "0.99.9",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.10.2"
+    }
+  },
+  "variants": [
+    {
+      "name": "releaseVariantReleaseApiPublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-api"
+      },
+      "files": [
+        {
+          "name": "nipworker-native-ffi-android-0.99.9.aar",
+          "url": "nipworker-native-ffi-android-0.99.9.aar",
+          "size": 34440765,
+          "sha512": "c84710c21a227ba51c317732a9696a5bb6fb9f3a234ffa7a0b778e5b6716eea766bdc57062607ecb09d00b6218c5ad59dd4602de6128c6ff6bb8b43a8479a0a0",
+          "sha256": "2dc3494096d17a51fa584d7f2cb496a60b5eedb49d10211236f1a78c58dc74ff",
+          "sha1": "e66c489c26f353777bc6c3a345690a467af4e667",
+          "md5": "c7de2e9ca34b55099f0317c41ac26d8f"
+        }
+      ]
+    },
+    {
+      "name": "releaseVariantReleaseRuntimePublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "nipworker-native-ffi-android-0.99.9.aar",
+          "url": "nipworker-native-ffi-android-0.99.9.aar",
+          "size": 34440765,
+          "sha512": "c84710c21a227ba51c317732a9696a5bb6fb9f3a234ffa7a0b778e5b6716eea766bdc57062607ecb09d00b6218c5ad59dd4602de6128c6ff6bb8b43a8479a0a0",
+          "sha256": "2dc3494096d17a51fa584d7f2cb496a60b5eedb49d10211236f1a78c58dc74ff",
+          "sha1": "e66c489c26f353777bc6c3a345690a467af4e667",
+          "md5": "c7de2e9ca34b55099f0317c41ac26d8f"
+        }
+      ]
+    },
+    {
+      "name": "releaseVariantReleaseSourcePublication",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "nipworker-native-ffi-android-0.99.9-sources.jar",
+          "url": "nipworker-native-ffi-android-0.99.9-sources.jar",
+          "size": 261,
+          "sha512": "1487e5a20c9e4d74f298e07c42e96a61be11b7a768c3fbc199ee138cd68e1fc2267d1cfe3f11f288acc05df755315344d052cc5f6f751f126ab4fe1caa5125ea",
+          "sha256": "c6deada2fac53b8ea6523dbda77597b128006674616f140f04df23264c6d1aa3",
+          "sha1": "2ad14aed781c4a73ed4dbb421966d408a0a06686",
+          "md5": "f43436d6bec321290f6af228ad602604"
+        }
+      ]
+    }
+  ]
+}
