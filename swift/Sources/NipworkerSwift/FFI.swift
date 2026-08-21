@@ -37,6 +37,17 @@ func nipworker_shared_release(
     _ userdata: UnsafeMutableRawPointer?
 )
 
+@_silgen_name("nipworker_shared_process_acquire")
+func nipworker_shared_process_acquire(
+    _ storagePath: UnsafePointer<CChar>?,
+    _ defaultRelays: UnsafePointer<CChar>?,
+    _ indexerRelays: UnsafePointer<CChar>?,
+    _ meshEnabled: Bool
+) -> UnsafeMutableRawPointer?
+
+@_silgen_name("nipworker_shared_process_release")
+func nipworker_shared_process_release()
+
 @_silgen_name("nipworker_set_log_level")
 func nipworker_set_log_level(_ level: UnsafePointer<Int8>?)
 

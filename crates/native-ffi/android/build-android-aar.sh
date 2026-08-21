@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CRATE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-JNICALL_DIR="$SCRIPT_DIR/src/main/jniLibs"
+RUST_JNI_DIR="$SCRIPT_DIR/build/rustJniLibs"
 
 ABIS=(
 	"arm64-v8a"
@@ -48,7 +48,7 @@ cargo ndk \
 	-t arm64-v8a \
 	-t x86 \
 	-t x86_64 \
-	-o "$JNICALL_DIR" \
+	-o "$RUST_JNI_DIR" \
 	build --release
 
 strip_bin="$(find_strip)"
@@ -56,7 +56,7 @@ for index in "${!ABIS[@]}"; do
 	abi="${ABIS[$index]}"
 	target="${TARGETS[$index]}"
 	source_lib="$CRATE_DIR/target/$target/release/libnipworker_native_ffi.so"
-	output_lib="$JNICALL_DIR/$abi/libnipworker_native_ffi.so"
+	output_lib="$RUST_JNI_DIR/$abi/libnipworker_native_ffi.so"
 
 	mkdir -p "$(dirname "$output_lib")"
 	cp "$source_lib" "$output_lib"
@@ -86,7 +86,7 @@ mkdir -p "$PREBUILT_DIR/include"
 cp "$CRATE_DIR/include/nipworker.h" "$PREBUILT_DIR/include/nipworker.h"
 for abi in "${ABIS[@]}"; do
 	mkdir -p "$PREBUILT_DIR/jni/$abi"
-	cp "$JNICALL_DIR/$abi/libnipworker_native_ffi.so" \
+	cp "$RUST_JNI_DIR/$abi/libnipworker_native_ffi.so" \
 		"$PREBUILT_DIR/jni/$abi/libnipworker_native_ffi.so"
 done
 echo "Staged local-consumer native libraries: $PREBUILT_DIR"

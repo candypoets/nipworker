@@ -37,6 +37,8 @@ void *nipworker_init_with_options(
  * Process-wide engine registry used by native mobile wrappers. The first
  * acquire creates the engine; subsequent clients receive the same handle and
  * subscribe to its callback stream. Release with the same callback/userdata.
+ * The idempotent process anchor keeps the engine alive between runtime clients
+ * and is released only for explicit application shutdown or test reset.
  */
 void *nipworker_shared_acquire(
 	nipworker_callback callback,
@@ -51,6 +53,13 @@ void nipworker_shared_release(
 	nipworker_callback callback,
 	void *userdata
 );
+void *nipworker_shared_process_acquire(
+	const char *storage_path,
+	const char *default_relays,
+	const char *indexer_relays,
+	bool mesh_enabled
+);
+void nipworker_shared_process_release(void);
 
 void nipworker_wake(void *handle);
 void nipworker_handle_message(void *handle, const uint8_t *bytes, size_t length);

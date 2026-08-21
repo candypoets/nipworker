@@ -95,6 +95,13 @@ object NipworkerRuntime {
 		}
 	}
 
+	/** Explicit application shutdown/test reset; RN bridge reloads must use deinit(). */
+	fun shutdownProcess() = synchronized(this) {
+		stopMesh()
+		NipworkerReactNativeModule.nativeShutdownProcessEngine()
+		sharedHandle = 0L
+	}
+
 	private fun readableArrayToCsv(values: ReadableArray?): String {
 		if (values == null) return ""
 		val relays = mutableListOf<String>()
@@ -132,6 +139,7 @@ class NipworkerReactNativeModule(
 			meshBLEEnabled: Boolean
 		): Long
 		@JvmStatic external fun nativeDeinitEngine()
+		@JvmStatic external fun nativeShutdownProcessEngine()
 
 		@JvmStatic external fun nipworkerSetLogLevel(logLevel: String)
 		@JvmStatic external fun nipworkerHandleMessage(handle: Long, bytes: ByteArray)

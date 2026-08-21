@@ -130,6 +130,11 @@ requireMatch(
 	/nipworker_shared_acquire/,
 	'does not acquire the process-wide Rust engine registry'
 );
+requireMatch(
+	'sharedJsi',
+	/nipworker_shared_process_acquire/,
+	'does not retain the Rust engine across React Native runtime reloads'
+);
 rejectMatch(
 	'sharedJsi',
 	/impl_->handle\s*=\s*nipworker_init(?:_with_options)?\s*\(/,
@@ -142,13 +147,13 @@ requireMatch(
 );
 requireMatch(
 	'nativeHeader',
-	/nipworker_shared_acquire[\s\S]*nipworker_shared_release/,
-	'does not expose balanced process-engine acquire/release ownership'
+	/nipworker_shared_acquire[\s\S]*nipworker_shared_release[\s\S]*nipworker_shared_process_acquire[\s\S]*nipworker_shared_process_release/,
+	'does not expose runtime-client and process-anchor ownership'
 );
 requireMatch(
 	'swiftManager',
-	/nipworker_shared_acquire[\s\S]*nipworker_shared_release/,
-	'does not share the Rust engine with React Native clients'
+	/nipworker_shared_acquire[\s\S]*nipworker_shared_process_acquire[\s\S]*nipworker_shared_release/,
+	'does not share and retain the Rust engine across native/runtime clients'
 );
 rejectMatch(
 	'swiftManager',

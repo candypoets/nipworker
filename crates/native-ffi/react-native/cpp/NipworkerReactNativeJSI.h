@@ -29,6 +29,7 @@ public:
 	);
 	void* handle() const;
 	void deinit();
+	void shutdownProcess();
 	void bind(const std::shared_ptr<RuntimeTransport>& transport);
 	void unbind(Generation runtimeGeneration);
 

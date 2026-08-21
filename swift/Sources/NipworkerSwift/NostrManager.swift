@@ -69,6 +69,18 @@ public actor NostrManager {
             nil,
             config.meshBLEEnabled
         )
+        if self.handle != nil {
+            let anchoredHandle = nipworker_shared_process_acquire(
+                nil,
+                nil,
+                nil,
+                config.meshBLEEnabled
+            )
+            precondition(
+                anchoredHandle == self.handle,
+                "NIPWorker process anchor returned a different engine handle"
+            )
+        }
         let initializedHandle = self.handle
         if let profileJSON = UserDefaults.standard.string(forKey: Self.meshProfileStorageKey) {
             _ = profileJSON.withCString { nipworker_mesh_set_profile_json(initializedHandle, $0) }
@@ -85,6 +97,14 @@ public actor NostrManager {
         let manager = NostrManager()
         standaloneSharedManager = manager
         return manager
+    }
+
+    /// Explicit application shutdown/test reset. Normal manager or React
+    /// Native runtime teardown releases only its delivery client so the shared
+    /// engine and cache remain alive for the next runtime generation.
+    public static func shutdownProcessEngine() {
+        standaloneSharedManager = nil
+        nipworker_shared_process_release()
     }
 
     deinit {

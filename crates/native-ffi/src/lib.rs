@@ -315,6 +315,8 @@ struct SharedClient {
 #[derive(Default)]
 struct SharedEngineState {
     handle: usize,
+    generation: u64,
+    process_anchored: bool,
     clients: Vec<SharedClient>,
     callbacks_in_flight: usize,
 }
@@ -328,6 +330,10 @@ static SHARED_ENGINE_INITIALIZATIONS: std::sync::atomic::AtomicUsize =
 
 fn shared_engine() -> &'static (Mutex<SharedEngineState>, Condvar) {
     SHARED_ENGINE.get_or_init(|| (Mutex::new(SharedEngineState::default()), Condvar::new()))
+}
+
+fn shared_reference_count(state: &SharedEngineState) -> usize {
+    state.clients.iter().map(|client| client.references).sum()
 }
 
 extern "C" fn shared_engine_callback(_userdata: *mut c_void, ptr: *const u8, len: usize) {
@@ -934,25 +940,46 @@ pub extern "C" fn nipworker_shared_acquire(
         return std::ptr::null_mut();
     };
     if state.handle != 0 {
-        if let Some(client) = state.clients.iter_mut().find(|client| {
+        let client_references = if let Some(client) = state.clients.iter_mut().find(|client| {
             client.callback as usize == callback_address && client.userdata == userdata_address
         }) {
             client.references += 1;
+            client.references
         } else {
             state.clients.push(SharedClient {
                 callback,
                 userdata: userdata_address,
                 references: 1,
             });
-        }
+            1
+        };
+        log::info!(
+            "[nipworker-native] shared engine acquire action=reuse generation={} handle=0x{:x} client=0x{:x} callback=0x{:x} clientReferences={} clients={} totalReferences={}",
+            state.generation,
+            state.handle,
+            userdata_address,
+            callback_address,
+            client_references,
+            state.clients.len(),
+            shared_reference_count(&state)
+        );
         return state.handle as *mut c_void;
     }
 
+    let generation = state.generation.wrapping_add(1).max(1);
     state.clients.push(SharedClient {
         callback,
         userdata: userdata_address,
         references: 1,
     });
+    log::info!(
+        "[nipworker-native] shared engine acquire action=create-start generation={} client=0x{:x} callback=0x{:x} clients={} totalReferences={}",
+        generation,
+        userdata_address,
+        callback_address,
+        state.clients.len(),
+        shared_reference_count(&state)
+    );
     drop(state);
 
     let handle = nipworker_init_with_options(
@@ -973,18 +1000,161 @@ pub extern "C" fn nipworker_shared_acquire(
         state.clients.retain(|client| {
             client.callback as usize != callback_address || client.userdata != userdata_address
         });
+        log::error!(
+            "[nipworker-native] shared engine acquire action=create-failed generation={} client=0x{:x} callback=0x{:x} clients={} totalReferences={}",
+            generation,
+            userdata_address,
+            callback_address,
+            state.clients.len(),
+            shared_reference_count(&state)
+        );
         return std::ptr::null_mut();
     }
     state.handle = handle as usize;
+    state.generation = generation;
+    log::info!(
+        "[nipworker-native] shared engine acquire action=created generation={} handle=0x{:x} client=0x{:x} callback=0x{:x} clients={} totalReferences={}",
+        state.generation,
+        state.handle,
+        userdata_address,
+        callback_address,
+        state.clients.len(),
+        shared_reference_count(&state)
+    );
     #[cfg(test)]
     SHARED_ENGINE_INITIALIZATIONS.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
     handle
 }
 
-/// Release one client reference. The final release synchronously joins the
-/// shared engine. Removal waits for every callback snapshot that could still
-/// reference userdata, so wrappers may reclaim their callback context on
-/// return. Calling this synchronously from a callback is unsupported.
+/// Pin the current shared engine to the native process lifetime. This anchor
+/// is idempotent rather than reference counted: React Native runtimes and
+/// pure-native facades may all request it, while only an explicit application
+/// shutdown or test reset should release it. Call shared_acquire first when a
+/// delivery client is also needed so startup packets have a consumer.
+#[no_mangle]
+pub extern "C" fn nipworker_shared_process_acquire(
+    storage_path: *const c_char,
+    default_relays: *const c_char,
+    indexer_relays: *const c_char,
+    mesh_enabled: bool,
+) -> *mut c_void {
+    let Ok(_lifecycle) = SHARED_ENGINE_LIFECYCLE.lock() else {
+        return std::ptr::null_mut();
+    };
+    let (mutex, _) = shared_engine();
+    let Ok(mut state) = mutex.lock() else {
+        return std::ptr::null_mut();
+    };
+    if state.handle != 0 {
+        state.process_anchored = true;
+        log::info!(
+            "[nipworker-native] shared engine anchor action=retain generation={} handle=0x{:x} clients={} totalReferences={}",
+            state.generation,
+            state.handle,
+            state.clients.len(),
+            shared_reference_count(&state)
+        );
+        return state.handle as *mut c_void;
+    }
+
+    let generation = state.generation.wrapping_add(1).max(1);
+    state.process_anchored = true;
+    log::info!(
+        "[nipworker-native] shared engine anchor action=create-start generation={} clients=0 totalReferences=0",
+        generation
+    );
+    drop(state);
+
+    let handle = nipworker_init_with_options(
+        shared_engine_callback,
+        std::ptr::null_mut(),
+        storage_path,
+        default_relays,
+        indexer_relays,
+        mesh_enabled,
+    );
+    let Ok(mut state) = mutex.lock() else {
+        if !handle.is_null() {
+            nipworker_deinit(handle);
+        }
+        return std::ptr::null_mut();
+    };
+    if handle.is_null() {
+        state.process_anchored = false;
+        log::error!(
+            "[nipworker-native] shared engine anchor action=create-failed generation={}",
+            generation
+        );
+        return std::ptr::null_mut();
+    }
+    state.handle = handle as usize;
+    state.generation = generation;
+    log::info!(
+        "[nipworker-native] shared engine anchor action=created generation={} handle=0x{:x} clients=0 totalReferences=0",
+        state.generation,
+        state.handle
+    );
+    #[cfg(test)]
+    SHARED_ENGINE_INITIALIZATIONS.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+    handle
+}
+
+/// Remove the process-lifetime pin. The engine remains alive while delivery
+/// clients exist and is synchronously joined once the last client is gone.
+/// Normal RN runtime invalidation must not call this function.
+#[no_mangle]
+pub extern "C" fn nipworker_shared_process_release() {
+    let Ok(_lifecycle) = SHARED_ENGINE_LIFECYCLE.lock() else {
+        return;
+    };
+    let (mutex, changed) = shared_engine();
+    let Ok(mut state) = mutex.lock() else {
+        return;
+    };
+    if !state.process_anchored {
+        return;
+    }
+    state.process_anchored = false;
+    if !state.clients.is_empty() {
+        log::info!(
+            "[nipworker-native] shared engine anchor action=release generation={} handle=0x{:x} clients={} totalReferences={}",
+            state.generation,
+            state.handle,
+            state.clients.len(),
+            shared_reference_count(&state)
+        );
+        return;
+    }
+    while state.callbacks_in_flight != 0 {
+        let Ok(next) = changed.wait(state) else {
+            return;
+        };
+        state = next;
+    }
+    let handle = state.handle as *mut c_void;
+    let generation = state.generation;
+    state.handle = 0;
+    log::info!(
+        "[nipworker-native] shared engine anchor action=final-release generation={} handle=0x{:x} clients=0 totalReferences=0",
+        generation,
+        handle as usize
+    );
+    drop(state);
+    if !handle.is_null() {
+        nipworker_deinit(handle);
+        log::info!(
+            "[nipworker-native] shared engine lifecycle action=deinitialized generation={} handle=0x{:x}",
+            generation,
+            handle as usize
+        );
+    }
+}
+
+/// Release one client reference. The final release synchronously joins an
+/// unanchored shared engine; a process anchor instead keeps it available for
+/// the next runtime client. Removal waits for every callback snapshot that
+/// could still reference userdata, so wrappers may reclaim their callback
+/// context on return. Calling this synchronously from a callback is unsupported.
 #[no_mangle]
 pub extern "C" fn nipworker_shared_release(
     handle: *mut c_void,
@@ -1004,15 +1174,40 @@ pub extern "C" fn nipworker_shared_release(
         return;
     };
     if state.handle != handle as usize {
+        log::debug!(
+            "[nipworker-native] shared engine release action=ignored-stale generation={} requestedHandle=0x{:x} activeHandle=0x{:x} client=0x{:x} callback=0x{:x}",
+            state.generation,
+            handle as usize,
+            state.handle,
+            userdata_address,
+            callback_address
+        );
         return;
     }
     let Some(index) = state.clients.iter().position(|client| {
         client.callback as usize == callback_address && client.userdata == userdata_address
     }) else {
+        log::debug!(
+            "[nipworker-native] shared engine release action=ignored-client generation={} handle=0x{:x} client=0x{:x} callback=0x{:x}",
+            state.generation,
+            state.handle,
+            userdata_address,
+            callback_address
+        );
         return;
     };
     if state.clients[index].references > 1 {
         state.clients[index].references -= 1;
+        log::info!(
+            "[nipworker-native] shared engine release action=reference generation={} handle=0x{:x} client=0x{:x} callback=0x{:x} clientReferences={} clients={} totalReferences={}",
+            state.generation,
+            state.handle,
+            userdata_address,
+            callback_address,
+            state.clients[index].references,
+            state.clients.len(),
+            shared_reference_count(&state)
+        );
         return;
     }
     state.clients.remove(index);
@@ -1023,11 +1218,43 @@ pub extern "C" fn nipworker_shared_release(
         state = next;
     }
     if !state.clients.is_empty() {
+        log::info!(
+            "[nipworker-native] shared engine release action=client generation={} handle=0x{:x} client=0x{:x} callback=0x{:x} clients={} totalReferences={}",
+            state.generation,
+            state.handle,
+            userdata_address,
+            callback_address,
+            state.clients.len(),
+            shared_reference_count(&state)
+        );
         return;
     }
+    if state.process_anchored {
+        log::info!(
+            "[nipworker-native] shared engine release action=last-client-anchored generation={} handle=0x{:x} client=0x{:x} callback=0x{:x} clients=0 totalReferences=0",
+            state.generation,
+            state.handle,
+            userdata_address,
+            callback_address
+        );
+        return;
+    }
+    let generation = state.generation;
+    log::info!(
+        "[nipworker-native] shared engine release action=final generation={} handle=0x{:x} client=0x{:x} callback=0x{:x} clients=0 totalReferences=0",
+        generation,
+        state.handle,
+        userdata_address,
+        callback_address
+    );
     state.handle = 0;
     drop(state);
     nipworker_deinit(handle);
+    log::info!(
+        "[nipworker-native] shared engine lifecycle action=deinitialized generation={} handle=0x{:x}",
+        generation,
+        handle as usize
+    );
 }
 
 #[no_mangle]
@@ -1516,12 +1743,13 @@ mod tests {
         apply_event_batch, nipworker_cleanup_subscriptions, nipworker_clear_signer,
         nipworker_deinit, nipworker_free_bytes, nipworker_init, nipworker_register_subscription,
         nipworker_release_subscription, nipworker_remove_signer, nipworker_set_private_key,
-        nipworker_shared_acquire, nipworker_shared_release, nipworker_subscription_pin,
+        nipworker_shared_acquire, nipworker_shared_process_acquire,
+        nipworker_shared_process_release, nipworker_shared_release, nipworker_subscription_pin,
         nipworker_subscription_pin_release, nipworker_subscription_try_reset,
-        parse_native_log_level, AppendOutcome, BatchOutcome, CallbackAction, EngineCommand,
-        NativeSubscription, NativeSubscriptionStore, NipworkerHandle, NipworkerState,
-        LOG_LEVEL_DEBUG, LOG_LEVEL_ERROR, LOG_LEVEL_INFO, LOG_LEVEL_TRACE, LOG_LEVEL_WARN,
-        SHARED_ENGINE_INITIALIZATIONS,
+        parse_native_log_level, shared_engine, AppendOutcome, BatchOutcome, CallbackAction,
+        EngineCommand, NativeSubscription, NativeSubscriptionStore, NipworkerHandle,
+        NipworkerState, LOG_LEVEL_DEBUG, LOG_LEVEL_ERROR, LOG_LEVEL_INFO, LOG_LEVEL_TRACE,
+        LOG_LEVEL_WARN, SHARED_ENGINE_INITIALIZATIONS,
     };
     use std::ffi::{c_void, CString};
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -2082,7 +2310,7 @@ mod tests {
     }
 
     #[test]
-    fn shared_acquire_uses_one_handle_and_unregisters_clients_safely() {
+    fn shared_registry_prevents_overlap_and_anchor_survives_runtime_reload() {
         const SECRET: &str = "f7e69dd87239da6a828fb9a2fbf481b5b9e147edb848497620e8dc6f5ec10a0a";
         let secret = CString::new(SECRET).unwrap();
         let first_callbacks = Box::into_raw(Box::new(AtomicUsize::new(0)));
@@ -2146,7 +2374,93 @@ mod tests {
         assert!(unsafe { &*second_callbacks }.load(Ordering::Acquire) > second_before_retry);
 
         nipworker_shared_release(second, counting_callback, second_callbacks.cast());
+        let generation_after_final_release = {
+            let (mutex, _) = shared_engine();
+            let state = mutex.lock().unwrap();
+            assert_eq!(
+                state.handle, 0,
+                "unanchored final release must clear the active handle"
+            );
+            assert!(
+                state.clients.is_empty(),
+                "final release must remove every client"
+            );
+            state.generation
+        };
+
+        let third_callbacks = Box::into_raw(Box::new(AtomicUsize::new(0)));
+        let third = nipworker_shared_acquire(
+            counting_callback,
+            third_callbacks.cast(),
+            std::ptr::null(),
+            std::ptr::null(),
+            std::ptr::null(),
+            false,
+        );
+        assert!(!third.is_null());
+        {
+            let (mutex, _) = shared_engine();
+            let state = mutex.lock().unwrap();
+            assert_eq!(state.handle, third as usize);
+            assert_eq!(state.clients.len(), 1);
+            assert_eq!(state.generation, generation_after_final_release + 1);
+        }
+        assert_eq!(
+            SHARED_ENGINE_INITIALIZATIONS.load(Ordering::Acquire),
+            initializations_before + 2,
+            "reacquire after final release must create one sequential generation"
+        );
+
+        let anchored = nipworker_shared_process_acquire(
+            std::ptr::null(),
+            std::ptr::null(),
+            std::ptr::null(),
+            false,
+        );
+        assert_eq!(anchored, third);
+        nipworker_shared_release(third, counting_callback, third_callbacks.cast());
+        {
+            let (mutex, _) = shared_engine();
+            let state = mutex.lock().unwrap();
+            assert_eq!(state.handle, anchored as usize);
+            assert!(state.process_anchored);
+            assert!(state.clients.is_empty());
+        }
+
+        let fourth_callbacks = Box::into_raw(Box::new(AtomicUsize::new(0)));
+        let fourth = nipworker_shared_acquire(
+            counting_callback,
+            fourth_callbacks.cast(),
+            std::ptr::null(),
+            std::ptr::null(),
+            std::ptr::null(),
+            false,
+        );
+        assert_eq!(
+            fourth, anchored,
+            "runtime reload must reuse the anchored engine"
+        );
+        assert_eq!(
+            SHARED_ENGINE_INITIALIZATIONS.load(Ordering::Acquire),
+            initializations_before + 2,
+            "runtime reload must not initialize a third engine"
+        );
+        nipworker_shared_release(fourth, counting_callback, fourth_callbacks.cast());
+        nipworker_shared_process_release();
+        {
+            let (mutex, _) = shared_engine();
+            let state = mutex.lock().unwrap();
+            assert_eq!(
+                state.handle, 0,
+                "explicit process release must stop the engine"
+            );
+            assert!(!state.process_anchored);
+            assert!(state.clients.is_empty());
+        }
+
         let _ = unsafe { Box::from_raw(first_callbacks) };
         let _ = unsafe { Box::from_raw(second_callbacks) };
+        let _ = unsafe { Box::from_raw(third_callbacks) };
+        let _ = unsafe { Box::from_raw(fourth_callbacks) };
     }
 }

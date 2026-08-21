@@ -169,6 +169,18 @@ void* EngineHost::configure(
 		indexerRelays.empty() ? nullptr : indexerRelays.c_str(),
 		meshEnabled
 	);
+	if (impl_->handle != nullptr) {
+		auto* anchoredHandle = nipworker_shared_process_acquire(
+			storagePath.empty() ? nullptr : storagePath.c_str(),
+			defaultRelays.empty() ? nullptr : defaultRelays.c_str(),
+			indexerRelays.empty() ? nullptr : indexerRelays.c_str(),
+			meshEnabled
+		);
+		if (anchoredHandle != impl_->handle) {
+			nipworker_shared_release(impl_->handle, callback, userdata);
+			impl_->handle = nullptr;
+		}
+	}
 	return impl_->handle;
 }
 
@@ -218,6 +230,11 @@ void EngineHost::deinit() {
 			impl_->callbackContexts.end()
 		);
 	}
+}
+
+void EngineHost::shutdownProcess() {
+	deinit();
+	nipworker_shared_process_release();
 }
 
 void EngineHost::bind(const std::shared_ptr<RuntimeTransport>& transport) {

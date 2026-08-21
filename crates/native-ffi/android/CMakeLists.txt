@@ -8,6 +8,6 @@ project(nipworker_native_ffi_android)
 add_library(nipworker_native_ffi SHARED src/main/cpp/prefab_stub.c)
 add_custom_command(TARGET nipworker_native_ffi POST_BUILD
 	COMMAND ${CMAKE_COMMAND} -E copy_if_different
-		"${CMAKE_CURRENT_SOURCE_DIR}/src/main/jniLibs/${ANDROID_ABI}/libnipworker_native_ffi.so"
+		"${CMAKE_CURRENT_SOURCE_DIR}/build/rustJniLibs/${ANDROID_ABI}/libnipworker_native_ffi.so"
 		"$<TARGET_FILE:nipworker_native_ffi>"
 )

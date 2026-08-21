@@ -85,3 +85,11 @@ Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nativeDeini
 ) {
 	EngineHost::shared().deinit();
 }
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nativeShutdownProcessEngine(
+	JNIEnv*,
+	jclass
+) {
+	EngineHost::shared().shutdownProcess();
+}
