@@ -12,9 +12,9 @@ Swift bindings for NIPWorker — a high-performance Nostr client library powered
 
 > **React Native applications:** do not add this Swift package alongside
 > `NipworkerReactNative`. The React Native pod already compiles these Swift
-> sources and both APIs use its single native XCFramework. Import
-> `NipworkerReactNative` through CocoaPods and initialize the Swift facade with
-> `NostrManager.reactNativeShared()`.
+> sources. Import `NipworkerReactNative` through CocoaPods and initialize the
+> standalone Swift facade with
+> `NostrManager.shared()`.
 
 ### Versioned release
 

@@ -1,4 +1,4 @@
-import type { CodegenTypes, TurboModule } from 'react-native';
+import type { TurboModule } from 'react-native';
 import { TurboModuleRegistry } from 'react-native';
 
 export interface Spec extends TurboModule {
@@ -22,14 +22,6 @@ export interface Spec extends TurboModule {
 	setStorageItem(key: string, value: string): boolean;
 	removeStorageItem(key: string): boolean;
 	deinitEngine(): void;
-
-	readonly onData: CodegenTypes.EventEmitter<
-		Readonly<{
-			v: number;
-			encoding: string;
-			data?: Array<number>;
-		}>
-	>;
 }
 
 export default TurboModuleRegistry.get<Spec>('NipworkerReactNativeModule');

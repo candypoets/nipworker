@@ -139,25 +139,3 @@ func nipworker_mesh_receive_fragment(
 
 @_silgen_name("nipworker_mesh_deinit")
 func nipworker_mesh_deinit(_ handle: UnsafeMutableRawPointer?)
-
-func nipworker_react_native_shared_handle_if_available() -> UnsafeMutableRawPointer? {
-    let runtimeClassName = "NipworkerRuntime"
-    let sharedHandleSelector = NSSelectorFromString("sharedHandle")
-    if let runtimeClass = NSClassFromString(runtimeClassName), runtimeClass.responds(to: sharedHandleSelector) {
-        typealias SharedHandleMessageSend = @convention(c) (AnyClass, Selector) -> UnsafeMutableRawPointer?
-        if let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "objc_msgSend") {
-            let send = unsafeBitCast(symbol, to: SharedHandleMessageSend.self)
-            if let handle = send(runtimeClass, sharedHandleSelector) {
-                return handle
-            }
-        }
-    }
-
-    typealias SharedHandleFunction = @convention(c) () -> UnsafeMutableRawPointer?
-
-    guard let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "nipworker_react_native_shared_handle") else {
-        return nil
-    }
-
-    return unsafeBitCast(symbol, to: SharedHandleFunction.self)()
-}

@@ -149,19 +149,17 @@ integration, use `nipworker-native-ios.zip` and `nipworker.h` from the same rele
 ### Swift API inside a React Native app
 
 Do not add the `NipworkerSwift` Swift package to a React Native application. The
-`NipworkerReactNative` pod compiles the same Swift API sources and supplies the
-single shared `NipworkerNativeFFI` XCFramework. Import the pod module and borrow
-the React Native engine:
+`NipworkerReactNative` pod already compiles the Swift API sources. Import the pod
+module and use its standalone Swift manager when native Swift code needs one:
 
 ```swift
 import NipworkerReactNative
 
-let manager = NostrManager.reactNativeShared()
+let manager = NostrManager.shared()
 ```
 
-Calling `NostrManager()` creates an independent engine. Use
-`reactNativeShared()` when Swift and React Native must share subscriptions,
-connections, keys, cache state, and the Rust runtime.
+The Swift manager and React Native CallInvoker transport intentionally own
+separate callback lifecycles; callback packets are never mirrored between them.
 
 ### Native release artifacts
 

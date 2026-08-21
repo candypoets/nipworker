@@ -15,38 +15,6 @@ extern "C" {
 
     fn impl_JNI_OnUnload(vm: *mut c_void, reserved: *mut c_void);
 
-    fn impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerInit(
-        env: *mut c_void,
-        cls: *mut c_void,
-        userdata: i64,
-    ) -> i64;
-
-    fn impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerInitWithStoragePath(
-        env: *mut c_void,
-        cls: *mut c_void,
-        userdata: i64,
-        storage_path: *mut c_void,
-    ) -> i64;
-
-    fn impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerInitWithConfig(
-        env: *mut c_void,
-        cls: *mut c_void,
-        userdata: i64,
-        storage_path: *mut c_void,
-        default_relays: *mut c_void,
-        indexer_relays: *mut c_void,
-    ) -> i64;
-
-    fn impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerInitWithOptions(
-        env: *mut c_void,
-        cls: *mut c_void,
-        userdata: i64,
-        storage_path: *mut c_void,
-        default_relays: *mut c_void,
-        indexer_relays: *mut c_void,
-        mesh_enabled: u8,
-    ) -> i64;
-
     fn impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerSetLogLevel(
         env: *mut c_void,
         cls: *mut c_void,
@@ -79,23 +47,10 @@ extern "C" {
         handle: i64,
     );
 
-    fn impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerDeinit(
-        env: *mut c_void,
-        cls: *mut c_void,
-        handle: i64,
-    );
-
     fn impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerWake(
         env: *mut c_void,
         cls: *mut c_void,
         handle: i64,
-    );
-
-    fn impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerFreeBytes(
-        env: *mut c_void,
-        cls: *mut c_void,
-        ptr: i64,
-        len: i64,
     );
 
     fn impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nativeMeshPeerConnected(
@@ -145,80 +100,6 @@ pub extern "C" fn JNI_OnLoad(vm: *mut c_void, reserved: *mut c_void) -> i32 {
 #[no_mangle]
 pub extern "C" fn JNI_OnUnload(vm: *mut c_void, reserved: *mut c_void) {
     unsafe { impl_JNI_OnUnload(vm, reserved) }
-}
-
-#[no_mangle]
-pub extern "C" fn Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerInit(
-    env: *mut c_void,
-    cls: *mut c_void,
-    userdata: i64,
-) -> i64 {
-    unsafe {
-        impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerInit(
-            env, cls, userdata,
-        )
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerInitWithStoragePath(
-    env: *mut c_void,
-    cls: *mut c_void,
-    userdata: i64,
-    storage_path: *mut c_void,
-) -> i64 {
-    unsafe {
-        impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerInitWithStoragePath(
-            env,
-            cls,
-            userdata,
-            storage_path,
-        )
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerInitWithConfig(
-    env: *mut c_void,
-    cls: *mut c_void,
-    userdata: i64,
-    storage_path: *mut c_void,
-    default_relays: *mut c_void,
-    indexer_relays: *mut c_void,
-) -> i64 {
-    unsafe {
-        impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerInitWithConfig(
-            env,
-            cls,
-            userdata,
-            storage_path,
-            default_relays,
-            indexer_relays,
-        )
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerInitWithOptions(
-    env: *mut c_void,
-    cls: *mut c_void,
-    userdata: i64,
-    storage_path: *mut c_void,
-    default_relays: *mut c_void,
-    indexer_relays: *mut c_void,
-    mesh_enabled: u8,
-) -> i64 {
-    unsafe {
-        impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerInitWithOptions(
-            env,
-            cls,
-            userdata,
-            storage_path,
-            default_relays,
-            indexer_relays,
-            mesh_enabled,
-        )
-    }
 }
 
 #[no_mangle]
@@ -289,19 +170,6 @@ pub extern "C" fn Java_com_candypoets_nipworker_reactnative_NipworkerReactNative
 }
 
 #[no_mangle]
-pub extern "C" fn Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerDeinit(
-    env: *mut c_void,
-    cls: *mut c_void,
-    handle: i64,
-) {
-    unsafe {
-        impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerDeinit(
-            env, cls, handle,
-        )
-    }
-}
-
-#[no_mangle]
 pub extern "C" fn Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerWake(
     env: *mut c_void,
     cls: *mut c_void,
@@ -310,20 +178,6 @@ pub extern "C" fn Java_com_candypoets_nipworker_reactnative_NipworkerReactNative
     unsafe {
         impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerWake(
             env, cls, handle,
-        )
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerFreeBytes(
-    env: *mut c_void,
-    cls: *mut c_void,
-    ptr: i64,
-    len: i64,
-) {
-    unsafe {
-        impl_Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nipworkerFreeBytes(
-            env, cls, ptr, len,
         )
     }
 }

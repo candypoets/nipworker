@@ -8,23 +8,6 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-FOUNDATION_EXPORT NSNotificationName const NipworkerRuntimeDataNotification;
-FOUNDATION_EXPORT NSString * const NipworkerRuntimeDataKey;
-FOUNDATION_EXPORT void *nipworker_react_native_shared_handle(void);
-
-@interface NipworkerRuntime : NSObject
-+ (void *)sharedHandle;
-+ (void *)sharedHandleWithDefaultRelays:(NSArray<NSString *> *)defaultRelays
-                          indexerRelays:(NSArray<NSString *> *)indexerRelays
-                         meshBLEEnabled:(BOOL)meshBLEEnabled
-                               userdata:(void *)userdata;
-+ (void)handleMessage:(NSData *)data;
-+ (void)setPrivateKey:(NSString *)secret;
-+ (void)clearSigner;
-+ (void)removeSigner;
-+ (void)wake;
-@end
-
 #ifdef __cplusplus
 @interface NipworkerReactNativeModule : NativeNipworkerReactNativeSpecBase <
 	NativeNipworkerReactNativeSpec,

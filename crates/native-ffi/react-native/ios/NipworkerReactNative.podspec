@@ -14,6 +14,8 @@ Pod::Spec.new do |s|
   s.source         = { :git => 'https://github.com/candypoets/nipworker.git', :tag => "v#{s.version}" }
   s.source_files   = [
     'NipworkerReactNativeModule.{h,mm}',
+    '../cpp/NipworkerReactNativeTransport.{h,cpp}',
+    '../cpp/NipworkerReactNativeJSI.{h,cpp}',
     '../../../../swift/Sources/NipworkerSwift/**/*.swift'
   ]
   s.public_header_files = 'NipworkerReactNativeModule.h'
@@ -27,6 +29,7 @@ Pod::Spec.new do |s|
   s.pod_target_xcconfig = {
     'CLANG_CXX_LANGUAGE_STANDARD' => 'c++17',
     'CLANG_CXX_LIBRARY' => 'libc++',
+    'HEADER_SEARCH_PATHS' => '$(inherited) "$(PODS_TARGET_SRCROOT)/../../include" "$(PODS_TARGET_SRCROOT)/../cpp"',
     'OTHER_LDFLAGS' => '$(inherited) -lc++'
   }
   s.swift_version = '5.9'

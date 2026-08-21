@@ -29,7 +29,7 @@ public func useSubscription(
     options: SubscriptionConfig = SubscriptionConfig()
 ) -> () -> Void {
     useSubscription(
-        manager: NostrManager.reactNativeShared(),
+        manager: NostrManager.shared(),
         subscriptionId: subscriptionId,
         requests: requests,
         callback: callback,
@@ -143,7 +143,7 @@ public func usePublish(
     optimisticSubIds: [String] = []
 ) -> () -> Void {
     usePublish(
-        manager: NostrManager.reactNativeShared(),
+        manager: NostrManager.shared(),
         publishId: publishId,
         event: event,
         callback: callback,
@@ -261,7 +261,7 @@ public func usePublishHandle(
 public func useRelayStatus(
     onStatus: @escaping (String, RelayStatus) -> Void
 ) -> () -> Void {
-    useRelayStatus(manager: NostrManager.reactNativeShared(), onStatus: onStatus)
+    useRelayStatus(manager: NostrManager.shared(), onStatus: onStatus)
 }
 
 /// Relay status helper. Immediately calls handler with current statuses,

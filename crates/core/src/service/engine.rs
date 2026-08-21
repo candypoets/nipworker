@@ -1,6 +1,9 @@
-use futures::{channel::mpsc, StreamExt};
+use futures::{channel::mpsc, SinkExt, StreamExt};
 use std::sync::Arc;
 use tracing::info;
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::atomic::{AtomicBool, Ordering};
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::channel::TokioWorkerChannel;
@@ -34,11 +37,29 @@ pub struct NostrEngine {
     connections_handle: ConnectionsHandle,
     #[cfg(not(target_arch = "wasm32"))]
     connections_wake_tx: Option<tokio::sync::mpsc::UnboundedSender<()>>,
+    #[cfg(not(target_arch = "wasm32"))]
+    native_threads: Vec<NativeWorkerThread>,
 }
 
 enum CryptoControl {
     Clear,
     Remove,
+}
+
+/// Forward one native-facing event with backpressure. The parser and crypto
+/// listeners are asynchronous tasks, so awaiting a full sink prevents silent
+/// loss without blocking the host or JavaScript thread.
+async fn forward_event_to_sink(
+    event_sink: &mut mpsc::Sender<(String, Vec<u8>)>,
+    sub_id: String,
+    bytes: Vec<u8>,
+    source: &str,
+) -> bool {
+    if let Err(error) = event_sink.send((sub_id, bytes)).await {
+        tracing::warn!("Failed to forward {} event to sink: {}", source, error);
+        return false;
+    }
+    true
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -48,11 +69,21 @@ pub struct MeshCacheEndpoint {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn spawn_native_local_thread<F>(name: &'static str, setup: F)
+struct NativeWorkerThread {
+    shutdown_tx: Option<tokio::sync::oneshot::Sender<()>>,
+    join: Option<std::thread::JoinHandle<()>>,
+    stopped: Arc<AtomicBool>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn spawn_native_local_thread<F>(name: &'static str, setup: F) -> NativeWorkerThread
 where
     F: FnOnce() + Send + 'static,
 {
-    std::thread::Builder::new()
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+    let stopped = Arc::new(AtomicBool::new(false));
+    let thread_stopped = stopped.clone();
+    let join = std::thread::Builder::new()
         .name(name.to_string())
         .spawn(move || {
             let rt = tokio::runtime::Builder::new_current_thread()
@@ -60,13 +91,49 @@ where
                 .build()
                 .expect("failed to build worker runtime");
             let local = tokio::task::LocalSet::new();
-            local.spawn_local(async move {
+            local.block_on(&rt, async move {
                 setup();
-                futures::future::pending::<()>().await;
+                let _ = shutdown_rx.await;
             });
-            rt.block_on(local);
+            thread_stopped.store(true, Ordering::Release);
         })
         .expect("failed to spawn worker thread");
+    NativeWorkerThread {
+        shutdown_tx: Some(shutdown_tx),
+        join: Some(join),
+        stopped,
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl Drop for NostrEngine {
+    fn drop(&mut self) {
+        // Signal every worker before joining any one of them so cross-worker
+        // channel dependencies cannot serialize or deadlock teardown.
+        for worker in &mut self.native_threads {
+            if let Some(shutdown_tx) = worker.shutdown_tx.take() {
+                let _ = shutdown_tx.send(());
+            }
+        }
+        for worker in &mut self.native_threads {
+            if let Some(join) = worker.join.take() {
+                if join.join().is_err() {
+                    tracing::warn!("Native worker thread panicked during shutdown");
+                }
+            }
+            debug_assert!(worker.stopped.load(Ordering::Acquire));
+        }
+    }
+}
+
+#[cfg(all(not(target_arch = "wasm32"), test))]
+impl NostrEngine {
+    fn native_worker_stop_flags(&self) -> Vec<Arc<AtomicBool>> {
+        self.native_threads
+            .iter()
+            .map(|worker| worker.stopped.clone())
+            .collect()
+    }
 }
 
 impl NostrEngine {
@@ -151,18 +218,19 @@ impl NostrEngine {
             }
         });
 
-        let event_sink_crypto = event_sink.clone();
+        let mut event_sink_crypto = event_sink.clone();
         spawn_worker(async move {
             let mut ch = engine_crypto_ch;
             loop {
                 match ch.recv().await {
                     Ok(bytes) => {
-                        if let Err(e) = event_sink_crypto
-                            .clone()
-                            .try_send(("crypto".to_string(), bytes))
-                        {
-                            tracing::warn!("Failed to forward crypto event to sink: {}", e);
-                        }
+                        let _ = forward_event_to_sink(
+                            &mut event_sink_crypto,
+                            "crypto".to_string(),
+                            bytes,
+                            "crypto",
+                        )
+                        .await;
                     }
                     Err(_) => break,
                 }
@@ -170,7 +238,7 @@ impl NostrEngine {
             info!("[NostrEngine] crypto listener exiting");
         });
 
-        let event_sink_clone = event_sink.clone();
+        let mut event_sink_clone = event_sink.clone();
         spawn_worker(async move {
             let mut ch = to_main_ch;
             loop {
@@ -181,9 +249,13 @@ impl NostrEngine {
                             tracing::warn!("Failed to decode tagged message from parser");
                         }
                         for (sub_id, data) in frames {
-                            if let Err(e) = event_sink_clone.clone().try_send((sub_id, data)) {
-                                tracing::warn!("Failed to forward parser event to sink: {}", e);
-                            }
+                            let _ = forward_event_to_sink(
+                                &mut event_sink_clone,
+                                sub_id,
+                                data,
+                                "parser",
+                            )
+                            .await;
                         }
                     }
                     Err(_) => break,
@@ -201,6 +273,8 @@ impl NostrEngine {
             connections_handle,
             #[cfg(not(target_arch = "wasm32"))]
             connections_wake_tx: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            native_threads: Vec::new(),
         }
     }
 
@@ -275,8 +349,9 @@ impl NostrEngine {
         let conn_crypto_tx = conn_crypto_ch.clone_sender();
         let crypto_conn_tx = crypto_conn_ch.clone_sender();
         let (crypto_clear_tx, mut crypto_clear_rx) = mpsc::unbounded::<CryptoControl>();
+        let mut native_threads = Vec::with_capacity(4);
 
-        spawn_native_local_thread("nipworker-parser", move || {
+        native_threads.push(spawn_native_local_thread("nipworker-parser", move || {
             let crypto_client = crate::crypto_client::CryptoClient::new(Box::new(parser_crypto_ch));
             let parser = Arc::new(Parser::new(Some(Arc::new(crypto_client))));
             let parser_worker = ParserWorker::new(
@@ -290,29 +365,32 @@ impl NostrEngine {
                 Box::new(conn_parser_ch),
                 Box::new(parser_cache_ch),
             );
-        });
+        }));
 
         let (connections_wake_tx, mut connections_wake_rx) =
             tokio::sync::mpsc::unbounded_channel::<()>();
 
-        spawn_native_local_thread("nipworker-connections", move || {
-            let connections_worker = ConnectionsWorker::new(transport_factory());
-            let connections_handle = connections_worker.run(
-                Box::new(parser_conn_ch),
-                conn_parser_tx,
-                Box::new(conn_cache_ch),
-                Box::new(conn_crypto_ch),
-                conn_crypto_tx,
-            );
+        native_threads.push(spawn_native_local_thread(
+            "nipworker-connections",
+            move || {
+                let connections_worker = ConnectionsWorker::new(transport_factory());
+                let connections_handle = connections_worker.run(
+                    Box::new(parser_conn_ch),
+                    conn_parser_tx,
+                    Box::new(conn_cache_ch),
+                    Box::new(conn_crypto_ch),
+                    conn_crypto_tx,
+                );
 
-            tokio::task::spawn_local(async move {
-                while connections_wake_rx.recv().await.is_some() {
-                    connections_handle.wake_all();
-                }
-            });
-        });
+                tokio::task::spawn_local(async move {
+                    while connections_wake_rx.recv().await.is_some() {
+                        connections_handle.wake_all();
+                    }
+                });
+            },
+        ));
 
-        spawn_native_local_thread("nipworker-cache", move || {
+        native_threads.push(spawn_native_local_thread("nipworker-cache", move || {
             if let Some(mesh_storage_factory) = mesh_storage_factory {
                 let cache_worker =
                     CacheWorker::with_mesh_storage(storage_factory(), mesh_storage_factory());
@@ -331,9 +409,9 @@ impl NostrEngine {
                     cache_conn_ch.clone_sender(),
                 );
             }
-        });
+        }));
 
-        spawn_native_local_thread("nipworker-crypto", move || {
+        native_threads.push(spawn_native_local_thread("nipworker-crypto", move || {
             let crypto_worker = CryptoWorker::new();
             let crypto_handle = crypto_worker.run(
                 Box::new(crypto_engine_ch),
@@ -351,23 +429,24 @@ impl NostrEngine {
                     }
                 }
             });
-        });
+        }));
 
-        let event_sink_crypto = event_sink.clone();
+        let mut event_sink_crypto = event_sink.clone();
         spawn_worker(async move {
             let mut ch = engine_crypto_ch;
             while let Ok(bytes) = ch.recv().await {
-                if let Err(e) = event_sink_crypto
-                    .clone()
-                    .try_send(("crypto".to_string(), bytes))
-                {
-                    tracing::warn!("Failed to forward crypto event to sink: {}", e);
-                }
+                let _ = forward_event_to_sink(
+                    &mut event_sink_crypto,
+                    "crypto".to_string(),
+                    bytes,
+                    "crypto",
+                )
+                .await;
             }
             info!("[NostrEngine] crypto listener exiting");
         });
 
-        let event_sink_clone = event_sink.clone();
+        let mut event_sink_clone = event_sink.clone();
         spawn_worker(async move {
             let mut ch = to_main_ch;
             while let Ok(bytes) = ch.recv().await {
@@ -376,9 +455,8 @@ impl NostrEngine {
                     tracing::warn!("Failed to decode tagged message from parser");
                 }
                 for (sub_id, data) in frames {
-                    if let Err(e) = event_sink_clone.clone().try_send((sub_id, data)) {
-                        tracing::warn!("Failed to forward parser event to sink: {}", e);
-                    }
+                    let _ =
+                        forward_event_to_sink(&mut event_sink_clone, sub_id, data, "parser").await;
                 }
             }
             info!("[NostrEngine] main loop exiting");
@@ -390,6 +468,7 @@ impl NostrEngine {
             crypto_clear_tx,
             event_sink,
             connections_wake_tx: Some(connections_wake_tx),
+            native_threads,
         };
         (engine, mesh_endpoint)
     }
@@ -590,6 +669,38 @@ mod tests {
     use std::sync::{Arc, Mutex, RwLock};
     use std::time::Duration;
     use tokio::task::LocalSet;
+
+    #[test]
+    fn event_sink_backpressure_forwards_ten_thousand_events_without_loss() {
+        const EVENT_COUNT: usize = 10_000;
+
+        futures::executor::block_on(async {
+            let (mut event_sink_tx, mut event_sink_rx) =
+                futures::channel::mpsc::channel::<(String, Vec<u8>)>(256);
+            let producer = async move {
+                for index in 0..EVENT_COUNT {
+                    assert!(
+                        forward_event_to_sink(
+                            &mut event_sink_tx,
+                            "burst-sub".to_string(),
+                            (index as u32).to_le_bytes().to_vec(),
+                            "test",
+                        )
+                        .await
+                    );
+                }
+            };
+            let consumer = async move {
+                for expected in 0..EVENT_COUNT {
+                    let (sub_id, bytes) = event_sink_rx.next().await.unwrap();
+                    assert_eq!(sub_id, "burst-sub");
+                    assert_eq!(bytes, (expected as u32).to_le_bytes());
+                }
+            };
+
+            futures::join!(producer, consumer);
+        });
+    }
 
     // ============================================================================
     // Mock Implementations
@@ -848,6 +959,28 @@ mod tests {
     // ============================================================================
     // Test 1: Engine Wiring Valid
     // ============================================================================
+
+    #[tokio::test]
+    async fn dropping_threaded_engine_joins_every_native_worker() {
+        let local = LocalSet::new();
+        local
+            .run_until(async {
+                let (event_sink_tx, _event_sink_rx) =
+                    futures::channel::mpsc::channel::<(String, Vec<u8>)>(8);
+                let engine = NostrEngine::new_threaded(
+                    || Arc::new(MockRelayTransport::new()),
+                    || Arc::new(MockStorage::new()),
+                    event_sink_tx,
+                );
+                let stopped = engine.native_worker_stop_flags();
+
+                assert_eq!(stopped.len(), 4);
+                assert!(stopped.iter().all(|flag| !flag.load(Ordering::Acquire)));
+                drop(engine);
+                assert!(stopped.iter().all(|flag| flag.load(Ordering::Acquire)));
+            })
+            .await;
+    }
 
     #[tokio::test]
     async fn test_threaded_engine_crypto_roundtrip() {

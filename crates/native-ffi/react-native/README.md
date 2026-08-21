@@ -57,8 +57,8 @@ the transport. Android 12+ requires `BLUETOOTH_SCAN`, `BLUETOOTH_CONNECT`, and
 library manifest declares them, while the host application remains responsible
 for presenting and requesting runtime permission.
 
-On iOS, the host attaches CoreBluetooth to the same handle with
-`NostrManager.reactNativeShared()` and `MeshBluetoothTransport.create(for:)`.
+On iOS, React Native delivery is isolated from standalone NipworkerSwift
+instances. The React Native module owns its CallInvoker-scoped engine lifecycle.
 
 ## Event Transport
 

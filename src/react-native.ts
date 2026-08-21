@@ -7,7 +7,7 @@
  *   import { createNostrManager } from '@candypoets/nipworker/react-native';
  */
 
-import { AppState, NativeEventEmitter, NativeModules, type AppStateStatus } from 'react-native';
+import { AppState, type AppStateStatus } from 'react-native';
 import * as flatbuffers from 'flatbuffers';
 
 import { BaseBackend, type StorageAdapter } from './lib/BaseBackend';
@@ -50,8 +50,6 @@ import {
 } from './generated/nostr/fb';
 import NativeNipworkerReactNative from './specs/NativeNipworkerReactNative';
 
-const REACT_NATIVE_EVENT_NAME = 'NipworkerEvent';
-const memoryStorage = new Map<string, string>();
 let reactNativeBackendInstance: ReactNativeManager | undefined;
 
 type ByteRuntime = {
@@ -59,19 +57,24 @@ type ByteRuntime = {
 	handleMessage(bytes: ArrayBuffer): void;
 	wake(): void;
 	setPrivateKey(secret: string): void;
-	clearSigner?(): void;
-	removeSigner?(): void;
+	clearSigner(): void;
+	removeSigner(): void;
 	deinit(): void;
-	drain(): ArrayBuffer[];
-	subscribe?(bytes: ArrayBuffer, subId: string): ArrayBuffer | undefined;
-	publish?(bytes: ArrayBuffer, publishId: string): ArrayBuffer | undefined;
-	registerSubscription?(subId: string, bufferSize: number): boolean;
-	registerPublishBuffer?(publishId: string, bufferSize: number): boolean;
-	retainSubscriptionBuffer?(subId: string): ArrayBuffer | undefined;
-	retainSubscription?(subId: string): boolean;
-	releaseSubscription?(subId: string): void;
-	getSubscriptionBuffer?(subId: string): ArrayBuffer | undefined;
-	cleanupSubscriptions?(): void;
+	setWakeHandler(handler?: () => void): void;
+	drainPending(): {
+		routes: string[];
+		packets: ArrayBuffer[];
+	};
+	getDeliveryStats(): Record<string, number>;
+	subscribe(bytes: ArrayBuffer, subId: string): ArrayBuffer | undefined;
+	publish(bytes: ArrayBuffer, publishId: string): ArrayBuffer | undefined;
+	registerSubscription(subId: string, bufferSize: number): boolean;
+	registerPublishBuffer(publishId: string, bufferSize: number): boolean;
+	retainSubscriptionBuffer(subId: string): ArrayBuffer | undefined;
+	retainSubscription(subId: string): boolean;
+	releaseSubscription(subId: string): void;
+	getSubscriptionBuffer(subId: string): ArrayBuffer | undefined;
+	cleanupSubscriptions(): void;
 };
 
 type ReactNativeModuleFacade = {
@@ -95,21 +98,30 @@ type ReactNativeModuleFacade = {
 	cleanupSubscriptions(): void;
 };
 
-function toExactUint8Array(bytes: Uint8Array | ArrayBuffer): Uint8Array {
-	if (bytes instanceof Uint8Array) {
-		return bytes.slice();
+function toExactArrayBuffer(bytes: Uint8Array | ArrayBuffer): ArrayBuffer {
+	if (bytes instanceof ArrayBuffer) return bytes;
+	if (
+		bytes.byteOffset === 0 &&
+		bytes.byteLength === bytes.buffer.byteLength &&
+		bytes.buffer instanceof ArrayBuffer
+	) {
+		return bytes.buffer;
 	}
-	return new Uint8Array(bytes).slice();
-}
-
-function toExactArrayBuffer(bytes: Uint8Array): ArrayBuffer {
-	const output = new ArrayBuffer(bytes.byteLength);
-	new Uint8Array(output).set(bytes);
-	return output;
+	return bytes.slice().buffer;
 }
 
 function getByteRuntime(): ByteRuntime | undefined {
 	return (globalThis as any).__nipworkerReactNativeByteRuntime;
+}
+
+function requireByteRuntime(): ByteRuntime {
+	const runtime = getByteRuntime();
+	if (!runtime) {
+		throw new Error(
+			'[ReactNativeBackend] Native delivery transport unavailable. Rebuild the app with the matching nipworker native module.'
+		);
+	}
+	return runtime;
 }
 
 function getTurboModule(): any {
@@ -117,33 +129,19 @@ function getTurboModule(): any {
 }
 
 function getAnyReactNativeModule(): any {
-	return getTurboModule() ?? NativeModules.NipworkerReactNativeModule;
+	return getTurboModule();
 }
 
 const reactNativeStorageAdapter: StorageAdapter = {
 	getItem(key: string): string | null {
-		const mod = getAnyReactNativeModule();
-		if (typeof mod?.getStorageItem === 'function') {
-			const value = mod.getStorageItem(key);
-			return typeof value === 'string' ? value : null;
-		}
-		return memoryStorage.get(key) ?? null;
+		const value = getReactNativeModule().getStorageItem(key);
+		return typeof value === 'string' ? value : null;
 	},
 	setItem(key: string, value: string): void {
-		const mod = getAnyReactNativeModule();
-		if (typeof mod?.setStorageItem === 'function') {
-			mod.setStorageItem(key, value);
-			return;
-		}
-		memoryStorage.set(key, value);
+		getReactNativeModule().setStorageItem(key, value);
 	},
 	removeItem(key: string): void {
-		const mod = getAnyReactNativeModule();
-		if (typeof mod?.removeStorageItem === 'function') {
-			mod.removeStorageItem(key);
-			return;
-		}
-		memoryStorage.delete(key);
+		getReactNativeModule().removeStorageItem(key);
 	}
 };
 
@@ -159,7 +157,6 @@ function getReactNativeModule(): any {
 
 const reactNativeBridge = {
 	name: 'react-native',
-	eventName: REACT_NATIVE_EVENT_NAME,
 	storage: reactNativeStorageAdapter,
 	getModule(): ReactNativeModuleFacade {
 		const mod = getReactNativeModule();
@@ -171,102 +168,40 @@ const reactNativeBridge = {
 					meshBLEEnabled: config?.meshBLEEnabled ?? false,
 					logLevel: config?.logLevel ?? 'warn'
 				};
-				// The shared native handle must be configured before installing the
-				// byte runtime, which borrows that same handle.
-				if (typeof mod.initEngine === 'function') {
-					mod.initEngine(
-						relayConfig.defaultRelays,
-						relayConfig.indexerRelays,
-						relayConfig.meshBLEEnabled,
-						relayConfig.logLevel
-					);
+				mod.initEngine(
+					relayConfig.defaultRelays,
+					relayConfig.indexerRelays,
+					relayConfig.meshBLEEnabled,
+					relayConfig.logLevel
+				);
+				if (!mod.installByteRuntime()) {
+					throw new Error('[ReactNativeBackend] Failed to install native delivery transport.');
 				}
-				if (typeof mod.installByteRuntime === 'function') {
-					mod.installByteRuntime();
-				}
-				if (relayConfig.meshBLEEnabled && typeof mod.startMesh === 'function') {
+				if (relayConfig.meshBLEEnabled) {
 					mod.startMesh();
 				}
-				const byteRuntime = getByteRuntime();
-				if (byteRuntime) {
-					byteRuntime.init(relayConfig);
-					return;
-				}
-				if (typeof mod.initEngine !== 'function') {
-					mod.init();
-				}
+				requireByteRuntime().init(relayConfig);
 			},
 			handleMessage(bytes: Uint8Array | ArrayBuffer): void {
-				const exact = toExactUint8Array(bytes);
-				const byteRuntime = getByteRuntime();
-				if (byteRuntime) {
-					byteRuntime.handleMessage(toExactArrayBuffer(exact));
-					return;
-				}
-				mod.handleMessage(Array.from(exact));
+				requireByteRuntime().handleMessage(toExactArrayBuffer(bytes));
 			},
 			subscribe(bytes: Uint8Array | ArrayBuffer, subId: string): ArrayBuffer | undefined {
-				const exact = toExactUint8Array(bytes);
-				const byteRuntime = getByteRuntime();
-				return byteRuntime?.subscribe?.(toExactArrayBuffer(exact), subId);
+				return requireByteRuntime().subscribe(toExactArrayBuffer(bytes), subId);
 			},
 			publish(bytes: Uint8Array | ArrayBuffer, publishId: string): ArrayBuffer | undefined {
-				const exact = toExactUint8Array(bytes);
-				const byteRuntime = getByteRuntime();
-				return byteRuntime?.publish?.(toExactArrayBuffer(exact), publishId);
+				return requireByteRuntime().publish(toExactArrayBuffer(bytes), publishId);
 			},
 			wake(): void {
-				const byteRuntime = getByteRuntime();
-				if (byteRuntime && typeof byteRuntime.wake === 'function') {
-					byteRuntime.wake();
-					return;
-				}
-				if (typeof mod.wake === 'function') {
-					mod.wake();
-				}
+				requireByteRuntime().wake();
 			},
 			setPrivateKey(secret: string): void {
-				const byteRuntime = getByteRuntime();
-				if (byteRuntime) {
-					byteRuntime.setPrivateKey(secret);
-					return;
-				}
-				mod.setPrivateKey(secret);
+				requireByteRuntime().setPrivateKey(secret);
 			},
 			clearSigner(): void {
-				const byteRuntime = getByteRuntime();
-				if (typeof byteRuntime?.clearSigner === 'function') {
-					byteRuntime.clearSigner();
-					return;
-				}
-				if (typeof mod.clearSigner === 'function') {
-					mod.clearSigner();
-					return;
-				}
-				throw new Error(
-					'[ReactNativeBackend] Native clearSigner is unavailable; rebuild the app with the matching nipworker native module.'
-				);
+				requireByteRuntime().clearSigner();
 			},
 			removeSigner(): void {
-				const byteRuntime = getByteRuntime();
-				if (typeof byteRuntime?.removeSigner === 'function') {
-					byteRuntime.removeSigner();
-					return;
-				}
-				if (typeof mod.removeSigner === 'function') {
-					mod.removeSigner();
-					return;
-				}
-				// Keep destructive local removal working across an OTA/native-version
-				// mismatch, even though an older binary cannot notify the remote signer.
-				if (typeof byteRuntime?.clearSigner === 'function') {
-					byteRuntime.clearSigner();
-				} else if (typeof mod.clearSigner === 'function') {
-					mod.clearSigner();
-				}
-				console.warn(
-					'[ReactNativeBackend] Native removeSigner is unavailable; cleared the local signer without sending NIP-46 logout.'
-				);
+				requireByteRuntime().removeSigner();
 			},
 			setMeshProfile(profileJson: string): boolean {
 				return typeof mod.setMeshProfile === 'function' && Boolean(mod.setMeshProfile(profileJson));
@@ -275,180 +210,51 @@ const reactNativeBridge = {
 				return typeof mod.clearMeshProfile === 'function' && Boolean(mod.clearMeshProfile());
 			},
 			deinit(): void {
-				if (typeof mod.stopMesh === 'function') {
-					mod.stopMesh();
-				}
-				const byteRuntime = getByteRuntime();
-				if (byteRuntime) {
-					byteRuntime.deinit();
-					return;
-				}
-				if (typeof mod.deinitEngine === 'function') {
-					mod.deinitEngine();
-				} else {
-					mod.deinit();
-				}
+				mod.stopMesh();
+				requireByteRuntime().deinit();
+				mod.deinitEngine();
 			},
 			registerSubscription(subId: string, bufferSize: number): boolean {
-				const byteRuntime = getByteRuntime();
-				return byteRuntime?.registerSubscription?.(subId, bufferSize) === true;
+				return requireByteRuntime().registerSubscription(subId, bufferSize);
 			},
 			registerPublishBuffer(publishId: string, bufferSize: number): boolean {
-				const byteRuntime = getByteRuntime();
-				return byteRuntime?.registerPublishBuffer?.(publishId, bufferSize) === true;
+				return requireByteRuntime().registerPublishBuffer(publishId, bufferSize);
 			},
 			retainSubscriptionBuffer(subId: string): ArrayBuffer | undefined {
-				const byteRuntime = getByteRuntime();
-				return byteRuntime?.retainSubscriptionBuffer?.(subId);
+				return requireByteRuntime().retainSubscriptionBuffer(subId);
 			},
 			retainSubscription(subId: string): boolean {
-				const byteRuntime = getByteRuntime();
-				return byteRuntime?.retainSubscription?.(subId) === true;
+				return requireByteRuntime().retainSubscription(subId);
 			},
 			releaseSubscription(subId: string): void {
-				const byteRuntime = getByteRuntime();
-				byteRuntime?.releaseSubscription?.(subId);
+				requireByteRuntime().releaseSubscription(subId);
 			},
 			getSubscriptionBuffer(subId: string): ArrayBuffer | undefined {
-				const byteRuntime = getByteRuntime();
-				return byteRuntime?.getSubscriptionBuffer?.(subId);
+				return requireByteRuntime().getSubscriptionBuffer(subId);
 			},
 			cleanupSubscriptions(): void {
-				const byteRuntime = getByteRuntime();
-				byteRuntime?.cleanupSubscriptions?.();
-			}
-		};
-	},
-	getEventEmitter(): any {
-		const mod = getReactNativeModule();
-		if (typeof mod.installByteRuntime === 'function') {
-			mod.installByteRuntime();
-		}
-		const byteRuntime = getByteRuntime();
-		if (byteRuntime) {
-			const turbo = getTurboModule();
-			const emitter = turbo?.onData ? undefined : new NativeEventEmitter(mod);
-			const subscriptions = new Map<(event: any) => void, { remove: () => void }>();
-			const deliverBuffers = (listener: (event: any) => void, buffers: ArrayBuffer[]) => {
-				for (const buffer of buffers) {
-					listener(buffer);
-				}
-			};
-			const handleQueuedEvent = (listener: (event: any) => void, event: any) => {
-				if (event?.v !== 1 || event?.encoding !== 'queued') return;
-				deliverBuffers(listener, byteRuntime.drain());
-			};
-			return {
-				addListener(_eventName: string, listener: (event: any) => void): void {
-					const subscription = turbo?.onData
-						? turbo.onData((event: any) => handleQueuedEvent(listener, event))
-						: emitter!.addListener(REACT_NATIVE_EVENT_NAME, (event: any) =>
-								handleQueuedEvent(listener, event)
-							);
-					subscriptions.set(listener, subscription);
-				},
-				removeListener(_eventName: string, listener: (event: any) => void): void {
-					subscriptions.get(listener)?.remove();
-					subscriptions.delete(listener);
-				}
-			};
-		}
-
-		const turbo = getTurboModule();
-		if (turbo?.onData) {
-			const subscriptions = new Map<(event: any) => void, { remove: () => void }>();
-			return {
-				addListener(_eventName: string, listener: (event: any) => void): void {
-					subscriptions.set(
-						listener,
-						turbo.onData((event: { data?: number[] }) => listener(event))
-					);
-				},
-				removeListener(_eventName: string, listener: (event: any) => void): void {
-					subscriptions.get(listener)?.remove();
-					subscriptions.delete(listener);
-				}
-			};
-		}
-
-		const emitter = new NativeEventEmitter(mod);
-		const subscriptions = new Map<(event: any) => void, { remove: () => void }>();
-		return {
-			addListener(eventName: string, listener: (event: any) => void): void {
-				subscriptions.set(listener, emitter.addListener(eventName, listener));
-			},
-			removeListener(_eventName: string, listener: (event: any) => void): void {
-				subscriptions.get(listener)?.remove();
-				subscriptions.delete(listener);
+				requireByteRuntime().cleanupSubscriptions();
 			}
 		};
 	}
 };
 
-function eventDataToBytes(event: any): Uint8Array | null {
-	if (event instanceof Uint8Array) return event;
-	if (event instanceof ArrayBuffer) return new Uint8Array(event);
-	if (ArrayBuffer.isView(event))
-		return new Uint8Array(event.buffer, event.byteOffset, event.byteLength);
-	if (Array.isArray(event)) return new Uint8Array(event);
-	if (!event || typeof event !== 'object') return null;
-	if (event.v === 1 && event.encoding === 'bytes') return eventDataToBytes(event.data);
-	return null;
-}
-
-const ROUTE_WAKE_MAGIC = [0x4e, 0x57, 0x52, 0x31]; // NWR1
-
-function decodeRouteWakeFrame(data: Uint8Array): string | null {
-	if (data.byteLength < 8) return null;
-	for (let i = 0; i < ROUTE_WAKE_MAGIC.length; i++) {
-		if (data[i] !== ROUTE_WAKE_MAGIC[i]) return null;
-	}
-	const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
-	const subIdLength = view.getUint32(4, true);
-	if (subIdLength === 0 || subIdLength !== data.byteLength - 8) return null;
-	try {
-		return new TextDecoder().decode(data.subarray(8));
-	} catch {
-		return null;
-	}
-}
-
 export class ReactNativeManager extends BaseBackend {
 	private appStateSubscription: { remove: () => void } | undefined;
 	private appState = AppState.currentState;
 	private nativeModule: ReactNativeModuleFacade;
-	private eventEmitter: any;
-	private eventListener: ((arg: any) => void) | undefined;
+	private nativeWakeHandler: (() => void) | undefined;
 	private deinitialized = false;
 	private _signRequests = new Map<number, (event: NostrEvent) => void>();
 	private _nextSignRequestId = 1;
-	private readonly useByteRuntime: boolean;
 
 	constructor(config: NostrManagerConfig = {}) {
 		super(reactNativeStorageAdapter);
 		this.nativeModule = reactNativeBridge.getModule();
 		this.nativeModule.init(config);
-		this.useByteRuntime = !!getByteRuntime();
-		this.eventEmitter = reactNativeBridge.getEventEmitter();
-		this.eventListener = (arg: any) => {
-			if (this.deinitialized) return;
-			const event = Array.isArray(arg) ? arg[0] : arg;
-			if (this.useByteRuntime && event?.v === 1 && event?.encoding === 'queued') {
-				const byteRuntime = getByteRuntime();
-				for (const payload of byteRuntime?.drain?.() ?? []) {
-					this.handleNativeWake(new Uint8Array(payload));
-				}
-				return;
-			}
-			const decoded = eventDataToBytes(event);
-			if (!decoded) return;
-			if (this.useByteRuntime) {
-				this.handleNativeWake(decoded);
-				return;
-			}
-			this.handleNativeMessage(decoded);
-		};
-		this.eventEmitter.addListener(REACT_NATIVE_EVENT_NAME, this.eventListener);
+		const byteRuntime = requireByteRuntime();
+		this.nativeWakeHandler = () => this.drainNativePending();
+		byteRuntime.setWakeHandler(this.nativeWakeHandler);
 		this.appStateSubscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
 			const wasActive = this.appState === 'active';
 			const wasBackgrounded = this.appState === 'background' || this.appState === 'inactive';
@@ -469,28 +275,20 @@ export class ReactNativeManager extends BaseBackend {
 		return this.deinitialized;
 	}
 
+	private drainNativePending(): void {
+		if (this.deinitialized) return;
+		const pending = requireByteRuntime().drainPending();
+		for (const subId of pending.routes) {
+			this.dispatch(`subscription:${subId}`, subId);
+			this.dispatch(`publish:${subId}`, subId);
+		}
+		for (const packet of pending.packets) {
+			this.handleNativePayload(new Uint8Array(packet));
+		}
+	}
+
 	private postMessage(bytes: Uint8Array): void {
-		this.nativeModule.handleMessage(bytes.slice().buffer);
-	}
-
-	private handleNativeWake(data: Uint8Array): void {
-		const routeSubId = decodeRouteWakeFrame(data);
-		if (routeSubId) {
-			this.dispatch(`subscription:${routeSubId}`, routeSubId);
-			this.dispatch(`publish:${routeSubId}`, routeSubId);
-			return;
-		}
-		this.handleNativePayload(data);
-	}
-
-	private handleNativeMessage(data: Uint8Array): void {
-		const routeSubId = decodeRouteWakeFrame(data);
-		if (routeSubId) {
-			this.dispatch(`subscription:${routeSubId}`, routeSubId);
-			this.dispatch(`publish:${routeSubId}`, routeSubId);
-			return;
-		}
-		this.handleNativePayload(data);
+		this.nativeModule.handleMessage(toExactArrayBuffer(bytes));
 	}
 
 	private handleNativePayload(data: Uint8Array): void {
@@ -936,9 +734,9 @@ export class ReactNativeManager extends BaseBackend {
 		this.deinitialized = true;
 		this.appStateSubscription?.remove();
 		this.appStateSubscription = undefined;
-		if (this.eventListener) {
-			this.eventEmitter?.removeListener(REACT_NATIVE_EVENT_NAME, this.eventListener);
-			this.eventListener = undefined;
+		if (this.nativeWakeHandler) {
+			requireByteRuntime().setWakeHandler(undefined);
+			this.nativeWakeHandler = undefined;
 		}
 		this.nativeModule.deinit();
 	}
@@ -989,6 +787,11 @@ export function hasReactNativeTurboModule(): boolean {
 
 export function hasReactNativeByteRuntime(): boolean {
 	return !!getByteRuntime();
+}
+
+/** Snapshot counters from the runtime-scoped native delivery transport. */
+export function getReactNativeDeliveryStats(): Readonly<Record<string, number>> | null {
+	return getByteRuntime()?.getDeliveryStats?.() ?? null;
 }
 
 export function hasNativeModule(): boolean {

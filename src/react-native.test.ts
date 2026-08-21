@@ -19,9 +19,10 @@ import {
 	WorkerMessageT
 } from './generated/nostr/fb';
 
-let nativeEventListener: ((event: any) => void) | undefined;
+let nativeWakeHandler: (() => void) | undefined;
 let appStateListener: ((state: 'active' | 'background' | 'inactive') => void) | undefined;
 const queuedBuffers: ArrayBuffer[] = [];
+const queuedRoutes: string[] = [];
 const nativeBuffers = new Map<string, ArrayBuffer>();
 const { initEngine, startMesh, setMeshProfile, clearMeshProfile, nativeStorage } = vi.hoisted(
 	() => ({
@@ -47,7 +48,14 @@ vi.mock('react-native', () => {
 				clearSigner: vi.fn(),
 				removeSigner: vi.fn(),
 				deinit: vi.fn(),
-				drain: vi.fn(() => queuedBuffers.splice(0)),
+				setWakeHandler: vi.fn((handler?: () => void) => {
+					nativeWakeHandler = handler;
+				}),
+				drainPending: vi.fn(() => ({
+					routes: queuedRoutes.splice(0),
+					packets: queuedBuffers.splice(0)
+				})),
+				getDeliveryStats: vi.fn(() => ({})),
 				subscribe: vi.fn((_bytes: ArrayBuffer, subId: string) => {
 					const buffer = nativeBuffers.get(subId) ?? new ArrayBuffer(4096);
 					if (!nativeBuffers.has(subId)) {
@@ -95,19 +103,8 @@ vi.mock('react-native', () => {
 			nativeStorage.delete(key);
 			return true;
 		}),
-		deinit: vi.fn()
+		deinitEngine: vi.fn()
 	};
-
-	class NativeEventEmitter {
-		addListener(_eventName: string, listener: (event: any) => void) {
-			nativeEventListener = listener;
-			return {
-				remove: vi.fn(() => {
-					if (nativeEventListener === listener) nativeEventListener = undefined;
-				})
-			};
-		}
-	}
 
 	return {
 		AppState: {
@@ -123,8 +120,6 @@ vi.mock('react-native', () => {
 				}
 			)
 		},
-		NativeModules: {},
-		NativeEventEmitter,
 		TurboModuleRegistry: {
 			get: vi.fn(() => turboModule)
 		}
@@ -234,20 +229,12 @@ function createSubscriptionBuffer(payload: Uint8Array): ArrayBuffer {
 	return buffer;
 }
 
-function buildRouteWakeFrame(subId: string): ArrayBuffer {
-	const subIdBytes = new TextEncoder().encode(subId);
-	const frame = new Uint8Array(8 + subIdBytes.length);
-	frame.set([0x4e, 0x57, 0x52, 0x31], 0);
-	new DataView(frame.buffer).setUint32(4, subIdBytes.length, true);
-	frame.set(subIdBytes, 8);
-	return frame.buffer;
-}
-
 describe('react-native byte runtime subscription path', () => {
 	beforeEach(() => {
-		nativeEventListener = undefined;
+		nativeWakeHandler = undefined;
 		appStateListener = undefined;
 		queuedBuffers.length = 0;
+		queuedRoutes.length = 0;
 		nativeBuffers.clear();
 		nativeStorage.clear();
 		initEngine.mockClear();
@@ -280,6 +267,21 @@ describe('react-native byte runtime subscription path', () => {
 
 		expect(initEngine).toHaveBeenCalledWith([], [], false, 'warn');
 		manager.deinit();
+	});
+
+	it('detaches the runtime-scoped wake handler before native deinit', () => {
+		const manager = createNostrManager();
+		const byteRuntime = (globalThis as any).__nipworkerReactNativeByteRuntime;
+		const installedHandler = nativeWakeHandler;
+
+		expect(installedHandler).toBeTypeOf('function');
+		manager.deinit();
+
+		expect(byteRuntime.setWakeHandler).toHaveBeenLastCalledWith(undefined);
+		expect(nativeWakeHandler).toBeUndefined();
+		queuedRoutes.push('late-after-deinit');
+		expect(() => installedHandler?.()).not.toThrow();
+		expect(queuedRoutes).toEqual(['late-after-deinit']);
 	});
 
 	it('configures and clears the visible mesh profile independently of BLE', () => {
@@ -315,8 +317,8 @@ describe('react-native byte runtime subscription path', () => {
 			closeOnEose: true
 		});
 
-		queuedBuffers.push(buildRouteWakeFrame('turbo-sub'));
-		nativeEventListener?.({ v: 1, encoding: 'queued' });
+		queuedRoutes.push('turbo-sub');
+		nativeWakeHandler?.();
 		await Promise.resolve();
 		await Promise.resolve();
 
@@ -347,8 +349,8 @@ describe('react-native byte runtime subscription path', () => {
 			closeOnEose: true
 		});
 
-		queuedBuffers.push(buildRouteWakeFrame('native-owned-sub'));
-		nativeEventListener?.({ v: 1, encoding: 'queued' });
+		queuedRoutes.push('native-owned-sub');
+		nativeWakeHandler?.();
 		await Promise.resolve();
 		await Promise.resolve();
 
@@ -514,7 +516,7 @@ describe('react-native byte runtime subscription path', () => {
 			callback
 		);
 		queuedBuffers.push(response.slice().buffer);
-		nativeEventListener?.({ v: 1, encoding: 'queued' });
+		nativeWakeHandler?.();
 
 		expect(callback).toHaveBeenCalledWith({
 			id: 'a'.repeat(64),

@@ -48,6 +48,30 @@ bool nipworker_retain_subscription(void *handle, const char *subscription_id);
 void nipworker_release_subscription(void *handle, const char *subscription_id);
 uint8_t *nipworker_subscription_buffer_ptr(void *handle, const char *subscription_id);
 size_t nipworker_subscription_buffer_len(void *handle, const char *subscription_id);
+/*
+ * Atomically pin one subscription buffer allocation and return an opaque
+ * lifetime token. This does not retain the logical subscription: cleanup may
+ * unsubscribe/remove the route while the returned data pointer stays valid
+ * until nipworker_subscription_pin_release(token) is called.
+ */
+void *nipworker_subscription_pin(
+	void *handle,
+	const char *subscription_id,
+	uint8_t **out_data,
+	size_t *out_len
+);
+void nipworker_subscription_pin_release(void *token);
+/*
+ * Reset a fully drained subscription buffer for reuse only when its current
+ * write cursor still equals expected_write_position. A false result means the
+ * producer appended concurrently (or the subscription is unavailable); the
+ * caller must re-read instead of resetting.
+ */
+bool nipworker_subscription_try_reset(
+	void *handle,
+	const char *subscription_id,
+	uint32_t expected_write_position
+);
 void nipworker_cleanup_subscriptions(void *handle);
 
 void *nipworker_mesh_init(void *handle);

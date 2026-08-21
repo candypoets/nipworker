@@ -11,6 +11,21 @@ permissions:
 
 jobs:
   # ──────────────────────────────────────────
+  # React Native transport — host stress and source parity gates
+  # ──────────────────────────────────────────
+  verify-react-native-transport:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+
+      - name: Verify shared React Native transport
+        run: npm run verify:native-transport
+
+  # ──────────────────────────────────────────
   # Android — build AAR with .so for all 4 ABIs
   # ──────────────────────────────────────────
   build-android:
@@ -259,7 +274,8 @@ jobs:
   # Release — attach all native artifacts
   # ──────────────────────────────────────────
   release-native:
-    needs: [build-android, publish-android-maven, build-ios, build-linux]
+    needs:
+      [verify-react-native-transport, build-android, publish-android-maven, build-ios, build-linux]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     steps:

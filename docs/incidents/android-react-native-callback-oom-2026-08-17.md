@@ -1,6 +1,6 @@
 # Android React Native callback OOM — 2026-08-17
 
-Status: confirmed upstream defect; native-mobile and perf-lab triage in progress.
+Status: resolved upstream for the 0.99.11 release.
 
 ## Summary
 
@@ -113,6 +113,33 @@ a focused regression test before it is promoted to confirmed root cause.
   architecture and Hermes-compatible payload conversion.
 - Re-run the Crays Android scenario with the fixed package; no Crays-side change is
   requested before an upstream candidate exists.
+
+## Resolution
+
+The callback/emitter architecture was removed rather than patched. Android and iOS now
+compile the same C++ runtime-scoped transport. Rust-owned subscription payloads remain in
+fixed-capacity buffers exposed through opaque, ref-counted JSI `ArrayBuffer` pins. Direct
+control packets transfer their Rust allocation into the JSI `ArrayBuffer` without an
+intermediate JNI, Kotlin, Objective-C, or JavaScript payload copy.
+
+Native producers mark bounded dirty route IDs or enqueue bounded control packets. A single
+atomic outer wake schedules `CallInvoker::invokeAsync`; JavaScript drains all pending work.
+The clear/recheck protocol covers both arrivals racing wake completion and handler
+installation racing an initially absent scheduler. The generated `onData` emitter,
+`NativeEventEmitter` fallback, JNI `jbyteArray` callback, process-global listener/queue,
+iOS notification/main-queue wake, and Swift borrowed React Native handle were deleted.
+
+Runtime invalidation clears handlers and queues, releases logical subscription leases, and
+unbinds its generation before engine teardown. Native deinit now signals and joins the engine
+thread plus parser, connections, cache, and crypto workers. A real FFI lifecycle probe that
+previously retained exactly five threads per cycle now has zero thread growth after both 25
+and 100 destroy/recreate cycles; retained callback count cannot change after deinit returns.
+
+Verification for the replacement includes the shared 10,000-event multithread burst,
+duplicate-route coalescing, runtime recreation with late arrivals, both wake races, bounded
+route/control saturation, ownership release, sanitizer runs, exact Android React Native 0.86.2
+compilation, and source parity guards for Android, iOS, Swift, and TypeScript. Measured results
+are recorded in `docs/benchmarks/react-native-native-delivery-2026-08-21.md`.
 
 ## Delegation
 

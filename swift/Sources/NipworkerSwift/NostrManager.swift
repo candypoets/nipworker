@@ -19,19 +19,15 @@ private final class ManagerBox {
 }
 
 public actor NostrManager {
-    private static let sharedRuntimeNotification = "NipworkerRuntimeDataNotification"
-    private static let sharedRuntimeDataKey = "data"
     private static let meshProfileStorageKey = "nipworker.meshProfile"
 
-    private static var reactNativeSharedManager: NostrManager?
+    private static var standaloneSharedManager: NostrManager?
 
     private var handle: UnsafeMutableRawPointer?
-    private let ownsHandle: Bool
     private var bufferViews: [String: SubscriptionBuffer] = [:]
     private var relayStatuses: [String: RelayStatus] = [:]
     private var activePubkey: String?
     private var pendingSession: (type: String, payload: Any)?
-    private var sharedRuntimeObserver: NSObjectProtocol?
 
     private var signContinuation: CheckedContinuation<NostrEvent, Error>?
     private var pubkeyContinuation: CheckedContinuation<String, Error>?
@@ -44,7 +40,6 @@ public actor NostrManager {
 
     public init(config: NostrManagerConfig = NostrManagerConfig()) {
         self.handle = nil
-        self.ownsHandle = true
         self.boxPtr = UnsafeMutablePointer<ManagerBox>.allocate(capacity: 1)
         self.boxPtr.initialize(to: ManagerBox(manager: self))
 
@@ -68,43 +63,20 @@ public actor NostrManager {
         }
     }
 
-    private init(borrowedHandle: UnsafeMutableRawPointer?) {
-        self.handle = borrowedHandle
-        self.ownsHandle = false
-        self.boxPtr = UnsafeMutablePointer<ManagerBox>.allocate(capacity: 1)
-        self.boxPtr.initialize(to: ManagerBox(manager: self))
-
-        self.sharedRuntimeObserver = NotificationCenter.default.addObserver(
-            forName: Notification.Name(rawValue: Self.sharedRuntimeNotification),
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
-            guard let data = notification.userInfo?[Self.sharedRuntimeDataKey] as? Data else { return }
-            Task { [weak self] in
-                await self?.handleNativeMessage(data)
-            }
-        }
-    }
-
-    public static func reactNativeShared() -> NostrManager {
-        if let manager = reactNativeSharedManager {
+    /// Process-wide standalone Swift manager. React Native owns a separate
+    /// CallInvoker-scoped engine and does not share callback delivery.
+    public static func shared() -> NostrManager {
+        if let manager = standaloneSharedManager {
             return manager
         }
-        guard let handle = nipworker_react_native_shared_handle_if_available() else {
-            return NostrManager(borrowedHandle: nil)
-        }
-        let manager = NostrManager(borrowedHandle: handle)
-        reactNativeSharedManager = manager
+        let manager = NostrManager()
+        standaloneSharedManager = manager
         return manager
     }
 
     deinit {
-        if ownsHandle, let handle = handle {
+        if let handle = handle {
             nipworker_deinit(handle)
-        }
-        if let observer = sharedRuntimeObserver {
-            NotificationCenter.default.removeObserver(observer)
-            sharedRuntimeObserver = nil
         }
         boxPtr.pointee.manager = nil
         boxPtr.deinitialize(count: 1)
