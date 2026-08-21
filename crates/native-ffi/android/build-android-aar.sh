@@ -71,6 +71,22 @@ done
 cd "$SCRIPT_DIR"
 if [[ -x "./gradlew" ]]; then
 	./gradlew assembleRelease
-else
+elif [[ -n "${NIPWORKER_GRADLEW:-}" && -x "${NIPWORKER_GRADLEW}" ]]; then
+	"${NIPWORKER_GRADLEW}" -p "$SCRIPT_DIR" assembleRelease
+elif command -v gradle >/dev/null 2>&1; then
 	gradle assembleRelease
+else
+	echo "error: Gradle is unavailable; set NIPWORKER_GRADLEW to a Gradle wrapper" >&2
+	exit 1
 fi
+
+PACKAGE_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+PREBUILT_DIR="$PACKAGE_ROOT/prebuilt/android"
+mkdir -p "$PREBUILT_DIR/include"
+cp "$CRATE_DIR/include/nipworker.h" "$PREBUILT_DIR/include/nipworker.h"
+for abi in "${ABIS[@]}"; do
+	mkdir -p "$PREBUILT_DIR/jni/$abi"
+	cp "$JNICALL_DIR/$abi/libnipworker_native_ffi.so" \
+		"$PREBUILT_DIR/jni/$abi/libnipworker_native_ffi.so"
+done
+echo "Staged local-consumer native libraries: $PREBUILT_DIR"

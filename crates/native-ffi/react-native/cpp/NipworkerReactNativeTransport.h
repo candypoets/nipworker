@@ -3,6 +3,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <condition_variable>
 #include <deque>
 #include <functional>
 #include <memory>
@@ -67,6 +68,36 @@ struct DeliveryStats {
 struct DrainBatch {
 	std::vector<std::string> routes;
 	std::vector<OwnedPacket> controls;
+};
+
+enum class RuntimeInstallDecision {
+	Install,
+	AlreadyInstalled,
+	Invalidated,
+};
+
+// Serializes runtime installation against repeated calls and invalidation.
+// The platform adapter still owns the JS-thread requirement; this gate makes
+// accidental concurrent calls deterministic and makes teardown wait until an
+// in-flight runtime mutation has finished.
+class RuntimeInstallGate final {
+public:
+	RuntimeInstallDecision beginInstall();
+	void finishInstall(bool succeeded);
+	void invalidate();
+	bool installed() const;
+
+private:
+	enum class Phase {
+		Ready,
+		Installing,
+		Installed,
+		Invalidated,
+	};
+
+	mutable std::mutex mutex_;
+	std::condition_variable changed_;
+	Phase phase_ = Phase::Ready;
 };
 
 // Thread-safe, runtime-independent delivery state. Platform adapters provide

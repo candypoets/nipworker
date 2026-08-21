@@ -153,19 +153,24 @@ class NipworkerReactNativeModule(
 	}
 
 	private var transportToken = 0L
+	private val transportLock = Any()
 	private val storage by lazy {
 		reactContext.getSharedPreferences(STORAGE_NAME, Context.MODE_PRIVATE)
 	}
 
 	override fun getName(): String = NAME
 
-	private fun ensureTransport(): Boolean {
+	private fun ensureTransport(): Boolean = synchronized(transportLock) {
 		if (transportToken != 0L) return true
 		val runtimePtr = reactContext.javaScriptContextHolder?.get() ?: 0L
 		if (runtimePtr == 0L || !reactContext.hasActiveReactInstance()) return false
 		val callInvokerHolder = reactContext.jsCallInvokerHolder ?: return false
 		transportToken = nativeInstallTransport(runtimePtr, callInvokerHolder)
-		return transportToken != 0L
+		transportToken != 0L
+	}
+
+	private fun hasTransport(): Boolean = synchronized(transportLock) {
+		transportToken != 0L
 	}
 
 	@ReactMethod
@@ -175,8 +180,9 @@ class NipworkerReactNativeModule(
 		meshBLEEnabled: Boolean,
 		logLevel: String
 	) {
-		// Bind the runtime-scoped CallInvoker transport before Rust can emit.
-		check(ensureTransport()) { "Nipworker React Native JSI transport is unavailable" }
+		// Never install JSI from this asynchronous native-module queue. The
+		// blocking installByteRuntime call must have completed on the JS thread.
+		check(hasTransport()) { "Call installByteRuntime before initEngine" }
 		NipworkerRuntime.init(
 			reactContext,
 			defaultRelays,
@@ -243,8 +249,10 @@ class NipworkerReactNativeModule(
 	}
 
 	private fun invalidateTransport() {
-		val token = transportToken
-		transportToken = 0L
-		if (token != 0L) nativeInvalidateTransport(token)
+		synchronized(transportLock) {
+			val token = transportToken
+			transportToken = 0L
+			if (token != 0L) nativeInvalidateTransport(token)
+		}
 	}
 }

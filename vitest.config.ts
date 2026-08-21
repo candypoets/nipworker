@@ -17,7 +17,8 @@ export default defineConfig({
 	},
 	resolve: {
 		alias: {
-			'src': resolve(__dirname, 'src')
+			'src': resolve(__dirname, 'src'),
+			'react-native': resolve(__dirname, 'tests/mocks/react-native.ts')
 		}
 	}
 });

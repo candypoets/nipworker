@@ -168,15 +168,18 @@ const reactNativeBridge = {
 					meshBLEEnabled: config?.meshBLEEnabled ?? false,
 					logLevel: config?.logLevel ?? 'warn'
 				};
+				// This blocking TurboModule method executes while React Native owns the
+				// JS runtime. It must complete before the asynchronous engine method can
+				// start Rust workers and produce native deliveries.
+				if (!mod.installByteRuntime()) {
+					throw new Error('[ReactNativeBackend] Failed to install native delivery transport.');
+				}
 				mod.initEngine(
 					relayConfig.defaultRelays,
 					relayConfig.indexerRelays,
 					relayConfig.meshBLEEnabled,
 					relayConfig.logLevel
 				);
-				if (!mod.installByteRuntime()) {
-					throw new Error('[ReactNativeBackend] Failed to install native delivery transport.');
-				}
 				if (relayConfig.meshBLEEnabled) {
 					mod.startMesh();
 				}

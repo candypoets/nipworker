@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use std::slice;
 use std::sync::{
     atomic::{AtomicU8, Ordering},
-    Arc, Mutex,
+    Arc, Condvar, Mutex, OnceLock,
 };
 use std::thread;
 use tokio::runtime::Builder;
@@ -301,6 +301,74 @@ struct NipworkerSubscriptionPin {
 /// Opaque handle
 pub struct NipworkerHandle {
     state: Mutex<NipworkerState>,
+}
+
+type NativeCallback = extern "C" fn(*mut c_void, *const u8, usize);
+
+#[derive(Clone, Copy)]
+struct SharedClient {
+    callback: NativeCallback,
+    userdata: usize,
+    references: usize,
+}
+
+#[derive(Default)]
+struct SharedEngineState {
+    handle: usize,
+    clients: Vec<SharedClient>,
+    callbacks_in_flight: usize,
+}
+
+static SHARED_ENGINE: OnceLock<(Mutex<SharedEngineState>, Condvar)> = OnceLock::new();
+static SHARED_ENGINE_LIFECYCLE: Mutex<()> = Mutex::new(());
+
+#[cfg(test)]
+static SHARED_ENGINE_INITIALIZATIONS: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+
+fn shared_engine() -> &'static (Mutex<SharedEngineState>, Condvar) {
+    SHARED_ENGINE.get_or_init(|| (Mutex::new(SharedEngineState::default()), Condvar::new()))
+}
+
+extern "C" fn shared_engine_callback(_userdata: *mut c_void, ptr: *const u8, len: usize) {
+    let clients = {
+        let (mutex, _) = shared_engine();
+        let Ok(mut state) = mutex.lock() else {
+            unsafe { nipworker_free_bytes(ptr as *mut u8, len) };
+            return;
+        };
+        if state.clients.is_empty() {
+            drop(state);
+            unsafe { nipworker_free_bytes(ptr as *mut u8, len) };
+            return;
+        }
+        state.callbacks_in_flight += 1;
+        state.clients.clone()
+    };
+
+    // Preserve the original owned allocation for the first consumer. Copies
+    // are allocated before invoking it because callbacks own and may
+    // immediately free their packet. The normal one-client path remains
+    // allocation/copy free across this registry.
+    let copies = if clients.len() > 1 && !ptr.is_null() && len > 0 {
+        let bytes = unsafe { slice::from_raw_parts(ptr, len) };
+        (1..clients.len())
+            .map(|_| Box::into_raw(bytes.to_vec().into_boxed_slice()) as *const u8)
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+
+    (clients[0].callback)(clients[0].userdata as *mut c_void, ptr, len);
+    for (client, copy) in clients.iter().skip(1).zip(copies) {
+        (client.callback)(client.userdata as *mut c_void, copy, len);
+    }
+
+    let (mutex, changed) = shared_engine();
+    if let Ok(mut state) = mutex.lock() {
+        state.callbacks_in_flight = state.callbacks_in_flight.saturating_sub(1);
+        changed.notify_all();
+    }
 }
 
 /// Build a FlatBuffers MainMessage that contains a SetSigner(PrivateKey) payload.
@@ -842,6 +910,126 @@ pub extern "C" fn nipworker_init_with_options(
     Box::into_raw(handle) as *mut c_void
 }
 
+/// Acquire the one process-wide native engine and register a delivery client.
+/// The first caller's storage/relay/mesh configuration owns engine creation;
+/// later callers share the exact handle, subscription store, and worker set.
+/// Every successful acquire must be paired with nipworker_shared_release using
+/// the same callback and userdata values.
+#[no_mangle]
+pub extern "C" fn nipworker_shared_acquire(
+    callback: NativeCallback,
+    userdata: *mut c_void,
+    storage_path: *const c_char,
+    default_relays: *const c_char,
+    indexer_relays: *const c_char,
+    mesh_enabled: bool,
+) -> *mut c_void {
+    let Ok(_lifecycle) = SHARED_ENGINE_LIFECYCLE.lock() else {
+        return std::ptr::null_mut();
+    };
+    let callback_address = callback as usize;
+    let userdata_address = userdata as usize;
+    let (mutex, _) = shared_engine();
+    let Ok(mut state) = mutex.lock() else {
+        return std::ptr::null_mut();
+    };
+    if state.handle != 0 {
+        if let Some(client) = state.clients.iter_mut().find(|client| {
+            client.callback as usize == callback_address && client.userdata == userdata_address
+        }) {
+            client.references += 1;
+        } else {
+            state.clients.push(SharedClient {
+                callback,
+                userdata: userdata_address,
+                references: 1,
+            });
+        }
+        return state.handle as *mut c_void;
+    }
+
+    state.clients.push(SharedClient {
+        callback,
+        userdata: userdata_address,
+        references: 1,
+    });
+    drop(state);
+
+    let handle = nipworker_init_with_options(
+        shared_engine_callback,
+        std::ptr::null_mut(),
+        storage_path,
+        default_relays,
+        indexer_relays,
+        mesh_enabled,
+    );
+    let Ok(mut state) = mutex.lock() else {
+        if !handle.is_null() {
+            nipworker_deinit(handle);
+        }
+        return std::ptr::null_mut();
+    };
+    if handle.is_null() {
+        state.clients.retain(|client| {
+            client.callback as usize != callback_address || client.userdata != userdata_address
+        });
+        return std::ptr::null_mut();
+    }
+    state.handle = handle as usize;
+    #[cfg(test)]
+    SHARED_ENGINE_INITIALIZATIONS.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+    handle
+}
+
+/// Release one client reference. The final release synchronously joins the
+/// shared engine. Removal waits for every callback snapshot that could still
+/// reference userdata, so wrappers may reclaim their callback context on
+/// return. Calling this synchronously from a callback is unsupported.
+#[no_mangle]
+pub extern "C" fn nipworker_shared_release(
+    handle: *mut c_void,
+    callback: NativeCallback,
+    userdata: *mut c_void,
+) {
+    if handle.is_null() {
+        return;
+    }
+    let Ok(_lifecycle) = SHARED_ENGINE_LIFECYCLE.lock() else {
+        return;
+    };
+    let callback_address = callback as usize;
+    let userdata_address = userdata as usize;
+    let (mutex, changed) = shared_engine();
+    let Ok(mut state) = mutex.lock() else {
+        return;
+    };
+    if state.handle != handle as usize {
+        return;
+    }
+    let Some(index) = state.clients.iter().position(|client| {
+        client.callback as usize == callback_address && client.userdata == userdata_address
+    }) else {
+        return;
+    };
+    if state.clients[index].references > 1 {
+        state.clients[index].references -= 1;
+        return;
+    }
+    state.clients.remove(index);
+    while state.callbacks_in_flight != 0 {
+        let Ok(next) = changed.wait(state) else {
+            return;
+        };
+        state = next;
+    }
+    if !state.clients.is_empty() {
+        return;
+    }
+    state.handle = 0;
+    drop(state);
+    nipworker_deinit(handle);
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn nipworker_wake(handle: *mut c_void) {
     if handle.is_null() {
@@ -1328,11 +1516,12 @@ mod tests {
         apply_event_batch, nipworker_cleanup_subscriptions, nipworker_clear_signer,
         nipworker_deinit, nipworker_free_bytes, nipworker_init, nipworker_register_subscription,
         nipworker_release_subscription, nipworker_remove_signer, nipworker_set_private_key,
-        nipworker_subscription_pin, nipworker_subscription_pin_release,
-        nipworker_subscription_try_reset, parse_native_log_level, AppendOutcome, BatchOutcome,
-        CallbackAction, EngineCommand, NativeSubscription, NativeSubscriptionStore,
-        NipworkerHandle, NipworkerState, LOG_LEVEL_DEBUG, LOG_LEVEL_ERROR, LOG_LEVEL_INFO,
-        LOG_LEVEL_TRACE, LOG_LEVEL_WARN,
+        nipworker_shared_acquire, nipworker_shared_release, nipworker_subscription_pin,
+        nipworker_subscription_pin_release, nipworker_subscription_try_reset,
+        parse_native_log_level, AppendOutcome, BatchOutcome, CallbackAction, EngineCommand,
+        NativeSubscription, NativeSubscriptionStore, NipworkerHandle, NipworkerState,
+        LOG_LEVEL_DEBUG, LOG_LEVEL_ERROR, LOG_LEVEL_INFO, LOG_LEVEL_TRACE, LOG_LEVEL_WARN,
+        SHARED_ENGINE_INITIALIZATIONS,
     };
     use std::ffi::{c_void, CString};
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -1890,5 +2079,74 @@ mod tests {
             let _ = unsafe { Box::from_raw(userdata) };
             let _ = unsafe { Box::from_raw(handle as *mut NipworkerHandle) };
         }
+    }
+
+    #[test]
+    fn shared_acquire_uses_one_handle_and_unregisters_clients_safely() {
+        const SECRET: &str = "f7e69dd87239da6a828fb9a2fbf481b5b9e147edb848497620e8dc6f5ec10a0a";
+        let secret = CString::new(SECRET).unwrap();
+        let first_callbacks = Box::into_raw(Box::new(AtomicUsize::new(0)));
+        let second_callbacks = Box::into_raw(Box::new(AtomicUsize::new(0)));
+        let initializations_before = SHARED_ENGINE_INITIALIZATIONS.load(Ordering::Acquire);
+
+        let first = nipworker_shared_acquire(
+            counting_callback,
+            first_callbacks.cast(),
+            std::ptr::null(),
+            std::ptr::null(),
+            std::ptr::null(),
+            false,
+        );
+        let second = nipworker_shared_acquire(
+            counting_callback,
+            second_callbacks.cast(),
+            std::ptr::null(),
+            std::ptr::null(),
+            std::ptr::null(),
+            false,
+        );
+        assert!(!first.is_null());
+        assert_eq!(
+            first, second,
+            "native and RN clients must share one engine handle"
+        );
+        assert_eq!(
+            SHARED_ENGINE_INITIALIZATIONS.load(Ordering::Acquire),
+            initializations_before + 1,
+            "two process clients must initialize exactly one engine"
+        );
+
+        unsafe { nipworker_set_private_key(first, secret.as_ptr()) };
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while (unsafe { &*first_callbacks }.load(Ordering::Acquire) == 0
+            || unsafe { &*second_callbacks }.load(Ordering::Acquire) == 0)
+            && Instant::now() < deadline
+        {
+            std::thread::yield_now();
+        }
+        assert!(unsafe { &*first_callbacks }.load(Ordering::Acquire) > 0);
+        assert!(unsafe { &*second_callbacks }.load(Ordering::Acquire) > 0);
+
+        nipworker_shared_release(first, counting_callback, first_callbacks.cast());
+        let first_after_release = unsafe { &*first_callbacks }.load(Ordering::Acquire);
+        let second_before_retry = unsafe { &*second_callbacks }.load(Ordering::Acquire);
+        unsafe { nipworker_clear_signer(second) };
+        unsafe { nipworker_set_private_key(second, secret.as_ptr()) };
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while unsafe { &*second_callbacks }.load(Ordering::Acquire) == second_before_retry
+            && Instant::now() < deadline
+        {
+            std::thread::yield_now();
+        }
+        assert_eq!(
+            unsafe { &*first_callbacks }.load(Ordering::Acquire),
+            first_after_release,
+            "released client received a stale callback"
+        );
+        assert!(unsafe { &*second_callbacks }.load(Ordering::Acquire) > second_before_retry);
+
+        nipworker_shared_release(second, counting_callback, second_callbacks.cast());
+        let _ = unsafe { Box::from_raw(first_callbacks) };
+        let _ = unsafe { Box::from_raw(second_callbacks) };
     }
 }

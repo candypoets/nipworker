@@ -51,7 +51,7 @@ public:
 	);
 	~RuntimeTransport();
 
-	void install(facebook::jsi::Runtime& runtime);
+	bool install(facebook::jsi::Runtime& runtime);
 	void acceptEnginePacket(Generation engineGeneration, Generation activeEngineGeneration, OwnedPacket packet);
 	void invalidate();
 	Generation generation() const noexcept { return generation_; }

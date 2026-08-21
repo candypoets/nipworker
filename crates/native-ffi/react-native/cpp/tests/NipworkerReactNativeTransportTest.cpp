@@ -408,6 +408,65 @@ void testOwnedPacketMoveAndDrainReleaseExactlyOnce() {
 	REQUIRE(ReleaseTracker::releases(20) == 1);
 }
 
+void testRuntimeInstallGateSerializesInstallInvalidateAndRecreate() {
+	transport::RuntimeInstallGate gate;
+	REQUIRE(gate.beginInstall() == transport::RuntimeInstallDecision::Install);
+	REQUIRE(!gate.installed());
+
+	std::atomic<bool> repeatedStarted{false};
+	std::atomic<bool> repeatedFinished{false};
+	std::atomic<int> repeatedDecision{-1};
+	std::thread repeated([&] {
+		repeatedStarted.store(true, std::memory_order_release);
+		repeatedDecision.store(
+			static_cast<int>(gate.beginInstall()),
+			std::memory_order_release
+		);
+		repeatedFinished.store(true, std::memory_order_release);
+	});
+	while (!repeatedStarted.load(std::memory_order_acquire)) std::this_thread::yield();
+	REQUIRE(!repeatedFinished.load(std::memory_order_acquire));
+	gate.finishInstall(true);
+	repeated.join();
+	REQUIRE(
+		repeatedDecision.load(std::memory_order_acquire) ==
+		static_cast<int>(transport::RuntimeInstallDecision::AlreadyInstalled)
+	);
+	REQUIRE(gate.installed());
+
+	transport::RuntimeInstallGate teardownGate;
+	REQUIRE(teardownGate.beginInstall() == transport::RuntimeInstallDecision::Install);
+	std::atomic<bool> invalidationStarted{false};
+	std::atomic<bool> invalidationFinished{false};
+	std::thread invalidator([&] {
+		invalidationStarted.store(true, std::memory_order_release);
+		teardownGate.invalidate();
+		invalidationFinished.store(true, std::memory_order_release);
+	});
+	while (!invalidationStarted.load(std::memory_order_acquire)) std::this_thread::yield();
+	REQUIRE(!invalidationFinished.load(std::memory_order_acquire));
+	teardownGate.finishInstall(true);
+	invalidator.join();
+	REQUIRE(!teardownGate.installed());
+	REQUIRE(
+		teardownGate.beginInstall() == transport::RuntimeInstallDecision::Invalidated
+	);
+
+	transport::RuntimeInstallGate failedInstall;
+	REQUIRE(failedInstall.beginInstall() == transport::RuntimeInstallDecision::Install);
+	failedInstall.finishInstall(false);
+	REQUIRE(failedInstall.beginInstall() == transport::RuntimeInstallDecision::Install);
+	failedInstall.finishInstall(true);
+	REQUIRE(failedInstall.installed());
+
+	// A recreated runtime owns a fresh gate and can install independently of the
+	// invalidated generation.
+	transport::RuntimeInstallGate recreated;
+	REQUIRE(recreated.beginInstall() == transport::RuntimeInstallDecision::Install);
+	recreated.finishInstall(true);
+	REQUIRE(recreated.installed());
+}
+
 using Test = std::pair<const char*, void (*)()>;
 
 } // namespace
@@ -423,6 +482,7 @@ int main() {
 		{"bounded control saturation", &testBoundedControlQueueRejectsNewestAndCountsBytes},
 		{"bounded dirty routes", &testDirtyRouteLimitIsBoundedAndCounted},
 		{"owned packet release once", &testOwnedPacketMoveAndDrainReleaseExactlyOnce},
+		{"runtime install lifecycle", &testRuntimeInstallGateSerializesInstallInvalidateAndRecreate},
 	};
 
 	for (const auto& [name, test] : tests) {

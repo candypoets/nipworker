@@ -45,7 +45,7 @@ Java_com_candypoets_nipworker_reactnative_NipworkerReactNativeModule_nativeInsta
 	if (nativeHolder == nullptr) return 0;
 	auto transport = RuntimeTransport::create(nativeHolder->getCallInvoker());
 	auto& runtime = *reinterpret_cast<facebook::jsi::Runtime*>(runtimePointer);
-	transport->install(runtime);
+	if (!transport->install(runtime)) return 0;
 	return reinterpret_cast<jlong>(new std::shared_ptr<RuntimeTransport>(std::move(transport)));
 }
 

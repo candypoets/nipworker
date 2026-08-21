@@ -20,6 +20,23 @@ func nipworker_init_with_options(
     _ meshEnabled: Bool
 ) -> UnsafeMutableRawPointer?
 
+@_silgen_name("nipworker_shared_acquire")
+func nipworker_shared_acquire(
+    _ callback: @convention(c) (UnsafeMutableRawPointer?, UnsafePointer<UInt8>?, Int) -> Void,
+    _ userdata: UnsafeMutableRawPointer?,
+    _ storagePath: UnsafePointer<Int8>?,
+    _ defaultRelays: UnsafePointer<Int8>?,
+    _ indexerRelays: UnsafePointer<Int8>?,
+    _ meshEnabled: Bool
+) -> UnsafeMutableRawPointer?
+
+@_silgen_name("nipworker_shared_release")
+func nipworker_shared_release(
+    _ handle: UnsafeMutableRawPointer?,
+    _ callback: @convention(c) (UnsafeMutableRawPointer?, UnsafePointer<UInt8>?, Int) -> Void,
+    _ userdata: UnsafeMutableRawPointer?
+)
+
 @_silgen_name("nipworker_set_log_level")
 func nipworker_set_log_level(_ level: UnsafePointer<Int8>?)
 

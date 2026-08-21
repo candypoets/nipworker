@@ -18,6 +18,22 @@ private final class ManagerBox {
     init(manager: NostrManager) { self.manager = manager }
 }
 
+private func nipworkerManagerCallback(
+    userdata: UnsafeMutableRawPointer?,
+    ptr: UnsafePointer<UInt8>?,
+    len: Int
+) {
+    guard let ptr, let userdata else { return }
+    let data = Data(bytes: ptr, count: len)
+    nipworker_free_bytes(UnsafeMutablePointer(mutating: ptr), len)
+
+    let box = userdata.assumingMemoryBound(to: ManagerBox.self).pointee
+    guard let manager = box.manager else { return }
+    Task {
+        await manager.handleNativeMessage(data)
+    }
+}
+
 public actor NostrManager {
     private static let meshProfileStorageKey = "nipworker.meshProfile"
 
@@ -45,26 +61,23 @@ public actor NostrManager {
 
         (config.logLevel ?? "warn").withCString { nipworker_set_log_level($0) }
 
-        self.handle = nipworker_init_with_options({ userdata, ptr, len in
-            guard let ptr = ptr else { return }
-            let data = Data(bytes: ptr, count: len)
-            nipworker_free_bytes(UnsafeMutablePointer(mutating: ptr), len)
-
-            let box = userdata!.assumingMemoryBound(to: ManagerBox.self).pointee
-            guard let manager = box.manager else { return }
-
-            Task {
-                await manager.handleNativeMessage(data)
-            }
-        }, self.boxPtr, nil, nil, nil, config.meshBLEEnabled)
+        self.handle = nipworker_shared_acquire(
+            nipworkerManagerCallback,
+            self.boxPtr,
+            nil,
+            nil,
+            nil,
+            config.meshBLEEnabled
+        )
         let initializedHandle = self.handle
         if let profileJSON = UserDefaults.standard.string(forKey: Self.meshProfileStorageKey) {
             _ = profileJSON.withCString { nipworker_mesh_set_profile_json(initializedHandle, $0) }
         }
     }
 
-    /// Process-wide standalone Swift manager. React Native owns a separate
-    /// CallInvoker-scoped engine and does not share callback delivery.
+    /// Process-wide Swift facade. Pure-native and React Native clients acquire
+    /// the same Rust process engine while retaining independent delivery
+    /// adapters for their runtimes.
     public static func shared() -> NostrManager {
         if let manager = standaloneSharedManager {
             return manager
@@ -76,7 +89,7 @@ public actor NostrManager {
 
     deinit {
         if let handle = handle {
-            nipworker_deinit(handle)
+            nipworker_shared_release(handle, nipworkerManagerCallback, boxPtr)
         }
         boxPtr.pointee.manager = nil
         boxPtr.deinitialize(count: 1)
@@ -291,7 +304,7 @@ public actor NostrManager {
 
     // MARK: - Callback Handling
 
-    private func handleNativeMessage(_ data: Data) {
+    fileprivate func handleNativeMessage(_ data: Data) {
         if let routeSubId = decodeRouteWakeFrame(data) {
             handleSubscriptionMessage(subId: routeSubId)
             return

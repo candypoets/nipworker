@@ -161,7 +161,7 @@ void* EngineHost::configure(
 	context->engineGeneration = impl_->engineGeneration;
 	auto* userdata = context.get();
 	impl_->callbackContexts.emplace_back(std::move(context));
-	impl_->handle = nipworker_init_with_options(
+	impl_->handle = nipworker_shared_acquire(
 		callback,
 		userdata,
 		storagePath.empty() ? nullptr : storagePath.c_str(),
@@ -189,11 +189,23 @@ void EngineHost::deinit() {
 		impl_->activeTransport.reset();
 		impl_->activeRuntimeGeneration = 0;
 	}
-	if (handle != nullptr) nipworker_deinit(handle);
-	// nipworker_deinit synchronously joins the engine thread, so no callback can
-	// still reference this generation. Preserve any newer context installed by a
-	// concurrent configure while reclaiming only the retired generation.
-	if (handle != nullptr) {
+	if (handle != nullptr && retiredGeneration != 0) {
+		void* userdata = nullptr;
+		{
+			std::lock_guard<std::mutex> lock(impl_->mutex);
+			for (const auto& context : impl_->callbackContexts) {
+				if (context->engineGeneration == retiredGeneration) {
+					userdata = context.get();
+					break;
+				}
+			}
+		}
+		nipworker_shared_release(handle, callback, userdata);
+	}
+	// shared_release waits for callback snapshots that reference this context.
+	// Preserve any newer context installed by a concurrent configure while
+	// reclaiming only the retired generation.
+	if (retiredGeneration != 0) {
 		std::lock_guard<std::mutex> lock(impl_->mutex);
 		impl_->callbackContexts.erase(
 			std::remove_if(
@@ -231,6 +243,7 @@ public:
 		callInvoker(std::move(callInvoker)), limits(limits) {}
 
 	std::shared_ptr<DeliveryState> state;
+	RuntimeInstallGate installGate;
 	std::mutex mutex;
 	std::shared_ptr<facebook::react::CallInvoker> callInvoker;
 	DeliveryLimits limits;
@@ -340,6 +353,7 @@ bool RuntimeTransport::alive() const {
 }
 
 void RuntimeTransport::invalidate() {
+	impl_->installGate.invalidate();
 	if (!impl_->state->alive()) return;
 	EngineHost::shared().unbind(generation_);
 	impl_->state->invalidate(generation_);
@@ -361,10 +375,13 @@ void RuntimeTransport::invalidate() {
 	}
 }
 
-void RuntimeTransport::install(Runtime& runtime) {
-	EngineHost::shared().bind(shared_from_this());
-	Object byteRuntime(runtime);
-	byteRuntime.setProperty(runtime, kGenerationName, static_cast<double>(generation_));
+bool RuntimeTransport::install(Runtime& runtime) {
+	const auto decision = impl_->installGate.beginInstall();
+	if (decision == RuntimeInstallDecision::AlreadyInstalled) return true;
+	if (decision == RuntimeInstallDecision::Invalidated) return false;
+	try {
+		Object byteRuntime(runtime);
+		byteRuntime.setProperty(runtime, kGenerationName, static_cast<double>(generation_));
 
 	auto weak = std::weak_ptr<RuntimeTransport>(shared_from_this());
 	auto add = [&](const char* name, unsigned int count, Function function) {
@@ -722,7 +739,14 @@ void RuntimeTransport::install(Runtime& runtime) {
 		}
 	));
 
-	runtime.global().setProperty(runtime, kRuntimeName, std::move(byteRuntime));
+		runtime.global().setProperty(runtime, kRuntimeName, std::move(byteRuntime));
+		EngineHost::shared().bind(shared_from_this());
+		impl_->installGate.finishInstall(true);
+		return true;
+	} catch (...) {
+		impl_->installGate.finishInstall(false);
+		return false;
+	}
 }
 
 } // namespace nipworker::react_native

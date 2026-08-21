@@ -5,6 +5,38 @@
 
 namespace nipworker::react_native {
 
+RuntimeInstallDecision RuntimeInstallGate::beginInstall() {
+	std::unique_lock<std::mutex> lock(mutex_);
+	changed_.wait(lock, [this] { return phase_ != Phase::Installing; });
+	if (phase_ == Phase::Installed) return RuntimeInstallDecision::AlreadyInstalled;
+	if (phase_ == Phase::Invalidated) return RuntimeInstallDecision::Invalidated;
+	phase_ = Phase::Installing;
+	return RuntimeInstallDecision::Install;
+}
+
+void RuntimeInstallGate::finishInstall(bool succeeded) {
+	{
+		std::lock_guard<std::mutex> lock(mutex_);
+		if (phase_ != Phase::Installing) return;
+		phase_ = succeeded ? Phase::Installed : Phase::Ready;
+	}
+	changed_.notify_all();
+}
+
+void RuntimeInstallGate::invalidate() {
+	{
+		std::unique_lock<std::mutex> lock(mutex_);
+		changed_.wait(lock, [this] { return phase_ != Phase::Installing; });
+		phase_ = Phase::Invalidated;
+	}
+	changed_.notify_all();
+}
+
+bool RuntimeInstallGate::installed() const {
+	std::lock_guard<std::mutex> lock(mutex_);
+	return phase_ == Phase::Installed;
+}
+
 OwnedPacket::OwnedPacket(std::uint8_t* data, std::size_t size, Release release) noexcept
 	: data_(data), size_(size), release_(release) {}
 

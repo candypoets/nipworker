@@ -24,9 +24,10 @@ let appStateListener: ((state: 'active' | 'background' | 'inactive') => void) | 
 const queuedBuffers: ArrayBuffer[] = [];
 const queuedRoutes: string[] = [];
 const nativeBuffers = new Map<string, ArrayBuffer>();
-const { initEngine, startMesh, setMeshProfile, clearMeshProfile, nativeStorage } = vi.hoisted(
+const { initEngine, installByteRuntime, startMesh, setMeshProfile, clearMeshProfile, nativeStorage } = vi.hoisted(
 	() => ({
 		initEngine: vi.fn(),
+		installByteRuntime: vi.fn(),
 		startMesh: vi.fn(() => true),
 		setMeshProfile: vi.fn(() => true),
 		clearMeshProfile: vi.fn(() => true),
@@ -39,7 +40,7 @@ vi.mock('react-native', () => {
 		init: vi.fn(),
 		initEngine,
 		handleMessage: vi.fn(),
-		installByteRuntime: vi.fn(() => {
+		installByteRuntime: installByteRuntime.mockImplementation(() => {
 			(globalThis as any).__nipworkerReactNativeByteRuntime = {
 				init: vi.fn(),
 				handleMessage: vi.fn(),
@@ -238,13 +239,14 @@ describe('react-native byte runtime subscription path', () => {
 		nativeBuffers.clear();
 		nativeStorage.clear();
 		initEngine.mockClear();
+		installByteRuntime.mockClear();
 		startMesh.mockClear();
 		setMeshProfile.mockClear();
 		clearMeshProfile.mockClear();
 		delete (globalThis as any).__nipworkerReactNativeByteRuntime;
 	});
 
-	it('forwards the mesh opt-in before installing the shared byte runtime', () => {
+	it('installs the shared byte runtime before starting the engine', () => {
 		const manager = createNostrManager({
 			defaultRelays: ['wss://default.example'],
 			indexerRelays: ['wss://indexer.example'],
@@ -257,6 +259,9 @@ describe('react-native byte runtime subscription path', () => {
 			['wss://indexer.example'],
 			true,
 			'info'
+		);
+		expect(installByteRuntime.mock.invocationCallOrder[0]).toBeLessThan(
+			initEngine.mock.invocationCallOrder[0]
 		);
 		expect(startMesh).toHaveBeenCalled();
 		manager.deinit();

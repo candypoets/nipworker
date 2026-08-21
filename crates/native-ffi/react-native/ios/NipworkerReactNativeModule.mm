@@ -85,7 +85,9 @@ RCT_EXPORT_BLOCKING_SYNCHRONOUS_METHOD(installByteRuntime) {
 	// New-architecture installation is performed by
 	// installJSIBindingsWithRuntime:callInvoker:, which supplies the runtime's
 	// scheduler. A raw Runtime pointer alone is deliberately insufficient.
-	return @(self.transportBox != nullptr);
+	@synchronized(self) {
+		return @(self.transportBox != nullptr);
+	}
 }
 
 RCT_EXPORT_BLOCKING_SYNCHRONOUS_METHOD(startMesh) {
@@ -173,20 +175,24 @@ RCT_EXPORT_BLOCKING_SYNCHRONOUS_METHOD(removeStorageItem:(NSString*)key) {
 }
 
 - (void)invalidateTransport {
-	if (self.transportBox) {
-		auto* box = NipworkerTransportBox(self.transportBox);
-		if (*box) (*box)->invalidate();
-		delete box;
-		self.transportBox = nullptr;
+	@synchronized(self) {
+		if (self.transportBox) {
+			auto* box = NipworkerTransportBox(self.transportBox);
+			if (*box) (*box)->invalidate();
+			delete box;
+			self.transportBox = nullptr;
+		}
 	}
 }
 
 - (void)installJSIBindingsWithRuntime:(facebook::jsi::Runtime&)runtime
 	callInvoker:(const std::shared_ptr<facebook::react::CallInvoker>&)callInvoker {
-	if (self.transportBox) return;
-	auto transport = RuntimeTransport::create(callInvoker);
-	transport->install(runtime);
-	self.transportBox = new std::shared_ptr<RuntimeTransport>(std::move(transport));
+	@synchronized(self) {
+		if (self.transportBox) return;
+		auto transport = RuntimeTransport::create(callInvoker);
+		if (!transport->install(runtime)) return;
+		self.transportBox = new std::shared_ptr<RuntimeTransport>(std::move(transport));
+	}
 }
 
 - (std::shared_ptr<facebook::react::TurboModule>)getTurboModule:
