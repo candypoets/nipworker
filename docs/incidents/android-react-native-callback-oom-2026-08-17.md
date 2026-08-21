@@ -26,6 +26,18 @@ manager was constructed behind `RuntimeGate`, but the callback was not retained 
 later `RoomDataProvider` mount. `ReactNativeBackend` already restored its persisted
 session and emitted auth. That Crays lifecycle issue is out of scope here.
 
+Live Crays Board designer review on 2026-08-21 established that the failure is not
+People-specific. Repeated relay-backed tablet journeys through Orders, Orders Ladder,
+Menu, Events, Check-in, People, Invites, Settings, Home, and Create Venue provisioned
+valid fixtures and logged the expected `crays-board-venue`/order markers before the same
+`bad_array_new_length` callback stack terminated the process. Create Venue reached its
+account-created wait before crashing. Agent Device then observed the Expo reload/home/
+copy/apps recovery screen or launcher and timed out waiting for `orders-screen`.
+
+The UI-only Welcome and Create Venue wizard exploration journeys passed. This control
+separates ordinary rendering/navigation from relay-backed native delivery and confirms
+that every affected journey crosses the callback boundary removed in 0.99.11.
+
 ## Environment
 
 - Crays commit `0ff95759a2311cf021a2f90c76461edd63218cd8`, with its uncommitted
@@ -140,6 +152,37 @@ duplicate-route coalescing, runtime recreation with late arrivals, both wake rac
 route/control saturation, ownership release, sanitizer runs, exact Android React Native 0.86.2
 compilation, and source parity guards for Android, iOS, Swift, and TypeScript. Measured results
 are recorded in `docs/benchmarks/react-native-native-delivery-2026-08-21.md`.
+
+## Crays Board device acceptance matrix
+
+Acceptance requires a fresh native development-client build with npm and native artifacts
+both at 0.99.11; an OTA-only JavaScript update is intentionally unsupported because the new
+JSI adapter requires new native pin symbols. Run at least three consecutive relay-backed
+passes through each of the following journeys without restarting the process:
+
+- Orders
+- Orders Ladder
+- Menu
+- Events
+- Check-in
+- People
+- Invites
+- Settings
+- Home
+- Create Venue, including the account-created wait
+
+For every pass, retain the fixture-provisioning and `crays-board-venue`/order markers and
+assert that the expected destination screen appears. The process must remain alive with no
+`OutOfMemoryError`, no `CxxCallbackImpl.nativeInvoke`/`emitOnData` stack, no Expo recovery
+screen or launcher fallback, and no callbacks after an explicit runtime reload. Capture
+`getReactNativeDeliveryStats()` before and after the matrix: route arrivals may coalesce,
+control/route high-water marks must remain within their configured bounds, and unexpected
+drop/stale counters must remain zero. Repeat Welcome and the UI-only Create Venue wizard as
+negative controls.
+
+This device matrix is the downstream application acceptance gate. The repository-level
+shared transport stress, lifecycle, race, saturation, Android AAR, Apple SDK, and Swift
+package checks are the upstream release gates and passed for 0.99.11.
 
 ## Delegation
 
