@@ -27,8 +27,19 @@ def bundledNativeRoot = new File(
 	packageRootDir,
 	"prebuilt/android"
 )
-def hasBundledNative = new File(bundledNativeRoot, "include/nipworker.h").isFile() &&
-	new File(bundledNativeRoot, "jni/arm64-v8a/libnipworker_native_ffi.so").isFile()
+def bundledNativeJniDir = new File(bundledNativeRoot, "jni")
+def bundledNativeIncludeDir = new File(packageRootDir, "crates/native-ffi/include")
+def bundledNativeAbis = ["arm64-v8a", "armeabi-v7a", "x86", "x86_64"]
+def hasBundledNative = new File(bundledNativeIncludeDir, "nipworker.h").isFile() &&
+	bundledNativeAbis.every { abi ->
+		new File(bundledNativeJniDir, "${abi}/libnipworker_native_ffi.so").isFile()
+	}
+
+logger.lifecycle(
+	hasBundledNative
+		? "[nipworker] Android native source=bundled jni=${bundledNativeJniDir} include=${bundledNativeIncludeDir}"
+		: "[nipworker] Android native source=maven version=${nipworkerVersion}"
+)
 
 react {
 	root = packageRootDir
@@ -61,7 +72,7 @@ android {
 		main {
 			java.srcDirs += ["$buildDir/generated/source/codegen/java"]
 			if (hasBundledNative) {
-				jniLibs.srcDirs += [new File(bundledNativeRoot, "jni")]
+				jniLibs.srcDirs += [bundledNativeJniDir]
 			}
 		}
 	}
@@ -75,7 +86,8 @@ android {
 				arguments "-DANDROID_STL=c++_shared",
 					"-DREACT_NATIVE_DIR=${toPlatformFileString(reactNativeRootDir.path)}"
 				if (hasBundledNative) {
-					arguments "-DNIPWORKER_LOCAL_NATIVE_DIR=${toPlatformFileString(bundledNativeRoot.path)}"
+					arguments "-DNIPWORKER_LOCAL_NATIVE_JNI_DIR=${toPlatformFileString(bundledNativeJniDir.path)}",
+						"-DNIPWORKER_LOCAL_NATIVE_INCLUDE_DIR=${toPlatformFileString(bundledNativeIncludeDir.path)}"
 				}
 				cppFlags '-std=c++17 -fexceptions -frtti'
 			}

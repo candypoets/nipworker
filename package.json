@@ -60,6 +60,7 @@
     "react-native.config.ts",
     "NipworkerReactNative.podspec",
     "crates/native-ffi/ios/NipworkerNativeFFI.xcframework",
+    "crates/native-ffi/include/nipworker.h",
     "crates/native-ffi/react-native/android/build.gradle",
     "crates/native-ffi/react-native/android/CMakeLists.txt",
     "crates/native-ffi/react-native/android/consumer-rules.pro",

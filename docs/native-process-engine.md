@@ -49,6 +49,13 @@ private copies. Android consumers must use the single
 `libnipworker_native_ffi.so` supplied by the native AAR. A separate loaded copy
 of the Rust library necessarily has separate static registry state.
 
+For local Android npm links, Gradle selects the checkout's
+`prebuilt/android/jni` libraries only when all four supported ABI files exist.
+It uses the tracked `crates/native-ffi/include/nipworker.h`, so selection does
+not depend on a generated packing-stage header. Configuration prints
+`Android native source=bundled` with the resolved JNI and include paths. The
+published Maven AAR is added only when the complete local native set is absent.
+
 At `info` log level, shared-registry lifecycle records include `generation`,
 `handle`, `client`, `clients`, and `totalReferences`. A normal runtime reload is
 visible as `release action=last-client-anchored`, followed by

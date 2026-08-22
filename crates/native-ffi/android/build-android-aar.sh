@@ -82,8 +82,6 @@ fi
 
 PACKAGE_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 PREBUILT_DIR="$PACKAGE_ROOT/prebuilt/android"
-mkdir -p "$PREBUILT_DIR/include"
-cp "$CRATE_DIR/include/nipworker.h" "$PREBUILT_DIR/include/nipworker.h"
 for abi in "${ABIS[@]}"; do
 	mkdir -p "$PREBUILT_DIR/jni/$abi"
 	cp "$RUST_JNI_DIR/$abi/libnipworker_native_ffi.so" \

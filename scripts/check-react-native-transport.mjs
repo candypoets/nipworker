@@ -6,6 +6,7 @@ const paths = {
 	jni: 'crates/native-ffi/android/nipworker_jni_impl.c',
 	androidModule:
 		'crates/native-ffi/react-native/android/src/main/java/com/candypoets/nipworker/reactnative/NipworkerReactNativeModule.kt',
+	androidGradle: 'crates/native-ffi/react-native/android/build.gradle',
 	androidCmake: 'crates/native-ffi/react-native/android/CMakeLists.txt',
 	androidCpp: 'crates/native-ffi/react-native/android/src/main/cpp/NipworkerByteRuntime.cpp',
 	iosModule: 'crates/native-ffi/react-native/ios/NipworkerReactNativeModule.mm',
@@ -114,6 +115,31 @@ requireMatch(
 	'androidCpp',
 	/NipworkerReactNativeJSI|RuntimeTransport/,
 	'does not install the shared runtime transport adapter'
+);
+requireMatch(
+	'androidModule',
+	/System\.loadLibrary\("nipworker_native_ffi"\)/,
+	'does not load the shared Rust engine library before the RN adapter'
+);
+requireMatch(
+	'androidCmake',
+	/NIPWORKER_LOCAL_NATIVE_JNI_DIR[\s\S]*NIPWORKER_LOCAL_NATIVE_INCLUDE_DIR/,
+	'does not support independent local JNI/include paths for linked checkouts'
+);
+requireMatch(
+	'androidGradle',
+	/bundledNativeIncludeDir\s*=\s*new File\(packageRootDir, ["']crates\/native-ffi\/include["']\)/,
+	'does not fall back to the tracked native header for linked checkouts'
+);
+requireMatch(
+	'androidGradle',
+	/bundledNativeAbis[\s\S]*\.every[\s\S]*hasBundledNative/,
+	'does not require a complete bundled Android ABI set'
+);
+requireMatch(
+	'androidGradle',
+	/if \(!hasBundledNative\)[\s\S]*nipworker-native-ffi-android/,
+	'does not exclude the published native AAR when bundled libraries are selected'
 );
 requireMatch(
 	'iosModule',
