@@ -126,9 +126,18 @@ jobs:
             mv prebuilt-temp/linux-host/* prebuilt/linux/
           fi
 
+          if [ -d "prebuilt-temp/android-jniLibs" ]; then
+            mkdir -p prebuilt/android/jni
+            cp -R prebuilt-temp/android-jniLibs/. prebuilt/android/jni/
+          else
+            echo "Missing android-jniLibs artifact"
+            exit 1
+          fi
+
           rm -rf prebuilt-temp
           echo "=== React Native native artifacts ==="
           find crates/native-ffi/ios/NipworkerNativeFFI.xcframework -type f | sort
+          find prebuilt/android/jni -type f | sort
 
       - name: Verify React Native native artifacts
         if: ${{ steps.check_publish.outputs.should_publish == 'true' }}
@@ -139,6 +148,11 @@ jobs:
           test -f crates/native-ffi/ios/NipworkerNativeFFI.xcframework/Info.plist
           test -f crates/native-ffi/ios/NipworkerNativeFFI.xcframework/ios-arm64/libnipworker_native_ffi.a
           test -f crates/native-ffi/ios/NipworkerNativeFFI.xcframework/ios-arm64_x86_64-simulator/libnipworker_native_ffi.a
+          test -f crates/native-ffi/include/nipworker.h
+          test -f prebuilt/android/jni/arm64-v8a/libnipworker_native_ffi.so
+          test -f prebuilt/android/jni/armeabi-v7a/libnipworker_native_ffi.so
+          test -f prebuilt/android/jni/x86/libnipworker_native_ffi.so
+          test -f prebuilt/android/jni/x86_64/libnipworker_native_ffi.so
 
           if find crates/native-ffi/ios/NipworkerNativeFFI.xcframework -type f -name '*.a' -print0 \
             | xargs -0 strings \
@@ -185,6 +199,11 @@ jobs:
               "crates/native-ffi/ios/NipworkerNativeFFI.xcframework/Info.plist",
               "crates/native-ffi/ios/NipworkerNativeFFI.xcframework/ios-arm64/libnipworker_native_ffi.a",
               "crates/native-ffi/ios/NipworkerNativeFFI.xcframework/ios-arm64_x86_64-simulator/libnipworker_native_ffi.a",
+              "crates/native-ffi/include/nipworker.h",
+              "prebuilt/android/jni/arm64-v8a/libnipworker_native_ffi.so",
+              "prebuilt/android/jni/armeabi-v7a/libnipworker_native_ffi.so",
+              "prebuilt/android/jni/x86/libnipworker_native_ffi.so",
+              "prebuilt/android/jni/x86_64/libnipworker_native_ffi.so",
             ];
             const missing = required.filter((path) => !packed.has(path));
             if (missing.length) {

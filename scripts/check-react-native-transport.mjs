@@ -19,7 +19,9 @@ const paths = {
 	reactNativeTs: 'src/react-native.ts',
 	turboSpec: 'src/specs/NativeNipworkerReactNative.ts',
 	rootPodspec: 'NipworkerReactNative.podspec',
-	nestedPodspec: 'crates/native-ffi/react-native/ios/NipworkerReactNative.podspec'
+	nestedPodspec: 'crates/native-ffi/react-native/ios/NipworkerReactNative.podspec',
+	nativeBuildWorkflow: '.github/workflows/native-build.yml',
+	npmPublishWorkflow: '.github/workflows/npm-publish.yml'
 };
 
 const source = Object.fromEntries(
@@ -142,6 +144,23 @@ requireMatch(
 	'does not exclude the published native AAR when bundled libraries are selected'
 );
 requireMatch(
+	'nativeBuildWorkflow',
+	/name: android-jniLibs[\s\S]*path: crates\/native-ffi\/android\/build\/rustJniLibs\//,
+	'does not upload the Android libraries from the current Rust build output'
+);
+requireMatch(
+	'npmPublishWorkflow',
+	/prebuilt-temp\/android-jniLibs[\s\S]*prebuilt\/android\/jni/,
+	'does not stage built Android libraries for npm consumers'
+);
+for (const abi of ['arm64-v8a', 'armeabi-v7a', 'x86', 'x86_64']) {
+	if (
+		!source.npmPublishWorkflow.includes(`prebuilt/android/jni/${abi}/libnipworker_native_ffi.so`)
+	) {
+		failures.push(`${paths.npmPublishWorkflow}: does not verify packaged Android ABI ${abi}`);
+	}
+}
+requireMatch(
 	'iosModule',
 	/NipworkerReactNativeJSI|RuntimeTransport/,
 	'does not install the shared runtime transport adapter'
@@ -204,7 +223,9 @@ requireMatch(
 const androidInitStart = source.androidModule.indexOf('override fun initEngine(');
 const androidInstallStart = source.androidModule.indexOf('override fun installByteRuntime()');
 if (androidInitStart < 0 || androidInstallStart < 0 || androidInstallStart <= androidInitStart) {
-	failures.push(`${paths.androidModule}: cannot verify initEngine/installByteRuntime ordering contract`);
+	failures.push(
+		`${paths.androidModule}: cannot verify initEngine/installByteRuntime ordering contract`
+	);
 } else {
 	const androidInitBody = source.androidModule.slice(androidInitStart, androidInstallStart);
 	if (/ensureTransport\(\)/.test(androidInitBody)) {
@@ -213,7 +234,9 @@ if (androidInitStart < 0 || androidInstallStart < 0 || androidInstallStart <= an
 		);
 	}
 	if (!/check\(hasTransport\(\)\)/.test(androidInitBody)) {
-		failures.push(`${paths.androidModule}: initEngine does not require prior JS-thread installation`);
+		failures.push(
+			`${paths.androidModule}: initEngine does not require prior JS-thread installation`
+		);
 	}
 }
 const tsInstallStart = source.reactNativeTs.indexOf('mod.installByteRuntime()');

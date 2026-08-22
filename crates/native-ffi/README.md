@@ -6,11 +6,13 @@ and Swift integrations.
 ## Build Artifacts
 
 - Android: `android/build-android-aar.sh` builds `libnipworker_native_ffi.so`
-  for supported ABIs and places them under `android/src/main/jniLibs`.
+  for supported ABIs under `android/build/rustJniLibs`, packages them into the
+  AAR, and stages npm-linkable copies under `prebuilt/android/jni`.
 - iOS/macOS: `ios/build-ios.sh` builds `NipworkerNativeFFI.xcframework` with
   the public C API from `include/nipworker.h`.
 
-The React Native Android bridge consumes the version-matched AAR through its
+The React Native Android bridge consumes bundled libraries when present (the
+npm and linked-checkout path), otherwise the version-matched AAR through its
 Prefab package. The Swift package consumes the iOS XCFramework through
 `swift/Package.swift`.
 

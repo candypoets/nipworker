@@ -104,7 +104,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: android-jniLibs
-          path: crates/native-ffi/android/src/main/jniLibs/
+          path: crates/native-ffi/android/build/rustJniLibs/
           if-no-files-found: error
 
       - name: Upload Android Maven repository
